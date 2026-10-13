@@ -1,4 +1,8 @@
 import type {
+    PlaybackItemOrder,
+    PlaybackPendingEntry,
+    PlaybackStackEntry,
+    PlaybackView,
     PlayingItem,
     PlaylistRecord,
     ScheduledPlaylist,
@@ -1112,8 +1116,12 @@ class PlaybackStateEntry {
 }
 
 // Track items that we may start
+let bakeCounter = 0;
+
 class PlaybackItem implements SchedulerHeapItem {
     itemType?: 'Scheduled' | 'Immediate' | 'Queued';
+    /** Distinguishes one baking of this item's song order from a later one. */
+    readonly bake: number = ++bakeCounter;
     priorityTier: number = 10;
     timeBasedPri: number = 0;
     cutOffPrevious: boolean = false; // Tie breaker, which wins, existing (false) or new (true)?
@@ -2167,7 +2175,68 @@ export class PlayerRunState {
     stopImmediately(currentTime: number, log?: PlaybackLogDetail[]) {
         this.interactiveQueue = [];
         this.immediateItem = undefined;
+        this.#stopTopNow(currentTime, log);
+    }
 
+    /** Graceful stop: finish the current sequence, play the outro (post-section)
+     *  of the current schedule if it has one, then let it end naturally.
+     *  Schedules and heap remain intact. */
+    stopGracefully(currentTime: number, _log?: PlaybackLogDetail[]) {
+        this.interactiveQueue = [];
+        this.immediateItem = undefined;
+        this.#stopTopGracefully(currentTime);
+    }
+
+    /**
+     * Stop one item and nothing else. The item that is on ends now or gracefully;
+     * an item under it, or one waiting its turn, is simply dropped so it never
+     * plays, and a schedule stays stopped until its end time. Returns what was found.
+     */
+    stopItem(
+        key: string,
+        graceful: boolean,
+        currentTime: number,
+        log?: PlaybackLogDetail[],
+    ): 'playing' | 'removed' | 'none' {
+        const top = this.#stackTop;
+        if (top && top.itemId === key) {
+            if (graceful) this.#stopTopGracefully(currentTime);
+            else this.#stopTopNow(currentTime, log);
+            return 'playing';
+        }
+
+        const idx = this.stack.findIndex((e) => e.itemId === key);
+        if (idx >= 0) {
+            const e = this.stack[idx];
+            e.stopAtTime(idx + 1, currentTime, log);
+            this.stack = [...this.stack.slice(0, idx), ...this.stack.slice(idx + 1)];
+            this.stackById.delete(key);
+            this.#keepStopped(e.item);
+            return 'removed';
+        }
+
+        const due = this.heapById.get(key);
+        if (due) {
+            this.heapById.delete(key);
+            const at = this.heap.findIndex((h) => h.itemId === key);
+            if (at !== undefined && at >= 0) this.heap.deleteAt(at);
+            this.#keepStopped(due);
+            return 'removed';
+        }
+
+        if (this.immediateItem?.requestId === key || this.interactiveQueue.some((q) => q.requestId === key)) {
+            this.removeInteractiveCommand(key, log);
+            return 'removed';
+        }
+        return 'none';
+    }
+
+    /** A stopped schedule must not be loaded again while its window is still open. */
+    #keepStopped(item: PlaybackItem) {
+        if (item.itemType === 'Scheduled') this.stoppedIds.set(item.itemId, item.schedEnd);
+    }
+
+    #stopTopNow(currentTime: number, log?: PlaybackLogDetail[]) {
         const st = this.#stackTop;
         if (!st) return;
 
@@ -2184,13 +2253,7 @@ export class PlayerRunState {
         }
     }
 
-    /** Graceful stop: finish the current sequence, play the outro (post-section)
-     *  of the current schedule if it has one, then let it end naturally.
-     *  Schedules and heap remain intact. */
-    stopGracefully(currentTime: number, _log?: PlaybackLogDetail[]) {
-        this.interactiveQueue = [];
-        this.immediateItem = undefined;
-
+    #stopTopGracefully(currentTime: number) {
         const st = this.#stackTop;
         if (!st) return;
 
@@ -2356,6 +2419,97 @@ export class PlayerRunState {
             });
         }
         return items;
+    }
+
+    /**
+     * The engine's structure, for the detailed playback view: the stack top first,
+     * then what waits, then what comes. Whether the top is paused or ending is the
+     * caller's to say; the engine only knows that it is on.
+     */
+    getStatusView(flags: { paused?: boolean; ending?: boolean } = {}): PlaybackView {
+        const stack: PlaybackStackEntry[] = [];
+        for (let i = this.stack.length - 1; i >= 0; --i) {
+            const top = i === this.stack.length - 1;
+            const state = !top ? 'suspended' : flags.paused ? 'paused' : flags.ending ? 'ending' : 'playing';
+            stack.push(this.#stackEntryView(this.stack[i], state));
+        }
+
+        const pending: PlaybackPendingEntry[] = this.getQueueItems().map((q) => ({ ...q, why: 'waiting' }));
+        for (const it of this.heapById.values()) {
+            if (it.itemType !== 'Scheduled') continue;
+            pending.push({
+                type: 'Scheduled',
+                item: 'Schedule',
+                title: this.titleForIds(undefined, undefined, it.scheduleId),
+                schedule_id: it.scheduleId,
+                at: it.schedStart,
+                until: it.schedEnd,
+                why: 'deferred',
+            });
+        }
+
+        return {
+            stack,
+            pending,
+            upcoming: [...this.predictUpcoming(600_000, 10), ...this.getUpcomingSchedules()],
+        };
+    }
+
+    #stackEntryView(e: PlaybackStateEntry, state: PlaybackStackEntry['state']): PlaybackStackEntry {
+        const it = e.item;
+        const byRequest = !!it.requestId && !it.scheduleId;
+        const view: PlaybackStackEntry = {
+            key: e.itemId,
+            origin: it.itemType ?? 'Scheduled',
+            state,
+            title: this.titleForIds(
+                byRequest && !it.playlistIds?.[1] ? it.mainSection[0]?.id : undefined,
+                byRequest ? it.playlistIds?.[1] : undefined,
+                it.scheduleId || undefined,
+            ),
+            schedule_id: it.scheduleId || undefined,
+            playlist_id: it.playlistIds?.[1],
+            request_id: it.requestId,
+            ends_at: it.scheduleId ? it.schedEnd : undefined,
+            order_key: `${e.itemId}#${it.bake}`,
+        };
+
+        if (e.itemPart >= 0 && e.itemPart <= 2 && e.itemCursor >= 0) {
+            const songs = e.seqSections[e.itemPart];
+            const durs = e.seqDurs[e.itemPart];
+            const count = songs.length;
+            const loop = e.itemPart === 1 && it.mainSectionLoop;
+            const index = loop && count ? e.itemCursor % count : e.itemCursor;
+            if (index < count) {
+                view.section = (['intro', 'main', 'outro'] as const)[e.itemPart];
+                view.position = { index, count, loop };
+                const seq = songs[index];
+                view.song = {
+                    sequence_id: seq.id,
+                    title: this.titleForIds(seq.id),
+                    offset_ms: e.offsetInto,
+                    // The top entry is advanced to now; a suspended one stopped where it was.
+                    at: state === 'suspended' ? (e.suspendTime ?? this.currentTime) : this.currentTime,
+                    duration_ms: durs[index] ?? 0,
+                };
+            }
+        }
+        return view;
+    }
+
+    /** The baked song order of a loaded item: on the stack, due, or still to come. */
+    getItemOrder(key: string): PlaybackItemOrder | undefined {
+        const it = this.stackById.get(key)?.item ?? this.heapById.get(key) ?? this.upcomingById.get(key);
+        if (!it) return undefined;
+        const list = (seqs: SequenceRecord[], durs: number[]) =>
+            seqs.map((seq, i) => ({ sequence_id: seq.id, title: this.titleForIds(seq.id), duration_ms: durs[i] ?? 0 }));
+        return {
+            key,
+            order_key: `${key}#${it.bake}`,
+            intro: list(it.preSection, it.preSectionDurs),
+            main: list(it.mainSection, it.mainSectionDurs),
+            outro: list(it.postSection, it.postSectionDurs),
+        };
     }
 
     getUpcomingSchedules(): PlayingItem[] {

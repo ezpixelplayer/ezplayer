@@ -1,13 +1,18 @@
 import { SchedulePreviewSettings } from '../types/SchedulePreviewTypes';
 
-export const DEFAULT_SCHEDULE_PREVIEW_SETTINGS: SchedulePreviewSettings = {
-    startDate: new Date(),
-    endDate: new Date(Date.now() + 8 * 60 * 60 * 1000), // 8 hours from now (reasonable default)
-    startTime: '00:00',
-    endTime: '23:45',
-    maxEvents: 50000, // Increased default limit for longer time ranges
-    scheduleTypeFilter: 'all',
-};
+export const DEFAULT_SCHEDULE_PREVIEW_MAX_EVENTS = 50000;
+
+// A function so the dates are taken when the preview opens, not when the bundle loaded
+export function defaultSchedulePreviewSettings(): SchedulePreviewSettings {
+    return {
+        startDate: new Date(),
+        endDate: new Date(Date.now() + 8 * 60 * 60 * 1000), // 8 hours from now (reasonable default)
+        startTime: '00:00',
+        endTime: '23:45',
+        maxEvents: DEFAULT_SCHEDULE_PREVIEW_MAX_EVENTS,
+        scheduleTypeFilter: 'all',
+    };
+}
 
 export const DEFAULT_TIMELINE_SETTINGS = {
     showTimestamps: true,

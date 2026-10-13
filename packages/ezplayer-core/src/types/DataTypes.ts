@@ -169,6 +169,72 @@ export interface PlayingItem {
     schedule_id?: string;
 }
 
+/** One item on the playback stack: what is on, or what it interrupted and will
+ *  resume when it ends. Mirrors the engine's own structure, which is what the
+ *  detailed playback view shows. */
+export interface PlaybackStackEntry {
+    /** Identifies the item to commands (`stopitem`) and to the song-order fetch. */
+    key: string;
+    origin: 'Scheduled' | 'Immediate' | 'Queued';
+    /** Only the top entry plays, pauses or ends; everything under it is suspended. */
+    state: 'playing' | 'paused' | 'ending' | 'suspended';
+    /** Show, playlist or song name, whichever the item is. */
+    title: string;
+    schedule_id?: string;
+    playlist_id?: string;
+    request_id?: string;
+    /** Which part of the item the cursor is in; absent before it starts or after it ends. */
+    section?: 'intro' | 'main' | 'outro';
+    /** The cursor within the section: 0-based `index` of `count`. A looping main
+     *  section starts over at 0 when it wraps. */
+    position?: { index: number; count: number; loop: boolean };
+    /** The song at the cursor. For a suspended entry, where it resumes. */
+    song?: {
+        sequence_id: string;
+        title: string;
+        /** How far into the song the cursor is, and when it got there (player clock). */
+        offset_ms: number;
+        at: number;
+        duration_ms: number;
+    };
+    /** When the item is due to end, for scheduled items. */
+    ends_at?: number;
+    /** Changes whenever the item's song order is baked; the order is fetched by it. */
+    order_key: string;
+}
+
+/** Something that will play when its turn comes but is not on the stack. */
+export interface PlaybackPendingEntry extends PlayingItem {
+    /** `waiting`: a request in line. `deferred`: a show whose time has come but
+     *  which something of higher standing is keeping off the stage. */
+    why: 'waiting' | 'deferred';
+}
+
+/** The engine's structure, for the detailed playback view. */
+export interface PlaybackView {
+    /** Top first; `[0]` is what is on. */
+    stack: PlaybackStackEntry[];
+    pending: PlaybackPendingEntry[];
+    /** Songs to come, as the engine will choose them, then shows due to start. */
+    upcoming: PlayingItem[];
+}
+
+export interface PlaybackOrderEntry {
+    sequence_id: string;
+    title: string;
+    duration_ms: number;
+}
+
+/** The baked song order of one playback item, fetched on demand by its `order_key`
+ *  (a shuffled show's order exists only here). */
+export interface PlaybackItemOrder {
+    key: string;
+    order_key: string;
+    intro: PlaybackOrderEntry[];
+    main: PlaybackOrderEntry[];
+    outro: PlaybackOrderEntry[];
+}
+
 export interface PlayerPStatusContent {
     // P - Player
     ptype: 'EZP' | 'FPP'; // FPP or EZP
@@ -190,6 +256,9 @@ export interface PlayerPStatusContent {
     queue?: PlayingItem[];
     suspendedItems?: PlayingItem[];
     preemptedItems?: PlayingItem[];
+    /** The engine's structure for the detailed playback view; the lists above are
+     *  flattened views of the same state and remain for older readers. */
+    view?: PlaybackView;
 
     volume?: {
         /** 0-100. The default output's level, or in `outputs` mode the loudest
@@ -588,6 +657,11 @@ export type EZPlayerCommand =
     | {
           command: 'deleterequest';
           requestId: string; // Identity, for canceling, of a song or a
+      }
+    | {
+          command: 'stopitem'; // Stop one playback item by its stack/pending key, leaving the rest alone
+          key: string;
+          graceful?: boolean; // Only meaningful for the item that is on; others are simply removed
       }
     | {
           command: 'clearrequests'; // Clear all requests

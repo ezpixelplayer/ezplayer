@@ -285,6 +285,9 @@ const handlers: PlayWorkerRPCAPI = {
     getFrameExportBuffer: async () => {
         return frameExportBuffer;
     },
+    getPlaybackItemOrder: async ({ key }) => {
+        return foregroundPlayerRunState.getItemOrder(key) ?? backgroundPlayerRunState.getItemOrder(key);
+    },
 };
 
 function playingItemDesc(item?: PlayAction, runState?: PlayerRunState) {
@@ -391,6 +394,10 @@ function sendPlayerStateUpdate() {
         ...foregroundPlayerRunState.predictUpcoming(600_000, 10),
         ...foregroundPlayerRunState.getUpcomingSchedules(),
     ];
+    playStatus.view = foregroundPlayerRunState.getStatusView({
+        paused: isPaused,
+        ending: stoppingGracefully && !!playStatus.now_playing,
+    });
     playStatus.suspendedItems = foregroundPlayerRunState.getHeapItems();
     playStatus.preemptedItems = foregroundPlayerRunState.getStackItems();
 
@@ -1164,6 +1171,26 @@ function processCommand(cmd: EZPlayerCommand) {
             emitInfo('Stop graceful command received');
             stoppingGracefully = true;
             foregroundPlayerRunState.stopGracefully(foregroundPlayerRunState.currentTime);
+            sendPlayerStateUpdate();
+            break;
+        }
+        case 'stopitem': {
+            emitInfo(`Stop item ${cmd.key}${cmd.graceful ? ' gracefully' : ''}`);
+            const was = foregroundPlayerRunState.stopItem(
+                cmd.key,
+                !!cmd.graceful,
+                foregroundPlayerRunState.currentTime,
+            );
+            if (was === 'playing') {
+                if (cmd.graceful) {
+                    stoppingGracefully = true;
+                } else {
+                    // Cut its audio over, as stopnow does.
+                    stoppingGracefully = false;
+                    audioPlayerRunTime = foregroundPlayerRunState.currentTime;
+                    ++curAudioSyncNum;
+                }
+            }
             sendPlayerStateUpdate();
             break;
         }
