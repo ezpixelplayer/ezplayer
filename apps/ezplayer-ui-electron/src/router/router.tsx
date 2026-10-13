@@ -145,7 +145,8 @@ const ElectronSettingsPage = () => {
             icon: <RouterIcon sx={{ fontSize: 56 }} />,
             available: piAvailable,
             onClick: () => {
-                window.open('http://192.168.4.1/setup', '_blank', 'noopener,noreferrer');
+                const portalHost = window.location.protocol === 'file:' ? '127.0.0.1' : window.location.hostname || '127.0.0.1';
+                window.open(`http://${portalHost}/setup`, '_blank', 'noopener,noreferrer');
             },
         },
         {
