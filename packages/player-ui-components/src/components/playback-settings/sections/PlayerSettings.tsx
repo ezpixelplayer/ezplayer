@@ -171,10 +171,6 @@ export const PlayerSettings: React.FC = () => {
             <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
                 Diagnostics
             </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                Help improve EZPlayer by sending anonymous crash and error reports. No show data, files, or personal
-                information is included.
-            </Typography>
             <Box>
                 <FormControlLabel
                     control={
@@ -188,8 +184,12 @@ export const PlayerSettings: React.FC = () => {
                     }
                     label="Send anonymous crash reports"
                 />
+                <Typography variant="body2" color="text.secondary">
+                    Help improve EZPlayer by sending anonymous crash and error reports. No show data, files, or personal
+                    information is included.
+                </Typography>
             </Box>
-            <Box>
+            <Box sx={{ mt: 1 }}>
                 <FormControlLabel
                     control={
                         <Checkbox
