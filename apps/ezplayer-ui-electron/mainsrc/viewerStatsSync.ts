@@ -16,6 +16,7 @@ import {
 } from '@ezplayer/ezplayer-core';
 import { appendLocalViewerStatsEvent, applyViewerStatsPull, getViewerStatsStore } from './data/ViewerStatsStorage.js';
 import { trustSystemCAs } from './trustSystemCAs.js';
+import { errorDetail } from './errorDetail.js';
 
 const PULL_INTERVAL_MS = 30_000;
 const PULL_TIMEOUT_MS = 10_000;
@@ -163,7 +164,7 @@ export async function pullViewerStats(): Promise<void> {
         lastError = undefined;
         publishViewerStats();
     } catch (err) {
-        const msg = (err as Error).message ?? String(err);
+        const msg = errorDetail(err);
         if (lastError !== msg) console.warn(`[viewer-stats] pull failed: ${msg}`);
         lastError = msg;
         publishViewerStats();

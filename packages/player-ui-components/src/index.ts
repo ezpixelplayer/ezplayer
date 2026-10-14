@@ -173,6 +173,7 @@ export { initI18N } from './i18n/i18n';
 export { getImageUrl, useImageUrl } from './util/imageUtils';
 export { ApiBaseProvider, useApiBase } from './util/ApiBaseProvider';
 export { UiVersionProvider, useUiVersion } from './util/UiVersionProvider';
+export { setUiErrorReporter, reportUiError } from './util/uiErrorReporter';
 
 export { useFrameBuffer } from './hooks/useFrameBuffer';
 export type { UseFrameBufferOptions, UseFrameBufferResult } from './hooks/useFrameBuffer';

@@ -147,6 +147,8 @@ export type WorkerToMainMessage =
     | { type: 'pixelbuffer'; buffer: SharedArrayBuffer | undefined }
     | { type: 'done' }
     | { type: 'error'; message: string }
+    /** An uncaught exception or unhandled rejection the worker survived; main reports it. */
+    | { type: 'uncaught'; what: 'uncaughtException' | 'unhandledRejection'; message: string; stack?: string }
     | { type: 'stats'; stats: PlaybackStatistics }
     | { type: 'cstatus'; status: PlayerCStatusContent }
     | { type: 'nstatus'; status: PlayerNStatusContent }

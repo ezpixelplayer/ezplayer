@@ -145,4 +145,6 @@ export interface ServerWorkerRPCAPI {
     /** Re-read the remote-access config after the CLI changed it, and
      *  re-broadcast availability. Resolves to the new per-feature state. */
     remoteAccessReloadConfig(): Promise<RemoteAccessAvailability>;
+    /** Zip of logs, recent crash dumps and an environment summary. */
+    buildSupportBundle(): Promise<{ name: string; data: Uint8Array }>;
 }

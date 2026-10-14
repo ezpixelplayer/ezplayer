@@ -125,6 +125,7 @@ import {
 } from './ezvcparent';
 import { randomUUID } from 'node:crypto';
 import { playableAudioPath } from '../data/derived-audio.js';
+import { throwLater } from '../faultinject.js';
 
 //import { setThreadAffinity } from '../affinity/affinity.js';
 //setThreadAffinity([3]);
@@ -148,13 +149,30 @@ process.on('uncaughtException', (err) => {
     });
     // Ensure non-zero exit so main 'exit' handler knows it wasn't clean.
     process.exitCode = 1;
+    forwardUncaught('uncaughtException', err);
 });
 
 // Promote unhandled rejections to real failures (or at least log them)
 process.on('unhandledRejection', (reason, _promise) => {
     console.error(tag('unhandledRejection'), { reason });
     process.exitCode = 1;
+    forwardUncaught('unhandledRejection', reason);
 });
+
+/** Forward to main for reporting; must not throw. */
+function forwardUncaught(what: 'uncaughtException' | 'unhandledRejection', reason: unknown) {
+    try {
+        const r = reason as { message?: unknown; stack?: unknown } | undefined;
+        send({
+            type: 'uncaught',
+            what,
+            message: String(r?.message ?? reason),
+            stack: typeof r?.stack === 'string' ? r.stack : undefined,
+        });
+    } catch {
+        /* parent port gone */
+    }
+}
 
 // When the event loop is about to go idle; good for final flushes
 process.on('beforeExit', (code) => {
@@ -1340,6 +1358,8 @@ send({ type: 'ready' });
 
 const rpcs = new RPCServer<PlayWorkerRPCAPI>(parentPort, handlers);
 const rpcc = new RPCClient<MainRPCAPI>(parentPort);
+
+throwLater('playback-worker-throw', 3000);
 
 ///////
 // Playback params
@@ -3130,7 +3150,10 @@ async function processQueue() {
                             emitInfo(`Playlist skipped "${t || l.sequenceId}": played recently`);
                         } else if (l.eventType === 'Sequence Started' || l.eventType === 'Sequence Resumed') {
                             targetFrameRTC = foregroundPlayerRunState.currentTime;
-                            emitInfo(`Sequence start in ${targetFrameRTC - Date.now()}`);
+                            const verb = l.eventType === 'Sequence Started' ? 'start' : 'resume';
+                            emitInfo(
+                                `Sequence ${verb} ${l.sequenceId ?? '?'} in ${Math.round(targetFrameRTC - Date.now())} ms`,
+                            );
                             foundTime = true;
                             break;
                         }

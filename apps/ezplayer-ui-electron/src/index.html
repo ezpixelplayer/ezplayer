@@ -5,6 +5,41 @@
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <link rel="icon" type="image/x-icon" href="./favicon.ico" />
         <title>EZPlayer</title>
+        <script>
+            // Reports errors from before the bundle runs; [ezp-report] console lines cover a missing preload.
+            (function () {
+                var last = {};
+                function report(message, stack) {
+                    var now = Date.now();
+                    if (last[message] && now - last[message] < 600000) return;
+                    last[message] = now;
+                    var api = window.electronAPI;
+                    if (api && api.reportRendererError) {
+                        api.reportRendererError(message, stack);
+                    } else {
+                        console.error('[ezp-report] ' + JSON.stringify({ message: message, stack: stack }));
+                    }
+                }
+                window.__ezpReportError = report;
+                // Capture phase sees script and stylesheet load failures; images are skipped.
+                window.addEventListener(
+                    'error',
+                    function (e) {
+                        var t = e.target;
+                        if (t && (t.tagName === 'SCRIPT' || t.tagName === 'LINK')) {
+                            report('failed to load ' + (t.src || t.href));
+                            return;
+                        }
+                        report(String(e.message || 'unknown error'), e.error && e.error.stack);
+                    },
+                    true,
+                );
+                window.addEventListener('unhandledrejection', function (e) {
+                    var r = e.reason || {};
+                    report(String(r.message || e.reason || 'unhandled rejection'), r.stack);
+                });
+            })();
+        </script>
     </head>
     <body>
         <div id="root"></div>

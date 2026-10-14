@@ -26,6 +26,7 @@ import {
 import { getCurrentShowFolder } from '../showfolder.js';
 import { updateShowFolderLock } from './showfolder-lock.js';
 import { reportDiagEvent } from './diagnostics.js';
+import { buildSupportBundle, supportBundleName } from './diagbundle.js';
 import { safeSend } from './safe-send.js';
 import { syncAudioOutputsFromSettings } from './audioWindows.js';
 import { applySettingsFromRenderer } from './data/SettingsStorage.js';
@@ -171,6 +172,9 @@ const rpcHandlers: ServerWorkerRPCAPI = {
     },
     remoteAccessReloadConfig: async () => {
         return publishRemoteAccessAvailability();
+    },
+    buildSupportBundle: async () => {
+        return { name: supportBundleName(), data: await buildSupportBundle() };
     },
 };
 
