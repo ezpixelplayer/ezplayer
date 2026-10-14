@@ -18,6 +18,7 @@ import type {
     PlayerCStatusContent,
     PlayerNStatusContent,
     EZPlayerCommand,
+    VcDropReason,
     PlaybackSettings,
     KnownController,
 } from '@ezplayer/ezplayer-core';
@@ -150,6 +151,15 @@ export type WorkerToMainMessage =
     | { type: 'cstatus'; status: PlayerCStatusContent }
     | { type: 'nstatus'; status: PlayerNStatusContent }
     | { type: 'viewerPick'; source: 'remote-falcon' | 'jukebox'; songId: string; title?: string }
+    | {
+          type: 'viewerPickDropped';
+          source: 'remote-falcon' | 'viewer';
+          songId: string;
+          title?: string;
+          reason: VcDropReason;
+          /** `recent`: songs started since this one last did. */
+          songsAgo?: number;
+      }
     | { type: 'pstatus'; status: PlayerPStatusContent }
     | {
           type: 'modelCoordinates';

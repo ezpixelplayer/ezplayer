@@ -29,6 +29,7 @@ import type {
     PlayerNStatusContent,
     PlaybackSettings,
     EZPlayerCommand,
+    VcDropReason,
     VcSong,
     VcPlayingItem,
     VcScheduleEntry,
@@ -660,6 +661,48 @@ function sendRemoteUpdate() {
     }
 }
 
+// ---- Viewer-pick repeat guard ---------------------------------------------
+// Remote Falcon and the viewer page each apply their own cooldown, but neither
+// sees the other's picks or the playlist's own plays. The player has the whole
+// picture, so it drops a pick that would repeat a song too soon. The history is
+// the run state's RepeatGuard, which also lets a scheduled playlist pass over a
+// song that just played.
+
+/** Why a viewer pick of `songId` should be dropped, or undefined to play it. */
+function viewerPickDropReason(songId: string): { reason: VcDropReason; songsAgo?: number } | undefined {
+    const fs = foregroundPlayerRunState;
+    const n = fs.repeatGuard.spacing;
+    if (!(n > 0)) return undefined;
+    if (currentForegroundPlayingItem()?.sequence_id === songId) return { reason: 'playing' };
+    if (fs.immediateItem?.seqId === songId || fs.interactiveQueue.some((q) => q.seqId === songId)) {
+        return { reason: 'queued' };
+    }
+    if (fs.predictUpcoming(600_000, 1)[0]?.sequence_id === songId) return { reason: 'next' };
+    const since = fs.repeatGuard.songsSince(songId);
+    if (since !== undefined && since < n) return { reason: 'recent', songsAgo: since };
+    return undefined;
+}
+
+const DROP_REASON_TEXT: Record<VcDropReason, string> = {
+    playing: 'playing now',
+    next: 'up next',
+    queued: 'already requested',
+    recent: 'played recently',
+};
+
+/** True if the pick may play; logs and records it when it is dropped. */
+function admitViewerPick(songId: string, source: 'remote-falcon' | 'viewer'): boolean {
+    const drop = viewerPickDropReason(songId);
+    if (!drop) return true;
+    const title = curSequences?.find((s) => s.id === songId)?.work?.title;
+    const ago = drop.songsAgo !== undefined ? ` (${drop.songsAgo} song${drop.songsAgo === 1 ? '' : 's'} ago)` : '';
+    emitWarning(`Dropped ${source} pick of "${title ?? songId}": ${DROP_REASON_TEXT[drop.reason]}${ago}`);
+    // Viewer-page picks are counted by the cloud; Remote Falcon's only here.
+    if (source === 'remote-falcon') send({ type: 'viewerPick', source, songId, title });
+    send({ type: 'viewerPickDropped', source, songId, title, reason: drop.reason, songsAgo: drop.songsAgo });
+    return false;
+}
+
 // ---- EZPlayer viewer control (ViewerControlState.type === 'ezplayer') ------
 // The schedule gating is shared (`getActiveViewerControlSchedule`); only the
 // backend differs. The cloud owns the mode/policy, so the suggestion is a
@@ -704,6 +747,11 @@ function configureEzvc() {
     setEzvcConfig({ cloudUrl: ezvcCloudUrl, playerToken: ezvcPlayerToken, tz }, (next) => {
         if (!next.songId) {
             // Nothing requested on the viewer page: Remote Falcon's turn.
+            releaseDeferredRFCheck();
+            return;
+        }
+        if (!admitViewerPick(next.songId, 'viewer')) {
+            // Dropped, so nothing from the built-in line this round: Remote Falcon's turn.
             releaseDeferredRFCheck();
             return;
         }
@@ -1410,6 +1458,10 @@ function dispatchSettings(settings: PlaybackSettings) {
     multiSync.configure(settings.sync?.multisync);
     sendIdleBlackFrames = settings.sendIdleBlackFrames !== false;
     if (curSender) curSender.blackFramesEnabled = sendIdleBlackFrames;
+    foregroundPlayerRunState.repeatGuard.spacing = Math.max(
+        0,
+        Math.floor(settings.viewerControl?.minSongsBetweenRepeats ?? 0),
+    );
     const nasa = settings.audioSyncAdjust ?? 0;
     if (nasa != playbackParams.audioTimeAdjMs) {
         playbackParams.audioTimeAdjMs = nasa;
@@ -1435,6 +1487,7 @@ function dispatchSettings(settings: PlaybackSettings) {
                 if (!pl) return;
                 const s = pl.items.find((seq) => seq.sequence === next.playlistIndex);
                 if (!s) return;
+                if (!admitViewerPick(s.id, 'remote-falcon')) return;
                 processCommand({
                     command: 'playsong',
                     immediate: false,
@@ -2730,7 +2783,9 @@ async function processQueue() {
                     const preserveBGFseqTime = backgroundPlayerRunState?.currentTime || initializeTime;
                     const preserveFGStops = foregroundPlayerRunState.stoppedIds;
                     const preserveBGStops = backgroundPlayerRunState.stoppedIds;
+                    const preserveRepeatGuard = foregroundPlayerRunState.repeatGuard;
                     foregroundPlayerRunState = new PlayerRunState(initializeTime);
+                    foregroundPlayerRunState.repeatGuard = preserveRepeatGuard;
                     backgroundPlayerRunState = new PlayerRunState(initializeTime);
                     if (preserveStops) {
                         foregroundPlayerRunState.stoppedIds = new Map(preserveFGStops);
@@ -3070,6 +3125,9 @@ async function processQueue() {
                     for (const l of plog) {
                         if (l.eventType === 'Sequence Ended') {
                             // TODO - Could reset clock base here.
+                        } else if (l.eventType === 'Sequence Skipped') {
+                            const t = l.sequenceId ? curSequences?.find((s) => s.id === l.sequenceId)?.work?.title : '';
+                            emitInfo(`Playlist skipped "${t || l.sequenceId}": played recently`);
                         } else if (l.eventType === 'Sequence Started' || l.eventType === 'Sequence Resumed') {
                             targetFrameRTC = foregroundPlayerRunState.currentTime;
                             emitInfo(`Sequence start in ${targetFrameRTC - Date.now()}`);

@@ -173,6 +173,24 @@ export const ViewerSettings: React.FC = () => {
             )}
 
             {showSchedule && (
+                <TextField
+                    size="small"
+                    type="number"
+                    label="Songs between repeats"
+                    value={settings.viewerControl.minSongsBetweenRepeats ?? 0}
+                    onChange={(e) => {
+                        const n = Math.floor(Number(e.target.value));
+                        dispatch(
+                            playbackSettingsActions.setMinSongsBetweenRepeats(Number.isFinite(n) && n > 0 ? n : 0),
+                        );
+                    }}
+                    inputProps={{ min: 0, step: 1 }}
+                    helperText="Viewer picks of a song that is playing, up next, already requested, or among this many recent songs are skipped, and playlists pass over a song a viewer just played. 0 = off."
+                    sx={{ mb: 3, maxWidth: 480 }}
+                />
+            )}
+
+            {showSchedule && (
                 <Box>
                     <Typography variant="subtitle2" sx={{ mb: 2 }}>
                         Schedule Configuration

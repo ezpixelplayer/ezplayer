@@ -25,6 +25,21 @@ During active viewer-control hours, the player keeps your Remote Falcon show
 page updated with what's playing and checks for viewer requests as it chooses
 the next song.
 
+## Songs Between Repeats
+
+Remote Falcon and the EZPlayer viewer page each keep their own "don't repeat"
+rules, but neither sees the other's picks or the songs your playlist plays on
+its own. Set **Songs between repeats** to have the player itself drop a viewer
+pick when that song is playing, up next, already requested, or started within
+that many songs. Dropped picks show in **Viewer Activity** as skipped picks.
+`0` turns the check off.
+
+It works the other way too: when a song has just played (usually a viewer pick), a
+scheduled playlist passes over that song if it comes up again too soon. For a
+playlist the spacing is held to 40% of its distinct songs, so a short playlist
+is never starved — a 5-song playlist waits at most 2 songs. Requests themselves
+are never skipped this way.
+
 ## Schedule Configuration
 
 When viewer control is enabled (Remote Falcon or EZPlayer), define one or more
