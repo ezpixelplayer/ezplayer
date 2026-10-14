@@ -3045,7 +3045,10 @@ async function processQueue() {
                             // TODO - Could reset clock base here.
                         } else if (l.eventType === 'Sequence Started' || l.eventType === 'Sequence Resumed') {
                             targetFrameRTC = foregroundPlayerRunState.currentTime;
-                            emitInfo(`Sequence start in ${targetFrameRTC - Date.now()}`);
+                            const verb = l.eventType === 'Sequence Started' ? 'start' : 'resume';
+                            emitInfo(
+                                `Sequence ${verb} ${l.sequenceId ?? '?'} in ${Math.round(targetFrameRTC - Date.now())} ms`,
+                            );
                             foundTime = true;
                             break;
                         }

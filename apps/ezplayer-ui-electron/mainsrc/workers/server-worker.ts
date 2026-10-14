@@ -149,6 +149,7 @@ class MainThreadRPC {
     // own cap (~120s), so it gets a longer leash.
     private static readonly TIMEOUT_MS: Partial<Record<keyof ServerWorkerRPCAPI, number>> = {
         controllerCommand: 130_000,
+        buildSupportBundle: 120_000,
     };
 
     call<K extends keyof ServerWorkerRPCAPI>(
@@ -1960,6 +1961,13 @@ async function startServer(config: ServerWorkerData) {
                 networkPolicies: [],
             },
         isIpAllowed: proxyTargetAllowed,
+    });
+    // Logs zip for support; web app only, like the routes above.
+    scanRouter.get('/api/ezp/support/logs.zip', async (ctx) => {
+        const { name, data } = await rpc.call('buildSupportBundle');
+        ctx.set('Content-Disposition', `attachment; filename="${name}"`);
+        ctx.type = 'application/zip';
+        ctx.body = Buffer.from(data.buffer, data.byteOffset, data.byteLength);
     });
     webApp.use(scanRouter.routes());
     webApp.use(scanRouter.allowedMethods());

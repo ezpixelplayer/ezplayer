@@ -18,6 +18,7 @@ import { pathToFileURL } from 'url';
 import { BrowserWindow, app } from 'electron';
 import type { AudioChunk, AudioOutputTarget, PlaybackSettings } from '@ezplayer/ezplayer-core';
 import { DEFAULT_VOLUME_TARGET_ID, isPhysicalAudioOutput } from '@ezplayer/ezplayer-core';
+import { captureRendererConsole } from './applog.js';
 import { safeSend } from './safe-send.js';
 
 const DEFAULT_TARGET: AudioOutputTarget = { deviceId: '', label: 'System default' };
@@ -74,6 +75,7 @@ function createAudioWindow(key: string, target: AudioOutputTarget): BrowserWindo
     });
     const url = htmlBaseUrl ? new URL(htmlBaseUrl) : pathToFileURL(htmlFilePath);
     console.log(`[audio] create window ${key}: ${target.label || '(default)'}`);
+    captureRendererConsole(win.webContents, `audio:${key}`);
     win.loadURL(url.toString());
 
     win.on('closed', () => {

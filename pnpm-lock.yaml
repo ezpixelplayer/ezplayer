@@ -673,6 +673,9 @@ importers:
       '@types/node':
         specifier: 'catalog:'
         version: 24.13.3
+      jszip:
+        specifier: 'catalog:'
+        version: 3.10.1
       opusscript:
         specifier: ^0.1.1
         version: 0.1.1

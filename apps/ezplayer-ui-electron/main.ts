@@ -15,6 +15,10 @@ import { applyGpuStartupPolicy, maybeFallbackToSoftwareGpu, noteChildProcessGone
 import { describeExitCode } from './mainsrc/rendererCrashPolicy.js';
 import { installDiagLogRing, primeDiagEnv } from './mainsrc/diagEnv.js';
 installDiagLogRing();
+import { beginSession, captureRendererConsole, installAppLog, markSessionEnding } from './mainsrc/applog.js';
+import { pruneCrashDumps } from './mainsrc/diagbundle.js';
+// Text-only verbs are short-lived and may run beside a player; keep them out of its log.
+if (!isToolVerb()) installAppLog();
 import { registerFileListHandlers } from './mainsrc/ipcmain.js';
 import {
     isScheduleActive,
@@ -213,8 +217,16 @@ const createWindow = (showFolder?: string, showWelcomeOnLaunch?: boolean) => {
         },
     });
 
+    captureRendererConsole(mainWindow.webContents, 'main');
     mainWindow.webContents.on('render-process-gone', (_event, details) => {
         console.error('wc render-process-gone', details);
+    });
+    mainWindow.webContents.on('did-finish-load', () => {
+        console.log('main window did-finish-load');
+    });
+    mainWindow.webContents.on('preload-error', (_event, preloadPath, error) => {
+        console.error('main window preload-error', preloadPath, error);
+        reportDiagEvent('renderer-error', `preload-error: ${error.message}`, error.stack);
     });
     mainWindow.webContents.on('did-fail-load', (_event, code, desc, url) => {
         console.error('did-fail-load', { code, desc, url });
@@ -234,6 +246,7 @@ const createWindow = (showFolder?: string, showWelcomeOnLaunch?: boolean) => {
     mainWindow.on('session-end', () => {
         console.log('session-end: suppressing process-gone diagnostics');
         noteSessionEnding();
+        markSessionEnding();
     });
 
     const url = !app.isPackaged
@@ -440,6 +453,19 @@ if (isToolVerb()) {
             console.error(`EZPlayer: unknown command '${unknownVerb}'\n\n${cliUsage()}`);
             app.exit(64);
             return;
+        }
+
+        console.log('GPU feature status:', JSON.stringify(app.getGPUFeatureStatus()));
+        pruneCrashDumps();
+        for (const prev of beginSession(ezpVersions.version)) {
+            if (prev.sessionEnding) {
+                console.log(`Previous run (pid ${prev.pid}, ${prev.version}) ended with the OS session`);
+                continue;
+            }
+            console.warn(
+                `Previous run (pid ${prev.pid}, ${prev.version}, started ${prev.startedAt}) did not exit normally`,
+            );
+            reportDiagEvent('unclean-exit', 'previous run did not exit normally', undefined, prev);
         }
 
         if (isHeadless()) {

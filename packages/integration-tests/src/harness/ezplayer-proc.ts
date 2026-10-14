@@ -8,7 +8,7 @@
 
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { createRequire } from 'node:module';
-import { createWriteStream, mkdtempSync } from 'node:fs';
+import { createWriteStream, existsSync, mkdtempSync, writeFileSync } from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
@@ -39,14 +39,21 @@ export interface EzPlayerProc {
     base: string;
     child: ChildProcess;
     logFile: string;
+    userDataDir: string;
     stop(): Promise<void>;
 }
 
-export async function startEzPlayer(showFolder: string, opts?: { port?: number }): Promise<EzPlayerProc> {
+export async function startEzPlayer(
+    showFolder: string,
+    opts?: { port?: number; userDataDir?: string },
+): Promise<EzPlayerProc> {
     const port = opts?.port ?? (await freePort());
-    const udd = mkdtempSync(path.join(os.tmpdir(), 'ezp-udd-'));
+    const udd = opts?.userDataDir ?? mkdtempSync(path.join(os.tmpdir(), 'ezp-udd-'));
+    // Test runs must not upload crash reports to the real cloud.
+    const consent = path.join(udd, 'diagnostics.json');
+    if (!existsSync(consent)) writeFileSync(consent, JSON.stringify({ diagnostics: { uploadEnabled: false } }));
     const logFile = path.join(udd, 'ezplayer.log');
-    const log = createWriteStream(logFile);
+    const log = createWriteStream(logFile, { flags: 'a' });
 
     const child = spawn(
         electronBinary(),
@@ -90,6 +97,7 @@ export async function startEzPlayer(showFolder: string, opts?: { port?: number }
         base,
         child,
         logFile,
+        userDataDir: udd,
         stop: async () => {
             if (child.exitCode !== null) return;
             if (process.platform === 'win32') {

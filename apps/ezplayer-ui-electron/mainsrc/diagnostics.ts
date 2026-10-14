@@ -41,7 +41,8 @@ export type DiagEventKind =
     | 'unresponsive'
     | 'did-fail-load'
     | 'worker-error'
-    | 'renderer-error';
+    | 'renderer-error'
+    | 'unclean-exit';
 
 /**
  * Exit codes Windows hands to processes it terminates at logoff / shutdown /
@@ -90,10 +91,18 @@ export function flushDiagReports(timeoutMs: number): Promise<void> {
 
 export function reportDiagEvent(kind: DiagEventKind, message: string, stack?: string, extra?: unknown): void {
     try {
-        if (!getDiagnosticsConsent().uploadEnabled) return;
+        // Always recorded in the local log, whether or not it is uploaded.
+        console.warn(`[diag] ${kind}: ${message}`);
+        if (!getDiagnosticsConsent().uploadEnabled) {
+            console.warn('[diag] not uploaded: reporting is turned off');
+            return;
+        }
         const now = Date.now();
         sentTimestamps = sentTimestamps.filter((t) => now - t < 3_600_000);
-        if (sentTimestamps.length >= MAX_REPORTS_PER_HOUR) return;
+        if (sentTimestamps.length >= MAX_REPORTS_PER_HOUR) {
+            console.warn('[diag] not uploaded: hourly limit reached');
+            return;
+        }
         sentTimestamps.push(now);
 
         const cfg = getCloudConfigCache();
@@ -121,9 +130,10 @@ export function reportDiagEvent(kind: DiagEventKind, message: string, stack?: st
             method: 'POST',
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify(body),
-        }).catch(() => {
-            /* best-effort */
-        });
+        }).then(
+            (res) => console.warn(`[diag] ${kind} upload: HTTP ${res.status}`),
+            (err: unknown) => console.warn(`[diag] ${kind} upload failed: ${String(err)}`),
+        );
         inFlight.add(upload);
         void upload.finally(() => inFlight.delete(upload));
     } catch {
