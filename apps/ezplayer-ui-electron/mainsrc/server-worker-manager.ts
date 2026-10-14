@@ -21,6 +21,7 @@ import {
     loadShowFolder,
     dispatchCloudCommand,
     putSequencesWithDurations,
+    getPlaybackItemOrder,
 } from './ipcezplayer.js';
 import { getCurrentShowFolder } from '../showfolder.js';
 import { updateShowFolderLock } from './showfolder-lock.js';
@@ -128,6 +129,7 @@ const rpcHandlers: ServerWorkerRPCAPI = {
             });
         }
     },
+    getPlaybackItemOrder: async (key: string) => await getPlaybackItemOrder(key),
     sendPlaybackSettings: (settings: unknown) => {
         const playbackSettings = settings as PlaybackSettings;
         syncAudioOutputsFromSettings(playbackSettings);
