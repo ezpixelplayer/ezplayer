@@ -158,7 +158,7 @@ process.on('unhandledRejection', (reason, _promise) => {
     forwardUncaught('unhandledRejection', reason);
 });
 
-/** Main reports it; a throw here would end the worker, so none escapes. */
+/** Forward to main for reporting; must not throw. */
 function forwardUncaught(what: 'uncaughtException' | 'unhandledRejection', reason: unknown) {
     try {
         const r = reason as { message?: unknown; stack?: unknown } | undefined;

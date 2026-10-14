@@ -354,7 +354,7 @@ async function startPlaybackWorker(): Promise<Worker> {
             logFile: path.join(app.getPath('logs'), 'playbackmain.log'),
         } satisfies PlaybackWorkerData,
     });
-    // The worker catches its own uncaught errors and forwards them; 'error' covers anything that still ends it.
+    // The worker forwards errors it survives; 'error' is for those that end it.
     worker.on('message', (msg: WorkerToMainMessage) => {
         if (msg.type === 'uncaught') reportDiagEvent('worker-error', `playback: ${msg.message}`, msg.stack, msg.what);
     });

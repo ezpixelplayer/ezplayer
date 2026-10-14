@@ -7,7 +7,7 @@ import { DiagOutbox, OUTBOX_MAX_AGE_MS, OUTBOX_MAX_FILES } from './diagoutbox.js
 
 let dir: string;
 
-/** A pid that is certainly not running: a child that has already exited. */
+/** Pid of a child that has already exited. */
 const deadPid = spawnSync(process.execPath, ['-e', '0']).pid!;
 
 beforeEach(() => {

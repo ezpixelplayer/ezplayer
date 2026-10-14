@@ -86,7 +86,7 @@ export function watchRenderer(win: BrowserWindow, recentErrors: () => string[]):
 
     const pinger = setInterval(() => {
         if (wc.isDestroyed()) return;
-        // Hidden or minimized windows may be throttled; judge only what the user can see.
+        // Hidden or minimized windows may be throttled; skip them.
         if (!ready || !win.isVisible() || win.isMinimized()) {
             lastPongAt = Date.now();
             return;

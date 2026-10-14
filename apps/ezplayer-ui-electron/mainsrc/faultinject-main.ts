@@ -47,7 +47,7 @@ export function injectRendererFaults(wc: WebContents): void {
     if (!anyFaults() || rendererFaultsInjected) return;
     rendererFaultsInjected = true;
     const later = (fn: () => void) => setTimeout(() => !wc.isDestroyed() && fn(), FAULT_DELAY_MS);
-    // Timers inside the page, so the throw is uncaught there rather than returned to executeJavaScript.
+    // Thrown from a page timer so it is uncaught, not returned to executeJavaScript.
     if (hasFault('renderer-throw')) {
         later(() => void wc.executeJavaScript("setTimeout(() => { throw new Error('ezp-fault: renderer-throw'); })"));
     }

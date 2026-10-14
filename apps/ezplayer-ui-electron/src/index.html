@@ -6,8 +6,7 @@
         <link rel="icon" type="image/x-icon" href="./favicon.ico" />
         <title>EZPlayer</title>
         <script>
-            // Runs before the app bundle, so errors while it loads are reported too.
-            // Without the preload's API, main picks the [ezp-report] console line up instead.
+            // Reports errors from before the bundle runs; [ezp-report] console lines cover a missing preload.
             (function () {
                 var last = {};
                 function report(message, stack) {
@@ -22,8 +21,7 @@
                     }
                 }
                 window.__ezpReportError = report;
-                // Capture phase also sees script and stylesheet load failures, which do not bubble;
-                // image failures are left out (missing artwork is routine).
+                // Capture phase sees script and stylesheet load failures; images are skipped.
                 window.addEventListener(
                     'error',
                     function (e) {

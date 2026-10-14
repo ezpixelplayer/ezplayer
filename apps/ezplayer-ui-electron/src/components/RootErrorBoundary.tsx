@@ -6,9 +6,8 @@ interface State {
 }
 
 /**
- * Last-resort boundary: an error that escapes every other boundary would
- * otherwise unmount the whole app and leave a blank window. Plain styles, since
- * the theme may be what failed.
+ * Catches what no other boundary does, so the window shows an error instead of
+ * going blank. Plain styles, since the theme may be what failed.
  */
 export class RootErrorBoundary extends React.Component<{ children: React.ReactNode }, State> {
     state: State = { error: null };
@@ -20,7 +19,7 @@ export class RootErrorBoundary extends React.Component<{ children: React.ReactNo
     componentDidCatch(error: Error, info: ErrorInfo) {
         console.error('[RootErrorBoundary]', error, info.componentStack);
         reportUiError('RootErrorBoundary', error, info.componentStack);
-        // The window is up and showing this panel, so main's not-ready watchdog has nothing to add.
+        // Showing this panel counts as up for main's watchdog.
         window.electronAPI?.rendererReady?.();
     }
 

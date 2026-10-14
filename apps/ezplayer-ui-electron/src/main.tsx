@@ -14,8 +14,7 @@ import ezplayerLogo from './assets/images/EZPlayerLogoTransparent128.png';
 
 initI18N();
 
-// Boundaries report through the early listener in index.html, which dedupes
-// and falls back to a console line main recognizes when the preload is missing.
+// Boundaries report via the early listener in index.html.
 setUiErrorReporter((message, stack) => window.__ezpReportError?.(message, stack));
 
 /** Tells main the app has mounted; main's watchdog reports a window that never gets here. */
