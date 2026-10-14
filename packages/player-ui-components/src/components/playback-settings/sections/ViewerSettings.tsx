@@ -18,7 +18,7 @@ import {
     TextField,
     Typography,
 } from '@mui/material';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { Select } from '@ezplayer/shared-ui-components';
 import type { ViewerControlBackend, ViewerControlScheduleEntry } from '@ezplayer/ezplayer-core';
@@ -43,6 +43,36 @@ const FRESH_ENTRY: Partial<ViewerControlScheduleEntry> = {
     startTime: '00:00',
     endTime: '23:59',
     playlist: '',
+};
+
+/** Whole-number field that commits on blur; empty (or 0) means off and shows as blank. */
+const RepeatSpacingField: React.FC<{
+    value: number;
+    onCommit: (value: number) => void;
+    helperText: string;
+}> = ({ value, onCommit, helperText }) => {
+    const shown = value > 0 ? String(value) : '';
+    const [local, setLocal] = useState(shown);
+    useEffect(() => setLocal(shown), [shown]);
+    return (
+        <TextField
+            size="small"
+            label="Songs between repeats"
+            value={local}
+            placeholder="0 (off)"
+            helperText={helperText}
+            InputLabelProps={{ shrink: true }}
+            inputProps={{ inputMode: 'numeric' }}
+            onChange={(e) => setLocal(e.target.value.replace(/[^0-9]/g, ''))}
+            onBlur={() => {
+                const n = Number(local);
+                const next = local !== '' && Number.isInteger(n) && n > 0 ? n : 0;
+                onCommit(next);
+                setLocal(next > 0 ? String(next) : ''); // normalizes "007" and "00"
+            }}
+            sx={{ mb: 3, maxWidth: 480 }}
+        />
+    );
 };
 
 export const ViewerSettings: React.FC = () => {
@@ -241,6 +271,14 @@ export const ViewerSettings: React.FC = () => {
                         Add Schedule Entry
                     </Button>
                 </Box>
+            )}
+
+            {showSchedule && (
+                <RepeatSpacingField
+                    value={settings.viewerControl.minSongsBetweenRepeats ?? 0}
+                    onCommit={(n) => dispatch(playbackSettingsActions.setMinSongsBetweenRepeats(n))}
+                    helperText="Viewer picks of a song that is playing, up next, already requested, or among this many recent songs are skipped, and playlists pass over a song a viewer just played. Leave blank for off."
+                />
             )}
 
             <Dialog open={addOpen} onClose={() => setAddOpen(false)}>

@@ -13,7 +13,8 @@ export type PlaybackLogEventType =
     | 'Sequence Started'
     | 'Sequence Ended'
     | 'Sequence Paused'
-    | 'Sequence Resumed';
+    | 'Sequence Resumed'
+    | 'Sequence Skipped';
 
 export interface SchedulePreviewData {
     currentState: PlaybackStateSnapshot[];

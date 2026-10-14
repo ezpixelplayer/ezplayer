@@ -38,6 +38,7 @@ import {
     getViewerStatsSummary,
     publishViewerStats,
     recordLocalViewerPick,
+    recordLocalViewerPickDropped,
     setViewerStatsBroadcaster,
 } from './viewerStatsSync.js';
 import { atomicWriteFile } from './data/atomicWrite.js';
@@ -1394,6 +1395,10 @@ export async function registerContentHandlers(mainWindow: BrowserWindow | null, 
             }
             case 'viewerPick': {
                 recordLocalViewerPick(msg);
+                break;
+            }
+            case 'viewerPickDropped': {
+                recordLocalViewerPickDropped(msg);
                 break;
             }
             case 'nstatus': {
