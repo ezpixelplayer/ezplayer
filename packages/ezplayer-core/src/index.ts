@@ -234,6 +234,7 @@ export {
     playlistsToMap,
     priorityToNumber,
     PlayerRunState,
+    RepeatGuard,
 } from './util/schedulecomp';
 
 export {
@@ -292,4 +293,4 @@ export {
     withViewerControlBackends,
 } from './util/viewerControlBackends';
 export type { ViewerControlBackend, PlaySongSource } from './types/DataTypes';
-export type { VcPickSource } from './types/ViewerControlWire';
+export type { VcPickSource, VcDropReason } from './types/ViewerControlWire';

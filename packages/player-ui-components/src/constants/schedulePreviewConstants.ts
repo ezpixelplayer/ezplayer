@@ -37,6 +37,7 @@ export const SCHEDULE_EVENT_COLORS = {
     'Sequence Ended': '#ffc107',
     'Sequence Paused': '#e91e63',
     'Sequence Resumed': '#03a9f4',
+    'Sequence Skipped': '#9e9e9e',
 } as const;
 
 // Colors for different stack depths in the timeline

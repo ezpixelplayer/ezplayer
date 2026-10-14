@@ -193,6 +193,9 @@ const playbackSettingsSlice = createSlice({
         setRemoteFalconToken(state, action: PayloadAction<string>) {
             state.settings.viewerControl.remoteFalconToken = action.payload;
         },
+        setMinSongsBetweenRepeats(state, action: PayloadAction<number>) {
+            state.settings.viewerControl.minSongsBetweenRepeats = action.payload;
+        },
         addViewerControlScheduleEntry(state, action: PayloadAction<ViewerControlScheduleEntry>) {
             (state.settings.viewerControl.schedule ??= []).push(action.payload);
         },
@@ -340,6 +343,7 @@ export const {
     setViewerControlEnabled,
     setViewerControlType,
     setRemoteFalconToken,
+    setMinSongsBetweenRepeats,
     addViewerControlScheduleEntry,
     removeViewerControlScheduleEntry,
     updateViewerControlScheduleEntry,

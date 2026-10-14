@@ -745,6 +745,12 @@ export interface ViewerControlState {
      *  (`viewerControlBackends()`). */
     backends?: ViewerControlBackend[];
     remoteFalconToken?: string;
+    /** Other songs that must start before the same song plays again. The player
+     *  drops viewer picks (Remote Falcon or the viewer page) of a song playing,
+     *  next up, already queued, or among this many recent starts, whatever the
+     *  backend allowed; scheduled playlists pass over such a song too, with the
+     *  spacing capped per playlist (`RepeatGuard`). 0 / absent = off. */
+    minSongsBetweenRepeats?: number;
     /** Optional in the type because legacy persisted shapes can lack it.
      *  Always treat absence as empty. `normalizePlaybackSettings` and helpers
      *  in `SettingsScheduleUtils.ts` default to `[]`. */

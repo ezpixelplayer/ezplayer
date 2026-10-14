@@ -8,7 +8,12 @@
  * same triple the playback worker gets as `cloudidentity`.
  */
 
-import { summarizeViewerStats, type VcStatsResponse, type ViewerStatsSummary } from '@ezplayer/ezplayer-core';
+import {
+    summarizeViewerStats,
+    type VcDropReason,
+    type VcStatsResponse,
+    type ViewerStatsSummary,
+} from '@ezplayer/ezplayer-core';
 import { appendLocalViewerStatsEvent, applyViewerStatsPull, getViewerStatsStore } from './data/ViewerStatsStorage.js';
 import { trustSystemCAs } from './trustSystemCAs.js';
 import { errorDetail } from './errorDetail.js';
@@ -80,6 +85,26 @@ export function recordLocalViewerPick(pick: {
         source: pick.source,
         songId: pick.songId,
         title: pick.title,
+    });
+    publishViewerStats();
+}
+
+/** A pick the player dropped as a repeat after its backend had already made it. */
+export function recordLocalViewerPickDropped(drop: {
+    source: 'remote-falcon' | 'viewer';
+    songId: string;
+    title?: string;
+    reason: VcDropReason;
+    songsAgo?: number;
+}): void {
+    appendLocalViewerStatsEvent({
+        ts: Date.now(),
+        kind: 'dropped',
+        source: drop.source,
+        songId: drop.songId,
+        title: drop.title,
+        dropReason: drop.reason,
+        count: drop.songsAgo,
     });
     publishViewerStats();
 }
