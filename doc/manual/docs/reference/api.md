@@ -397,8 +397,13 @@ Note: The response includes only non-deleted schedules (`deleted !== true`).
 
 Remote file operations on the show folder. Paths and response shapes follow the
 [FPP](https://github.com/FalconChristmas/fpp) file API so FPP-ecosystem tools
-work unchanged. EZPlayer show folders are flat, so every logical directory maps
-to the show folder root with an extension filter:
+work unchanged. Every logical directory maps to the show folder root with an
+extension filter. Uploads and deletes act on the root. Reads by name
+(downloads, `/api/sequence/:name`, `/api/media/:name/…`) look in the root,
+then at the file a registered song plays (which may be in a show subfolder or
+the media folder), then in the media folder, then in show subfolders
+(skipping hidden folders and `Backup`). Listings show the root's files plus
+the files registered songs play elsewhere.
 
 | `:dirName`  | Contents                                              |
 | ----------- | ----------------------------------------------------- |
