@@ -3,7 +3,12 @@ import { Button, Checkbox, Divider, FormControl, FormControlLabel, Switch, TextF
 import React from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { Select } from '@ezplayer/shared-ui-components';
-import type { AppSettingsCommand, ControllerRefreshMode, DiagnosticsConsent } from '@ezplayer/ezplayer-core';
+import type {
+    AppSettingsCommand,
+    ControllerRefreshMode,
+    DiagnosticsConsent,
+    SupportBundleLevel,
+} from '@ezplayer/ezplayer-core';
 import { controllerRefreshMode } from '@ezplayer/ezplayer-core';
 import { Box } from '../../box/Box';
 import { TagListInput } from '../../tag-list-input/TagListInput';
@@ -12,6 +17,24 @@ import { sendAppSettingsCommand } from '../../../store/slices/AppSettingsStore';
 import type { AppDispatch, RootState } from '../../../store/Store';
 import { useFrameServerUrl } from '../../../hooks/useFrameServerUrl';
 import { useApiBase } from '../../../util/ApiBaseProvider';
+
+const BUNDLE_OPTIONS: { id: SupportBundleLevel; name: string; help: string }[] = [
+    {
+        id: 'logs',
+        name: 'Logs',
+        help: 'Recent logs, crash information, versions, system details, and settings changed from their defaults.',
+    },
+    {
+        id: 'setup',
+        name: 'Logs and player setup',
+        help: 'Adds network addresses, the xLights controller setup, and your songs, playlists, and schedule. No audio or sequence files.',
+    },
+    {
+        id: 'layout',
+        name: 'Logs, player setup, and layout',
+        help: 'Adds the xLights layout file as well.',
+    },
+];
 
 /** Number field that commits on blur; empty commits `undefined` (use default). */
 const PortField: React.FC<{
@@ -70,6 +93,8 @@ export const PlayerSettings: React.FC = () => {
     const apiBase = useApiBase();
     const { url: playerUrl } = useFrameServerUrl();
     const logsUrl = !apiBase && playerUrl ? `${playerUrl}/api/ezp/support/logs.zip` : undefined;
+    const [bundleLevel, setBundleLevel] = React.useState<SupportBundleLevel>('logs');
+    const [bundleSaved, setBundleSaved] = React.useState(false);
 
     return (
         <Box>
@@ -211,12 +236,43 @@ export const PlayerSettings: React.FC = () => {
             </Box>
             {logsUrl && (
                 <Box sx={{ mt: 2 }}>
-                    <Button variant="outlined" size="small" startIcon={<Download />} href={logsUrl}>
-                        Download Logs
-                    </Button>
-                    <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                        A zip of the player computer's recent logs and crash information, to send when asking for help.
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+                        A zip of information about the player computer, to send when asking for help. Passwords and
+                        tokens are removed.
                     </Typography>
+                    <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
+                        <FormControl size="small" sx={{ minWidth: 260 }}>
+                            <Select
+                                options={BUNDLE_OPTIONS}
+                                itemText="name"
+                                itemValue="id"
+                                onChange={(e) => {
+                                    setBundleLevel((e.target as HTMLSelectElement).value as SupportBundleLevel);
+                                    setBundleSaved(false);
+                                }}
+                                label="Include"
+                                value={bundleLevel}
+                            />
+                        </FormControl>
+                        <Button
+                            variant="outlined"
+                            size="small"
+                            startIcon={<Download />}
+                            href={`${logsUrl}?level=${bundleLevel}`}
+                            onClick={() => setBundleSaved(true)}
+                        >
+                            Download
+                        </Button>
+                    </Box>
+                    <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                        {BUNDLE_OPTIONS.find((o) => o.id === bundleLevel)?.help}
+                    </Typography>
+                    {bundleSaved && (
+                        <Typography variant="body2" sx={{ mt: 1 }}>
+                            The download is an ordinary zip file. Open it and look through it before you send it, and
+                            remove anything you would rather not share.
+                        </Typography>
+                    )}
                 </Box>
             )}
 

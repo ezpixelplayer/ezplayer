@@ -1,5 +1,6 @@
-/** Supportability: the app log captures main and worker output, the logs zip
- *  downloads from the web server, and a killed run is flagged on the next start. */
+/** Supportability: the app log captures main and worker output, the support
+ *  zip downloads from the web server at each level, and a killed run is flagged
+ *  on the next start. */
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import fsp from 'node:fs/promises';
@@ -46,6 +47,26 @@ describe('support logs', () => {
         const summary = JSON.parse(await zip.file('diagnostics.json')!.async('string'));
         expect(summary.reporting.uploadEnabled).toBe(false);
         expect(zip.file(`logs/session-${app.child.pid}.json`)).toBeTruthy();
+        expect(zip.file('settings.json')).toBeTruthy();
+        expect(zip.file('network.json')).toBeNull();
+        expect(zip.file('show/xlights_networks.xml')).toBeNull();
+    });
+
+    it('adds the show setup, then the layout, at higher levels', async () => {
+        const get = async (level: string) => {
+            const res = await fetch(`${app!.base}/api/ezp/support/logs.zip?level=${level}`);
+            expect(res.status).toBe(200);
+            expect(res.headers.get('content-disposition')).toContain(`ezplayer-${level}-`);
+            return JSZip.loadAsync(await res.arrayBuffer());
+        };
+        const setup = await get('setup');
+        expect(setup.file('network.json')).toBeTruthy();
+        expect(setup.file('show/xlights_networks.xml')).toBeTruthy();
+        expect(setup.file('show/xlights_rgbeffects.xml')).toBeNull();
+        const layout = await get('layout');
+        expect(layout.file('show/xlights_rgbeffects.xml')).toBeTruthy();
+
+        expect((await fetch(`${app!.base}/api/ezp/support/logs.zip?level=everything`)).status).toBe(400);
     });
 
     it('flags a killed run on the next start, locally even with uploads off', async () => {

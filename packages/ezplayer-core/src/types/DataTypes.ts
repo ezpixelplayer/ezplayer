@@ -1079,6 +1079,14 @@ export interface RemoteAccessAvailability {
     files: boolean;
 }
 
+/** What a support bundle holds; each level adds to the one before. */
+export const SUPPORT_BUNDLE_LEVELS = ['logs', 'setup', 'layout'] as const;
+export type SupportBundleLevel = (typeof SUPPORT_BUNDLE_LEVELS)[number];
+
+export function isSupportBundleLevel(v: unknown): v is SupportBundleLevel {
+    return (SUPPORT_BUNDLE_LEVELS as readonly unknown[]).includes(v);
+}
+
 /** Machine-wide diagnostics/crash-report consent. `uploadEnabled` defaults
  *  on (opt-out); `includePlayerId` defaults off (opt-in) since it ties a
  *  report to a specific installation. */
