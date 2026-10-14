@@ -39,7 +39,7 @@ exactly one entry, the idle placeholder when nothing is playing.
 
 | Method | Path | Notes |
 | ------ | ---- | ----- |
-| GET    | `/api/player`, `/api/player/status` | `{playlists: [{name, desc, currentState, currentEntry, size, repeat, …, details, status, scheduled, position, startTime, stopTime, priority}]}`. `details` is the running playlist's config with each entry's run state; `currentEntry` carries `secondsElapsed`, `millisecondsElapsed` and `secondsRemaining` |
+| GET    | `/api/player`, `/api/player/status` | `{playlists: [{name, desc, currentState, currentEntry, size, repeat, …, details, status, scheduled, position, startTime, stopTime, priority}]}`. `details` is the running playlist's config with each entry's run state; `currentEntry` carries `duration`, `secondsElapsed`, `millisecondsElapsed` and `secondsRemaining`; a sequence+media (`both`) entry also nests `media` and `sequence` objects carrying the same elapsed fields, as FPP does |
 | GET    | `/api/player/current` | `{playlist: {…the same info, without details…}}` |
 | GET    | `/api/fppd/playlists` | `{playlists: [name]}` while playing, `[]` when idle |
 | GET    | `/api/fppd/playlist/config` | the running playlist's config (as in `details` above); only the status fields when idle |
@@ -103,6 +103,10 @@ EZPlayer playlists are ordered lists of sequences, so the FPP format maps with
   or title (case-insensitive, extension optional). If the name isn't
   registered but the `.fseq` file exists in the show folder (e.g. it was just
   uploaded via the file API), a sequence record is **auto-registered**.
+- A `both` entry's `mediaName` becomes the sequence's audio when that file is
+  in the show folder and the sequence has no audio yet. A sequence already
+  paired with different audio keeps it (EZPlayer songs have one audio file),
+  with a warning.
 - Audio-only `media` entries and `pause` entries are skipped.
 - Nested `playlist` entries are rejected (400).
 - `repeat`/`loopCount` are not stored — pass repeat to `Start Playlist` or set
