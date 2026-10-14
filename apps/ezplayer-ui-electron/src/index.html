@@ -5,6 +5,43 @@
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <link rel="icon" type="image/x-icon" href="./favicon.ico" />
         <title>EZPlayer</title>
+        <script>
+            // Runs before the app bundle, so errors while it loads are reported too.
+            // Without the preload's API, main picks the [ezp-report] console line up instead.
+            (function () {
+                var last = {};
+                function report(message, stack) {
+                    var now = Date.now();
+                    if (last[message] && now - last[message] < 600000) return;
+                    last[message] = now;
+                    var api = window.electronAPI;
+                    if (api && api.reportRendererError) {
+                        api.reportRendererError(message, stack);
+                    } else {
+                        console.error('[ezp-report] ' + JSON.stringify({ message: message, stack: stack }));
+                    }
+                }
+                window.__ezpReportError = report;
+                // Capture phase also sees script and stylesheet load failures, which do not bubble;
+                // image failures are left out (missing artwork is routine).
+                window.addEventListener(
+                    'error',
+                    function (e) {
+                        var t = e.target;
+                        if (t && (t.tagName === 'SCRIPT' || t.tagName === 'LINK')) {
+                            report('failed to load ' + (t.src || t.href));
+                            return;
+                        }
+                        report(String(e.message || 'unknown error'), e.error && e.error.stack);
+                    },
+                    true,
+                );
+                window.addEventListener('unhandledrejection', function (e) {
+                    var r = e.reason || {};
+                    report(String(r.message || e.reason || 'unhandled rejection'), r.stack);
+                });
+            })();
+        </script>
     </head>
     <body>
         <div id="root"></div>

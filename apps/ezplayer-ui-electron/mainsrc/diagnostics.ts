@@ -7,15 +7,19 @@
  * to a specific installation, so it requires an explicit tick.
  *
  * `reportDiagEvent` is safe to call from any crash path: it never throws,
- * uploads best-effort with no retry, and self-throttles so a crash loop
- * can't flood the cloud (which rate-limits per IP on its side too).
+ * and self-throttles so a crash loop can't flood the cloud (which rate-limits
+ * per IP on its side too). Each report is saved to an outbox before upload and
+ * removed once delivered; `startOutboxRetry` resends what is left.
  */
 
+import { app } from 'electron';
 import Store from 'electron-store';
+import path from 'node:path';
 import type { DiagnosticsConsent } from '@ezplayer/ezplayer-core';
 import { DEFAULT_CLOUD_SERVICE_URL, getCloudConfigCache } from './data/CloudConfigStorage.js';
 import { ezpVersions } from '../versions.js';
 import { getDiagEnv } from './diagEnv.js';
+import { DiagOutbox } from './diagoutbox.js';
 
 const store = new Store<{ diagnostics?: DiagnosticsConsent }>({ name: 'diagnostics' });
 
@@ -42,6 +46,8 @@ export type DiagEventKind =
     | 'did-fail-load'
     | 'worker-error'
     | 'renderer-error'
+    | 'renderer-not-ready'
+    | 'renderer-hang'
     | 'unclean-exit';
 
 /**
@@ -77,8 +83,21 @@ export function isExpectedProcessExit(details: { reason: string; exitCode: numbe
 }
 
 const MAX_REPORTS_PER_HOUR = 10;
+const UPLOAD_TIMEOUT_MS = 20_000;
+const RETRY_FIRST_MS = 15_000;
+const RETRY_EVERY_MS = 30 * 60_000;
+/** The server allows one report per 2 minutes after a short burst. */
+const RETRY_SPACING_MS = 130_000;
+
 let sentTimestamps: number[] = [];
 const inFlight = new Set<Promise<unknown>>();
+const inFlightFiles = new Set<string>();
+let outbox: DiagOutbox | undefined;
+
+function getOutbox(): DiagOutbox {
+    outbox ??= new DiagOutbox(path.join(app.getPath('userData'), 'diag-outbox'));
+    return outbox;
+}
 
 /** Resolves when pending uploads have settled or the timeout passes. Never rejects. */
 export function flushDiagReports(timeoutMs: number): Promise<void> {
@@ -87,6 +106,46 @@ export function flushDiagReports(timeoutMs: number): Promise<void> {
         Promise.allSettled([...inFlight]).then(() => undefined),
         new Promise<void>((r) => setTimeout(r, timeoutMs)),
     ]);
+}
+
+function reportUrl(): string {
+    // EZP_DIAG_URL points test runs at a mock endpoint.
+    const cloudUrl = process.env.EZP_DIAG_URL || getCloudConfigCache().cloudServiceUrl || DEFAULT_CLOUD_SERVICE_URL;
+    const base = cloudUrl.endsWith('/') ? cloudUrl : `${cloudUrl}/`;
+    return `${base}api/diag/crashreport`;
+}
+
+/** Delivered, or rejected in a way a retry will not fix. */
+function isFinalStatus(status: number): boolean {
+    return status < 400 || (status < 500 && status !== 408 && status !== 429);
+}
+
+/** Resolves true once the report no longer needs sending. */
+function upload(kind: string, body: unknown, file: string | undefined): Promise<boolean> {
+    if (file) inFlightFiles.add(file);
+    const p = fetch(reportUrl(), {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS),
+    }).then(
+        (res) => {
+            const final = isFinalStatus(res.status);
+            console.warn(`[diag] ${kind} upload: HTTP ${res.status}${final ? '' : '; kept for retry'}`);
+            if (final) getOutbox().remove(file);
+            return final;
+        },
+        (err: unknown) => {
+            console.warn(`[diag] ${kind} upload failed: ${String(err)}; kept for retry`);
+            return false;
+        },
+    );
+    inFlight.add(p);
+    void p.finally(() => {
+        inFlight.delete(p);
+        if (file) inFlightFiles.delete(file);
+    });
+    return p;
 }
 
 export function reportDiagEvent(kind: DiagEventKind, message: string, stack?: string, extra?: unknown): void {
@@ -106,8 +165,6 @@ export function reportDiagEvent(kind: DiagEventKind, message: string, stack?: st
         sentTimestamps.push(now);
 
         const cfg = getCloudConfigCache();
-        const cloudUrl = cfg.cloudServiceUrl || DEFAULT_CLOUD_SERVICE_URL;
-        const base = cloudUrl.endsWith('/') ? cloudUrl : `${cloudUrl}/`;
         const body = {
             kind,
             message: message.slice(0, 2048),
@@ -126,17 +183,41 @@ export function reportDiagEvent(kind: DiagEventKind, message: string, stack?: st
                 ? { player_token: cfg.playerIdToken }
                 : {}),
         };
-        const upload = fetch(`${base}api/diag/crashreport`, {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify(body),
-        }).then(
-            (res) => console.warn(`[diag] ${kind} upload: HTTP ${res.status}`),
-            (err: unknown) => console.warn(`[diag] ${kind} upload failed: ${String(err)}`),
-        );
-        inFlight.add(upload);
-        void upload.finally(() => inFlight.delete(upload));
+        // Saved first, so a report survives the process dying mid-upload.
+        void upload(kind, body, getOutbox().save(body));
     } catch {
         /* never throw from a crash path */
     }
+}
+
+let retrying = false;
+
+async function retryPass(): Promise<void> {
+    if (retrying) return;
+    retrying = true;
+    try {
+        if (!getDiagnosticsConsent().uploadEnabled) {
+            getOutbox().removeAll();
+            return;
+        }
+        const entries = getOutbox().pending(inFlightFiles);
+        if (entries.length) console.warn(`[diag] resending ${entries.length} saved report(s)`);
+        for (const [i, e] of entries.entries()) {
+            if (i > 0) await new Promise((r) => setTimeout(r, RETRY_SPACING_MS));
+            const kind = (e.body as { kind?: unknown })?.kind;
+            if (!(await upload(`${String(kind)} (saved)`, e.body, e.file))) break;
+        }
+    } catch {
+        /* best-effort */
+    } finally {
+        retrying = false;
+    }
+}
+
+/** Resend saved reports shortly after startup, then periodically. */
+export function startOutboxRetry(): void {
+    setTimeout(() => {
+        void retryPass();
+        setInterval(() => void retryPass(), RETRY_EVERY_MS).unref();
+    }, RETRY_FIRST_MS).unref();
 }

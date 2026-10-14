@@ -65,6 +65,7 @@ import { registerScanApiRoutes } from './scan-api.js';
 import { registerControllersApiRoutes } from './controllers-api.js';
 import { ViewObject, LayoutSettings, type MhFixtureInfo } from './playbacktypes.js';
 import { trustSystemCAs } from '../trustSystemCAs.js';
+import { throwLater } from '../faultinject.js';
 
 // Trust the OS cert store before this worker's TLS (cloud WS bridge).
 trustSystemCAs();
@@ -199,6 +200,7 @@ class MainThreadRPC {
 }
 
 const rpc = new MainThreadRPC();
+throwLater('server-worker-throw', 3000);
 
 const wsBroadcaster = new WebSocketBroadcaster();
 

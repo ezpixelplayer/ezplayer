@@ -171,8 +171,13 @@ export function audioWindowHtmlPath(mainDirname: string): string {
     return path.join(mainDirname, '../dist/audio-window.html');
 }
 
+/** Unpackaged runs load pages from the Vite dev server unless EZP_RENDERER_DIST=1 asks for the built ones. */
+export function loadsFromDevServer(): boolean {
+    return !app.isPackaged && process.env.EZP_RENDERER_DIST !== '1';
+}
+
 /** Vite dev server URL; dist/audio-window.html is only refreshed by build:react. */
 export function audioWindowDevUrl(): string | undefined {
-    if (app.isPackaged) return undefined;
+    if (!loadsFromDevServer()) return undefined;
     return 'http://localhost:5173/audio-window.html';
 }

@@ -115,4 +115,15 @@ describe('captureRendererConsole', () => {
         }
         expect(log).toHaveBeenCalledTimes(60);
     });
+
+    it('keeps the last few errors for reports, past the rate cap', () => {
+        const wc = new EventEmitter();
+        vi.spyOn(console, 'log').mockImplementation(() => {});
+        const recent = captureRendererConsole(wc as never, 'main');
+        for (let i = 0; i < 100; i++) {
+            wc.emit('console-message', { level: 'error', message: `e${i}`, lineNumber: 0, sourceId: '' });
+        }
+        wc.emit('console-message', { level: 'warning', message: 'w', lineNumber: 0, sourceId: '' });
+        expect(recent()).toEqual(['e95', 'e96', 'e97', 'e98', 'e99']);
+    });
 });

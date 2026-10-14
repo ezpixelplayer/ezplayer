@@ -20,6 +20,8 @@ const CRASH_LOG_MAX_BYTES = 5 * 1024 * 1024;
 const SESSION_PREFIX = 'session-';
 /** Renderer console lines kept per window per minute. */
 const RENDERER_LINES_PER_MIN = 60;
+/** Recent renderer errors kept for crash reports. */
+const RECENT_ERRORS_KEPT = 5;
 
 let logger: AsyncBatchLogger | null = null;
 let session: SessionMarker | null = null;
@@ -104,14 +106,21 @@ export function pruneLogs(dir: string): void {
 
 /**
  * Copy a window's renderer warnings and errors into the app log (via stdout).
- * Rate-limited so a render loop cannot flood it.
+ * Rate-limited so a render loop cannot flood it. Returns the window's most
+ * recent error lines, for attaching to reports.
  */
-export function captureRendererConsole(wc: WebContents, tag: string): void {
+export function captureRendererConsole(wc: WebContents, tag: string): () => string[] {
     let windowStart = 0;
     let count = 0;
     let suppressed = 0;
+    const recentErrors: string[] = [];
     wc.on('console-message', (event) => {
         if (event.level !== 'warning' && event.level !== 'error') return;
+        const where = event.sourceId ? ` (${event.sourceId}:${event.lineNumber})` : '';
+        if (event.level === 'error') {
+            recentErrors.push(`${event.message.slice(0, 300)}${where}`);
+            if (recentErrors.length > RECENT_ERRORS_KEPT) recentErrors.shift();
+        }
         const now = Date.now();
         if (now - windowStart > 60_000) {
             if (suppressed > 0) console.log(`[renderer:${tag}] ${suppressed} console lines suppressed`);
@@ -123,9 +132,9 @@ export function captureRendererConsole(wc: WebContents, tag: string): void {
             suppressed++;
             return;
         }
-        const where = event.sourceId ? ` (${event.sourceId}:${event.lineNumber})` : '';
         console.log(`[renderer:${tag}] ${event.level === 'error' ? 'E' : 'W'} ${event.message}${where}`);
     });
+    return () => [...recentErrors];
 }
 
 interface SessionMarker {
