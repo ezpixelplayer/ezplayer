@@ -1,4 +1,5 @@
-import { Checkbox, Divider, FormControl, FormControlLabel, Switch, TextField, Typography } from '@mui/material';
+import { Download } from '@mui/icons-material';
+import { Button, Checkbox, Divider, FormControl, FormControlLabel, Switch, TextField, Typography } from '@mui/material';
 import React from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { Select } from '@ezplayer/shared-ui-components';
@@ -9,6 +10,8 @@ import { TagListInput } from '../../tag-list-input/TagListInput';
 import { playbackSettingsActions } from '../../../store/slices/PlaybackSettingsStore';
 import { sendAppSettingsCommand } from '../../../store/slices/AppSettingsStore';
 import type { AppDispatch, RootState } from '../../../store/Store';
+import { useFrameServerUrl } from '../../../hooks/useFrameServerUrl';
+import { useApiBase } from '../../../util/ApiBaseProvider';
 
 /** Number field that commits on blur; empty commits `undefined` (use default). */
 const PortField: React.FC<{
@@ -62,6 +65,11 @@ export const PlayerSettings: React.FC = () => {
 
     const diag: DiagnosticsConsent = appSettings?.diagnostics ?? { uploadEnabled: true, includePlayerId: false };
     const diagInteractive = appSettings !== null;
+
+    // The logs route is on the player's own web server; the cloud proxy does not carry it.
+    const apiBase = useApiBase();
+    const { url: playerUrl } = useFrameServerUrl();
+    const logsUrl = !apiBase && playerUrl ? `${playerUrl}/api/ezp/support/logs.zip` : undefined;
 
     return (
         <Box>
@@ -163,10 +171,6 @@ export const PlayerSettings: React.FC = () => {
             <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
                 Diagnostics
             </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                Help improve EZPlayer by sending anonymous crash and error reports. No show data, files, or personal
-                information is included.
-            </Typography>
             <Box>
                 <FormControlLabel
                     control={
@@ -180,8 +184,12 @@ export const PlayerSettings: React.FC = () => {
                     }
                     label="Send anonymous crash reports"
                 />
+                <Typography variant="body2" color="text.secondary">
+                    Help improve EZPlayer by sending anonymous crash and error reports. No show data, files, or personal
+                    information is included.
+                </Typography>
             </Box>
-            <Box>
+            <Box sx={{ mt: 1 }}>
                 <FormControlLabel
                     control={
                         <Checkbox
@@ -201,6 +209,16 @@ export const PlayerSettings: React.FC = () => {
                     Lets support connect reports to your player when you ask for help. Off by default.
                 </Typography>
             </Box>
+            {logsUrl && (
+                <Box sx={{ mt: 2 }}>
+                    <Button variant="outlined" size="small" startIcon={<Download />} href={logsUrl}>
+                        Download Logs
+                    </Button>
+                    <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                        A zip of the player computer's recent logs and crash information, to send when asking for help.
+                    </Typography>
+                </Box>
+            )}
 
             <Divider sx={{ my: 3 }} />
             <Typography variant="subtitle2" sx={{ mb: 0.5 }}>

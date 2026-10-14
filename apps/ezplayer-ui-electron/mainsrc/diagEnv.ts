@@ -16,6 +16,7 @@
 import { app, screen } from 'electron';
 import fs from 'node:fs';
 import os from 'node:os';
+import path from 'node:path';
 import util from 'node:util';
 import { isHeadless } from './earlycli.js';
 
@@ -120,8 +121,10 @@ export interface DiagEnvSnapshot {
         rssMB: number;
         freeMemMB: number;
         loadavg?: number[];
-        /** Count of native minidumps sitting in the local crashDumps dir. */
+        /** Count of native minidumps under the local crashDumps dir. */
         minidumps?: number;
+        /** A GPU process exists right now; live, unlike `procs`. */
+        gpuProc?: boolean;
         /** Last periodic app.getAppMetrics() sample (renderer/GPU memory).
          *  Sampled, not live: by the time render-process-gone fires the
          *  renderer is gone, so this is the only pre-crash memory view. */
@@ -339,9 +342,30 @@ function displays(): string[] | undefined {
     }
 }
 
+// Crashpad nests the dumps: reports/ on Windows, completed/ and pending/ on Linux and macOS.
 function minidumpCount(): number | undefined {
     try {
-        return fs.readdirSync(app.getPath('crashDumps')).filter((f) => f.endsWith('.dmp')).length;
+        let n = 0;
+        const walk = (dir: string, depth: number) => {
+            for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+                if (entry.isDirectory()) {
+                    if (depth < 2) walk(path.join(dir, entry.name), depth + 1);
+                } else if (entry.name.endsWith('.dmp')) {
+                    n++;
+                }
+            }
+        };
+        walk(app.getPath('crashDumps'), 0);
+        return n;
+    } catch {
+        return undefined;
+    }
+}
+
+function gpuProcessAlive(): boolean | undefined {
+    if (!app.isReady()) return undefined;
+    try {
+        return app.getAppMetrics().some((p) => p.type === 'GPU');
     } catch {
         return undefined;
     }
@@ -362,6 +386,7 @@ export function getDiagEnv(): DiagEnvSnapshot | undefined {
                 freeMemMB: Math.round(os.freemem() / 1048576),
                 ...(process.platform === 'linux' ? { loadavg: os.loadavg().map((x) => Math.round(x * 100) / 100) } : {}),
                 minidumps: minidumpCount(),
+                gpuProc: gpuProcessAlive(),
                 ...(lastMetrics
                     ? {
                           procs: lastMetrics.procs,

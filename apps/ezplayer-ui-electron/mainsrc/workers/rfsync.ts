@@ -1,6 +1,7 @@
 // remoteFalconWorker.ts
 import { parentPort } from 'worker_threads';
 import { trustSystemCAs } from '../trustSystemCAs.js';
+import { errorDetail } from '../errorDetail.js';
 
 // Trust the OS cert store before any outbound fetch in this worker.
 trustSystemCAs();
@@ -330,7 +331,7 @@ async function runGuarded(key: string, fn: () => Promise<void>) {
     try {
         await fn();
     } catch (e) {
-        send({ type: 'log', msg: (e as Error).message, level: 'error' });
+        send({ type: 'log', msg: errorDetail(e), level: 'error' });
     } finally {
         inFlight[key] = false;
     }
