@@ -76,6 +76,7 @@ export type {
     UpdateCommand,
     AutoUpdateOpsState,
     DiagnosticsConsent,
+    SupportBundleLevel,
     LoginItemState,
     AppSettingsState,
     AppSettingsCommand,
@@ -83,7 +84,12 @@ export type {
     ControllerRefreshMode,
 } from './types/DataTypes';
 
-export { controllerRefreshSettingsFor, controllerRefreshMode } from './types/DataTypes';
+export {
+    controllerRefreshSettingsFor,
+    controllerRefreshMode,
+    SUPPORT_BUNDLE_LEVELS,
+    isSupportBundleLevel,
+} from './types/DataTypes';
 
 export type {
     ControllerDetailNode,

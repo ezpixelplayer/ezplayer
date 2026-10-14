@@ -27,7 +27,7 @@ import type {
     ScheduledPlaylist,
     SequenceRecord,
 } from '@ezplayer/ezplayer-core';
-import { LatestFrameRingBuffer, AudioChunkRingBuffer } from '@ezplayer/ezplayer-core';
+import { LatestFrameRingBuffer, AudioChunkRingBuffer, isSupportBundleLevel } from '@ezplayer/ezplayer-core';
 import type { AudioBridgeControlMessage, CloudAudioMode } from '@ezplayer/ezplayer-core';
 import { AudioStreamEncoder } from './audio-stream-encoder.js';
 import { BufferPool } from '@ezplayer/epp';
@@ -1985,9 +1985,15 @@ async function startServer(config: ServerWorkerData) {
             },
         isIpAllowed: proxyTargetAllowed,
     });
-    // Logs zip for support; web app only, like the routes above.
+    // Support zip; web app only, like the routes above. ?level= picks what it holds.
     scanRouter.get('/api/ezp/support/logs.zip', async (ctx) => {
-        const { name, data } = await rpc.call('buildSupportBundle');
+        const level = ctx.query.level ?? 'logs';
+        if (!isSupportBundleLevel(level)) {
+            ctx.status = 400;
+            ctx.body = 'level must be logs, setup, or layout';
+            return;
+        }
+        const { name, data } = await rpc.call('buildSupportBundle', level);
         ctx.set('Content-Disposition', `attachment; filename="${name}"`);
         ctx.type = 'application/zip';
         ctx.body = Buffer.from(data.buffer, data.byteOffset, data.byteLength);

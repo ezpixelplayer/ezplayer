@@ -8,6 +8,7 @@ import type {
     CloudAudioMode,
     CloudCommand,
     RemoteAccessAvailability,
+    SupportBundleLevel,
     UpdateCommand,
 } from '@ezplayer/ezplayer-core';
 
@@ -146,5 +147,5 @@ export interface ServerWorkerRPCAPI {
      *  re-broadcast availability. Resolves to the new per-feature state. */
     remoteAccessReloadConfig(): Promise<RemoteAccessAvailability>;
     /** Zip of logs, recent crash dumps and an environment summary. */
-    buildSupportBundle(): Promise<{ name: string; data: Uint8Array }>;
+    buildSupportBundle(level: SupportBundleLevel): Promise<{ name: string; data: Uint8Array }>;
 }

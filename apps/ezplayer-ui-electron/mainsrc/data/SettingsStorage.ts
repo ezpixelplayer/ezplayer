@@ -15,8 +15,8 @@ export function getSettingsCache(): PlaybackSettings | null {
     return currentSettings;
 }
 
-export async function loadSettingsFromDisk(settingsPath: string): Promise<PlaybackSettings> {
-    const defaults: PlaybackSettings = {
+export function defaultPlaybackSettings(): PlaybackSettings {
+    return {
         audioSyncAdjust: 0,
         backgroundSequence: 'overlay',
         viewerControl: {
@@ -35,6 +35,10 @@ export async function loadSettingsFromDisk(settingsPath: string): Promise<Playba
         },
         testSequenceTags: ['test'],
     };
+}
+
+export async function loadSettingsFromDisk(settingsPath: string): Promise<PlaybackSettings> {
+    const defaults = defaultPlaybackSettings();
     // Reset the dedupe cache for the new path. A subsequent save with content
     // identical to disk should still be skipped, so seed it from the parsed
     // file when we have one.
