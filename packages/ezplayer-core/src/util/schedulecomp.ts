@@ -576,15 +576,16 @@ interface PlaybackCursor {
 
 /**
  * Recently started songs, so a scheduled playlist can pass over one that just
- * played (typically because a viewer requested it). Owned by the run state and
- * cloned with its snapshots, so predictions skip the same songs playback will.
+ * played (typically because a viewer requested it). A repeat the schedule made
+ * itself is left alone. Owned by the run state and cloned with its snapshots, so
+ * predictions skip the same songs playback will.
  */
 export class RepeatGuard {
     static readonly HISTORY_CAP = 100;
     /** Other songs that must start before a repeat; 0 = off. */
     spacing = 0;
-    /** Song ids, most recent first. */
-    recent: string[] = [];
+    /** Most recent first. `scheduled`: started by a scheduled item rather than a request. */
+    recent: { seqId: string; scheduled: boolean }[] = [];
 
     clone(): RepeatGuard {
         const g = new RepeatGuard();
@@ -593,25 +594,26 @@ export class RepeatGuard {
         return g;
     }
 
-    noteStart(seqId: string) {
-        this.recent.unshift(seqId);
+    noteStart(seqId: string, scheduled: boolean) {
+        this.recent.unshift({ seqId, scheduled });
         if (this.recent.length > RepeatGuard.HISTORY_CAP) this.recent.length = RepeatGuard.HISTORY_CAP;
     }
 
     /** How many other songs have started since `seqId` last did; undefined if not in the history. */
     songsSince(seqId: string): number | undefined {
-        const i = this.recent.indexOf(seqId);
+        const i = this.recent.findIndex((r) => r.seqId === seqId);
         return i < 0 ? undefined : i;
     }
 
     /** Whether a playlist of `distinctSongs` should pass over `seqId`. The spacing is held to
      *  40% of the playlist's distinct songs (a shuffle already keeps a song half the playlist
-     *  apart), so a short playlist is never starved by a long spacing. */
+     *  apart), so a short playlist is never starved by a long spacing. A song whose last start
+     *  was scheduled too is never skipped: the schedule chose that repeat. */
     playlistShouldSkip(seqId: string, distinctSongs: number): boolean {
         const n = Math.min(this.spacing, Math.floor(distinctSongs * 0.4));
         if (n <= 0) return false;
         const since = this.songsSince(seqId);
-        return since !== undefined && since < n;
+        return since !== undefined && since < n && !this.recent[since].scheduled;
     }
 }
 
@@ -719,7 +721,7 @@ class PlaybackStateEntry {
         // Only this entry's own cursor, while it runs, is playback; other cursors are readahead.
         if (et === 'Sequence Started' && c === this && this.suspendTime === undefined) {
             const id = this.seqIdAt(c);
-            if (id) this.repeatGuard?.noteStart(id);
+            if (id) this.repeatGuard?.noteStart(id, c.item.itemType === 'Scheduled');
         }
         log?.push({
             eventType: et,

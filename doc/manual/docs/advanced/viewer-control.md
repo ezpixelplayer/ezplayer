@@ -37,8 +37,9 @@ that many songs. Dropped picks show in **Viewer Activity** as skipped picks.
 It works the other way too: when a song has just played (usually a viewer pick), a
 scheduled playlist passes over that song if it comes up again too soon. For a
 playlist the spacing is held to 40% of its distinct songs, so a short playlist
-is never starved — a 5-song playlist waits at most 2 songs. Requests themselves
-are never skipped this way.
+is never starved — a 5-song playlist waits at most 2 songs. Repeats your
+schedule makes on its own (a song listed twice, or back-to-back shows that share
+a song) still play, and requests themselves are never skipped this way.
 
 ## Schedule Configuration
 

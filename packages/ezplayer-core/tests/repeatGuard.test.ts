@@ -53,9 +53,9 @@ function startsWithRequest(pl: PlaylistRecord, spacing: number, requestId: strin
 describe('RepeatGuard', () => {
     it('counts songs since a start', () => {
         const g = new RepeatGuard();
-        g.noteStart('a');
-        g.noteStart('b');
-        g.noteStart('c');
+        g.noteStart('a', false);
+        g.noteStart('b', false);
+        g.noteStart('c', false);
         expect(g.songsSince('c')).toBe(0);
         expect(g.songsSince('a')).toBe(2);
         expect(g.songsSince('z')).toBeUndefined();
@@ -64,9 +64,9 @@ describe('RepeatGuard', () => {
     it('holds the playlist spacing to 40% of its distinct songs', () => {
         const g = new RepeatGuard();
         g.spacing = 10;
-        g.noteStart('a');
-        g.noteStart('b');
-        g.noteStart('c');
+        g.noteStart('a', false);
+        g.noteStart('b', false);
+        g.noteStart('c', false);
         // 9 songs -> 3: 'a' (2 since) is skipped
         expect(g.playlistShouldSkip('a', 9)).toBe(true);
         // 5 songs -> 2: 'a' (2 since) may play
@@ -74,6 +74,18 @@ describe('RepeatGuard', () => {
         expect(g.playlistShouldSkip('b', 5)).toBe(true);
         // 2 songs -> 0: never skip
         expect(g.playlistShouldSkip('c', 2)).toBe(false);
+    });
+
+    it('lets a scheduled repeat of a scheduled start through', () => {
+        const g = new RepeatGuard();
+        g.spacing = 3;
+        g.noteStart('a', true);
+        g.noteStart('b', false);
+        g.noteStart('a', false);
+        g.noteStart('c', true);
+        // 'c' last started from a schedule; 'a' last from a request.
+        expect(g.playlistShouldSkip('c', 9)).toBe(false);
+        expect(g.playlistShouldSkip('a', 9)).toBe(true);
     });
 });
 
@@ -94,6 +106,16 @@ describe('playlist repeat skip', () => {
 
     it('never skips in a playlist too short for the spacing', () => {
         expect(startsWithRequest(plof2, 5, '2', 40_000)).toEqual(['1', '2', '2']);
+    });
+
+    it('keeps a repeat the playlist itself lists', () => {
+        const repeats: PlaylistRecord = {
+            ...plof9,
+            id: 'repeats',
+            title: 'repeats',
+            items: ['1', '2', '1', '3', '4', '5', '6', '7', '8'].map((id, i) => ({ id, sequence: i + 1 })),
+        };
+        expect(startsWithRequest(repeats, 3, '9')).toEqual(['1', '9', '2', '1', '3', '4']);
     });
 
     it('predicts the skip without touching the live history', () => {
