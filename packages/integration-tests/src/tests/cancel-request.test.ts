@@ -172,7 +172,7 @@ describe('cancel a playing request', () => {
         expect(resumed.status).toBe('Playing');
         expect(resumed.queue ?? []).toEqual([]);
         expect(resumed.view!.stack.map((e) => [e.origin, e.state])).toEqual([['Scheduled', 'playing']]);
-        // repeat: 1 above makes the main section loop.
+        // The schedule was put with repeat: 1, so its main section loops.
         expect(resumed.view!.stack[0].position).toEqual({ index: 0, count: 1, loop: true });
 
         // And it is actually running, not parked on one frame: the engine clock moves.
