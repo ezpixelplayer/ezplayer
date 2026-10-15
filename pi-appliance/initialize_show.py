@@ -18,8 +18,8 @@ def write_json(path, value):
 
 def initialize(home, config_dir=None):
     home = Path(home)
-    # Packaged app productName is EZPlayer; electron-store uses userData/config.json.
-    store_path = Path(config_dir or home / '.config' / 'EZPlayer') / 'config.json'
+    # Electron uses the package name for userData, not the display productName.
+    store_path = Path(config_dir or home / '.config' / 'ezplayer-ui-electron') / 'config.json'
     settings = json.loads(store_path.read_text()) if store_path.exists() else {}
     if not isinstance(settings, dict):
         raise ValueError('Existing EZPlayer settings are invalid; no settings were changed')
@@ -40,5 +40,5 @@ def initialize(home, config_dir=None):
 
 if __name__ == '__main__':
     home = Path.home()
-    config_dir = Path(os.environ.get('XDG_CONFIG_HOME', str(home / '.config'))) / 'EZPlayer'
+    config_dir = Path(os.environ.get('XDG_CONFIG_HOME', str(home / '.config'))) / 'ezplayer-ui-electron'
     print('Show folder: ' + initialize(home, config_dir))

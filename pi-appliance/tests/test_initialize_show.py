@@ -11,7 +11,7 @@ class InstallShowTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.home = Path(self.temp.name)
-        self.store = self.home / '.config/EZPlayer/config.json'
+        self.store = self.home / '.config/ezplayer-ui-electron/config.json'
 
     def test_first_install_seeds_valid_show_and_persistent_selection(self):
         folder = Path(initialize(self.home))

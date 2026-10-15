@@ -52,6 +52,10 @@ rm -f /etc/nginx/sites-enabled/default
 nginx -t
 systemctl disable hostapd ezplayer-reset-button.service ezplayer-setup-portal.service
 systemctl enable NetworkManager.service avahi-daemon.service nginx.service ezplayer-network.service ezplayer-show-output.service ezplayer-image-firstboot.service
+# Use the OS's desktop-autologin setting, including its main LightDM config.
+# A conf.d entry alone can be overridden by /etc/lightdm/lightdm.conf.
+install -d /etc/systemd/system/getty@tty1.service.d
+SUDO_USER="$player_user" raspi-config nonint do_boot_behaviour B4
 # These must not be generated or copied into the distributable rootfs.
 test ! -e /var/lib/ezplayer-network/image-initialized
 test ! -e /var/lib/ezplayer-network/wifi-display.json
