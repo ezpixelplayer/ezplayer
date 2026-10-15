@@ -183,12 +183,19 @@ class ProxyAuthentication(unittest.TestCase):
  def setUp(self):
   HTTPAccess.setUp(self);self.proxy=patch.object(s,'PROXY_MODE',True);self.proxy.start()
   self.config=patch.object(s,'config',return_value={'password':'Ezrgb1234'});self.config.start()
+  self.home=patch.object(s,'address',return_value='192.168.99.107/24');self.home.start()
   s.SESSIONS.clear();s.LOGIN_ATTEMPTS.clear()
  def tearDown(self):
-  HTTPAccess.tearDown(self);self.proxy.stop();self.config.stop()
+  HTTPAccess.tearDown(self);self.proxy.stop();self.config.stop();self.home.stop()
  def headers(self,**extra):return {'Host':'192.168.99.107','X-EZPlayer-Client-IP':'192.168.1.103','X-EZPlayer-Server-IP':'192.168.99.107',**extra}
- def test_proxy_cannot_bypass_lan_login(self):
-  self.assertEqual(self.request('/api/network/status',headers=self.headers())[0],401)
+ def test_home_wifi_proxy_direct_access_without_cookie(self):
+  with patch.object(s,'get_status',return_value={}):
+   self.assertEqual(self.request('/api/network/status',headers=self.headers())[0],200)
+   code,body=self.request('/setup',headers=self.headers());self.assertEqual(code,200);self.assertIn(b'Home Wi-Fi',body)
+ def test_other_lan_still_requires_login(self):
+  self.assertEqual(self.request('/api/network/status',headers=self.headers(Host='192.168.25.1',**{'X-EZPlayer-Server-IP':'192.168.25.1'}))[0],401)
+ def test_home_wifi_still_requires_page_token_for_changes(self):
+  self.assertEqual(self.request('/api/network/lan','POST',headers=self.headers())[0],403)
  def test_hotspot_proxy_direct_access(self):
   with patch.object(s,'get_status',return_value={}):
    self.assertEqual(self.request('/api/network/status',headers=self.headers(Host='192.168.4.1',**{'X-EZPlayer-Client-IP':'192.168.4.20','X-EZPlayer-Server-IP':'192.168.4.1'}))[0],200)
@@ -201,7 +208,7 @@ class ProxyAuthentication(unittest.TestCase):
   c=http.client.HTTPConnection('127.0.0.1',self.server.server_port)
   c.request('POST','/api/network/login',body=json.dumps({'password':'Ezrgb1234'}),headers=self.headers(**{'Content-Type':'application/json'}))
   r=c.getresponse();self.assertEqual(r.status,200);cookie=r.getheader('Set-Cookie');r.read();c.close()
-  with patch.object(s,'get_status',return_value={}):
+  with patch.object(s,'get_status',return_value={}),patch.object(s.Handler,'local_access',return_value=False):
    self.assertEqual(self.request('/api/network/status',headers=self.headers(Cookie=cookie))[0],200)
    self.assertEqual(self.request('/api/network/status',headers=self.headers(Cookie=cookie,**{'X-EZPlayer-Client-IP':'192.168.1.104'}))[0],401)
 

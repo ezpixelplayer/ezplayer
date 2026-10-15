@@ -26,8 +26,8 @@ cleanup='''
 p.write_text(text.replace(needle,needle+cleanup))
 PYSPACE
 bash "$script_dir/prepare-pi-gen.sh" "$workspace/pi-gen" "$package"
-password=$(python3 -c 'import secrets; print(secrets.token_urlsafe(18))')
-# Mask the generated test login if building in GitHub Actions.
+password='Ezplayer1'
+# Mask the configured test login if building in GitHub Actions.
 if [[ ${GITHUB_ACTIONS:-} == true ]]; then printf '::add-mask::%s\n' "$password"; fi
 umask 077
 cat > "$workspace/pi-gen/config" <<CONF
@@ -50,7 +50,7 @@ COMPRESSION_LEVEL=3
 STAGE_LIST="stage0 stage1 stage2 stage3 stage4 stage-ezplayer"
 CONF
 touch "$workspace/pi-gen/stage2/SKIP_IMAGES" "$workspace/pi-gen/stage4/SKIP_IMAGES"
-printf 'Private hardware-test login\nUsername: ezplayer\nPassword: %s\nSSH is disabled by default. Change this generated test password before enabling SSH or sharing an image.\n' "$password" > "$output/TEST-LOGIN.txt"
+printf 'Private hardware-test login\nUsername: ezplayer\nPassword: %s\nSSH is disabled by default. This is the configured hardware-test account password.\n' "$password" > "$output/TEST-LOGIN.txt"
 unset password
 umask 022
 export EZPLAYER_RECLAIM_PREVIOUS=1

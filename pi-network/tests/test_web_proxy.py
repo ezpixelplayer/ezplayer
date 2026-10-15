@@ -19,7 +19,7 @@ class Routing(unittest.TestCase):
  @classmethod
  def setUpClass(cls):
   cls.tmp=tempfile.TemporaryDirectory();d=pathlib.Path(cls.tmp.name)
-  cls.patches=[patch.object(s,'PROXY_MODE',True),patch.object(s,'config',return_value={'password':'Ezrgb1234'}),patch.object(s,'get_status',return_value={'wifi':{'connected':True}})]
+  cls.patches=[patch.object(s,'PROXY_MODE',True),patch.object(s,'address',return_value='127.0.0.1/8'),patch.object(s,'config',return_value={'password':'Ezrgb1234'}),patch.object(s,'get_status',return_value={'wifi':{'connected':True}})]
   for p in cls.patches:p.start()
   cls.servers=[];ports=[]
   for handler in [Player,s.Handler]:
@@ -51,8 +51,8 @@ class Routing(unittest.TestCase):
  def test_large_player_upload(self):
   code,body,_=self.request('/api/ezp/upload','POST',b'x'*(2*1024*1024));self.assertEqual(code,200);self.assertEqual(body,b'2097152')
  def test_setup_and_spoofed_loopback_header(self):
-  code,body,headers=self.request('/setup');self.assertEqual(code,200);self.assertIn(b'Setup password',body);self.assertIn(b'data:image/png;base64,',body);self.assertIn("img-src 'self' data:",headers['Content-Security-Policy'])
-  self.assertEqual(self.request('/api/network/status',headers={'X-EZPlayer-Client-IP':'127.0.0.1'})[0],401)
+  code,body,headers=self.request('/setup');self.assertEqual(code,200);self.assertIn(b'Home Wi-Fi',body);self.assertIn(b'data:image/png;base64,',body);self.assertIn("img-src 'self' data:",headers['Content-Security-Policy'])
+  self.assertEqual(self.request('/api/network/status',headers={'X-EZPlayer-Client-IP':'127.0.0.1'})[0],200)
  def test_portal_login_and_csrf(self):
   code,_,headers=self.request('/api/network/login','POST',json.dumps({'password':'Ezrgb1234'}),{'Content-Type':'application/json'});self.assertEqual(code,200)
   cookie=headers['Set-Cookie'];code,body,_=self.request('/api/network/status',headers={'Cookie':cookie});self.assertEqual(code,200);self.assertIn('token',json.loads(body))

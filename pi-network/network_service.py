@@ -396,7 +396,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def local_access(self):
         raw_peer,destination=self.request_addresses()
         peer=ipaddress.ip_address(raw_peer)
-        return peer.is_loopback or (destination==HOTSPOT_IP and peer in ipaddress.ip_network('192.168.4.0/24'))
+        if peer.is_loopback or (destination==HOTSPOT_IP and peer in ipaddress.ip_network('192.168.4.0/24')):return True
+        # Trust local clients reaching the Pi through its current home Wi-Fi IP.
+        # In proxy mode the address context comes only from our loopback proxy.
+        home_address=address(WIFI)
+        try:return peer.is_private and bool(home_address) and destination==str(ipaddress.ip_interface(home_address).ip)
+        except ValueError:return False
     def valid_host(self):
         host=self.headers.get('Host','').split(':')[0].lower()
         try:peer,local=self.request_addresses()
@@ -485,7 +490,7 @@ def main():
         write_config({**config(),'ssid':'EZPLAYER','password':'Ezrgb1234'})
         run('systemctl','restart','ezplayer-network.service');return
     AP_SERVICE.initialize();threading.Thread(target=watcher,daemon=True).start()
-    # LAN access requires the setup password. Hotspot and local Pi access stay direct.
+    # Home Wi-Fi, hotspot and local Pi access are direct; other LAN access uses login.
     server=http.server.ThreadingHTTPServer(('127.0.0.1' if PROXY_MODE else '0.0.0.0',8081 if PROXY_MODE else 80),Handler)
     try:server.serve_forever()
     finally:server.server_close();AP_SERVICE.close()
