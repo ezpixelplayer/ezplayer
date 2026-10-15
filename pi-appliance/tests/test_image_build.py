@@ -1,5 +1,5 @@
 """Validate staging without mounting/building a rootfs in the test process."""
-import importlib.util,json,pathlib,shutil,subprocess,tempfile,unittest
+import importlib.util,json,os,pathlib,shutil,subprocess,tempfile,unittest
 ROOT=pathlib.Path(__file__).parents[2]
 spec=importlib.util.spec_from_file_location('image_initialize',ROOT/'pi-appliance/initialize_show.py');initializer=importlib.util.module_from_spec(spec);spec.loader.exec_module(initializer)
 class ImageStaging(unittest.TestCase):
@@ -16,6 +16,24 @@ class ImageStaging(unittest.TestCase):
     self.assertEqual((staged/'network'/relative).read_bytes(),(ROOT/'pi-network'/relative).read_bytes())
    self.assertTrue((staged/'ezplayer-pi.deb').is_file());self.assertFalse(list((staged/'network').rglob('*.pyc')))
    self.assertTrue((pigen/'stage-ezplayer/prerun.sh').stat().st_mode&0o111)
+   # pi-gen executes the substage as a child process without exporting
+   # SUB_STAGE_DIR. Exercise that boundary, mocking only architecture/chroot.
+   rootfs=tmp/'rootfs';rootfs.mkdir();commands=tmp/'chroot-commands'
+   env=os.environ.copy();env.pop('SUB_STAGE_DIR',None)
+   env.update(ROOTFS_DIR=str(rootfs),FIRST_USER_NAME='ezplayer',WPA_COUNTRY='US',COMMAND_CAPTURE=str(commands))
+   runner='''
+uname() { echo aarch64; }
+on_chroot() {
+ test -f "$ROOTFS_DIR/tmp/ezplayer-pi-build/ezplayer-pi.deb" || return 1
+ test -f "$ROOTFS_DIR/tmp/ezplayer-pi-build/network/install-image.sh" || return 1
+ cat > "$COMMAND_CAPTURE"
+}
+export -f uname on_chroot
+./00-run.sh
+'''
+   subprocess.run(['bash','-e','-c',runner],cwd=staged.parent,env=env,check=True,capture_output=True)
+   self.assertIn('network/install-image.sh "US" "ezplayer"',commands.read_text())
+   self.assertFalse((rootfs/'tmp/ezplayer-pi-build').exists())
  def test_device_identities_are_generated_independently_and_survive_reboot(self):
   with tempfile.TemporaryDirectory() as tmp:
    homes=[pathlib.Path(tmp)/'pi1',pathlib.Path(tmp)/'pi2'];tokens=[]

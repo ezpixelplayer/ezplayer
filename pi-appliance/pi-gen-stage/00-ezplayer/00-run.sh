@@ -1,9 +1,11 @@
 #!/bin/bash -e
 # Native ARM64 builder only; the installer intentionally checks the host architecture.
 [[ $(uname -m) == aarch64 ]] || { echo 'Build this experimental stage on ARM64 Linux'; exit 1; }
-[[ -f "${SUB_STAGE_DIR}/files/ezplayer-pi.deb" ]] || { echo 'Add rebuilt ezplayer-pi.deb to stage files first'; exit 1; }
+# pi-gen runs this script from its substage but does not export SUB_STAGE_DIR.
+stage_files="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/files"
+[[ -f "${stage_files}/ezplayer-pi.deb" ]] || { echo 'Add rebuilt ezplayer-pi.deb to stage files first'; exit 1; }
 install -d "${ROOTFS_DIR}/tmp/ezplayer-pi-build"
-cp -a "${SUB_STAGE_DIR}/files/." "${ROOTFS_DIR}/tmp/ezplayer-pi-build/"
+cp -a "${stage_files}/." "${ROOTFS_DIR}/tmp/ezplayer-pi-build/"
 on_chroot <<EOF
 EZPLAYER_IMAGE_BUILD=1 bash /tmp/ezplayer-pi-build/install-pi.sh /tmp/ezplayer-pi-build/ezplayer-pi.deb "${FIRST_USER_NAME}" "${WPA_COUNTRY}"
 EZPLAYER_IMAGE_BUILD=1 bash /tmp/ezplayer-pi-build/network/install-image.sh "${WPA_COUNTRY}" "${FIRST_USER_NAME}"
