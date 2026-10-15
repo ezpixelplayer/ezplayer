@@ -24,16 +24,22 @@ class ImageStaging(unittest.TestCase):
    runner='''
 uname() { echo aarch64; }
 on_chroot() {
- test -f "$ROOTFS_DIR/tmp/ezplayer-pi-build/ezplayer-pi.deb" || return 1
- test -f "$ROOTFS_DIR/tmp/ezplayer-pi-build/network/install-image.sh" || return 1
+ # Model pi-gen hiding /tmp when entering the rootfs.
+ mkdir -p "$ROOTFS_DIR/tmp"
+ mv "$ROOTFS_DIR/tmp" "$ROOTFS_DIR/tmp-hidden"
+ mkdir "$ROOTFS_DIR/tmp"
+ test -f "$ROOTFS_DIR/opt/ezplayer-image-build/ezplayer-pi.deb" || return 1
+ test -f "$ROOTFS_DIR/opt/ezplayer-image-build/install-pi.sh" || return 1
+ test -f "$ROOTFS_DIR/opt/ezplayer-image-build/network/install-image.sh" || return 1
  cat > "$COMMAND_CAPTURE"
 }
 export -f uname on_chroot
 ./00-run.sh
 '''
    subprocess.run(['bash','-e','-c',runner],cwd=staged.parent,env=env,check=True,capture_output=True)
+   self.assertIn('/opt/ezplayer-image-build/install-pi.sh /opt/ezplayer-image-build/ezplayer-pi.deb',commands.read_text())
    self.assertIn('network/install-image.sh "US" "ezplayer"',commands.read_text())
-   self.assertFalse((rootfs/'tmp/ezplayer-pi-build').exists())
+   self.assertFalse((rootfs/'opt/ezplayer-image-build').exists())
  def test_device_identities_are_generated_independently_and_survive_reboot(self):
   with tempfile.TemporaryDirectory() as tmp:
    homes=[pathlib.Path(tmp)/'pi1',pathlib.Path(tmp)/'pi2'];tokens=[]
