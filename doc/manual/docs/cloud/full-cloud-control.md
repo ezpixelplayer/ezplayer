@@ -31,27 +31,30 @@ On [EZRGB](https://ezrgb.com) you can:
 - Acquire **sequences** (they map, render, and download to the player
   automatically once assigned).
 - Set up **playlists** and **schedule** entries.
-- Open **Manage Player** from the **EZPlayer** section of your account for the
-  full remote player UI over the internet.
+- Open **Manage Player** from the **EZPlayer** section of your account, or use
+  the **Remote Control Link** on the player's Cloud screen, for the full remote
+  player UI over the internet.
 
 Changes you make on the website flow down to EZPlayer on the next sync. Watch
 progress on the [Cloud screen](./status-control-ui.md), or click
 **Sync Layout + Content** (cloud-managed) / **Sync Content Now** (xLights-managed)
 there if you want updates right away.
 
-Some **player settings** — such as volume rules and viewer-control options — can
-also be pushed from EZRGB and adopted by the player when they change on the
-cloud.
+Some **player settings** — volume rules, viewer-control options, and show name
+— can also be pushed from EZRGB and adopted by the player when they change on
+the cloud (last-write-wins against a newer local edit).
 
 ## Control from near and far
 
 - **On the show network** — the [LAN UI](../basics/local-web-interface.md) runs
   from the player machine for local phones and laptops.
-- **Over the internet** — after [registration](./registering.md), open your
-  EZRGB account → **EZPlayer** → **Manage Player**. That loads the full EZPlayer
-  UI remotely so you can check status, edit playlists and schedules, play songs,
-  adjust volume, and more when you are not on site. Open it in a **new tab** for
-  the most usable layout.
+- **Over the internet** — after [registration](./registering.md), open the
+  **Remote Control Link** on the Cloud screen (QR or URL). Anyone with that
+  link can control the player; no EZRGB sign-in is required. You can also open
+  your EZRGB account → **EZPlayer** → **Manage Player** for the same remote UI.
+  Open it in a **new tab** for the most usable layout. If the link leaked, use
+  **Change Player ID** on the Cloud screen. Details:
+  [Cloud Status / Control UI](./status-control-ui.md#remote-control-link).
 
 The player must stay registered, online, and not paused for remote control to
 work. The Cloud screen in EZPlayer is where you confirm that connection on the
