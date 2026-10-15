@@ -6,6 +6,8 @@ if [[ $EUID -ne 0 ]]; then
     exit 1
 fi
 package_path=$(realpath -- "${1:?Supply the rebuilt arm64 .deb}")
+image_build=${EZPLAYER_IMAGE_BUILD:-0}
+[[ $image_build == 0 || $image_build == 1 ]] || { echo "Invalid image build flag"; exit 1; }
 player_user=${2:?Supply the existing desktop username}
 [[ $(uname -m) == aarch64 ]] || { echo '64-bit ARM OS required'; exit 1; }
 [[ $player_user =~ ^[a-z_][a-z0-9_-]*$ ]] || { echo 'Invalid username'; exit 1; }
@@ -22,13 +24,20 @@ done
 apt-get update
 apt-get install -y network-manager dnsmasq-base python3-dbus python3-aiohttp pipewire pipewire-pulse wireplumber "$package_path"
 # Initialize show storage as its owner; preserve an already selected show folder.
-/usr/sbin/runuser -u "$player_user" -- /usr/bin/python3 "$script_dir/initialize_show.py"
+if [[ $image_build == 0 ]]; then
+    /usr/sbin/runuser -u "$player_user" -- /usr/bin/python3 "$script_dir/initialize_show.py"
+else
+    # A player identity must be created independently on each physical Pi.
+    player_home=$(getent passwd "$player_user" | cut -d: -f6)
+    install -d -o "$player_user" -g "$player_user" "$player_home/EZPlayer/Show"
+fi
 getent group ezplayer-system >/dev/null || groupadd --system ezplayer-system
 usermod -a -G ezplayer-system "$player_user"
 id ezplayer-portal >/dev/null 2>&1 || useradd --system --no-create-home --shell /usr/sbin/nologin --gid ezplayer-system ezplayer-portal
 id -u "$player_user" > /etc/ezplayer-pi-player-uid
 systemctl unmask ezplayer-pi.service ezplayer-setup-portal.service
 systemctl --global unmask ezplayer-desktop.service
+install -D -o root -g root -m 0644 "$script_dir/initialize_show.py" /usr/local/lib/ezplayer-pi/initialize_show.py
 install -D -o root -g root -m 0755 "$script_dir/pi_service.py" /usr/local/lib/ezplayer-pi/pi_service.py
 install -D -o root -g root -m 0644 "$script_dir/pi_hotspot.py" /usr/local/lib/ezplayer-pi/pi_hotspot.py
 install -D -o root -g root -m 0644 "$script_dir/pi_clock.py" /usr/local/lib/ezplayer-pi/pi_clock.py
@@ -47,7 +56,7 @@ cat > /etc/lightdm/lightdm.conf.d/90-ezplayer-pi.conf <<EOF
 autologin-user=$player_user
 autologin-user-timeout=0
 EOF
-if [[ -x /usr/bin/raspi-config ]]; then
+if [[ $image_build == 0 && -x /usr/bin/raspi-config ]]; then
     raspi-config nonint do_wifi_country "$wifi_country"
 fi
 # dnsmasq is spawned by NM only on shared/hotspot interfaces.
@@ -55,9 +64,13 @@ mkdir -p /etc/NetworkManager/dnsmasq-shared.d
 printf 'address=/#/192.168.4.1\n' > /etc/NetworkManager/dnsmasq-shared.d/ezplayer-setup.conf
 systemctl daemon-reload
 # The standalone captive portal owns port 80; keep the legacy portal dormant.
-systemctl disable --now ezplayer-setup-portal.service
+if [[ $image_build == 0 ]]; then
+    systemctl disable --now ezplayer-setup-portal.service
+else
+    systemctl disable ezplayer-setup-portal.service
+fi
 systemctl enable NetworkManager.service ezplayer-pi.service
-systemctl restart ezplayer-pi.service
+if [[ $image_build == 0 ]]; then systemctl restart ezplayer-pi.service; fi
 
 printf '\nInstalled. Reboot to load group membership and start EZPlayer.\n'
 printf 'Use the standalone setup hotspot portal to join Wi-Fi. No account or Wi-Fi password is baked into this package.\n'

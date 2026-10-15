@@ -1,38 +1,47 @@
-# Experimental Etcher image build recipe
+# Flashable EZPlayer test image
 
-This stage is supplied for development. It has not been executed here. Do not distribute an image until the hardware checklist in README.md passes. It produces a fresh Raspberry Pi OS Desktop image with the rebuilt EZPlayer and the local Pi service; it does not clone customer data.
+The Pi ARM64 Build workflow now has two jobs: build the matching ARM64 application
+installer, then build a fresh Raspberry Pi OS Desktop image on a hosted ARM64
+runner. No self-hosted Pi runner or installed customer card is used.
 
-1. Rebuild the modified EZPlayer ARM64 package as described in README.md.
-2. Use a native ARM64 Debian/Raspberry Pi OS build host and a reviewed, pinned ARM64 revision of official pi-gen: https://github.com/RPi-Distro/pi-gen/tree/arm64 . Follow its current dependency instructions. Record the exact commit and OS release with your generated image.
-3. Prepare the custom stage:
+Push this change to `codex/ezplayer-pi-appliance` (PR #260). The PR update triggers
+the workflow automatically. After the image job succeeds, download the artifact
+named `ezplayer-pi-image-<commit>`, extract it, and flash `EZPlayer-Pi-test.img.xz`
+to a spare SD card using Etcher or Raspberry Pi Imager. The source update ZIP is
+not flashable. Keep the working card unchanged.
 
-   ```bash
-   ./pi-appliance/prepare-pi-gen.sh /path/to/pi-gen /path/to/rebuilt-arm64.deb
-   ```
+See TEST-IMAGE-QUICKSTART.txt for first boot and physical testing. The image has
+no home Wi-Fi credentials, EZRGB registration, paid sequences, or pre-generated
+player identity. Each physical Pi generates its own identity on first boot.
+Default Ethernet is EZRGB Mode. The optional physical reset service is disabled.
 
-4. In pi-gen's configuration, set a desktop build through stage4 followed by stage-ezplayer. Example values:
+The image artifact contains a generated test login, checksum and build metadata.
+SSH is off by default. This first build is for private hardware validation; a
+customer first-boot password provisioning flow is not yet implemented.
 
-   ```bash
-   IMG_NAME=EZPlayer-Pi-0.6.9-test
-   TARGET_HOSTNAME=ezplayer
-   FIRST_USER_NAME=ezplayer
-   DISABLE_FIRST_BOOT_USER_RENAME=1
-   ENABLE_SSH=0
-   PASSWORDLESS_SUDO=0
-   WPA_COUNTRY=US
-   TIMEZONE_DEFAULT=America/New_York
-   KEYBOARD_KEYMAP=us
-   STAGE_LIST="stage0 stage1 stage2 stage3 stage4 stage-ezplayer"
-   ```
+## Native build
 
-   Set FIRST_USER_PASS to a newly generated strong password for your private test build (do not use a shared/default customer password). Keep the configuration private. Select the correct country/time zone for the installation. For customer production, implement first-boot password/account provisioning before distributing.
+On a privileged native ARM64 Debian-based build host with pi-gen's dependencies:
 
-5. Place SKIP_IMAGES marker files in stage2 and stage4 to avoid exporting intermediate images. Do not add SKIP to stage4: its desktop packages are required. Keep the final stage-ezplayer/EXPORT_IMAGE.
-6. Run the official build.sh on the native ARM64 host, following pi-gen's instructions. It needs internet access and substantial disk space. Services installed while building inside the chroot are expected to be started on actual boot, not during the image build.
-7. Find the final image in pi-gen's deploy directory. If exported as a ZIP, extract the .img. Compress the resulting .img with xz if desired, and produce a SHA256 checksum. That .img/.img.xz is the Etcher input. This source ZIP is not an Etcher image.
-8. Flash and test a fresh card. Verify account provisioning, automatic graphical login, Wi-Fi access before EZRGB registration, local audio, controller output, time zone, shutdown and power-loss recovery. Do not retain test Wi-Fi passwords, EZRGB tokens, downloaded paid sequences, or customer data in the distributable image.
+```bash
+sudo bash pi-appliance/build-test-image.sh /path/to/arm64.deb /path/to/new-output
+```
 
-Sources used for this recipe:
-- Official pi-gen configuration and stages: https://github.com/RPi-Distro/pi-gen
-- NetworkManager checkpoints: https://networkmanager.pages.freedesktop.org/NetworkManager/NetworkManager/gdbus-org.freedesktop.NetworkManager.html
-- NetworkManager IPv4 settings: https://www.networkmanager.dev/docs/api/latest/settings-ipv4.html
+The script pins official ARM64 pi-gen at
+`d346cd53562b3c6b4f94c9155175f814258c456d`, uses Trixie Desktop through stage4,
+and exports a compressed full disk image. A guarded copy_previous patch removes
+only completed, unexported intermediate rootfs copies to reduce build disk usage.
+Stage2 and stage4 image exports are skipped; stage-ezplayer is exported.
+
+The normal installer has an explicit image-build mode: service restarts and
+radio hardware calls are deferred, and initialize_show runs on first boot so
+player IDs are never duplicated across flashed cards. The standalone networking
+stack is installed offline and enabled for boot. The image builder records the
+source commit and pi-gen revision in BUILD-INFO.txt.
+
+Validation here covers stage preparation, script syntax, unique first-boot
+identities, workflow YAML, Pi service tests, and the standalone network tests.
+Full image generation requires privileged loop mounts on the GitHub runner and
+has not run in the restricted workspace. Build and boot results are still pending.
+
+Official pi-gen reference: https://github.com/RPi-Distro/pi-gen/tree/arm64

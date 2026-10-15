@@ -1,0 +1,40 @@
+EZPLAYER FIRST HARDWARE TEST IMAGE
+
+1. Download the ezplayer-pi-image artifact from the successful Pi ARM64 Build.
+2. Extract the downloaded artifact ZIP. The Etcher input is
+   EZPlayer-Pi-test.img.xz (not the artifact ZIP or the source update ZIP).
+3. Verify SHA256SUMS if desired. Flash the .img.xz to a SPARE microSD card
+   using balenaEtcher or Raspberry Pi Imager. The selected card is erased.
+4. Keep your existing working card unchanged. Insert the spare card in the Pi.
+5. The fresh image has no home Wi-Fi, EZRGB account, sequences, or shared player
+   identity. First boot initializes Ethernet to EZRGB Mode (192.168.25.1/24),
+   generates a new player identity, and opens the desktop player.
+6. Join hotspot EZPLAYER with password Ezrgb1234. Open http://192.168.4.1
+   if the setup page does not open automatically. Configure home Wi-Fi there.
+7. On home Wi-Fi, open http://PLAYER-IP/ for the player or /setup for networking.
+   http://ezplayer.local/ depends on multicast name discovery. The bare name
+   http://ezplayer/ depends on router DNS and is not guaranteed.
+8. Register the player from Cloud. Use a real Ethernet controller to test show
+   output, including unplugging Ethernet and confirming no show data on Wi-Fi.
+9. Test both 2.4 and 5 GHz, idle overnight, reboot, audio and USB audio, time,
+   portal password changes, manual/DHCP settings, uploads, and registration.
+
+TEST LOGIN
+TEST-LOGIN.txt contains a newly generated login for this build. It is not a
+customer account or your existing Pi password. SSH is disabled by default.
+For SSH testing, use a local Pi terminal to change the test password with passwd,
+then generate host keys with sudo ssh-keygen -A and enable SSH with
+sudo systemctl enable --now ssh (enter the test password
+for sudo). Do not share an image with this generated test login enabled for SSH.
+
+LIMITS
+This is a hardware-test image, not a validated customer release. Image generation
+has automated checks, but boot, radio reliability and Ethernet controller output
+still need testing. The optional GPIO reset service is installed but disabled
+until the physical button is fitted. Current show output enforcement covers
+standard DDP UDP 4048 and sACN UDP 5568; custom diagnostic DDP ports are not covered.
+Country is US and time zone is America/New_York for this first test build.
+
+RECOVERY
+Power down and put your original card back if this test image does not boot.
+Do not use the original working card as the image flashing target.

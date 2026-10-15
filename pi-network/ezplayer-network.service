@@ -1,0 +1,20 @@
+[Unit]
+Description=EZPlayer captive portal and setup hotspot
+After=NetworkManager.service
+Requires=NetworkManager.service
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/ezplayer-network/network_service.py
+Restart=on-failure
+RestartSec=10
+RuntimeDirectory=ezplayer-network
+RuntimeDirectoryMode=0700
+UMask=0077
+KillMode=control-group
+TimeoutStopSec=15
+
+[Install]
+WantedBy=multi-user.target

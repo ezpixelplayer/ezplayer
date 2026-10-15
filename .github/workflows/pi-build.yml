@@ -37,6 +37,8 @@ jobs:
               run: pnpm install --frozen-lockfile
             - name: Test Pi service
               run: python3 -m unittest discover -s pi-appliance/tests -v
+            - name: Test standalone network stack
+              run: python3 -m unittest discover -s pi-network/tests -v
             - name: Build app
               run: pnpm run build
             - name: Test app
@@ -60,3 +62,46 @@ jobs:
                       apps/ezplayer-ui-electron/release/*_arm64.deb
                       apps/ezplayer-ui-electron/release/*-arm64.AppImage
                       pi-appliance/
+                      pi-network/
+
+    build-image:
+        name: Build flashable Pi test image
+        needs: build-pi
+        if: github.event_name == 'workflow_dispatch' || github.head_ref == 'codex/ezplayer-pi-appliance'
+        runs-on: ubuntu-24.04-arm
+        timeout-minutes: 240
+        steps:
+            - name: Checkout matching source
+              uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+            - name: Download matching ARM64 installer
+              uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+              with:
+                  name: ezplayer-pi-arm64-${{ github.sha }}
+                  path: pi-installer
+            - name: Prepare native image builder
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install -y coreutils quilt parted qemu-user-binfmt debootstrap zerofree zip dosfstools e2fsprogs libcap2-bin grep rsync xz-utils file git curl bc gpg pigz xxd arch-test bmap-tools kmod python3
+                  # Reclaim only unused preinstalled SDKs on this disposable VM.
+                  sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
+                  df -h /
+            - name: Build fresh Raspberry Pi OS Desktop image
+              shell: bash
+              run: |
+                  mapfile -t packages < <(find pi-installer -name '*_arm64.deb' -type f)
+                  (( ${#packages[@]} == 1 )) || { echo 'Expected exactly one ARM64 package'; exit 1; }
+                  sudo --preserve-env=GITHUB_ACTIONS bash pi-appliance/build-test-image.sh "${packages[0]}" "$GITHUB_WORKSPACE/pi-image-output"
+                  sudo chown -R "$(id -u):$(id -g)" pi-image-output
+            - name: Verify compressed image
+              run: |
+                  xz -t pi-image-output/EZPlayer-Pi-test.img.xz
+                  cd pi-image-output
+                  sha256sum --check SHA256SUMS
+            - name: Upload flashable image and test instructions
+              uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+              with:
+                  name: ezplayer-pi-image-${{ github.sha }}
+                  path: pi-image-output/
+                  if-no-files-found: error
+                  compression-level: 0
+                  retention-days: 7

@@ -11,5 +11,7 @@ stage_files="$pi_gen_dir/stage-ezplayer/00-ezplayer/files"
 mkdir -p "$stage_files"
 cp -- "$package_path" "$stage_files/ezplayer-pi.deb"
 cp -- "$script_dir"/{install-pi.sh,pi_service.py,pi_hotspot.py,pi_clock.py,initialize_show.py,setup_portal.py,ezplayer-pi.service,ezplayer-setup-portal.service,ezplayer-desktop.service,start-desktop.sh,ezplayer-autostart.desktop} "$stage_files/"
+mkdir -p "$stage_files/network"
+tar -C "$script_dir/../pi-network" --exclude='__pycache__' --exclude='*.pyc' -cf - . | tar -C "$stage_files/network" -xf -
 chmod +x "$pi_gen_dir/stage-ezplayer/prerun.sh" "$pi_gen_dir/stage-ezplayer/00-ezplayer/00-run.sh"
 echo 'Stage prepared. Follow IMAGE-BUILD.md to configure and build. No image has been built yet.'
