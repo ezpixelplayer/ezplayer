@@ -32,6 +32,7 @@ import { collectReferencedAssets } from '../data/layoutAssets.js';
 import { FSEQReaderAsync } from '@ezplayer/epp';
 import { canonicalIdTags, crc32, generateNodeFingerprint, parseAudioTags } from 'audiofile';
 import { trustSystemCAs } from '../trustSystemCAs.js';
+import { errorDetail } from '../errorDetail.js';
 
 // Trust the OS cert store before any cloud fetch in this worker.
 trustSystemCAs();
@@ -380,8 +381,8 @@ async function electHomeServerOnce(): Promise<boolean> {
         announce();
         return true;
     } catch (e) {
-        log('warn', `electHomeServer: ${(e as Error).message}`);
-        electionIssue = `Choosing a regional server failed: ${(e as Error).message}`;
+        log('warn', `electHomeServer: ${errorDetail(e)}`);
+        electionIssue = `Choosing a regional server failed: ${errorDetail(e)}`;
         return false;
     }
 }
@@ -550,14 +551,14 @@ async function pollRegistration() {
         }
     } catch (e) {
         const err = e as Error;
-        log('warn', `checkin error: ${err.message}`);
+        log('warn', `checkin error: ${errorDetail(err)}`);
         wasRegistered = false;
         post({
             type: 'cloudStatus',
             status: {
                 playerIdIsRegistered: false,
                 lastCheckedAt: Date.now(),
-                lastError: err.message,
+                lastError: errorDetail(err),
             },
         });
     } finally {
@@ -596,7 +597,7 @@ async function pollManifest() {
             await fetchLayout();
         } catch (e) {
             // fetchLayout already logs and writes to cStatus; don't fail the manifest tick.
-            log('warn', `pre-manifest layout fetch error: ${(e as Error).message}`);
+            log('warn', `pre-manifest layout fetch error: ${errorDetail(e)}`);
         }
     } else {
         // Local-master mode: the player IS the layout source of truth, so
@@ -622,8 +623,8 @@ async function pollManifest() {
         await reconcileManifest(sequences);
     } catch (e) {
         const err = e as Error;
-        log('warn', `manifest poll error: ${err.message}`);
-        recordFailure(err.message);
+        log('warn', `manifest poll error: ${errorDetail(err)}`);
+        recordFailure(errorDetail(err));
     } finally {
         manifestInFlight = false;
     }
@@ -651,7 +652,7 @@ async function fetchPlaylistsAndSchedule() {
             log('warn', `playlists HTTP ${res.status}`);
         }
     } catch (e) {
-        log('warn', `playlists fetch error: ${(e as Error).message}`);
+        log('warn', `playlists fetch error: ${errorDetail(e)}`);
     }
 
     const schUrl = `${cloudUrl}${CLOUD_API_ENDPOINTS.EZP_GET_SCHEDULE}${playerIdToken}`;
@@ -670,7 +671,7 @@ async function fetchPlaylistsAndSchedule() {
             log('warn', `schedule HTTP ${res.status}`);
         }
     } catch (e) {
-        log('warn', `schedule fetch error: ${(e as Error).message}`);
+        log('warn', `schedule fetch error: ${errorDetail(e)}`);
     }
 }
 
@@ -695,7 +696,7 @@ async function fetchPlayerSettings() {
             parentPort?.postMessage({ type: 'cloudSettings', settings } satisfies CloudPollOutMessage);
         }
     } catch (e) {
-        log('warn', `settings fetch error: ${(e as Error).message}`);
+        log('warn', `settings fetch error: ${errorDetail(e)}`);
     }
 }
 
@@ -1232,7 +1233,7 @@ async function scanMediaRights(folder: string | undefined, ffmpeg: string | unde
         // Newly proven music unblocks downloads on the next manifest pass.
         if (toSubmit.length > 0) void pollManifest();
     } catch (e) {
-        const msg = (e as Error).message;
+        const msg = errorDetail(e);
         log('warn', `rights scan failed: ${msg}`);
         setRightsScan({ status: 'error', error: msg, lastRunAt: Date.now() });
     } finally {
@@ -1265,19 +1266,19 @@ async function downloadSet(entry: CloudSeqManifestEntry, pending: PendingFile[])
                 });
                 return { ok: false, installed };
             }
-            log('warn', `download ${pf.kind} ${pf.file_id} failed: ${err.message}`);
+            log('warn', `download ${pf.kind} ${pf.file_id} failed: ${errorDetail(err)}`);
             setFile(pf.file_id, {
                 vseq_id: entry.vseq_id,
                 kind: pf.kind,
                 file_id: pf.file_id,
                 file_time: pf.file_time,
                 status: 'error',
-                error: err.message,
+                error: errorDetail(err),
             });
             // Thumbs are decorative — don't let stale URLs trip the
             // breaker before fseq/audio get a chance.
             if (pf.kind !== 'thumb') {
-                recordFailure(`download ${pf.kind}: ${err.message}`);
+                recordFailure(`download ${pf.kind}: ${errorDetail(err)}`);
             }
             return { ok: false, installed };
         }
@@ -1744,8 +1745,8 @@ async function fetchLayout(): Promise<void> {
         post({ type: 'layoutInstalled', layoutMeta: newMeta });
     } catch (e) {
         const err = e as Error;
-        log('warn', `layout fetch error: ${err.message}`);
-        setLayout({ status: 'error', error: err.message });
+        log('warn', `layout fetch error: ${errorDetail(err)}`);
+        setLayout({ status: 'error', error: errorDetail(err) });
     } finally {
         layoutInFlight = false;
     }
@@ -2002,8 +2003,8 @@ async function uploadLayout(): Promise<void> {
         });
     } catch (e) {
         const err = e as Error;
-        log('warn', `layout upload error: ${err.message}`);
-        setLayout({ status: 'error', direction: 'upload', error: err.message });
+        log('warn', `layout upload error: ${errorDetail(err)}`);
+        setLayout({ status: 'error', direction: 'upload', error: errorDetail(err) });
     } finally {
         layoutUploadInFlight = false;
     }

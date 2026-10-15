@@ -161,7 +161,12 @@ export interface VcPublicShowState {
 
 // -- owner activity stats ------------------------------------------------------
 
-export type VcStatsEventKind = 'request' | 'vote' | 'refused' | 'pick' | 'play' | 'viewers' | 'listeners';
+export type VcStatsEventKind = 'request' | 'vote' | 'refused' | 'pick' | 'dropped' | 'play' | 'viewers' | 'listeners';
+
+/** Why the player dropped a pick its backend had already made (`dropped`
+ *  events, recorded by the player only): the song was playing, next up,
+ *  already queued, or started too recently (`count` = songs since). */
+export type VcDropReason = 'playing' | 'next' | 'queued' | 'recent';
 
 /** One viewer-activity event from the player_server's RAM ring. The player
  *  pulls these (`GET /api/player/vc/stats/:player_token?afterSeq=N`) and is
@@ -184,10 +189,13 @@ export interface VcStatsEvent {
     /** Salted short hash of the viewer id; never the address. */
     viewer?: string;
     /** `viewers` / `listeners`: the new count. `request`: queue position.
-     *  `vote`: the song's tally after the vote. */
+     *  `vote`: the song's tally after the vote. `dropped` (`recent`): songs
+     *  started since this one last did. */
     count?: number;
-    /** `pick` only. Absent = viewer page. */
+    /** `pick` / `dropped`. Absent = viewer page. */
     source?: VcPickSource;
+    /** `dropped` only. */
+    dropReason?: VcDropReason;
     [k: string]: unknown;
 }
 

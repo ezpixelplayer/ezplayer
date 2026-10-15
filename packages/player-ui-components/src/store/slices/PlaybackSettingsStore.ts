@@ -20,6 +20,22 @@ function defaultVolumeControl(): VolumeControlState {
     return { defaultVolume: 100, schedule: [] };
 }
 
+/** Replace the entry with the same id, keeping its place (and so its priority). */
+function replaceEntry<T extends { id: string }>(list: T[] | undefined, entry: T): void {
+    const i = (list ?? []).findIndex((e) => e.id === entry.id);
+    if (list && i >= 0) list[i] = entry;
+}
+
+/** Move an entry by `delta` places; later entries take priority. */
+function moveEntry<T extends { id: string }>(list: T[] | undefined, entryId: string, delta: number): void {
+    if (!list) return;
+    const from = list.findIndex((e) => e.id === entryId);
+    const to = from + delta;
+    if (from < 0 || to < 0 || to >= list.length) return;
+    const [entry] = list.splice(from, 1);
+    list.splice(to, 0, entry);
+}
+
 function normalizeAudioOutputs(list: AudioOutputConfig[] | undefined): AudioOutputConfig[] | undefined {
     if (!list || list.length === 0) return undefined;
     return list.map((o) => ({
@@ -177,6 +193,9 @@ const playbackSettingsSlice = createSlice({
         setRemoteFalconToken(state, action: PayloadAction<string>) {
             state.settings.viewerControl.remoteFalconToken = action.payload;
         },
+        setMinSongsBetweenRepeats(state, action: PayloadAction<number>) {
+            state.settings.viewerControl.minSongsBetweenRepeats = action.payload;
+        },
         addViewerControlScheduleEntry(state, action: PayloadAction<ViewerControlScheduleEntry>) {
             (state.settings.viewerControl.schedule ??= []).push(action.payload);
         },
@@ -184,6 +203,12 @@ const playbackSettingsSlice = createSlice({
             state.settings.viewerControl.schedule = (state.settings.viewerControl.schedule ?? []).filter(
                 (e) => e.id !== action.payload,
             );
+        },
+        updateViewerControlScheduleEntry(state, action: PayloadAction<ViewerControlScheduleEntry>) {
+            replaceEntry(state.settings.viewerControl.schedule, action.payload);
+        },
+        moveViewerControlScheduleEntry(state, action: PayloadAction<{ entryId: string; delta: number }>) {
+            moveEntry(state.settings.viewerControl.schedule, action.payload.entryId, action.payload.delta);
         },
 
         setSendIdleBlackFrames(state, action: PayloadAction<boolean>) {
@@ -238,6 +263,12 @@ const playbackSettingsSlice = createSlice({
                 (e) => e.id !== action.payload,
             );
         },
+        updateVolumeScheduleEntry(state, action: PayloadAction<VolumeScheduleEntry>) {
+            replaceEntry(state.settings.volumeControl.schedule, action.payload);
+        },
+        moveVolumeScheduleEntry(state, action: PayloadAction<{ entryId: string; delta: number }>) {
+            moveEntry(state.settings.volumeControl.schedule, action.payload.entryId, action.payload.delta);
+        },
 
         /** Desktop: true = system default output with `volumeControl`; false = `audioOutputs`. */
         setUseDefaultAudioOutput(state, action: PayloadAction<boolean>) {
@@ -278,6 +309,14 @@ const playbackSettingsSlice = createSlice({
             if (!entry?.volumeControl.schedule) return;
             entry.volumeControl.schedule = entry.volumeControl.schedule.filter((e) => e.id !== action.payload.entryId);
         },
+        updateAudioOutputScheduleEntry(state, action: PayloadAction<{ id: string; entry: VolumeScheduleEntry }>) {
+            const output = (state.settings.audioOutputs ?? []).find((o) => o.id === action.payload.id);
+            replaceEntry(output?.volumeControl.schedule, action.payload.entry);
+        },
+        moveAudioOutputScheduleEntry(state, action: PayloadAction<{ id: string; entryId: string; delta: number }>) {
+            const output = (state.settings.audioOutputs ?? []).find((o) => o.id === action.payload.id);
+            moveEntry(output?.volumeControl.schedule, action.payload.entryId, action.payload.delta);
+        },
     },
     extraReducers: (builder) => {
         builder
@@ -304,8 +343,11 @@ export const {
     setViewerControlEnabled,
     setViewerControlType,
     setRemoteFalconToken,
+    setMinSongsBetweenRepeats,
     addViewerControlScheduleEntry,
     removeViewerControlScheduleEntry,
+    updateViewerControlScheduleEntry,
+    moveViewerControlScheduleEntry,
     setSendIdleBlackFrames,
     setControllerRefresh,
     setNormalizeNewSongs,
@@ -318,6 +360,8 @@ export const {
     setDefaultVolume,
     addVolumeScheduleEntry,
     removeVolumeScheduleEntry,
+    updateVolumeScheduleEntry,
+    moveVolumeScheduleEntry,
     setUseDefaultAudioOutput,
     addAudioOutput,
     removeAudioOutput,
@@ -325,6 +369,8 @@ export const {
     setAudioOutputVolume,
     addAudioOutputScheduleEntry,
     removeAudioOutputScheduleEntry,
+    updateAudioOutputScheduleEntry,
+    moveAudioOutputScheduleEntry,
 } = playbackSettingsSlice.actions;
 
 export const playbackSettingsActions = playbackSettingsSlice.actions;

@@ -1,4 +1,4 @@
-import { Add, Delete, Visibility, VisibilityOff } from '@mui/icons-material';
+import { Add, Save, Visibility, VisibilityOff } from '@mui/icons-material';
 import {
     Button,
     Chip,
@@ -18,7 +18,7 @@ import {
     TextField,
     Typography,
 } from '@mui/material';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { Select } from '@ezplayer/shared-ui-components';
 import type { ViewerControlBackend, ViewerControlScheduleEntry } from '@ezplayer/ezplayer-core';
@@ -34,6 +34,7 @@ import {
     getDaysDisplayName,
     isValidExtendedTimeFormat,
     isValidTimeFormat,
+    ScheduleEntryActions,
     TimeInput,
 } from './sectionHelpers';
 
@@ -44,6 +45,36 @@ const FRESH_ENTRY: Partial<ViewerControlScheduleEntry> = {
     playlist: '',
 };
 
+/** Whole-number field that commits on blur; empty (or 0) means off and shows as blank. */
+const RepeatSpacingField: React.FC<{
+    value: number;
+    onCommit: (value: number) => void;
+    helperText: string;
+}> = ({ value, onCommit, helperText }) => {
+    const shown = value > 0 ? String(value) : '';
+    const [local, setLocal] = useState(shown);
+    useEffect(() => setLocal(shown), [shown]);
+    return (
+        <TextField
+            size="small"
+            label="Songs between repeats"
+            value={local}
+            placeholder="0 (off)"
+            helperText={helperText}
+            InputLabelProps={{ shrink: true }}
+            inputProps={{ inputMode: 'numeric' }}
+            onChange={(e) => setLocal(e.target.value.replace(/[^0-9]/g, ''))}
+            onBlur={() => {
+                const n = Number(local);
+                const next = local !== '' && Number.isInteger(n) && n > 0 ? n : 0;
+                onCommit(next);
+                setLocal(next > 0 ? String(next) : ''); // normalizes "007" and "00"
+            }}
+            sx={{ mb: 3, maxWidth: 480 }}
+        />
+    );
+};
+
 export const ViewerSettings: React.FC = () => {
     const dispatch = useDispatch<AppDispatch>();
     const settings = useSelector((s: RootState) => s.playbackSettings.settings);
@@ -51,6 +82,8 @@ export const ViewerSettings: React.FC = () => {
 
     const [addOpen, setAddOpen] = useState(false);
     const [newEntry, setNewEntry] = useState<Partial<ViewerControlScheduleEntry>>(FRESH_ENTRY);
+    /** Id of the entry the dialog is editing; null when adding. */
+    const [editingId, setEditingId] = useState<string | null>(null);
     const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
     const [showRemoteFalconToken, setShowRemoteFalconToken] = useState(false);
 
@@ -66,6 +99,13 @@ export const ViewerSettings: React.FC = () => {
 
     const openAdd = () => {
         setNewEntry(FRESH_ENTRY);
+        setEditingId(null);
+        setAddOpen(true);
+    };
+
+    const openEdit = (entry: ViewerControlScheduleEntry) => {
+        setNewEntry(entry);
+        setEditingId(entry.id);
         setAddOpen(true);
     };
 
@@ -79,13 +119,17 @@ export const ViewerSettings: React.FC = () => {
             isValidExtendedTimeFormat(newEntry.endTime)
         ) {
             const entry: ViewerControlScheduleEntry = {
-                id: generateId(),
+                id: editingId ?? generateId(),
                 days: newEntry.days,
                 startTime: formatTime24Hour(newEntry.startTime),
                 endTime: formatTime24Hour(newEntry.endTime),
                 playlist: newEntry.playlist,
             };
-            dispatch(playbackSettingsActions.addViewerControlScheduleEntry(entry));
+            dispatch(
+                editingId
+                    ? playbackSettingsActions.updateViewerControlScheduleEntry(entry)
+                    : playbackSettingsActions.addViewerControlScheduleEntry(entry),
+            );
             setNewEntry(FRESH_ENTRY);
             setAddOpen(false);
         }
@@ -176,7 +220,7 @@ export const ViewerSettings: React.FC = () => {
                             <List dense>
                                 {(settings.viewerControl?.schedule ?? []).map((entry, index) => (
                                     <React.Fragment key={entry.id}>
-                                        <ListItem>
+                                        <ListItem sx={{ pr: 20 }}>
                                             <ListItemText
                                                 primary={
                                                     <Box
@@ -197,17 +241,23 @@ export const ViewerSettings: React.FC = () => {
                                                         </Typography>
                                                     </Box>
                                                 }
-                                                secondary={`Priority: ${(settings.viewerControl?.schedule?.length ?? 0) - index}`}
+                                                secondary={`Priority: ${index + 1}`}
                                             />
                                             <ListItemSecondaryAction>
-                                                <IconButton
-                                                    edge="end"
-                                                    onClick={() => setPendingDeleteId(entry.id)}
-                                                    size="small"
-                                                    color="error"
-                                                >
-                                                    <Delete />
-                                                </IconButton>
+                                                <ScheduleEntryActions
+                                                    index={index}
+                                                    count={settings.viewerControl?.schedule?.length ?? 0}
+                                                    onEdit={() => openEdit(entry)}
+                                                    onMove={(delta) =>
+                                                        dispatch(
+                                                            playbackSettingsActions.moveViewerControlScheduleEntry({
+                                                                entryId: entry.id,
+                                                                delta,
+                                                            }),
+                                                        )
+                                                    }
+                                                    onDelete={() => setPendingDeleteId(entry.id)}
+                                                />
                                             </ListItemSecondaryAction>
                                         </ListItem>
                                         {index < (settings.viewerControl?.schedule?.length ?? 0) - 1 && <Divider />}
@@ -223,9 +273,17 @@ export const ViewerSettings: React.FC = () => {
                 </Box>
             )}
 
+            {showSchedule && (
+                <RepeatSpacingField
+                    value={settings.viewerControl.minSongsBetweenRepeats ?? 0}
+                    onCommit={(n) => dispatch(playbackSettingsActions.setMinSongsBetweenRepeats(n))}
+                    helperText="Viewer picks of a song that is playing, up next, already requested, or among this many recent songs are skipped, and playlists pass over a song a viewer just played. Leave blank for off."
+                />
+            )}
+
             <Dialog open={addOpen} onClose={() => setAddOpen(false)}>
                 <DialogTitle>
-                    <Typography variant="h5">Add Schedule Entry</Typography>
+                    <Typography variant="h5">{editingId ? 'Edit' : 'Add'} Schedule Entry</Typography>
                 </DialogTitle>
                 <DialogContent>
                     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1, minWidth: '500px' }}>
@@ -311,12 +369,12 @@ export const ViewerSettings: React.FC = () => {
                             </Button>
                             <Button
                                 variant="contained"
-                                startIcon={<Add />}
+                                startIcon={editingId ? <Save /> : <Add />}
                                 onClick={submitAdd}
                                 disabled={!isAddValid}
                                 sx={{ minWidth: 140 }}
                             >
-                                Add Schedule Entry
+                                {editingId ? 'Save' : 'Add Schedule Entry'}
                             </Button>
                         </Box>
                     </Box>

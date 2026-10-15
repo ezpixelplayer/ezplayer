@@ -10,7 +10,7 @@
     },
     "private": true,
     "license": "AGPL-3.0",
-    "version": "0.6.10-pi.1",
+    "version": "0.6.11-pi.1",
     "main": "dist/main.js",
     "type": "module",
     "build": {
@@ -152,7 +152,7 @@
         "@types/react": "catalog:",
         "@types/react-dom": "catalog:",
         "@vitejs/plugin-react": "catalog:",
-        "concurrently": "^10.0.4",
+        "concurrently": "^10.0.6",
         "dmg-builder": "^26.15.4",
         "electron": "^41.10.5",
         "electron-builder": "^26.15.4",
@@ -214,7 +214,7 @@
         "react-toastify": "catalog:",
         "uuid": "catalog:",
         "ws": "^8.21.0",
-        "xllayoutcalcs": "file:..\\..\\libs\\xllayoutcalcs-0.4.0-dev.2.tgz",
+        "xllayoutcalcs": "file:..\\..\\libs\\xllayoutcalcs-0.4.0-dev.4.tgz",
         "zstd-codec": "^0.1.5",
         "zstddec": "^0.1.0"
     }

@@ -42,6 +42,9 @@ const { contextBridge, ipcRenderer } = require('electron');
 const launchArgs: string[] = Array.isArray(process.argv) ? process.argv : [];
 const shouldShowWelcomeOnLaunch = launchArgs.includes('--show-welcome=true');
 
+// Main's hang check: a renderer whose main thread is stuck stops answering.
+ipcRenderer.on('ezp:ping', (_event: IpcRendererEvent, seq: number) => ipcRenderer.send('ezp:pong', seq));
+
 contextBridge.exposeInMainWorld('electronAPI', {
     piAvailable: (): Promise<boolean> => ipcRenderer.invoke('pi:available'),
     piRequest: (request: Record<string, unknown>): Promise<unknown> => ipcRenderer.invoke('pi:request', request),
@@ -146,6 +149,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
     reportRendererError(message: string, stack?: string): Promise<void> {
         return ipcRenderer.invoke('ipcReportRendererError', message, stack);
+    },
+    rendererReady(): void {
+        ipcRenderer.send('ezp:renderer-ready');
     },
     setZoomFactor(factor: number): Promise<void> {
         return ipcRenderer.invoke('ipcSetZoomFactor', factor);

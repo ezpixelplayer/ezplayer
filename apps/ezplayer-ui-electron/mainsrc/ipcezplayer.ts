@@ -38,6 +38,7 @@ import {
     getViewerStatsSummary,
     publishViewerStats,
     recordLocalViewerPick,
+    recordLocalViewerPickDropped,
     setViewerStatsBroadcaster,
 } from './viewerStatsSync.js';
 import { atomicWriteFile } from './data/atomicWrite.js';
@@ -81,6 +82,7 @@ import type {
     PlayerNStatusContent,
     UIConnectSnapshot,
     FullPlayerState,
+    PlaybackItemOrder,
     PlaybackSettings,
     PlaylistRecord,
     ScheduledPlaylist,
@@ -452,6 +454,11 @@ export function isScheduleActive(): boolean {
     if (!player || player.status !== 'Playing') return false;
     const nowPlaying = player.now_playing;
     return !!(nowPlaying && nowPlaying.type === 'Scheduled');
+}
+
+/** The baked song order of a playback item, from the worker that holds it. */
+export async function getPlaybackItemOrder(key: string): Promise<PlaybackItemOrder | undefined> {
+    return await rpcc?.call('getPlaybackItemOrder', { key });
 }
 
 /**
@@ -1393,6 +1400,10 @@ export async function registerContentHandlers(mainWindow: BrowserWindow | null, 
             }
             case 'viewerPick': {
                 recordLocalViewerPick(msg);
+                break;
+            }
+            case 'viewerPickDropped': {
+                recordLocalViewerPickDropped(msg);
                 break;
             }
             case 'nstatus': {

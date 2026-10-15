@@ -19,6 +19,7 @@ export { SongSaveProgress, describeSongSave, saveErrorMessage } from './componen
 export { DeleteSongDialog } from './components/song/DeleteSongDialog';
 export { ControlButton } from './components/player/ControlButton';
 export { PlaybackControls } from './components/player/PlaybackControls';
+export { PlaybackDetailDialog } from './components/player/PlaybackDetailDialog';
 export { PlayerScreen } from './components/player/PlayerScreen';
 export { JukeboxArea, JukeboxFullScreen, JukeboxScreen } from './components/jukebox/JukeboxScreen';
 export { ShowStatusScreen } from './components/status/ShowStatusScreen';
@@ -172,6 +173,7 @@ export { initI18N } from './i18n/i18n';
 export { getImageUrl, useImageUrl } from './util/imageUtils';
 export { ApiBaseProvider, useApiBase } from './util/ApiBaseProvider';
 export { UiVersionProvider, useUiVersion } from './util/UiVersionProvider';
+export { setUiErrorReporter, reportUiError } from './util/uiErrorReporter';
 
 export { useFrameBuffer } from './hooks/useFrameBuffer';
 export type { UseFrameBufferOptions, UseFrameBufferResult } from './hooks/useFrameBuffer';

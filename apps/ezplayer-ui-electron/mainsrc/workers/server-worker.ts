@@ -27,7 +27,7 @@ import type {
     ScheduledPlaylist,
     SequenceRecord,
 } from '@ezplayer/ezplayer-core';
-import { LatestFrameRingBuffer, AudioChunkRingBuffer } from '@ezplayer/ezplayer-core';
+import { LatestFrameRingBuffer, AudioChunkRingBuffer, isSupportBundleLevel } from '@ezplayer/ezplayer-core';
 import type { AudioBridgeControlMessage, CloudAudioMode } from '@ezplayer/ezplayer-core';
 import { AudioStreamEncoder } from './audio-stream-encoder.js';
 import { BufferPool } from '@ezplayer/epp';
@@ -67,6 +67,7 @@ import { registerPiApiRoutes } from './pi-api.js';
 import { requestPi } from '../pi-client.js';
 import { ViewObject, LayoutSettings, type MhFixtureInfo } from './playbacktypes.js';
 import { trustSystemCAs } from '../trustSystemCAs.js';
+import { throwLater } from '../faultinject.js';
 
 // Trust the OS cert store before this worker's TLS (cloud WS bridge).
 trustSystemCAs();
@@ -151,6 +152,7 @@ class MainThreadRPC {
     // own cap (~120s), so it gets a longer leash.
     private static readonly TIMEOUT_MS: Partial<Record<keyof ServerWorkerRPCAPI, number>> = {
         controllerCommand: 130_000,
+        buildSupportBundle: 120_000,
     };
 
     call<K extends keyof ServerWorkerRPCAPI>(
@@ -200,6 +202,7 @@ class MainThreadRPC {
 }
 
 const rpc = new MainThreadRPC();
+throwLater('server-worker-throw', 3000);
 
 const wsBroadcaster = new WebSocketBroadcaster();
 
@@ -1568,6 +1571,27 @@ async function startServer(config: ServerWorkerData) {
     });
 
     // ----------------------------------------------
+    // API: GET /api/ezp/playback-item/:key — the baked song order of a loaded
+    // playback item (a shuffled show's order exists only in the engine). Asked
+    // for on demand by the detailed playback view; too big to ride the status.
+    // ----------------------------------------------
+    router.get('/api/ezp/playback-item/:key', async (ctx) => {
+        try {
+            const order = await rpc.call('getPlaybackItemOrder', ctx.params.key as string);
+            if (!order) {
+                ctx.status = 404;
+                ctx.body = { error: 'No such playback item' };
+                return;
+            }
+            ctx.body = order;
+        } catch (error) {
+            console.error('[server-worker] Error reading playback item:', error);
+            ctx.status = 500;
+            ctx.body = { error: 'Internal server error' };
+        }
+    });
+
+    // ----------------------------------------------
     // API: GET /api/ezp/current-show (local cache read)
     // ----------------------------------------------
     router.get('/api/ezp/current-show', async (ctx) => {
@@ -1969,6 +1993,19 @@ async function startServer(config: ServerWorkerData) {
                 networkPolicies: [],
             },
         isIpAllowed: proxyTargetAllowed,
+    });
+    // Support zip; web app only, like the routes above. ?level= picks what it holds.
+    scanRouter.get('/api/ezp/support/logs.zip', async (ctx) => {
+        const level = ctx.query.level ?? 'logs';
+        if (!isSupportBundleLevel(level)) {
+            ctx.status = 400;
+            ctx.body = 'level must be logs, setup, or layout';
+            return;
+        }
+        const { name, data } = await rpc.call('buildSupportBundle', level);
+        ctx.set('Content-Disposition', `attachment; filename="${name}"`);
+        ctx.type = 'application/zip';
+        ctx.body = Buffer.from(data.buffer, data.byteOffset, data.byteLength);
     });
     webApp.use(scanRouter.routes());
     webApp.use(scanRouter.allowedMethods());
