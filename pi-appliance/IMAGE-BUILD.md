@@ -16,7 +16,7 @@ player identity. Each physical Pi generates its own identity on first boot.
 Default Ethernet is EZRGB Mode. The optional physical reset service is disabled.
 
 The image artifact contains the configured test login (`ezplayer` / `Ezplayer1`), checksum and build metadata.
-SSH is off by default. This first build is for private hardware validation; a
+SSH is enabled by default using the configured test account. This first build is for private hardware validation; a
 customer first-boot password provisioning flow is not yet implemented.
 
 ## Native build

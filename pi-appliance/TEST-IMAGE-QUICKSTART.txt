@@ -31,9 +31,8 @@ TEST LOGIN
 TEST-LOGIN.txt records the configured login for this image:
 Username: ezplayer
 Password: Ezplayer1
-SSH is disabled by default. For SSH testing, open a local Pi terminal and run:
-sudo ssh-keygen -A
-sudo systemctl enable --now ssh
+SSH is enabled by default. From another computer on the same network, connect:
+ssh ezplayer@PLAYER-IP
 Use Ezplayer1 when sudo or SSH asks for the account password.
 
 LIMITS

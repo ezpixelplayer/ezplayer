@@ -38,7 +38,7 @@ TARGET_HOSTNAME=EZPlayer
 FIRST_USER_NAME=ezplayer
 FIRST_USER_PASS=$password
 DISABLE_FIRST_BOOT_USER_RENAME=1
-ENABLE_SSH=0
+ENABLE_SSH=1
 PASSWORDLESS_SUDO=0
 WPA_COUNTRY=US
 TIMEZONE_DEFAULT=America/New_York
@@ -50,7 +50,7 @@ COMPRESSION_LEVEL=3
 STAGE_LIST="stage0 stage1 stage2 stage3 stage4 stage-ezplayer"
 CONF
 touch "$workspace/pi-gen/stage2/SKIP_IMAGES" "$workspace/pi-gen/stage4/SKIP_IMAGES"
-printf 'Private hardware-test login\nUsername: ezplayer\nPassword: %s\nSSH is disabled by default. This is the configured hardware-test account password.\n' "$password" > "$output/TEST-LOGIN.txt"
+printf 'Private hardware-test login\nUsername: ezplayer\nPassword: %s\nSSH is enabled by default. This is the configured hardware-test account password.\n' "$password" > "$output/TEST-LOGIN.txt"
 unset password
 umask 022
 export EZPLAYER_RECLAIM_PREVIOUS=1
