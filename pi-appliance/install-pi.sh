@@ -18,7 +18,7 @@ player_user=${2:?Supply the existing desktop username}
 wifi_country=${3:-US}
 [[ $wifi_country =~ ^[A-Z]{2}$ ]] || { echo 'Supply a two-letter Wi-Fi country'; exit 1; }
 script_dir=$(cd -- "$(dirname -- "$0")" && pwd)
-for source in pi_service.py pi_hotspot.py pi_clock.py initialize_show.py setup_portal.py ezplayer-pi.service ezplayer-setup-portal.service ezplayer-desktop.service start-desktop.sh ezplayer-autostart.desktop; do
+for source in pi_service.py pi_hotspot.py pi_clock.py initialize_show.py prepare_player_start.py setup_portal.py ezplayer-pi.service ezplayer-setup-portal.service ezplayer-desktop.service start-desktop.sh ezplayer-autostart.desktop; do
     [[ -s "$script_dir/$source" ]] || { echo "Missing or empty integration file: $source" >&2; exit 1; }
 done
 apt-get update
@@ -38,6 +38,7 @@ id -u "$player_user" > /etc/ezplayer-pi-player-uid
 systemctl unmask ezplayer-pi.service ezplayer-setup-portal.service
 systemctl --global unmask ezplayer-desktop.service
 install -D -o root -g root -m 0644 "$script_dir/initialize_show.py" /usr/local/lib/ezplayer-pi/initialize_show.py
+install -D -o root -g root -m 0644 "$script_dir/prepare_player_start.py" /usr/local/lib/ezplayer-pi/prepare_player_start.py
 install -D -o root -g root -m 0755 "$script_dir/pi_service.py" /usr/local/lib/ezplayer-pi/pi_service.py
 install -D -o root -g root -m 0644 "$script_dir/pi_hotspot.py" /usr/local/lib/ezplayer-pi/pi_hotspot.py
 install -D -o root -g root -m 0644 "$script_dir/pi_clock.py" /usr/local/lib/ezplayer-pi/pi_clock.py
