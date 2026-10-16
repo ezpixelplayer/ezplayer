@@ -19,6 +19,14 @@ EZPLAYER FIRST HARDWARE TEST IMAGE
 9. Test both 2.4 and 5 GHz, idle overnight, reboot, audio and USB audio, time,
    portal password changes, manual/DHCP settings, uploads, and registration.
 
+THIS TEST CANDIDATE
+- Forces HDMI-A-2 to 1280x720 at 60 Hz so the desktop can start with HDMI unplugged.
+- Checks for a running player before removing an empty orphaned show-lock directory.
+- Compresses the 3D/2D preview coordinate JSON at the web proxy.
+These fixes passed tests on the existing Pi; verify again on this freshly flashed card.
+Test controllers powered on after playback starts, and confirm no obsolete FPP proxy
+remains in your uploaded layout. Such user layout settings are not baked into the image.
+
 TEST LOGIN
 TEST-LOGIN.txt records the configured login for this image:
 Username: ezplayer

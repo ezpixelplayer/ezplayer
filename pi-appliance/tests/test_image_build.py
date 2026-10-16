@@ -2,6 +2,7 @@
 import importlib.util,json,os,pathlib,shutil,subprocess,tempfile,unittest
 ROOT=pathlib.Path(__file__).parents[2]
 spec=importlib.util.spec_from_file_location('image_initialize',ROOT/'pi-appliance/initialize_show.py');initializer=importlib.util.module_from_spec(spec);spec.loader.exec_module(initializer)
+display_spec=importlib.util.spec_from_file_location('boot_display',ROOT/'pi-appliance/configure_boot_display.py');display=importlib.util.module_from_spec(display_spec);display_spec.loader.exec_module(display)
 class ImageStaging(unittest.TestCase):
  @unittest.skipUnless(shutil.which('dpkg-deb'),'dpkg-deb required')
  def test_stage_contains_matching_network_stack_and_firstboot(self):
@@ -19,6 +20,7 @@ class ImageStaging(unittest.TestCase):
    # pi-gen executes the substage as a child process without exporting
    # SUB_STAGE_DIR. Exercise that boundary, mocking only architecture/chroot.
    rootfs=tmp/'rootfs';rootfs.mkdir();commands=tmp/'chroot-commands'
+   cmdline=rootfs/'boot/firmware/cmdline.txt';cmdline.parent.mkdir(parents=True);cmdline.write_text('console=tty1 root=ROOTDEV rootwait\n')
    env=os.environ.copy();env.pop('SUB_STAGE_DIR',None)
    env.update(ROOTFS_DIR=str(rootfs),FIRST_USER_NAME='ezplayer',WPA_COUNTRY='US',COMMAND_CAPTURE=str(commands))
    runner='''
@@ -40,6 +42,18 @@ export -f uname on_chroot
    self.assertIn('/opt/ezplayer-image-build/install-pi.sh /opt/ezplayer-image-build/ezplayer-pi.deb',commands.read_text())
    self.assertIn('network/install-image.sh "US" "ezplayer"',commands.read_text())
    self.assertFalse((rootfs/'opt/ezplayer-image-build').exists())
+   self.assertEqual(cmdline.read_text(),'console=tty1 root=ROOTDEV rootwait video=HDMI-A-2:1280x720@60D\n')
+ def test_display_mode_preserves_boot_parameters_and_is_idempotent(self):
+  with tempfile.TemporaryDirectory() as tmp:
+   p=pathlib.Path(tmp)/'cmdline.txt';p.write_text('root=PARTUUID=test-02 rootwait video=HDMI-A-1:1920x1080@60 video=HDMI-A-2:800x600@60\n')
+   display.configure(p);first=p.read_text();display.configure(p)
+   self.assertEqual(p.read_text(),first);self.assertIn('root=PARTUUID=test-02 rootwait',first)
+   self.assertIn('video=HDMI-A-1:1920x1080@60',first);self.assertEqual(first.count('video=HDMI-A-2:'),1)
+ def test_display_refuses_invalid_multiline_boot_configuration(self):
+  with tempfile.TemporaryDirectory() as tmp:
+   p=pathlib.Path(tmp)/'cmdline.txt';original='root=PARTUUID=test-02\nrootwait\n';p.write_text(original)
+   with self.assertRaises(ValueError):display.configure(p)
+   self.assertEqual(p.read_text(),original)
  def test_device_identities_are_generated_independently_and_survive_reboot(self):
   with tempfile.TemporaryDirectory() as tmp:
    homes=[pathlib.Path(tmp)/'pi1',pathlib.Path(tmp)/'pi2'];tokens=[]
