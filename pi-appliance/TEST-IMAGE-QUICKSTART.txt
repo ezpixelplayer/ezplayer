@@ -24,8 +24,9 @@ THIS TEST CANDIDATE
 - Checks for a running player before removing an empty orphaned show-lock directory.
 - Compresses the 3D/2D preview coordinate JSON at the web proxy.
 These fixes passed tests on the existing Pi; verify again on this freshly flashed card.
-Test controllers powered on after playback starts, and confirm no obsolete FPP proxy
-remains in your uploaded layout. Such user layout settings are not baked into the image.
+Test controllers powered on after playback starts. The Pi appliance ignores FPP
+proxy settings for playback and controller reachability checks, sending directly
+to each controller address. Imported layout files remain unchanged.
 
 TEST LOGIN
 TEST-LOGIN.txt records the configured login for this image:

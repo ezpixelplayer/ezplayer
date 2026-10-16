@@ -14,6 +14,7 @@ import type {
 } from './playbacktypes';
 import { RPCClient, RPCServer } from './rpc';
 import { ClockConverter } from '../../sharedsrc/ClockConverter';
+import { useDirectPiControllerOutput } from './pi-controller-output';
 
 import type {
     SequenceRecord,
@@ -2566,6 +2567,14 @@ async function processQueue() {
                   // Surface library-side skips in the warning log, not console.
                   logger: (msg) => emitWarning(msg),
               });
+
+        const ignoredProxies = useDirectPiControllerOutput(
+            controllers,
+            process.env.EZPLAYER_PI_APPLIANCE === '1',
+        );
+        if (ignoredProxies) {
+            emitInfo(`Pi controller output: ignoring ${ignoredProxies} FPP proxy setting(s); sending directly to controller addresses`);
+        }
 
         // Per-controller max-FPS overrides from our records in the show folder
         const fpsOverrides = await readControllerFpsOverrides(showFolder!);
