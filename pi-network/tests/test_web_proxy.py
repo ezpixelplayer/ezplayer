@@ -1,13 +1,16 @@
 """Optional integration test: NGINX_BINARY=/path/to/nginx python3 tests/test_web_proxy.py.
 Runs an isolated nginx against mock player and real portal handlers. No Pi required.
 """
-import base64,hashlib,http.client,http.server,importlib.util,json,os,pathlib,socket,subprocess,tempfile,threading,time,unittest
+import base64,gzip,hashlib,http.client,http.server,importlib.util,json,os,pathlib,socket,subprocess,tempfile,threading,time,unittest
 from unittest.mock import patch
 ROOT=pathlib.Path(__file__).parents[1]
 spec=importlib.util.spec_from_file_location('proxy_service',ROOT/'network_service.py');s=importlib.util.module_from_spec(spec);spec.loader.exec_module(s)
 class Player(http.server.BaseHTTPRequestHandler):
  def log_message(self,*args):pass
  def do_GET(self):
+  if self.path in ['/api/ezp/model-coordinates','/api/ezp/model-coordinates-2d']:
+   body=json.dumps({'points':[[i,i+1,i+2] for i in range(10000)]}).encode()
+   self.send_response(200);self.send_header('Content-Type','application/json');self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body);return
   if self.path=='/ws':
    key=base64.b64encode(hashlib.sha1((self.headers['Sec-WebSocket-Key']+'258EAFA5-E914-47DA-95CA-C5AB0DC85B11').encode()).digest()).decode()
    self.send_response(101);self.send_header('Upgrade','websocket');self.send_header('Connection','Upgrade');self.send_header('Sec-WebSocket-Accept',key);self.end_headers();self.wfile.write(b'\x81\x04live');self.wfile.flush();return
@@ -50,6 +53,13 @@ class Routing(unittest.TestCase):
    code,body,_=self.request(path);self.assertEqual(code,200);self.assertEqual(body,('player:'+path).encode())
  def test_large_player_upload(self):
   code,body,_=self.request('/api/ezp/upload','POST',b'x'*(2*1024*1024));self.assertEqual(code,200);self.assertEqual(body,b'2097152')
+ def test_coordinate_compression_preserves_payload_and_is_negotiated(self):
+  for path in ['/api/ezp/model-coordinates','/api/ezp/model-coordinates-2d']:
+   code,original,headers=self.request(path);self.assertEqual(code,200);self.assertNotIn('Content-Encoding',headers)
+   code,compressed,headers=self.request(path,headers={'Accept-Encoding':'gzip'})
+   self.assertEqual(code,200);self.assertEqual(headers.get('Content-Encoding'),'gzip')
+   self.assertIn('Accept-Encoding',headers.get('Vary',''))
+   self.assertEqual(gzip.decompress(compressed),original);self.assertLess(len(compressed),len(original))
  def test_setup_and_spoofed_loopback_header(self):
   code,body,headers=self.request('/setup');self.assertEqual(code,200);self.assertIn(b'Home Wi-Fi',body);self.assertIn(b'data:image/png;base64,',body);self.assertIn("img-src 'self' data:",headers['Content-Security-Policy'])
   self.assertEqual(self.request('/api/network/status',headers={'X-EZPlayer-Client-IP':'127.0.0.1'})[0],200)
