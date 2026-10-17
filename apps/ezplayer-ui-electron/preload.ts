@@ -46,6 +46,8 @@ const shouldShowWelcomeOnLaunch = launchArgs.includes('--show-welcome=true');
 ipcRenderer.on('ezp:ping', (_event: IpcRendererEvent, seq: number) => ipcRenderer.send('ezp:pong', seq));
 
 contextBridge.exposeInMainWorld('electronAPI', {
+    piAvailable: (): Promise<boolean> => ipcRenderer.invoke('pi:available'),
+    piRequest: (request: Record<string, unknown>): Promise<unknown> => ipcRenderer.invoke('pi:request', request),
     shouldShowWelcomeOnLaunch: () => shouldShowWelcomeOnLaunch,
     selectFiles: (options?: FileSelectOptions) => ipcRenderer.invoke('dialog:openFile', options),
     autoDetectSongFilesFromFseq: (fseqPath: string) => ipcRenderer.invoke('ipcAutoDetectSongFilesFromFseq', fseqPath),

@@ -20,7 +20,30 @@ import type {
     BatchImportSuccess,
     BatchImportSummary,
 } from '@ezplayer/ezplayer-core';
+import { isSupportedAudioName } from '@ezplayer/ezplayer-core';
 import type { RootState } from '../..';
+
+/** Count each saved file once. MP4 is shown as video; other song audio formats as audio. */
+export function uploadedFileRows(files: string[]): { label: string; count: number }[] {
+    const counts = new Map<string, number>();
+    for (const name of files) {
+        const ext = name.slice(name.lastIndexOf('.')).toLowerCase();
+        const label =
+            ext === '.fseq'
+                ? 'Sequences'
+                : ['.mp4', '.mkv', '.avi', '.mov', '.mpg', '.mpeg'].includes(ext)
+                  ? 'Video files'
+                  : isSupportedAudioName(name)
+                    ? 'Audio files'
+                    : ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'].includes(ext)
+                      ? 'Artwork files'
+                      : 'Other files';
+        counts.set(label, (counts.get(label) ?? 0) + 1);
+    }
+    return ['Sequences', 'Audio files', 'Video files', 'Artwork files', 'Other files']
+        .filter((label) => counts.has(label))
+        .map((label) => ({ label, count: counts.get(label)! }));
+}
 
 export interface BulkImportSummaryDialogProps {
     open: boolean;
@@ -54,14 +77,32 @@ export function BulkImportSummaryDialog({
     return (
         <Dialog open={open} onClose={choosingMediaFolder ? undefined : onClose} maxWidth="sm" fullWidth>
             <DialogTitle>
-                <Typography variant="h5">Bulk Import Summary</Typography>
+                <Typography variant="h5">{summary.uploadedFiles ? 'Upload Summary' : 'Bulk Import Summary'}</Typography>
             </DialogTitle>
             <Divider />
             <DialogContent>
-                <Typography sx={{ mb: 1 }}>
-                    Imported <strong>{summary.imported}</strong> of <strong>{summary.total}</strong> sequence
-                    {summary.total === 1 ? '' : 's'}.
-                </Typography>
+                {uploadedFileRows(summary.uploadedFiles ?? []).map(({ label, count }) => (
+                    <Typography key={label} sx={{ mb: 1 }}>
+                        {label}: uploaded <strong>{count}</strong> of <strong>{count}</strong> successfully.
+                    </Typography>
+                ))}
+                {summary.total > 0 && (
+                    <Typography sx={{ mb: 1 }}>
+                        Imported <strong>{summary.imported}</strong> of <strong>{summary.total}</strong> sequence
+                        {summary.total === 1 ? '' : 's'} into the song list.
+                    </Typography>
+                )}
+                {summary.successes.some((s) => !s.mediaFound) && (
+                    <Alert severity="info" sx={{ mb: 2 }}>
+                        Sequences without audio were saved. Upload matching audio later, or use Edit Song to choose it.
+                        Animations can play without audio.
+                    </Alert>
+                )}
+                {summary.total === 0 && summary.failed === 0 && (
+                    <Alert severity="success" sx={{ mb: 2 }}>
+                        Files uploaded. Choose them with “On player” when adding or editing a song.
+                    </Alert>
+                )}
                 {summary.failed > 0 && (
                     <Typography color="error" sx={{ mb: 1 }}>
                         Failed: {summary.failed}

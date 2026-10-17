@@ -1,0 +1,14 @@
+[Unit]
+Description=Follow home Wi-Fi route for EZPlayer restricted gateway
+Requires=ezplayer-gateway.service
+After=ezplayer-gateway.service
+PartOf=ezplayer-gateway.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/ezplayer-network/hotspot_gateway.py watch
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

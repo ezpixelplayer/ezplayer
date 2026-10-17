@@ -79,6 +79,7 @@ import type {
     CloudPlayerSettings,
     CloudPollScheduleEntry,
     CombinedPlayerStatus,
+    PlayerNStatusContent,
     UIConnectSnapshot,
     FullPlayerState,
     PlaybackItemOrder,
@@ -89,6 +90,7 @@ import type {
 } from '@ezplayer/ezplayer-core';
 
 import { FSEQReaderAsync } from '@ezplayer/epp';
+import { copyPiSongFiles } from './data/pi-import-files.js';
 
 import {
     CLOUD_API_ENDPOINTS,
@@ -126,7 +128,7 @@ import {
     hasRunningControllerOps,
     setKnownControllers,
 } from './controller-ops.js';
-import type { ControllerCommand, PlayerNStatusContent } from '@ezplayer/ezplayer-core';
+import type { ControllerCommand } from '@ezplayer/ezplayer-core';
 import {
     updateFrameBuffer,
     updateAudioBuffer,
@@ -210,7 +212,7 @@ const ALIVE_REFRESH_GAP_MS = 60_000;
  * show starting drops whatever is still queued.  A controller that comes back
  * is a single read, allowed mid-show when the recovery setting asks for it.
  */
-function refreshControllersNowAlive(status: PlayerNStatusContent): void {
+function _refreshControllersNowAlive(status: PlayerNStatusContent): void {
     const refresh = getSettingsCache()?.controllerRefresh;
     // Unset means on: reading controllers as they appear is the helpful default.
     const whenIdle = refresh?.whenIdle !== false;
@@ -449,8 +451,7 @@ export function getSequenceThumbnail(id: string) {
 
 export function isScheduleActive(): boolean {
     const player = curStatus.player;
-    // A graceful stop is still playing until its song and outro finish.
-    if (!player || (player.status !== 'Playing' && player.status !== 'Stopping')) return false;
+    if (!player || player.status !== 'Playing') return false;
     const nowPlaying = player.now_playing;
     return !!(nowPlaying && nowPlaying.type === 'Scheduled');
 }
@@ -652,7 +653,10 @@ function queueInstallCommit(record: SequenceRecord): void {
 
 /** Sequence upsert shared by the renderer IPC and the server-worker RPC.
  *  API clients may send show-relative file names and omit ids. */
-export async function putSequencesWithDurations(recs: SequenceRecord[]): Promise<SequenceRecord[]> {
+export async function putSequencesWithDurations(
+    recs: SequenceRecord[],
+    localImport = false,
+): Promise<SequenceRecord[]> {
     const showFolder = getCurrentShowFolder();
     const uppl = recs.map((r) => {
         return { ...r, updatedAt: Date.now() };
@@ -665,10 +669,13 @@ export async function putSequencesWithDurations(recs: SequenceRecord[]): Promise
             ups.work = { title: base, artist: '', length: 0 };
         }
         if (ups.files && showFolder) {
-            for (const key of ['fseq', 'audio', 'thumb'] as const) {
+            for (const key of ['fseq', 'audio', 'video', 'thumb'] as const) {
                 const p = ups.files[key];
                 if (p && !path.isAbsolute(p)) ups.files[key] = path.join(showFolder, p);
             }
+        }
+        if (localImport && process.env.EZPLAYER_PI_APPLIANCE === '1' && ups.files && showFolder && !ups.deleted) {
+            ups.files = await copyPiSongFiles(showFolder, ups.files);
         }
         // Pin the normalization choice: new local songs take the setting default,
         // edits that omit it keep the record's value. Cloud songs arrive normalized.
@@ -1144,9 +1151,7 @@ export async function registerContentHandlers(mainWindow: BrowserWindow | null, 
         return Promise.resolve(curSequences);
     });
     ipcMain.handle('ipcPutCloudSequences', async (_event, recs: SequenceRecord[]): Promise<SequenceRecord[]> => {
-        // TODO Cloud sync if that makes sense...
-        // TODO calculate any effect on the schedule
-        return await putSequencesWithDurations(recs);
+        return await putSequencesWithDurations(recs, true);
     });
 
     ipcMain.handle('ipcAutoDetectSongFilesFromFseq', async (_event, fseqPath: string) => {
@@ -1164,7 +1169,7 @@ export async function registerContentHandlers(mainWindow: BrowserWindow | null, 
             normalize: getSettingsCache()?.normalizeNewSongs,
             onProgress: (p) => safeSend(updateWindow, 'update:batchImportProgress', p),
             existingSequences: curSequences,
-            putSequences: putSequencesWithDurations,
+            putSequences: (records) => putSequencesWithDurations(records, true),
         });
     });
     ipcMain.handle('ipcBatchImportSequencesFromFolder', async (_event, folderPath: string) => {
@@ -1175,7 +1180,7 @@ export async function registerContentHandlers(mainWindow: BrowserWindow | null, 
             normalize: getSettingsCache()?.normalizeNewSongs,
             onProgress: (p) => safeSend(updateWindow, 'update:batchImportProgress', p),
             existingSequences: curSequences,
-            putSequences: putSequencesWithDurations,
+            putSequences: (records) => putSequencesWithDurations(records, true),
         });
     });
 
@@ -1408,7 +1413,6 @@ export async function registerContentHandlers(mainWindow: BrowserWindow | null, 
                 curStatus = { ...curStatus, controller: merged, controller_updated: Date.now() };
                 safeSend(mainWindow, 'playback:nstatus', merged);
                 broadcastToWebSocket('nStatus', merged);
-                refreshControllersNowAlive(msg.status);
                 break;
             }
             case 'pstatus': {

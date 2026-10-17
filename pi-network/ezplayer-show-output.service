@@ -1,0 +1,15 @@
+[Unit]
+Description=EZPlayer Ethernet-only DDP and sACN show output
+After=NetworkManager.service nftables.service
+Before=display-manager.service
+Wants=NetworkManager.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/ezplayer-network/show_output.py apply
+ExecReload=/usr/bin/python3 /opt/ezplayer-network/show_output.py apply
+RemainAfterExit=yes
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
