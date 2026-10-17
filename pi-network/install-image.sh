@@ -10,6 +10,8 @@ apt-get update
 apt-get install -y network-manager hostapd dnsmasq-base iw rfkill python3-gpiozero python3-lgpio avahi-daemon nginx curl nftables tcpdump
 install -d -m 755 /opt/ezplayer-network/portal /usr/local/lib/ezplayer-pi
 install -d -m 700 /var/lib/ezplayer-network
+install -d -m 755 /etc/wireplumber/wireplumber.conf.d
+install -m 644 "$source_dir/90-ezplayer-volume.conf" /etc/wireplumber/wireplumber.conf.d/90-ezplayer-volume.conf
 install -m 644 "$source_dir/network_service.py" "$source_dir/show_output.py" "$source_dir/reset_button.py" /opt/ezplayer-network/
 install -m 644 "$source_dir/portal/index.html" "$source_dir/portal/login.html" /opt/ezplayer-network/portal/
 install -m 755 "$source_dir/image-firstboot.sh" /usr/local/lib/ezplayer-pi/image-firstboot.sh
