@@ -7,12 +7,17 @@ country=${1:?country required}
 player_user=${2:?player username required}
 [[ $country =~ ^[A-Z]{2}$ && $player_user =~ ^[a-z_][a-z0-9_-]*$ ]] || exit 1
 apt-get update
-apt-get install -y network-manager hostapd dnsmasq-base iw rfkill python3-gpiozero python3-lgpio avahi-daemon nginx curl nftables tcpdump
+apt-get install -y network-manager hostapd dnsmasq-base iw rfkill python3-gpiozero python3-lgpio avahi-daemon nginx libnginx-mod-stream curl nftables tcpdump
 install -d -m 755 /opt/ezplayer-network/portal /usr/local/lib/ezplayer-pi
 install -d -m 700 /var/lib/ezplayer-network
 install -d -m 755 /etc/wireplumber/wireplumber.conf.d
 install -m 644 "$source_dir/90-ezplayer-volume.conf" /etc/wireplumber/wireplumber.conf.d/90-ezplayer-volume.conf
 install -m 644 "$source_dir/network_service.py" "$source_dir/show_output.py" "$source_dir/reset_button.py" /opt/ezplayer-network/
+id ezplayer-gateway >/dev/null 2>&1 || useradd --system --no-create-home --shell /usr/sbin/nologin ezplayer-gateway
+install -m 644 "$source_dir/hotspot_gateway.py" /opt/ezplayer-network/hotspot_gateway.py
+python3 "$source_dir/hotspot_gateway.py" config > /etc/ezplayer-gateway.conf
+chmod 644 /etc/ezplayer-gateway.conf
+install -m 644 "$source_dir/ezplayer-gateway.service" "$source_dir/ezplayer-gateway-route.service" /etc/systemd/system/
 install -m 644 "$source_dir/portal/index.html" "$source_dir/portal/login.html" /opt/ezplayer-network/portal/
 install -m 755 "$source_dir/image-firstboot.sh" /usr/local/lib/ezplayer-pi/image-firstboot.sh
 COUNTRY_CODE="$country" python3 - <<'PY'
@@ -54,6 +59,7 @@ rm -f /etc/nginx/sites-enabled/default
 nginx -t
 systemctl disable hostapd ezplayer-reset-button.service ezplayer-setup-portal.service
 systemctl enable NetworkManager.service avahi-daemon.service nginx.service ezplayer-network.service ezplayer-show-output.service ezplayer-image-firstboot.service
+systemctl enable ezplayer-gateway.service ezplayer-gateway-route.service
 # Use the OS's desktop-autologin setting, including its main LightDM config.
 # A conf.d entry alone can be overridden by /etc/lightdm/lightdm.conf.
 install -d /etc/systemd/system/getty@tty1.service.d

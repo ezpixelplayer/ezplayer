@@ -20,6 +20,9 @@ EZPLAYER FIRST HARDWARE TEST IMAGE
    portal password changes, manual/DHCP settings, uploads, and registration.
 
 THIS TEST CANDIDATE
+- Adds restricted hotspot TLS access to the reviewed EZRGB/EZPlayer hostname list.
+  Complete the first-time login test on the spare card; unlisted dependencies
+  remain blocked. See pi-network/HOTSPOT-GATEWAY.md for filtering limits.
 - Starts new audio output routes at 98% system volume; saved user levels still apply.
 - Forces HDMI-A-2 to 1280x720 at 60 Hz so the desktop can start with HDMI unplugged.
 - Checks for a running player before removing an empty orphaned show-lock directory.

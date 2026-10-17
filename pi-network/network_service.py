@@ -222,7 +222,11 @@ class Hotspot:
         if f'Interface {AP}' not in existing:run('iw','dev',WIFI,'interface','add',AP,'type','__ap')
         run('ip','addr','replace',HOTSPOT_IP+'/24','dev',AP);run('ip','link','set',AP,'up')
         ssid,freq=link();self.start(freq)
-        self.dns=subprocess.Popen(['dnsmasq','--keep-in-foreground','--conf-file=/dev/null','--interface='+AP,'--bind-dynamic','--listen-address='+HOTSPOT_IP,'--dhcp-range=192.168.4.20,192.168.4.200,255.255.255.0,12h','--dhcp-option=3,'+'192.168.4.1','--dhcp-option=6,'+'192.168.4.1','--address=/#/'+HOTSPOT_IP,'--no-resolv','--dhcp-authoritative'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        gateway_dns=[]
+        if pathlib.Path('/etc/ezplayer-gateway.conf').exists():
+            from hotspot_gateway import dns_arguments
+            gateway_dns=dns_arguments()
+        self.dns=subprocess.Popen(['dnsmasq','--keep-in-foreground','--conf-file=/dev/null','--interface='+AP,'--bind-dynamic','--listen-address='+HOTSPOT_IP,'--dhcp-range=192.168.4.20,192.168.4.200,255.255.255.0,12h','--dhcp-option=3,'+'192.168.4.1','--dhcp-option=6,'+'192.168.4.1','--address=/#/'+HOTSPOT_IP,'--no-resolv','--dhcp-authoritative',*gateway_dns],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
     def close(self):
         self.stop()
         if self.dns:
