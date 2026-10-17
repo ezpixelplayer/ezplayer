@@ -14,7 +14,7 @@ import type {
 } from './playbacktypes';
 import { RPCClient, RPCServer } from './rpc';
 import { ClockConverter } from '../../sharedsrc/ClockConverter';
-import { useDirectPiControllerOutput } from './pi-controller-output';
+import { applyDirectPiControllerOutput } from './pi-controller-output';
 
 import type {
     SequenceRecord,
@@ -2568,7 +2568,7 @@ async function processQueue() {
                   logger: (msg) => emitWarning(msg),
               });
 
-        const ignoredProxies = useDirectPiControllerOutput(
+        const ignoredProxies = applyDirectPiControllerOutput(
             controllers,
             process.env.EZPLAYER_PI_APPLIANCE === '1',
         );

@@ -212,7 +212,7 @@ const ALIVE_REFRESH_GAP_MS = 60_000;
  * show starting drops whatever is still queued.  A controller that comes back
  * is a single read, allowed mid-show when the recovery setting asks for it.
  */
-function refreshControllersNowAlive(status: PlayerNStatusContent): void {
+function _refreshControllersNowAlive(status: PlayerNStatusContent): void {
     const refresh = getSettingsCache()?.controllerRefresh;
     // Unset means on: reading controllers as they appear is the helpful default.
     const whenIdle = refresh?.whenIdle !== false;

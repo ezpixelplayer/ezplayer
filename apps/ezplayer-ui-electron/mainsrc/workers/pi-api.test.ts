@@ -26,9 +26,11 @@ describe('Pi browser administration origin checks', () => {
 });
 
 describe('Pi HTTP control routes', () => {
+    const platformDescriptor = Object.getOwnPropertyDescriptor(process, 'platform')!;
     let server: Server;
     let origin: string;
     beforeEach(async () => {
+        Object.defineProperty(process, 'platform', { ...platformDescriptor, value: 'linux' });
         vi.stubEnv('EZPLAYER_PI_APPLIANCE', '1');
         vi.spyOn(fs, 'existsSync').mockReturnValue(true);
         vi.spyOn(os, 'networkInterfaces').mockReturnValue({
@@ -61,6 +63,7 @@ describe('Pi HTTP control routes', () => {
     });
     afterEach(async () => {
         await new Promise<void>((resolve) => server.close(() => resolve()));
+        Object.defineProperty(process, 'platform', platformDescriptor);
         vi.restoreAllMocks();
         vi.unstubAllEnvs();
         vi.mocked(requestPi).mockClear();
@@ -94,6 +97,16 @@ describe('Pi HTTP control routes', () => {
             });
             expect(response.status).toBe(code);
         }
+        expect(requestPi).not.toHaveBeenCalled();
+    });
+    it.each(['win32', 'darwin'])('does not enable Pi administration on %s', async (platform) => {
+        Object.defineProperty(process, 'platform', { ...platformDescriptor, value: platform });
+        const response = await fetch(origin + '/api/ezp/pi', {
+            method: 'POST',
+            headers: headers(origin),
+            body: JSON.stringify({ action: 'status' }),
+        });
+        expect(response.status).toBe(404);
         expect(requestPi).not.toHaveBeenCalled();
     });
     it('does not enable Pi administration on an ordinary desktop install', async () => {
