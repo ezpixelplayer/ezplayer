@@ -313,6 +313,8 @@ export function primeDiagEnv(): void {
             gpuPart = {
                 ...gpuPart,
                 info: level,
+                // Re-read now that the GPU process is up; at app ready it reads all-disabled.
+                features: gpuFeatures() ?? gpuPart.features,
                 glRenderer: str(aux.glRenderer, 96),
                 glVendor: str(aux.glVendor, 48),
                 glVersion: str(aux.glVersion, 64),
