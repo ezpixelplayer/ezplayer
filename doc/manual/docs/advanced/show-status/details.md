@@ -77,7 +77,34 @@ When both backends are on, viewer-page requests play before Remote Falcon
 suggestions.
 
 **Settings** opens the Viewer Control settings. **Viewer activity** opens the
-full activity view.
+full activity view. The button is unavailable until the player has reported
+activity.
+
+### Viewer Activity
+
+What the audience is doing with the viewer page. The dialog has these cards:
+
+- **Right now** — whether the player is online and whether requests or voting are
+  open, with how many people are **on the page** and **listening**, the number of
+  songs **in queue**, and the **songs with votes**. The request queue and vote
+  counts are listed below when there are any. It shows when the data was last
+  updated, and a warning if the player server could not be reached.
+- **Today** — requests, votes, songs picked from the page, by Remote Falcon and
+  from the jukebox, viewers who acted, peak on the page and peak listening, and
+  how many requests were refused. **Picks skipped as repeats** counts picks
+  dropped by [Songs Between Repeats](../viewer-control.md#songs-between-repeats).
+- **Last _N_ days** — the same totals over the recent window, with a bar for each
+  day split into requests and votes. Hover over a day for its counts.
+- **Most requested** — a per-song table of requests, votes, times picked, plays,
+  refusals and skipped picks. **Why requests were refused** shows the reasons
+  with counts, such as requests closed, already playing or next, played recently,
+  per-viewer limit, or queue full.
+- **Recent activity** — a feed of requests, votes, refusals, picks, skipped picks
+  and plays, each with its time. Viewers appear only as a short anonymous ID.
+
+Days are counted in the show's time zone. If the player server dropped some
+activity before it could be collected, a notice says recent counts may be
+incomplete.
 
 ## Controller Status
 
