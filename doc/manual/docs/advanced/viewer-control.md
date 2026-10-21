@@ -8,16 +8,20 @@ title: Viewer Control
 Let viewers request songs during configured hours — either through
 [**Remote Falcon**](https://remotefalcon.com) or EZPlayer's built-in viewer control.
 
-## Viewer Control Type
+## Where Viewers Can Pick Songs
 
-| Option                  | What it does                                                            |
-| ----------------------- | ----------------------------------------------------------------------- |
-| **Disabled**            | No viewer requests.                                                     |
-| **Remote Falcon**       | Poll Remote Falcon for viewer requests. Requires a Remote Falcon token. |
-| **EZPlayer (built-in)** | Use EZPlayer's own viewer-control integration.                          |
+Two switches control where viewers can pick songs from:
 
-When Remote Falcon is selected, paste your **Remote Falcon Token** into the
-field below the type dropdown.
+| Switch                              | What it does                                                           |
+| ----------------------------------- | ---------------------------------------------------------------------- |
+| **EZPlayer viewer page (built-in)** | Use EZPlayer's own viewer-control integration.                         |
+| **Remote Falcon**                   | Poll Remote Falcon for viewer requests. Requires a Remote Falcon token. |
+
+Both can be on at once; requests from the EZPlayer viewer page are played
+before Remote Falcon suggestions. With both off, there are no viewer requests.
+
+When **Remote Falcon** is on, paste your **Remote Falcon Token** into the field
+below the switches. Use the eye icon to show or hide the token.
 
 ![Remote Falcon show page](/img/remote-falcon-1.png)
 
@@ -43,15 +47,17 @@ a song) still play, and requests themselves are never skipped this way.
 
 ## Schedule Configuration
 
-When viewer control is enabled (Remote Falcon or EZPlayer), define one or more
-**schedule entries** that control when viewers can request songs:
+When either switch is on, define one or more **schedule entries** that control
+when viewers can request songs. The schedule is shared by both:
 
 - **Days** — all days, weekends, weekdays, or a single day of the week.
 - **Start / end time** — 24-hour format (`14:30`). End times can use extended
   hours (`25:00` = 1:00 AM the next day) for windows that cross midnight.
 - **Playlist** — which playlist viewers can pick from during this window.
 
-Add entries with **Add Schedule Entry**. Delete an entry with the trash icon.
+Add entries with **Add Schedule Entry**. Each entry in **Current Schedule** has
+buttons to edit it, move it to a lower or higher priority (up/down arrows), and
+delete it (trash icon, with a confirmation).
 
 If windows overlap, the **last entry in the list takes priority** (shown as
-higher priority in the list).
+`Priority: <number>`, where a higher number wins).
