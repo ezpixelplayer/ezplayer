@@ -8,7 +8,7 @@ This source update includes separate IP address/subnet mask fields and the setup
 2. Copy its contents into D:\EZPlayer, merging folders and replacing the matching files. Keep the relative folders: apps, packages, pi-appliance and .github.
 3. In GitHub Desktop, select the codex/ezplayer-pi-appliance branch. Commit with the summary "Add phone Wi-Fi setup and tethering modes", then Push origin. The existing pull request triggers the Pi ARM64 build.
 4. Download the successful build artifact, extract it to D:\EZPlayer-Pi-Build and transfer it to the Pi as before.
-5. Run the updated install-pi.sh with the rebuilt ARM64 .deb and desktop username, then reboot. For the current development installation the desktop username is ezplayer. Keep actual Wi-Fi credentials out of commits and distributable images.
+5. Run the updated install-pi.sh with the rebuilt ARM64 .deb and player username, then reboot. For the current development installation the player username is ezplayer. Keep actual Wi-Fi credentials out of commits and distributable images.
 
 ## What the user sees
 

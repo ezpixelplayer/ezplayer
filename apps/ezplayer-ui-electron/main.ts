@@ -378,8 +378,8 @@ async function startPlaybackWorker(): Promise<Worker> {
     return worker;
 }
 
-/** The `headless` verb: full player, zero BrowserWindows, dialogs become
- *  fail-fast exit codes. */
+/** The `headless` verb: full player with no visible UI; dialogs become
+ *  fail-fast exit codes. Appliances may opt into one hidden audio renderer. */
 async function startHeadless() {
     const resolved = await ensureExclusiveFolderHeadless();
     if ('error' in resolved) {
@@ -390,8 +390,20 @@ async function startHeadless() {
     }
     console.log(`EZPlayer headless: using show folder ${resolved.folder}`);
 
-    // Headless plays no local audio; decoding still feeds web/cloud clients.
-    setAudioWindowsEnabled(false);
+    // A normal CLI headless run remains silent. The Pi appliance opts into the
+    // existing hidden Web Audio renderer while Electron uses Ozone's headless
+    // backend, so local HDMI/USB audio does not require X, Wayland, or a visible
+    // application window.
+    const localAudio = process.env.EZPLAYER_HEADLESS_AUDIO === '1';
+    setAudioWindowsEnabled(localAudio);
+    if (localAudio) {
+        configureAudioWindowPaths({
+            preloadPath: path.join(__dirname, 'preload-audio.js'),
+            htmlFilePath: audioWindowHtmlPath(__dirname),
+            htmlBaseUrl: audioWindowDevUrl(),
+        });
+        console.log('EZPlayer headless: local audio renderer enabled');
+    }
 
     // persist:false — never write headless CLI values into stored preferences
     const portInfo = getWebPort({ persist: false });

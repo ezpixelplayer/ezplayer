@@ -1,4 +1,4 @@
-"""First-install show folder setup, run by the installer as the desktop user."""
+"""First-install show folder setup, run by the installer as the player user."""
 import json
 import os
 from pathlib import Path

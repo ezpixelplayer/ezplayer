@@ -1,0 +1,18 @@
+[Unit]
+Description=EZPlayer headless Raspberry Pi player
+Wants=pipewire.service pipewire-pulse.service wireplumber.service
+After=pipewire.service pipewire-pulse.service wireplumber.service
+
+[Service]
+Type=simple
+Environment=EZPLAYER_PI_APPLIANCE=1
+Environment=EZPLAYER_HEADLESS_AUDIO=1
+Environment=MALLOC_ARENA_MAX=2
+ExecStartPre=/usr/bin/python3 /usr/local/lib/ezplayer-pi/prepare_player_start.py
+ExecStart=/opt/EZPlayer/ezplayer-ui-electron --ozone-platform=headless --no-sandbox --no-update-check headless
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+
+[Install]
+WantedBy=default.target

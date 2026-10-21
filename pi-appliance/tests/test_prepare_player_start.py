@@ -60,6 +60,7 @@ class StartupLocks(unittest.TestCase):
         self.assertTrue(other.is_dir())
         self.assertTrue(self.lock.is_symlink())
 
+    @unittest.skipUnless(Path('/proc').is_dir(), '/proc required')
     def test_process_inspection_detects_player_command(self):
         before = set(startup.running_players())
         process = subprocess.Popen(['/opt/EZPlayer/ezplayer-ui-electron', '60'], executable='/bin/sleep')
@@ -70,3 +71,11 @@ class StartupLocks(unittest.TestCase):
         finally:
             process.terminate()
             process.wait(timeout=5)
+
+    def test_show_output_gate_accepts_ready_marker_and_times_out_without_it(self):
+        marker = self.home / 'show-output.ready'
+        marker.write_text('{}')
+        startup.wait_for_show_output(marker, timeout=0)
+        marker.unlink()
+        with self.assertRaises(RuntimeError):
+            startup.wait_for_show_output(marker, timeout=0)

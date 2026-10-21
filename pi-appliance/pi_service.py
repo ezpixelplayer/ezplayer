@@ -337,7 +337,7 @@ class Appliance:
                     command = ['/usr/sbin/runuser', '-u', player, '--', '/usr/bin/env',
                                'XDG_RUNTIME_DIR=/run/user/' + str(player_uid),
                                'DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/' + str(player_uid) + '/bus',
-                               '/usr/bin/systemctl', '--user', 'restart', 'ezplayer-desktop.service']
+                               '/usr/bin/systemctl', '--user', 'restart', 'ezplayer-player.service']
                 else:
                     command = ['/usr/bin/systemctl', 'reboot' if action == 'reboot' else 'poweroff']
                 threading.Timer(2, lambda: subprocess.run(command, check=False)).start()

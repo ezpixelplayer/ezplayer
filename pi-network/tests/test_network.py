@@ -146,12 +146,12 @@ class LANAuthentication(unittest.TestCase):
 class PortalModes(unittest.TestCase):
  def test_ezrgb_preset_ignores_submitted_values(self):
   data=s.validate_lan({'mode':'ezrgb','ip':'10.0.0.2','gateway':'10.0.0.1','dns':'8.8.8.8','controllerOnly':False})
-  self.assertEqual((data['ip'],data['prefix'],data['gateway'],data['dns'],data['controllerOnly']),('192.168.25.1',24,'','',True))
+  self.assertEqual((data['ip'],data['prefix'],data['gateway'],data['dns'],data['controllerOnly']),('192.168.25.2',24,'','',True))
  def test_ezrgb_restored_and_manual_not_mislabeled(self):
   with tempfile.TemporaryDirectory() as d,patch.object(s,'STATE',pathlib.Path(d)):
    (pathlib.Path(d)/'lan-mode.json').write_text('{"mode":"ezrgb"}')
-   with patch.object(s,'nm',side_effect=['--','manual','192.168.25.1/24','','','yes']):self.assertEqual(s.lan_settings()['mode'],'ezrgb')
-   with patch.object(s,'nm',side_effect=['--','manual','192.168.25.2/24','','','yes']):self.assertEqual(s.lan_settings()['mode'],'manual')
+   with patch.object(s,'nm',side_effect=['--','manual','192.168.25.2/24','','','yes']):self.assertEqual(s.lan_settings()['mode'],'ezrgb')
+   with patch.object(s,'nm',side_effect=['--','manual','192.168.25.3/24','','','yes']):self.assertEqual(s.lan_settings()['mode'],'manual')
  def test_wifi_ip_validation(self):
   with self.assertRaises(ValueError):s.validate_wifi_ip({'mode':'ezrgb'})
   with self.assertRaises(ValueError):s.validate_wifi_ip({'mode':'manual','ip':'192.168.4.10','subnet':'255.255.255.0'})
@@ -193,7 +193,7 @@ class ProxyAuthentication(unittest.TestCase):
    self.assertEqual(self.request('/api/network/status',headers=self.headers())[0],200)
    code,body=self.request('/setup',headers=self.headers());self.assertEqual(code,200);self.assertIn(b'Home Wi-Fi',body)
  def test_other_lan_still_requires_login(self):
-  self.assertEqual(self.request('/api/network/status',headers=self.headers(Host='192.168.25.1',**{'X-EZPlayer-Server-IP':'192.168.25.1'}))[0],401)
+  self.assertEqual(self.request('/api/network/status',headers=self.headers(Host='192.168.25.2',**{'X-EZPlayer-Server-IP':'192.168.25.2'}))[0],401)
  def test_home_wifi_still_requires_page_token_for_changes(self):
   self.assertEqual(self.request('/api/network/lan','POST',headers=self.headers())[0],403)
  def test_hotspot_proxy_direct_access(self):

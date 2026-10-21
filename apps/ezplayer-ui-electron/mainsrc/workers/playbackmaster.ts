@@ -96,6 +96,7 @@ import {
 const PARSE_OPTS: ModelParseOptions = { warnUnusedAttrs: false };
 
 import { buildInterleavedAudioChunkFromSegments, MP3PrefetchCache } from './mp3decodecache';
+import { playbackMemoryProfile } from './playbackMemoryProfile';
 import { AsyncBatchLogger } from './logger';
 
 import { monitorEventLoopDelay, performance } from 'perf_hooks';
@@ -1053,7 +1054,9 @@ function interactiveAudioReady(seqId: string): boolean {
  */
 function holdInteractiveStartsForAudio(now: number): void {
     const horizon = now + playbackParams.sendAudioInAdvanceMs + playbackParams.sendAudioChunkMs;
+    const activeRequestIds = new Set<string>();
     const hold = (cmd: { seqId?: string; startTime: number; requestId: string }): boolean => {
+        activeRequestIds.add(cmd.requestId);
         if (!cmd.seqId || cmd.startTime > horizon) return false;
         if (interactiveAudioReady(cmd.seqId)) {
             interactiveAudioWaitSince.delete(cmd.requestId);
@@ -1081,6 +1084,9 @@ function holdInteractiveStartsForAudio(now: number): void {
     let moved = false;
     for (const cmd of fs.interactiveQueue) moved = hold(cmd) || moved;
     if (moved) fs.interactiveQueue.sort((a, b) => a.startTime - b.startTime);
+    for (const requestId of interactiveAudioWaitSince.keys()) {
+        if (!activeRequestIds.has(requestId)) interactiveAudioWaitSince.delete(requestId);
+    }
 }
 
 /////////
@@ -1373,8 +1379,15 @@ const playbackParams = {
     sendAudioChunkMs: 100, // The "hop": how far each chunk advances. Multiple of 10 for 44100kHz.
     audioCrossfadeMs: 10, // Trailing overlap appended to each music chunk; ramped to crossfade seams.
     mp3CacheSeconds: 3600, // We reuse the memory in ~5s chunks
+    mp3CacheAgeoutMs: 25 * 3600 * 1000,
+    mp3DecodePoolBytes: 512_000_000,
+    mp3DecodeReserveSeconds: 15 * 60,
+    mp3ScratchRetainBytes: 64_000_000,
     audioPrefetchTime: 30_000, // forward-run horizon for audio; decode is fast, beyond this is margins
     fseqSpace: 1_000_000_000,
+    fseqCacheAgeoutMs: 60_000,
+    fseqPoolBytes: 256_000_000,
+    fseqMaxConcurrency: 4,
     idleSleepInterval: 200,
     // Earliest a commanded song starts. Its audio may not have decoded by then; the start
     // is then held by holdInteractiveStartsForAudio() rather than played without sound.
@@ -1568,20 +1581,18 @@ const playbackStats: PlaybackStatistics = {
 // above suit 8 GB+ boards; trim on ~4 GB boards, and warn (surfaced to the UI via
 // playbackStats.lastError) on memory too small to run reliably (~2 GB and below).
 {
-    const totalMemGB = totalmem() / 1e9;
-    if (totalMemGB < 6) {
-        playbackParams.mp3CacheSeconds = 1000; // ~380 MB of 48 kHz stereo audio
-        playbackParams.fseqSpace = 256_000_000; // 256 MB of decompressed frames
-    }
+    const totalMemBytes = totalmem();
+    const totalMemGB = totalMemBytes / 1e9;
+    Object.assign(playbackParams, playbackMemoryProfile(totalMemBytes));
     emitInfo(
         `System RAM ${totalMemGB.toFixed(1)} GB → mp3 cache ${playbackParams.mp3CacheSeconds}s, ` +
-            `fseq cache ${Math.round(playbackParams.fseqSpace / 1e6)} MB`,
+            `fseq cache ${Math.round(playbackParams.fseqSpace / 1e6)} MB, ` +
+            `audio age-out ${playbackParams.mp3CacheAgeoutMs} ms, ` +
+            `decode pool ${Math.round(playbackParams.mp3DecodePoolBytes / 1e6)} MB, ` +
+            `FSEQ pool ${Math.round(playbackParams.fseqPoolBytes / 1e6)} MB`,
     );
     if (totalMemGB < 2.5) {
-        emitError(
-            `Low system memory: ${totalMemGB.toFixed(1)} GB. EZPlayer recommends at least 4 GB; ` +
-                `audio/FSEQ caches were reduced and playback may be unstable.`,
-        );
+        emitInfo(`Low-memory playback profile active for ${totalMemGB.toFixed(1)} GB of RAM.`);
     }
 }
 
@@ -2512,6 +2523,10 @@ async function processQueue() {
             log: emitInfo,
             now: rtcConverter.computeTime(performance.now()),
             mp3SpaceSeconds: playbackParams.mp3CacheSeconds,
+            ageoutMs: playbackParams.mp3CacheAgeoutMs,
+            decodePoolBytes: playbackParams.mp3DecodePoolBytes,
+            decodeReserveSeconds: playbackParams.mp3DecodeReserveSeconds,
+            scratchRetainBytes: playbackParams.mp3ScratchRetainBytes,
             // Map record audio -> precomputed derived file. Never builds here; a
             // missing derivation surfaces as an audio error for the song.
             resolveFile: (audioFile, opts) => {
@@ -2526,6 +2541,9 @@ async function processQueue() {
             {
                 now: performance.now(),
                 fseqSpace: playbackParams.fseqSpace,
+                ageoutMs: playbackParams.fseqCacheAgeoutMs,
+                decompPoolBytes: playbackParams.fseqPoolBytes,
+                maxConcurrency: playbackParams.fseqMaxConcurrency,
                 decompZstd: decompressZStdWithWorker,
             },
             emitError,
@@ -2568,12 +2586,11 @@ async function processQueue() {
                   logger: (msg) => emitWarning(msg),
               });
 
-        const ignoredProxies = applyDirectPiControllerOutput(
-            controllers,
-            process.env.EZPLAYER_PI_APPLIANCE === '1',
-        );
+        const ignoredProxies = applyDirectPiControllerOutput(controllers, process.env.EZPLAYER_PI_APPLIANCE === '1');
         if (ignoredProxies) {
-            emitInfo(`Pi controller output: ignoring ${ignoredProxies} FPP proxy setting(s); sending directly to controller addresses`);
+            emitInfo(
+                `Pi controller output: ignoring ${ignoredProxies} FPP proxy setting(s); sending directly to controller addresses`,
+            );
         }
 
         // Per-controller max-FPS overrides from our records in the show folder
@@ -3062,6 +3079,7 @@ async function processQueue() {
                     if (saf && !path.isAbsolute(saf)) saf = path.join(showFolder!, saf);
                     if (saf) {
                         audioref = mp3Cache.getMp3(saf, !!curAudioSeq?.settings?.normalize);
+                        if (audioref?.ref || audioref?.err) audioPendingLoggedAt.delete(saf);
                         if (!audioref) {
                             emitError(`Audio ${saf} not ready.`);
                             break;

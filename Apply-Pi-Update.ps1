@@ -25,6 +25,8 @@ $files = @(
     'pi-appliance/PI-SETTINGS-UPDATE.md',
     'pi-appliance/README.md',
     'pi-appliance/TETHERING.md',
+    'pi-appliance/build-test-image.sh',
+    'pi-appliance/ezplayer-player.service',
     'pi-appliance/ezplayer-pi.service',
     'pi-appliance/ezplayer-setup-portal.service',
     'pi-appliance/initialize_show.py',
@@ -33,6 +35,7 @@ $files = @(
     'pi-appliance/pi_hotspot.py',
     'pi-appliance/pi_service.py',
     'pi-appliance/prepare-pi-gen.sh',
+    'pi-appliance/prepare_player_start.py',
     'pi-appliance/setup_portal.py',
     'pi-appliance/tests/test_clock.py',
     'pi-appliance/tests/test_hotspot.py',
@@ -50,11 +53,15 @@ foreach ($relative in $files) {
 }
 $retired = @(
     'apps/ezplayer-ui-electron/mainsrc/data/pi-show-folder.ts',
-    'apps/ezplayer-ui-electron/mainsrc/data/pi-show-folder.test.ts'
+    'apps/ezplayer-ui-electron/mainsrc/data/pi-show-folder.test.ts',
+    'pi-appliance/configure_boot_display.py',
+    'pi-appliance/ezplayer-autostart.desktop',
+    'pi-appliance/ezplayer-desktop.service',
+    'pi-appliance/start-desktop.sh'
 )
 foreach ($relative in $retired) {
     $destination = Join-Path $Repository $relative
-    if ((Test-Path $destination) -and $PSCmdlet.ShouldProcess($destination, 'Remove retired Pi show-folder helper')) {
+    if ((Test-Path $destination) -and $PSCmdlet.ShouldProcess($destination, 'Remove retired Pi integration file')) {
         Remove-Item -LiteralPath $destination
     }
 }

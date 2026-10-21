@@ -65,7 +65,7 @@ def wifi_settings(data):
 def validate_lan(data):
     if data.get('mode')=='ezrgb':
         # Enforce the preset on the Pi, regardless of submitted editable fields.
-        data={'mode':'manual','displayMode':'ezrgb','ip':'192.168.25.1','subnet':'255.255.255.0','gateway':'','dns':'','controllerOnly':True}
+        data={'mode':'manual','displayMode':'ezrgb','ip':'192.168.25.2','subnet':'255.255.255.0','gateway':'','dns':'','controllerOnly':True}
     if data.get('mode') not in ('auto','manual') or type(data.get('controllerOnly')) is not bool:
         raise ValueError('Invalid LAN mode.')
     if data['mode']=='auto': return data
@@ -312,7 +312,7 @@ def lan_settings():
         settings={'mode':'manual' if mode=='manual' else 'auto','address':str(interface.ip) if interface else '', 'subnet':str(interface.netmask) if interface else '', 'gateway':value('ipv4.gateway').replace('--',''),'dns':value('ipv4.dns').replace('--',''),'controllerOnly':value('ipv4.never-default')=='yes'}
         try:display_mode=json.loads((STATE/'lan-mode.json').read_text()).get('mode')
         except (OSError,ValueError):display_mode=None
-        if display_mode=='ezrgb' and settings=={'mode':'manual','address':'192.168.25.1','subnet':'255.255.255.0','gateway':'','dns':'','controllerOnly':True}:
+        if display_mode=='ezrgb' and settings=={'mode':'manual','address':'192.168.25.2','subnet':'255.255.255.0','gateway':'','dns':'','controllerOnly':True}:
             settings['mode']='ezrgb'
         return settings
     except Exception:return None

@@ -1,7 +1,6 @@
 [Unit]
 Description=EZPlayer Ethernet-only DDP and sACN show output
 After=NetworkManager.service nftables.service
-Before=display-manager.service
 Wants=NetworkManager.service
 
 [Service]

@@ -7,8 +7,8 @@ EZPLAYER FIRST HARDWARE TEST IMAGE
    using balenaEtcher or Raspberry Pi Imager. The selected card is erased.
 4. Keep your existing working card unchanged. Insert the spare card in the Pi.
 5. The fresh image has no home Wi-Fi, EZRGB account, sequences, or shared player
-   identity. First boot initializes Ethernet to EZRGB Mode (192.168.25.1/24),
-   generates a new player identity, and opens the desktop player.
+   identity. First boot initializes Ethernet to EZRGB Mode (192.168.25.2/24),
+   generates a new player identity, and starts the headless player service.
 6. Join hotspot EZPLAYER with password Ezrgb1234. Open http://192.168.4.1
    if the setup page does not open automatically. Configure home Wi-Fi there.
 7. On home Wi-Fi, open http://PLAYER-IP/ for the player or /setup for networking.
@@ -24,7 +24,8 @@ THIS TEST CANDIDATE
   Complete the first-time login test on the spare card; unlisted dependencies
   remain blocked. See pi-network/HOTSPOT-GATEWAY.md for filtering limits.
 - Starts new audio output routes at 98% system volume; saved user levels still apply.
-- Forces HDMI-A-2 to 1280x720 at 60 Hz so the desktop can start with HDMI unplugged.
+- Uses Raspberry Pi OS Lite and a headless player service to reduce idle memory.
+- Keeps local HDMI/USB audio through a hidden audio renderer without a desktop session.
 - Checks for a running player before removing an empty orphaned show-lock directory.
 - Compresses the 3D/2D preview coordinate JSON at the web proxy.
 These fixes passed tests on the existing Pi; verify again on this freshly flashed card.

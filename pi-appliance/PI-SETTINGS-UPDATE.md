@@ -1,6 +1,6 @@
 # Pi settings and local imports update
 
-Extract EZPlayer-Pi-Settings-Update.zip to a separate folder. Run its Apply-Pi-Update.ps1 using PowerShell; it copies the update into D:\EZPlayer and removes the two retired pi-show-folder helper/test files from the earlier update. It also restores the original startup and WelcomeScreen files. Use -Repository to target another repository folder or -WhatIf to preview. In GitHub Desktop on codex/ezplayer-pi-appliance, commit with "Improve Pi setup, offline clock and local song uploads" and Push origin. Download the new successful Pi ARM64 artifact, transfer it to the Pi, stop ezplayer-desktop.service, run its updated install-pi.sh with the new .deb and the desktop username, and reboot. Both the rebuilt app and updated integration scripts are required.
+Extract EZPlayer-Pi-Settings-Update.zip to a separate folder. Run its Apply-Pi-Update.ps1 using PowerShell; it copies the update into D:\EZPlayer and removes the two retired pi-show-folder helper/test files from the earlier update. It also restores the original startup and WelcomeScreen files. Use -Repository to target another repository folder or -WhatIf to preview. In GitHub Desktop on codex/ezplayer-pi-appliance, commit with "Improve Pi setup, offline clock and local song uploads" and Push origin. Download the new successful Pi ARM64 artifact, transfer it to the Pi, stop ezplayer-player.service, run its updated install-pi.sh with the new .deb and the player username, and reboot. Both the rebuilt app and updated integration scripts are required.
 
 ## Network
 
@@ -16,7 +16,7 @@ Hardware clocks, including RasClock, are managed by Raspberry Pi OS. EZPlayer do
 
 ## Show storage at installation
 
-On first installation, install-pi.sh runs initialize_show.py as the desktop user. It creates ~/EZPlayer/Show, seeds the existing cloud-managed folder format and a stable player ID, and saves showFolder in the packaged app's electron-store settings. EZPlayer's existing startup validation recognizes the folder and skips the folder prompt. Startup and WelcomeScreen code are restored to their original behavior; there is no added registration-first screen flow. Registration remains in the existing Cloud UI and phone handoff.
+On first installation, install-pi.sh runs initialize_show.py as the player user. It creates ~/EZPlayer/Show, seeds the existing cloud-managed folder format and a stable player ID, and saves showFolder in the packaged app's electron-store settings. EZPlayer's existing startup validation recognizes the folder and skips the folder prompt. Startup and WelcomeScreen code are restored to their original behavior; there is no added registration-first screen flow. Registration remains in the existing Cloud UI and phone handoff.
 
 An already selected show folder and all existing preferences are preserved. Upgrading does not change that selection, move a show or regenerate its player ID. Invalid settings are reported rather than overwritten. Stop EZPlayer before installing so its settings file cannot race the installer.
 

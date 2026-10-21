@@ -118,7 +118,7 @@ This adds home-network access without changing SSID/password defaults, persisten
 
 Only Home Wi-Fi starts expanded. Other sections can be expanded independently.
 Ethernet offers EZRGB Mode, DHCP, and Manual IP Address. EZRGB Mode is enforced
-by the service as 192.168.25.1/24, with no gateway or DNS, and never becomes the
+by the service as 192.168.25.2/24, with no gateway or DNS, and never becomes the
 internet default route. The UI shows these values as read-only. Manual fields
 are editable; saved settings and the selected mode are restored on reload.
 

@@ -17,6 +17,8 @@ class Gateway(unittest.TestCase):
 
     def test_firewall_blocks_forwarding_private_destinations_and_other_egress(self):
         rules = g.firewall(1234, False)
+        self.assertIn('chain hotspot_redirect {', rules)
+        self.assertNotIn('chain redirect {', rules)
         self.assertIn('iifname "ezsetup0" drop', rules)
         self.assertIn('oifname "ezsetup0" drop', rules)
         self.assertIn('meta skuid 1234 meta nfproto != ipv4 drop', rules)

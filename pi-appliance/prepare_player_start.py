@@ -3,6 +3,7 @@ import json
 import os
 from pathlib import Path
 import stat
+import time
 
 
 def running_players():
@@ -42,7 +43,7 @@ def prepare(home, active_players=None):
         return False
     if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid():
         raise RuntimeError('Unexpected show-lock type or owner; leaving it untouched')
-    # All appliances run the player as one desktop user. The service serializes
+    # All appliances run the player as one unprivileged user. The service serializes
     # its own starts; do not remove locks until that user's players are gone.
     # rmdir refuses nonempty directories. Never remove the metadata/show files.
     lock.rmdir()
@@ -50,5 +51,16 @@ def prepare(home, active_players=None):
     return True
 
 
+def wait_for_show_output(path=Path('/run/ezplayer-show-output.ready'), timeout=90):
+    """Keep image playback behind the system routing/firewall setup."""
+    deadline = time.monotonic() + timeout
+    while not path.is_file():
+        if time.monotonic() >= deadline:
+            raise RuntimeError('Show-output network policy did not become ready')
+        time.sleep(0.25)
+
+
 if __name__ == '__main__':
     prepare(Path.home())
+    if os.environ.get('EZPLAYER_WAIT_FOR_SHOW_OUTPUT') == '1':
+        wait_for_show_output()

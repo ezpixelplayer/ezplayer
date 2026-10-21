@@ -1790,6 +1790,7 @@ export class PlayerRunState {
             // First, discard obsolete items
             while (this.heap.top && this.heap.top.schedEnd <= this.currentTime) {
                 logLowIters('Heap top deleted');
+                const expired = this.heap.top;
                 // This is a prevented event - never ran
                 log?.push({
                     eventTime: this.currentTime,
@@ -1799,6 +1800,7 @@ export class PlayerRunState {
                     requestId: this.heap.top.requestId,
                 });
                 this.heap.deleteTop();
+                this.heapById.delete(expired.itemId);
             }
 
             // Then see if there are relevant upcoming items to add to it
@@ -1809,7 +1811,10 @@ export class PlayerRunState {
                 if (add.schedStart > heapUntil) break;
                 logLowIters('Add upcoming occurrence');
                 this.upcomingById.delete(add.itemId);
-                if (this.heapById.has(add.itemId)) continue;
+                if (this.heapById.has(add.itemId)) {
+                    ++nti;
+                    continue;
+                }
                 this.#addToHeap(add);
                 ++nti;
             }

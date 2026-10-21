@@ -2,7 +2,7 @@
 const {JSDOM}=require(process.env.JSDOM_PATH||'jsdom');
 const fs=require('fs'),assert=require('assert');
 const html=fs.readFileSync(require('path').join(__dirname,'../portal/index.html'),'utf8');
-const dom=new JSDOM(html,{runScripts:'dangerously',url:'http://ezplayer/setup',beforeParse(w){w.AbortController=AbortController;w.fetch=async()=>({status:200,ok:true,json:async()=>({token:'test',wifi:{connected:true,ip:'192.168.99.107/24',ssid:'Home',band:'a',hasSavedPassword:true,settings:{mode:'manual',ip:'192.168.99.107',subnet:'255.255.255.0',gateway:'192.168.99.1',dns:'1.1.1.1'}},lan:{settings:{mode:'ezrgb',address:'192.168.25.1',subnet:'255.255.255.0',gateway:'',dns:'',controllerOnly:true}},hotspot:{ssid:'EZPLAYER'}})});}});
+const dom=new JSDOM(html,{runScripts:'dangerously',url:'http://ezplayer/setup',beforeParse(w){w.AbortController=AbortController;w.fetch=async()=>({status:200,ok:true,json:async()=>({token:'test',wifi:{connected:true,ip:'192.168.99.107/24',ssid:'Home',band:'a',hasSavedPassword:true,settings:{mode:'manual',ip:'192.168.99.107',subnet:'255.255.255.0',gateway:'192.168.99.1',dns:'1.1.1.1'}},lan:{settings:{mode:'ezrgb',address:'192.168.25.2',subnet:'255.255.255.0',gateway:'',dns:'',controllerOnly:true}},hotspot:{ssid:'EZPLAYER'}})});}});
 const w=dom.window,d=w.document,$=id=>d.getElementById(id);
 assert.deepEqual([...d.querySelectorAll('details[open]')].map(x=>x.id),['wifiPanel']);
 assert.equal($('lanMode').value,'ezrgb');
@@ -15,7 +15,7 @@ assert.deepEqual([...d.querySelectorAll('details[open]')].map(x=>x.id),['finishP
 $('wifiPanel').open=true;$('finishPanel').open=false;await w.status();assert($('wifiPanel').open);assert(!$('finishPanel').open);
 w.fetch=async()=>({ok:true,status:200,json:async()=>({wifi:{connected:false},hotspot:{}})});await w.status();
 w.fetch=async()=>({ok:true,status:200,json:async()=>({wifi:{connected:true,ip:'192.168.99.107/24',ssid:'Home',band:'a',hasSavedPassword:true,settings:{mode:'manual',ip:'192.168.99.107',subnet:'255.255.255.0',gateway:'192.168.99.1',dns:'1.1.1.1'}},hotspot:{}})});await w.status();assert(!$('wifiPanel').open);assert($('finishPanel').open);
-assert.equal($('lanMode').value,'ezrgb');assert.equal($('ip').value,'192.168.25.1');assert($('ip').readOnly);assert.equal($('gateway').value,'');
+assert.equal($('lanMode').value,'ezrgb');assert.equal($('ip').value,'192.168.25.2');assert($('ip').readOnly);assert.equal($('gateway').value,'');
 $('lanMode').value='manual';$('lanMode').dispatchEvent(new w.Event('change',{bubbles:true}));assert.equal($('ip').value,'');assert(!$('ip').readOnly);
 $('ip').value='192.168.50.10';$('lanMode').value='ezrgb';$('lanMode').dispatchEvent(new w.Event('change',{bubbles:true}));$('lanMode').value='manual';$('lanMode').dispatchEvent(new w.Event('change',{bubbles:true}));assert.equal($('ip').value,'192.168.50.10');
 assert($('wifiIpForm').hidden);$('advancedMode').checked=true;$('advancedMode').dispatchEvent(new w.Event('change'));assert(!$('wifiIpForm').hidden);assert.equal($('wifiIpMode').value,'manual');assert.equal($('homeIp').value,'192.168.99.107');

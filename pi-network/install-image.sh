@@ -36,23 +36,26 @@ wifi.powersave=2
 CONF
 install -m 755 "$source_dir/90-ezplayer-show-output" /etc/NetworkManager/dispatcher.d/90-ezplayer-show-output
 install -m 644 "$source_dir/ezplayer-network.service" "$source_dir/ezplayer-show-output.service" "$source_dir/ezplayer-reset-button.service" "$source_dir/ezplayer-image-firstboot.service" /etc/systemd/system/
-for unit in ezplayer-network ezplayer-show-output; do
- install -d "/etc/systemd/system/$unit.service.d"
- cat > "/etc/systemd/system/$unit.service.d/10-image-firstboot.conf" <<'CONF'
+install -d /etc/systemd/system/ezplayer-network.service.d
+cat > /etc/systemd/system/ezplayer-network.service.d/10-image-firstboot.conf <<'CONF'
+[Unit]
+Wants=ezplayer-image-firstboot.service
+After=ezplayer-image-firstboot.service
+CONF
+install -d /etc/systemd/system/ezplayer-show-output.service.d
+cat > /etc/systemd/system/ezplayer-show-output.service.d/10-image-firstboot.conf <<'CONF'
 [Unit]
 Requires=ezplayer-image-firstboot.service
 After=ezplayer-image-firstboot.service
 CONF
-done
 cat > /etc/systemd/system/ezplayer-network.service.d/20-web-proxy.conf <<'CONF'
 [Service]
 Environment=EZPLAYER_PROXY_MODE=1
 CONF
-install -d /etc/systemd/system/display-manager.service.d
-cat > /etc/systemd/system/display-manager.service.d/20-ezplayer-show-output.conf <<'CONF'
-[Unit]
-Requires=ezplayer-show-output.service
-After=ezplayer-show-output.service
+install -d /etc/systemd/user/ezplayer-player.service.d
+cat > /etc/systemd/user/ezplayer-player.service.d/20-show-output.conf <<'CONF'
+[Service]
+Environment=EZPLAYER_WAIT_FOR_SHOW_OUTPUT=1
 CONF
 install -m 644 "$source_dir/ezplayer-web.conf" /etc/nginx/conf.d/ezplayer-web.conf
 rm -f /etc/nginx/sites-enabled/default
@@ -60,10 +63,6 @@ nginx -t
 systemctl disable hostapd ezplayer-reset-button.service ezplayer-setup-portal.service
 systemctl enable NetworkManager.service avahi-daemon.service nginx.service ezplayer-network.service ezplayer-show-output.service ezplayer-image-firstboot.service
 systemctl enable ezplayer-gateway.service ezplayer-gateway-route.service
-# Use the OS's desktop-autologin setting, including its main LightDM config.
-# A conf.d entry alone can be overridden by /etc/lightdm/lightdm.conf.
-install -d /etc/systemd/system/getty@tty1.service.d
-SUDO_USER="$player_user" raspi-config nonint do_boot_behaviour B4
 # These must not be generated or copied into the distributable rootfs.
 test ! -e /var/lib/ezplayer-network/image-initialized
 test ! -e /var/lib/ezplayer-network/wifi-display.json

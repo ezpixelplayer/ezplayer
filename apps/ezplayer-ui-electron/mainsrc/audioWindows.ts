@@ -32,7 +32,7 @@ interface AudioOutputWindow {
 let preloadPath = '';
 let htmlFilePath = '';
 let htmlBaseUrl: string | undefined;
-/** Headless / CLI runs stay silent on local speakers. */
+/** Disabled for normal headless/CLI runs; an appliance can explicitly enable it. */
 let audioWindowsEnabled = true;
 
 /** DEFAULT_VOLUME_TARGET_ID or AudioOutputConfig.id */
@@ -63,7 +63,11 @@ function createAudioWindow(key: string, target: AudioOutputTarget): BrowserWindo
         throw new Error('configureAudioWindowPaths must be called before creating audio windows');
     }
     const win = new BrowserWindow({
+        width: 1,
+        height: 1,
         show: false,
+        frame: false,
+        skipTaskbar: true,
         webPreferences: {
             preload: preloadPath,
             contextIsolation: true,

@@ -4,7 +4,6 @@
 # pi-gen runs this script from its substage but does not export SUB_STAGE_DIR.
 stage_files="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/files"
 [[ -f "${stage_files}/ezplayer-pi.deb" ]] || { echo 'Add rebuilt ezplayer-pi.deb to stage files first'; exit 1; }
-python3 "${stage_files}/configure_boot_display.py" "${ROOTFS_DIR}/boot/firmware/cmdline.txt"
 # on_chroot mounts tmpfs over /tmp and /run; stage outside those paths.
 install -d "${ROOTFS_DIR}/opt/ezplayer-image-build"
 cp -a "${stage_files}/." "${ROOTFS_DIR}/opt/ezplayer-image-build/"

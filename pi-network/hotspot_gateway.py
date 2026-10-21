@@ -44,7 +44,7 @@ stream {{
 def firewall(uid, existing):
     prefix = 'delete table inet ezplayer_gateway\n' if existing else ''
     return prefix + f'''table inet ezplayer_gateway {{
- chain redirect {{
+ chain hotspot_redirect {{
   type nat hook prerouting priority dstnat; policy accept;
   iifname "{AP}" ip saddr 192.168.4.0/24 tcp dport 443 redirect to :8443
  }}

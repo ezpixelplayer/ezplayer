@@ -47,9 +47,9 @@ KEYBOARD_KEYMAP=us
 KEYBOARD_LAYOUT='English (US)'
 DEPLOY_COMPRESSION=xz
 COMPRESSION_LEVEL=3
-STAGE_LIST="stage0 stage1 stage2 stage3 stage4 stage-ezplayer"
+STAGE_LIST="stage0 stage1 stage2 stage-ezplayer"
 CONF
-touch "$workspace/pi-gen/stage2/SKIP_IMAGES" "$workspace/pi-gen/stage4/SKIP_IMAGES"
+touch "$workspace/pi-gen/stage2/SKIP_IMAGES"
 printf 'Private hardware-test login\nUsername: ezplayer\nPassword: %s\nSSH is enabled by default. This is the configured hardware-test account password.\n' "$password" > "$output/TEST-LOGIN.txt"
 unset password
 umask 022
@@ -64,7 +64,7 @@ images=("$workspace/pi-gen/deploy/"*.img.xz)
 install -m 600 "${images[0]}" "$output/EZPlayer-Pi-test.img.xz"
 source_sha=$(git -c safe.directory="$repo_dir" -C "$repo_dir" rev-parse HEAD)
 package_version=$(dpkg-deb -f "$package" Version)
-printf 'source_commit=%s\npi_gen_commit=%s\npackage_version=%s\nos=Raspberry Pi OS Desktop ARM64 Trixie\nhostname=EZPlayer\ncountry=US\nimage_type=hardware-test\n' "$source_sha" "$pi_gen_sha" "$package_version" > "$output/BUILD-INFO.txt"
+printf 'source_commit=%s\npi_gen_commit=%s\npackage_version=%s\nos=Raspberry Pi OS Lite ARM64 Trixie\nhostname=EZPlayer\ncountry=US\nimage_type=hardware-test\n' "$source_sha" "$pi_gen_sha" "$package_version" > "$output/BUILD-INFO.txt"
 cp "$script_dir/TEST-IMAGE-QUICKSTART.txt" "$output/READ-ME-FIRST.txt"
 (cd "$output" && sha256sum EZPlayer-Pi-test.img.xz > SHA256SUMS)
 echo "Flashable image created in $output"

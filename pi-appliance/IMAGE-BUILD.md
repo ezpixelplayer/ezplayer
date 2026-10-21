@@ -1,7 +1,7 @@
 # Flashable EZPlayer test image
 
 The Pi ARM64 Build workflow now has two jobs: build the matching ARM64 application
-installer, then build a fresh Raspberry Pi OS Desktop image on a hosted ARM64
+installer, then build a fresh Raspberry Pi OS Lite image on a hosted ARM64
 runner. No self-hosted Pi runner or installed customer card is used.
 
 Push this change to `codex/ezplayer-pi-appliance` (PR #260). The PR update triggers
@@ -28,10 +28,10 @@ sudo bash pi-appliance/build-test-image.sh /path/to/arm64.deb /path/to/new-outpu
 ```
 
 The script pins official ARM64 pi-gen at
-`d346cd53562b3c6b4f94c9155175f814258c456d`, uses Trixie Desktop through stage4,
+`d346cd53562b3c6b4f94c9155175f814258c456d`, uses Trixie Lite through stage2,
 and exports a compressed full disk image. A guarded copy_previous patch removes
 only completed, unexported intermediate rootfs copies to reduce build disk usage.
-Stage2 and stage4 image exports are skipped; stage-ezplayer is exported.
+The normal stage2 image export is skipped; stage-ezplayer is exported.
 
 The normal installer has an explicit image-build mode: service restarts and
 radio hardware calls are deferred, and initialize_show runs on first boot so
@@ -41,7 +41,26 @@ source commit and pi-gen revision in BUILD-INFO.txt.
 
 Validation here covers stage preparation, script syntax, unique first-boot
 identities, workflow YAML, Pi service tests, and the standalone network tests.
-Full image generation requires privileged loop mounts on the GitHub runner and
-has not run in the restricted workspace. Build and boot results are still pending.
+Full image generation requires privileged loop mounts. A local ARM64 Docker
+build completed successfully on 2026-10-20, and its compressed archive,
+checksum, MBR signature, boot partition, and root partition passed host-side
+validation. The image then booted successfully on a Raspberry Pi 3 Model B and
+completed a first Lite-image performance run.
+
+## Hardware performance baselines
+
+Keep repeatable hardware measurements in `logs/`. The first saved baseline is
+[Pi 3 — full desktop image — USB power](logs/2026-10-20-pi-3-full-desktop-usb-power.md),
+captured before testing regulated header power or the Lite image. The matching
+[Pi 3 — full desktop image — LRS-50-5 header power](logs/2026-10-20-pi-3-full-desktop-lrs-50-5-header-power.md)
+baseline isolates the effect of correcting the USB undervoltage condition. The
+[Pi 3 — Lite image — LRS-50-5 header power](logs/2026-10-20-pi-3-lite-lrs-50-5-header-power.md)
+run compares the headless image and records the gateway restart issue observed
+during that test. The separate
+[Pi 3 — Lite memory-corrected image — LRS-50-5 header power](logs/2026-10-20-pi-3-lite-memory-corrected-lrs-50-5-header-power.md)
+run records the 15-minute warm-up and 10-minute steady-state test after fixing
+long-lived audio, FSEQ, worker, buffer-pool, and scheduler allocations. The
+[October 21 overnight soak](logs/2026-10-21-pi-3-lite-memory-corrected-overnight-soak.md)
+records a five-minute follow-up after nearly 22 hours of uninterrupted operation.
 
 Official pi-gen reference: https://github.com/RPi-Distro/pi-gen/tree/arm64

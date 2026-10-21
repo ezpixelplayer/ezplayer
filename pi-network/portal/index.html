@@ -69,7 +69,7 @@ function applyLanMode(){
  $('manualLan').hidden=mode==='auto';$('ip').required=$('subnet').required=manual;
  for(const id of ['ip','subnet','gateway','dns']){$(id).readOnly=ezrgb;$(id).placeholder=ezrgb&&['gateway','dns'].includes(id)?'None':id==='ip'?'192.168.50.10':id==='subnet'?'255.255.255.0':id==='gateway'?'192.168.50.1':'1.1.1.1, 8.8.8.8'}
  $('ezrgbNote').hidden=!ezrgb;$('controllerOnlyLabel').hidden=ezrgb;
- if(ezrgb){$('ip').value='192.168.25.1';$('subnet').value='255.255.255.0';$('gateway').value='';$('dns').value='';$('controllerOnly').checked=true}
+ if(ezrgb){$('ip').value='192.168.25.2';$('subnet').value='255.255.255.0';$('gateway').value='';$('dns').value='';$('controllerOnly').checked=true}
 }
 function syncLan(settings){
  if(!settings||lanDirty||serviceBusy)return;
