@@ -16,5 +16,12 @@ title: Volume
 When two overrides cover the same time, the **last entry wins** (the same way
 [Viewer Control](./viewer-control.md) resolves overlaps).
 
+Each override appears in a list with its days, time range, volume and priority.
+Use the pencil to edit an entry, the up and down arrows to lower or raise its
+priority (entries lower in the list take priority), or the bin to delete it.
+
+If **Use default audio output?** is set to **No**, volume overrides are set per
+device under **Audio Devices** instead.
+
 Volume lives on the **Audio** tile of the
 [Settings](../settings/audio.md) screen.

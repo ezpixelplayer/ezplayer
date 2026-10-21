@@ -84,6 +84,10 @@ activity.
 
 What the audience is doing with the viewer page. The dialog has these cards:
 
+![Viewer Activity dialog](/img/viewer-activity-1.png)
+![Viewer Activity dialog](/img/viewer-activity-2.png)
+
+
 - **Right now** — whether the player is online and whether requests or voting are
   open, with how many people are **on the page** and **listening**, the number of
   songs **in queue**, and the **songs with votes**. The request queue and vote
