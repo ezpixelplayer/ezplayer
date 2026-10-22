@@ -55,3 +55,16 @@ Add entries with **Add Schedule Entry**. Delete an entry with the trash icon.
 
 If windows overlap, the **last entry in the list takes priority** (shown as
 higher priority in the list).
+
+### Separate Remote Falcon Schedule
+
+When the viewer page and Remote Falcon are both on, they share one schedule by
+default. Turn on **Separate Remote Falcon schedule and playlists** to give
+Remote Falcon its own windows and playlists, shown as a second list, **Remote
+Falcon Schedule**, under the **Viewer Page Schedule**. Use it when Remote
+Falcon should offer a shorter song list than the viewer page (Remote Falcon
+limits how many songs a show can list), or take requests at different hours.
+
+The Remote Falcon schedule starts as a copy of the shared schedule; after that,
+edit either list on its own. Viewer-page requests still play before Remote
+Falcon suggestions whenever both windows are open.

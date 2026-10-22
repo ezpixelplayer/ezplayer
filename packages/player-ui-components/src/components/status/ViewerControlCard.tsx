@@ -7,7 +7,8 @@
  * in a dialog.
  */
 
-import { getActiveViewerControlSchedule, viewerControlBackends } from '@ezplayer/ezplayer-core';
+import type { ViewerControlBackend } from '@ezplayer/ezplayer-core';
+import { getActiveViewerControlSchedule, viewerControlBackends, viewerControlSchedule } from '@ezplayer/ezplayer-core';
 import CloseIcon from '@mui/icons-material/Close';
 import GroupsRounded from '@mui/icons-material/GroupsRounded';
 import SettingsRounded from '@mui/icons-material/SettingsRounded';
@@ -40,6 +41,12 @@ const BACKEND_LABEL: Record<string, string> = {
     ezplayer: 'EZPlayer viewer page',
 };
 
+/** Lower-case names for the per-backend window lines when the schedules are separate. */
+const WINDOW_NAME: Record<ViewerControlBackend, string> = {
+    'remote-falcon': 'Remote Falcon',
+    ezplayer: 'viewer page',
+};
+
 const MODE_LABEL: Record<string, string> = { off: 'off', request: 'taking requests', vote: 'taking votes' };
 
 export function ViewerControlCard() {
@@ -59,19 +66,30 @@ export function ViewerControlCard() {
     const backends = useMemo(() => viewerControlBackends(viewerControl), [viewerControl]);
     const anyOn = backends.length > 0;
     const builtIn = backends.includes('ezplayer');
-    const window = useMemo(
-        () => (viewerControl && anyOn ? getActiveViewerControlSchedule(viewerControl, now) : null),
-        [viewerControl, anyOn, now],
+    // One window per backend; they differ only when Remote Falcon has its own schedule.
+    const windows = useMemo(
+        () =>
+            new Map(
+                backends.map((b) => [b, viewerControl ? getActiveViewerControlSchedule(viewerControl, b, now) : null]),
+            ),
+        [viewerControl, backends, now],
     );
+    const splitSchedules = !!viewerControl?.separateRemoteFalconSchedule && backends.length > 1;
     const live = summary?.live;
     const liveFresh = !!live && Date.now() - live.at < 2 * 60_000;
 
-    const windowLine = (() => {
-        if (!anyOn) return null;
-        if (!viewerControl?.schedule?.length) return 'No request windows scheduled';
-        return window
-            ? `Request window open now — playlist “${window.playlist}” until ${window.endTime}`
-            : 'Request window closed now';
+    // One line for the shared schedule, or one per backend when they differ.
+    const windowLines = (() => {
+        if (!anyOn) return [];
+        const lineFor = (b: ViewerControlBackend, name: string) => {
+            const w = windows.get(b);
+            const Name = name.charAt(0).toUpperCase() + name.slice(1);
+            if (w) return `${Name} window open now: playlist "${w.playlist}" until ${w.endTime}`;
+            if (!viewerControlSchedule(viewerControl, b).length) return `No ${name} windows scheduled`;
+            return `${Name} window closed now`;
+        };
+        if (!splitSchedules) return [{ key: 'shared', text: lineFor(backends[0], 'request') }];
+        return backends.map((b) => ({ key: b, text: lineFor(b, WINDOW_NAME[b]) }));
     })();
 
     const cloudLine = (() => {
@@ -115,7 +133,7 @@ export function ViewerControlCard() {
                                 key={b}
                                 size="small"
                                 label={BACKEND_LABEL[b] ?? b}
-                                color={window ? 'success' : 'warning'}
+                                color={windows.get(b) ? 'success' : 'warning'}
                                 variant="filled"
                             />
                         ))
@@ -123,7 +141,11 @@ export function ViewerControlCard() {
                         <Chip size="small" label="Disabled" variant="outlined" />
                     )}
                 </Box>
-                {windowLine ? <Typography variant="body1">{windowLine}</Typography> : null}
+                {windowLines.map((line) => (
+                    <Typography key={line.key} variant="body1">
+                        {line.text}
+                    </Typography>
+                ))}
                 {cloudLine ? <Typography variant="body1">{cloudLine}</Typography> : null}
                 {backends.length === 2 ? (
                     <Typography variant="body2" color="text.secondary">

@@ -597,14 +597,16 @@ let lastRFCheck: number = Date.now();
 
 // With both backends on, each round asks the built-in request line first and polls
 // Remote Falcon only when that had nothing (see the ezvc suggestion callback). The
-// two checks fire in the same tick because they share the schedule and the timing.
+// two checks fire in the same tick because they share the timing. Remote Falcon is
+// held only while the built-in window is open: the two schedules may differ, and a
+// closed built-in window sends no check, so nothing would release the hold.
 let rfCheckDeferred = false;
 let rfCheckDeferredAt = 0;
 /** If the built-in check never answers (cloud unreachable), stop holding Remote Falcon. */
 const RF_DEFER_MAX_MS = 3000;
 function initiateRFCheck() {
     const vc = latestSettings?.viewerControl;
-    const bothOn = viewerControlBackends(vc).includes('ezplayer') && !!ezvcCloudUrl && !!ezvcPlayerToken;
+    const bothOn = !!vc && !!getActiveViewerControlSchedule(vc, 'ezplayer') && !!ezvcCloudUrl && !!ezvcPlayerToken;
     if (!bothOn) {
         sendRFInitiateCheck();
         return;
@@ -630,11 +632,7 @@ function sendRemoteUpdate() {
         //emitInfo("No RF token");
         return;
     }
-    if (!viewerControlBackends(settings.viewerControl).includes('remote-falcon')) {
-        setRFControlEnabled(false);
-        return;
-    }
-    const rfStat = getActiveViewerControlSchedule(settings.viewerControl);
+    const rfStat = getActiveViewerControlSchedule(settings.viewerControl, 'remote-falcon');
     if (!rfStat) {
         //emitInfo('Disable RF');
         setRFControlEnabled(false);
@@ -722,9 +720,9 @@ function admitViewerPick(songId: string, source: 'remote-falcon' | 'viewer'): bo
 }
 
 // ---- EZPlayer viewer control (ViewerControlState.type === 'ezplayer') ------
-// The schedule gating is shared (`getActiveViewerControlSchedule`); only the
-// backend differs. The cloud owns the mode/policy, so the suggestion is a
-// sequence id we can play directly — no index mapping needed.
+// Gated by the main schedule (`getActiveViewerControlSchedule`), which Remote
+// Falcon shares unless it has its own. The cloud owns the mode/policy, so the
+// suggestion is a sequence id we can play directly; no index mapping needed.
 let ezvcCloudUrl: string | undefined = undefined;
 let ezvcPlayerToken: string | undefined = undefined;
 let ezvcConfigInitialized = false;
@@ -824,7 +822,7 @@ function sendEzvcUpdate() {
     // runs only when type === 'ezplayer' and its schedule window is open.
     const vc = settings.viewerControl;
     const ezOn = viewerControlBackends(vc).includes('ezplayer');
-    const ezWindow = ezOn ? getActiveViewerControlSchedule(vc) : null;
+    const ezWindow = getActiveViewerControlSchedule(vc, 'ezplayer');
     setEzvcControlEnabled(!!ezWindow);
 
     // ---- now-playing + the upcoming song lineup ("what's coming") ---------
@@ -867,7 +865,7 @@ function sendEzvcUpdate() {
             start: new Date(x.startTimeMS).toISOString(),
             end: new Date(x.endTimeMS).toISOString(),
         }));
-    // Request windows: exactly the viewer-control schedule entries.
+    // Request windows: the viewer page's schedule entries (never Remote Falcon's own).
     const reqWindows: VcScheduleEntry[] = (ezOn ? (vc?.schedule ?? []) : []).map((e) => ({
         title: e.playlist,
         start: e.startTime,
@@ -1501,7 +1499,7 @@ function dispatchSettings(settings: PlaybackSettings) {
             (next) => {
                 const settings = latestSettings;
                 if (!settings) return;
-                const rfc = getActiveViewerControlSchedule(settings.viewerControl);
+                const rfc = getActiveViewerControlSchedule(settings.viewerControl, 'remote-falcon');
                 if (!rfc) return;
                 const pl = curPlaylists?.find((pl) => pl.title.toLowerCase() === rfc?.playlist.toLowerCase());
                 if (!pl) return;
