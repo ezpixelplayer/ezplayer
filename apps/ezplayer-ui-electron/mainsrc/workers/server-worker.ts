@@ -434,6 +434,9 @@ interface CloudBridge {
 }
 let cloudBridge: CloudBridge | undefined;
 
+/** Bounds a dial; an unbounded CONNECTING socket counts as alive and blocks redial forever. */
+const BRIDGE_HANDSHAKE_TIMEOUT_MS = 15_000;
+
 /** Open, or still dialing (CONNECTING). Anything else is dead and gets redialed. */
 function bridgeAlive(b: { ws: WebSocket; open: boolean }): boolean {
     return b.open || b.ws.readyState === WebSocket.CONNECTING;
@@ -470,7 +473,7 @@ function openCloudBridge(
     }
     let ws: WebSocket;
     try {
-        ws = new WebSocket(wsUrl);
+        ws = new WebSocket(wsUrl, { handshakeTimeout: BRIDGE_HANDSHAKE_TIMEOUT_MS });
     } catch (err) {
         console.error('[server-worker] cloud bridge dial failed:', err);
         return;
@@ -547,7 +550,7 @@ function openCloudProxyBridge(wsUrl: string, sessionId: string, ttlSeconds: numb
     }
     let ws: WebSocket;
     try {
-        ws = new WebSocket(wsUrl);
+        ws = new WebSocket(wsUrl, { handshakeTimeout: BRIDGE_HANDSHAKE_TIMEOUT_MS });
     } catch (err) {
         console.error('[server-worker] cloud proxy bridge dial failed:', err);
         return;
@@ -908,7 +911,7 @@ function openCloudAudioBridge(wsUrl: string, sessionId: string, ttlSeconds: numb
     }
     let ws: WebSocket;
     try {
-        ws = new WebSocket(wsUrl);
+        ws = new WebSocket(wsUrl, { handshakeTimeout: BRIDGE_HANDSHAKE_TIMEOUT_MS });
     } catch (err) {
         console.error('[server-worker] cloud audio bridge dial failed:', err);
         return;
