@@ -294,5 +294,10 @@ export {
     viewerControlScheduleList,
     withViewerControlBackends,
 } from './util/viewerControlBackends';
-export type { ViewerControlBackend, ViewerControlScheduleList, PlaySongSource } from './types/DataTypes';
+export type {
+    ViewerControlBackend,
+    ViewerControlScheduleList,
+    ViewerControlResyncResult,
+    PlaySongSource,
+} from './types/DataTypes';
 export type { VcPickSource, VcDropReason } from './types/ViewerControlWire';

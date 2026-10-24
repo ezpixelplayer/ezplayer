@@ -600,6 +600,9 @@ export type EZPlayerCommand =
           command: 'resetstats'; // Reset cumulative stats counters
       }
     | {
+          command: 'resyncviewercontrol'; // Re-send the song list and state to Remote Falcon
+      }
+    | {
           command: 'stopnow'; // Stop all playing
       }
     | {
@@ -732,6 +735,14 @@ export interface CloudPollScheduleEntry {
 }
 
 export type ViewerControlBackend = 'remote-falcon' | 'ezplayer';
+
+/** Outcome of an operator-requested Remote Falcon song-list push.  `message`
+ *  carries Remote Falcon's own words when it refuses the list — it answers
+ *  HTTP 200 either way, so that text is the only sign of a refusal. */
+export interface ViewerControlResyncResult {
+    ok: boolean;
+    message?: string;
+}
 
 export interface ViewerControlState {
     enabled: boolean;

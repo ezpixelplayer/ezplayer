@@ -103,7 +103,7 @@ import { dispatchAppSettingsCommand, getAppSettingsState } from './appSettings.j
 import { safeSend } from './safe-send.js';
 import { syncAudioOutputsFromSettings, broadcastAudioChunk } from './audioWindows.js';
 
-import type { EZPlayerCommand } from '@ezplayer/ezplayer-core';
+import type { EZPlayerCommand, ViewerControlResyncResult } from '@ezplayer/ezplayer-core';
 
 import { PlayerCommand, type MainRPCAPI, type PlayWorkerRPCAPI, WorkerToMainMessage } from './workers/playbacktypes.js';
 import { RPCClient, RPCServer } from './workers/rpc.js';
@@ -458,6 +458,16 @@ export function isScheduleActive(): boolean {
 /** The baked song order of a playback item, from the worker that holds it. */
 export async function getPlaybackItemOrder(key: string): Promise<PlaybackItemOrder | undefined> {
     return await rpcc?.call('getPlaybackItemOrder', { key });
+}
+
+/** Re-push the Remote Falcon song list; resolves with Remote Falcon's own
+ *  answer, so the caller can show a refusal rather than claim success. */
+export async function resyncViewerControl(): Promise<ViewerControlResyncResult> {
+    try {
+        return (await rpcc?.call('resyncViewerControl', {})) ?? { ok: false, message: 'The player is not running' };
+    } catch (err) {
+        return { ok: false, message: err instanceof Error ? err.message : String(err) };
+    }
 }
 
 /**
@@ -1192,6 +1202,10 @@ export async function registerContentHandlers(mainWindow: BrowserWindow | null, 
     });
     ipcMain.handle('ipcPutCloudSchedule', async (_event, recs: ScheduledPlaylist[]): Promise<ScheduledPlaylist[]> => {
         return await updateScheduleHandler(recs);
+    });
+
+    ipcMain.handle('ipcResyncViewerControl', async (_event): Promise<ViewerControlResyncResult> => {
+        return await resyncViewerControl();
     });
 
     ipcMain.handle('ipcGetCloudStatus', async (_event): Promise<CombinedPlayerStatus> => {
