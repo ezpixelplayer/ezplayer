@@ -37,6 +37,28 @@ export class FSEQHeader {
     headers: { [key: string]: string } = {};
 }
 
+// The sparse range count is one byte, and xLights has written tables of more
+// than 255 ranges with only the low byte. Take the count implied by the header
+// length (offset to the variable headers) when its low byte matches, the table
+// fits before the channel data, and the ranges add up to the channel count.
+function sparseRangeCount(hdr: DataView): number {
+    const n = hdr.getUint8(22);
+    const off2chdata = hdr.getUint16(4, true);
+    const shdrlen = hdr.getUint16(8, true);
+    const blks = ((hdr.getUint8(20) & 240) << 4) + hdr.getUint8(21);
+    const tableStart = 32 + blks * 8;
+    if (shdrlen <= tableStart + n * 6 || shdrlen > off2chdata || shdrlen > hdr.byteLength) return n;
+    if ((shdrlen - tableStart) % 6) return n;
+    const full = (shdrlen - tableStart) / 6;
+    if ((full & 255) !== n) return n;
+    let sum = 0;
+    for (let i = 0; i < full; ++i) {
+        const p = tableStart + i * 6 + 3;
+        sum += hdr.getUint8(p) + hdr.getUint8(p + 1) * 256 + hdr.getUint8(p + 2) * 65536;
+    }
+    return sum === hdr.getUint32(10, true) ? full : n;
+}
+
 export class FSEQReaderBrowser {
     private buffer: DataView;
     private offset = 0;
@@ -165,6 +187,7 @@ export class FSEQReaderBrowser {
                         compblocklist.push({ framenum, blocksize });
                     }
 
+                    nranges = sparseRangeCount(this.buffer);
                     for (let i = 0; i < nranges; ++i) {
                         const startch = this.read24bit();
                         const chcount = this.read24bit();
@@ -180,6 +203,7 @@ export class FSEQReaderBrowser {
             if (full) {
                 while (this.offset + 4 <= off2chdata) {
                     const hlen = this.read16bit() - 4;
+                    if (hlen < 0) break; // corrupt; a zero length would never advance
                     const hname = new TextDecoder().decode(this.read(2));
                     const hval = new TextDecoder().decode(this.read(hlen));
                     v1headers[hname] = hval;
