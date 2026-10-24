@@ -65,6 +65,7 @@ export type RFWorkerInMessage =
     | { type: 'setControlEnabled'; enabled: boolean }
     | { type: 'syncPlaylists'; playlists: PlaylistSyncItem[] }
     | { type: 'requestNextSuggestion' }
+    | { type: 'forgetRemoteState' }
     | { type: 'sendHeartbeat' };
 
 // Worker to Parent
@@ -341,15 +342,20 @@ async function runGuarded(key: string, fn: () => Promise<void>) {
 // Debounced action handlers
 // -------------------------
 
-async function handleSetConfig(newConfig: RFApiClientConfig) {
-    config = newConfig;
-    client = null; // force recreation with new settings
-
-    // Reset RF view since we don't know what it's at anymore
+/** Drop what we believe RF holds, so the next update pushes all of it again.
+ *  Needed after a config change, and when the site was edited behind our back. */
+function forgetRemoteState() {
     lastNowPlaying = null;
     lastNextScheduled = null;
     lastControlEnabled = null;
     lastPlaylistHash = null;
+}
+
+async function handleSetConfig(newConfig: RFApiClientConfig) {
+    config = newConfig;
+    client = null; // force recreation with new settings
+
+    forgetRemoteState();
 
     send({ type: 'configStatus', ok: true });
 }
@@ -512,6 +518,9 @@ parentPort.on('message', async (msg: RFWorkerInMessage) => {
                 break;
             case 'requestNextSuggestion':
                 await handleRequestNextSuggestion();
+                break;
+            case 'forgetRemoteState':
+                forgetRemoteState();
                 break;
             case 'sendHeartbeat':
                 await handleSendHeartbeat();

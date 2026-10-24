@@ -600,6 +600,9 @@ export type EZPlayerCommand =
           command: 'resetstats'; // Reset cumulative stats counters
       }
     | {
+          command: 'resyncviewercontrol'; // Re-send the song list and state to Remote Falcon
+      }
+    | {
           command: 'stopnow'; // Stop all playing
       }
     | {

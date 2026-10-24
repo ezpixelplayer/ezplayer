@@ -29,6 +29,7 @@ import type {
 import { viewerControlBackends } from '@ezplayer/ezplayer-core';
 import { Box } from '../../box/Box';
 import { playbackSettingsActions } from '../../../store/slices/PlaybackSettingsStore';
+import { callImmediateCommand } from '../../../store/slices/RuntimeStore';
 import type { AppDispatch, RootState } from '../../../store/Store';
 import {
     DAY_OPTIONS,
@@ -174,6 +175,7 @@ export const ViewerSettings: React.FC = () => {
     const [dialogList, setDialogList] = useState<ViewerControlScheduleList>('schedule');
     const [pendingDelete, setPendingDelete] = useState<{ list: ViewerControlScheduleList; id: string } | null>(null);
     const [showRemoteFalconToken, setShowRemoteFalconToken] = useState(false);
+    const [resendState, setResendState] = useState<'idle' | 'busy' | 'sent'>('idle');
 
     // Both backends share `schedule` unless Remote Falcon is given its own.
     const backends = viewerControlBackends(settings.viewerControl);
@@ -194,6 +196,19 @@ export const ViewerSettings: React.FC = () => {
                 on ? [...backends, backend] : backends.filter((b) => b !== backend),
             ),
         );
+
+    /** Push the song list to Remote Falcon even though nothing changed here —
+     *  needed when the list was edited on the site, which the player cannot see. */
+    const resendRemoteFalconList = async () => {
+        setResendState('busy');
+        try {
+            await dispatch(callImmediateCommand({ command: 'resyncviewercontrol' })).unwrap();
+            setResendState('sent');
+            setTimeout(() => setResendState('idle'), 4000);
+        } catch {
+            setResendState('idle');
+        }
+    };
 
     const openAdd = (list: ViewerControlScheduleList) => {
         setDialogList(list);
@@ -283,31 +298,45 @@ export const ViewerSettings: React.FC = () => {
             />
 
             {backends.includes('remote-falcon') && (
-                <TextField
-                    fullWidth
-                    size="small"
-                    type={showRemoteFalconToken ? 'text' : 'password'}
-                    label="Remote Falcon Token"
-                    value={settings.viewerControl.remoteFalconToken}
-                    onChange={(e) => dispatch(playbackSettingsActions.setRemoteFalconToken(e.target.value))}
-                    placeholder="Enter your Remote Falcon token"
-                    autoComplete="off"
-                    sx={{ mb: 3 }}
-                    InputProps={{
-                        endAdornment: (
-                            <InputAdornment position="end">
-                                <IconButton
-                                    aria-label={showRemoteFalconToken ? 'Hide token' : 'Show token'}
-                                    onClick={() => setShowRemoteFalconToken((visible) => !visible)}
-                                    edge="end"
-                                    size="small"
-                                >
-                                    {showRemoteFalconToken ? <VisibilityOff /> : <Visibility />}
-                                </IconButton>
-                            </InputAdornment>
-                        ),
-                    }}
-                />
+                <Box sx={{ mb: 3 }}>
+                    <TextField
+                        fullWidth
+                        size="small"
+                        type={showRemoteFalconToken ? 'text' : 'password'}
+                        label="Remote Falcon Token"
+                        value={settings.viewerControl.remoteFalconToken}
+                        onChange={(e) => dispatch(playbackSettingsActions.setRemoteFalconToken(e.target.value))}
+                        placeholder="Enter your Remote Falcon token"
+                        autoComplete="off"
+                        sx={{ mb: 1 }}
+                        InputProps={{
+                            endAdornment: (
+                                <InputAdornment position="end">
+                                    <IconButton
+                                        aria-label={showRemoteFalconToken ? 'Hide token' : 'Show token'}
+                                        onClick={() => setShowRemoteFalconToken((visible) => !visible)}
+                                        edge="end"
+                                        size="small"
+                                    >
+                                        {showRemoteFalconToken ? <VisibilityOff /> : <Visibility />}
+                                    </IconButton>
+                                </InputAdornment>
+                            ),
+                        }}
+                    />
+                    <Button
+                        variant="outlined"
+                        size="small"
+                        disabled={!settings.viewerControl.remoteFalconToken || resendState === 'busy'}
+                        onClick={() => void resendRemoteFalconList()}
+                    >
+                        {resendState === 'sent' ? 'Song list sent' : 'Send song list now'}
+                    </Button>
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                        The player only uploads a list that has changed here. Use this after editing the sequences on
+                        the Remote Falcon site, so the two agree again.
+                    </Typography>
+                </Box>
             )}
 
             {showSeparateToggle && (

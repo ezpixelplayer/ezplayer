@@ -85,6 +85,11 @@ export function setRFPlaylist(pl: PlaylistSyncItem[]) {
     });
 }
 
+/** Forget what the worker thinks RF holds; the next update re-pushes all of it. */
+export function resyncRF() {
+    send({ type: 'forgetRemoteState' });
+}
+
 export function sendRFInitiateCheck() {
     send({
         type: 'requestNextSuggestion',

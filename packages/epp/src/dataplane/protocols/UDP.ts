@@ -122,15 +122,6 @@ export class UdpClient {
                 });
             }
 
-            if (this.sendBufSize) {
-                try {
-                    this.socket.setSendBufferSize(this.sendBufSize);
-                } catch (e) {
-                    const err = e as Error;
-                    this.lastError = err.message;
-                }
-            }
-
             await new Promise<void>((resolve, reject) => {
                 const onError = (err: Error) => {
                     this.socket?.off('connect', onConnect); // Cleanup listeners
@@ -151,6 +142,18 @@ export class UdpClient {
 
                 this.socket?.connect(this.port, this.address);
             });
+
+            // The OS socket handle only exists once bound or connected; setting
+            // the buffer before that throws ENOTSOCK and silently leaves the
+            // default (64 KB on Windows), too small for a frame's worth of packets.
+            if (this.sendBufSize) {
+                try {
+                    this.socket?.setSendBufferSize(this.sendBufSize);
+                } catch (e) {
+                    const err = e as Error;
+                    this.lastError = err.message;
+                }
+            }
         } catch (e) {
             const error = e as Error;
             this.lastError = error.message;
