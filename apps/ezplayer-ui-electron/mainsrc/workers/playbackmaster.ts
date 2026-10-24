@@ -53,6 +53,8 @@ import {
     resolveVolumeTargets,
     type VolumeTarget,
     viewerControlBackends,
+    viewerControlSchedule,
+    type ViewerControlResyncResult,
 } from '@ezplayer/ezplayer-core';
 
 if (!parentPort) throw new Error('No parentPort in worker');
@@ -111,7 +113,16 @@ import { decompressZStdWithWorker, getZstdStats, resetZstdStats } from './zstdpa
 import { setPingConfig, getLatestPingStats, stopPing } from './pingparent';
 import type { PingTarget } from './pingworker';
 
-import { sendRFInitiateCheck, setRFConfig, setRFControlEnabled, setRFNowPlaying, setRFPlaylist } from './rfparent';
+import {
+    resyncRF,
+    resyncRFPlaylist,
+    sendRFInitiateCheck,
+    setRFConfig,
+    setRFControlEnabled,
+    setRFNowPlaying,
+    setRFPlaylist,
+    setRFWarningCallback,
+} from './rfparent';
 import { PlaylistSyncItem } from './rfsync';
 import {
     sendEzvcInitiateCheck,
@@ -277,6 +288,7 @@ const handlers: PlayWorkerRPCAPI = {
     fail: ({ msg }) => {
         throw new Error(msg);
     },
+    resyncViewerControl: async (_args: Record<string, never>) => resyncRemoteFalcon(),
     stopPlayback: async (_args: Record<string, never>) => {
         // Send black frame once as part of shutdown behavior
         isStopped = true;
@@ -597,14 +609,16 @@ let lastRFCheck: number = Date.now();
 
 // With both backends on, each round asks the built-in request line first and polls
 // Remote Falcon only when that had nothing (see the ezvc suggestion callback). The
-// two checks fire in the same tick because they share the schedule and the timing.
+// two checks fire in the same tick because they share the timing. Remote Falcon is
+// held only while the built-in window is open: the two schedules may differ, and a
+// closed built-in window sends no check, so nothing would release the hold.
 let rfCheckDeferred = false;
 let rfCheckDeferredAt = 0;
 /** If the built-in check never answers (cloud unreachable), stop holding Remote Falcon. */
 const RF_DEFER_MAX_MS = 3000;
 function initiateRFCheck() {
     const vc = latestSettings?.viewerControl;
-    const bothOn = viewerControlBackends(vc).includes('ezplayer') && !!ezvcCloudUrl && !!ezvcPlayerToken;
+    const bothOn = !!vc && !!getActiveViewerControlSchedule(vc, 'ezplayer') && !!ezvcCloudUrl && !!ezvcPlayerToken;
     if (!bothOn) {
         sendRFInitiateCheck();
         return;
@@ -624,17 +638,66 @@ function releaseDeferredRFCheck() {
     sendRFInitiateCheck();
 }
 
+/** The RF song list for a playlist, or undefined when there is no such
+ *  playlist (renamed since the schedule entry was written).  Undefined rather
+ *  than empty: an empty list would clear the list on the site. */
+function remotePlaylistItems(playlistName: string | undefined): PlaylistSyncItem[] | undefined {
+    const pl = curPlaylists?.find((p) => p.title.toLowerCase() === playlistName?.toLowerCase());
+    if (!pl) return undefined;
+    const items: PlaylistSyncItem[] = [];
+    for (const i of pl.items) {
+        const s = foregroundPlayerRunState.sequencesById.get(i.id);
+        if (!s) continue;
+        items.push({
+            playlistType: 'SEQUENCE',
+            playlistDuration: s.work.length,
+            playlistIndex: i.sequence,
+            playlistName: `${s.work.title} - ${s.work.artist}${s.sequence?.vendor ? ' - ' + s.sequence.vendor : ''}`,
+        });
+    }
+    return items;
+}
+
+/** The playlist Remote Falcon should be showing: the active window's, or
+ *  outside show hours the last configured entry's (last wins overlaps). */
+function remoteFalconPlaylistName(): string | undefined {
+    const vc = latestSettings?.viewerControl;
+    if (!vc) return undefined;
+    const active = getActiveViewerControlSchedule(vc, 'remote-falcon');
+    if (active) return active.playlist;
+    const entries = viewerControlSchedule(vc, 'remote-falcon');
+    return entries.length ? entries[entries.length - 1].playlist : undefined;
+}
+
+/** Re-push the song list whatever the worker believes RF already has, and
+ *  report what RF said.  Works outside show hours, when there is no active
+ *  entry to take the playlist name from. */
+async function resyncRemoteFalcon(): Promise<ViewerControlResyncResult> {
+    const vc = latestSettings?.viewerControl;
+    if (!vc?.remoteFalconToken) return { ok: false, message: 'No Remote Falcon token is set' };
+    resyncRF();
+    const name = remoteFalconPlaylistName();
+    const items = remotePlaylistItems(name);
+    if (!items) {
+        return {
+            ok: false,
+            message: name ? `There is no playlist named "${name}"` : 'No Remote Falcon schedule entry is configured',
+        };
+    }
+    const res = await resyncRFPlaylist(items);
+    if (res.ok) emitInfo(`Sent ${items.length} songs to Remote Falcon`);
+    // A failure is already reported through setRFWarningCallback.
+    sendRemoteUpdate(); // now-playing and enabled were forgotten too
+    return res;
+}
+
 function sendRemoteUpdate() {
     const settings = latestSettings;
     if (!settings || !settings.viewerControl?.remoteFalconToken) {
         //emitInfo("No RF token");
         return;
     }
-    if (!viewerControlBackends(settings.viewerControl).includes('remote-falcon')) {
-        setRFControlEnabled(false);
-        return;
-    }
-    const rfStat = getActiveViewerControlSchedule(settings.viewerControl);
+    const rfStat = getActiveViewerControlSchedule(settings.viewerControl, 'remote-falcon');
     if (!rfStat) {
         //emitInfo('Disable RF');
         setRFControlEnabled(false);
@@ -647,22 +710,9 @@ function sendRemoteUpdate() {
     const upcoming = foregroundPlayerRunState.predictUpcoming(600_000, 1)[0];
     //emitInfo("Set RF Now Playing");
     setRFNowPlaying(now_playing?.title, upcoming?.title);
-    const pl = curPlaylists?.find((p) => p.title.toLowerCase() === rfStat?.playlist.toLowerCase());
-    const items: PlaylistSyncItem[] = [];
-    if (pl) {
-        for (const i of pl.items) {
-            const s = foregroundPlayerRunState.sequencesById.get(i.id);
-            if (!s) continue;
-            items.push({
-                playlistType: 'SEQUENCE',
-                playlistDuration: s.work.length,
-                playlistIndex: i.sequence,
-                playlistName: `${s.work.title} - ${s.work.artist}${s.sequence?.vendor ? ' - ' + s.sequence.vendor : ''}`,
-            });
-        }
-        //emitInfo(`Set RF Now Playlists ${JSON.stringify(items)}`);
-        setRFPlaylist(items);
-    }
+    const items = remotePlaylistItems(rfStat.playlist);
+    //emitInfo(`Set RF Now Playlists ${JSON.stringify(items)}`);
+    if (items) setRFPlaylist(items);
     if (now_playing) {
         const diff = (now_playing.until ?? 0) - foregroundPlayerRunState.currentTime;
         if (diff >= 3000 && diff < 4000) {
@@ -722,9 +772,9 @@ function admitViewerPick(songId: string, source: 'remote-falcon' | 'viewer'): bo
 }
 
 // ---- EZPlayer viewer control (ViewerControlState.type === 'ezplayer') ------
-// The schedule gating is shared (`getActiveViewerControlSchedule`); only the
-// backend differs. The cloud owns the mode/policy, so the suggestion is a
-// sequence id we can play directly — no index mapping needed.
+// Gated by the main schedule (`getActiveViewerControlSchedule`), which Remote
+// Falcon shares unless it has its own. The cloud owns the mode/policy, so the
+// suggestion is a sequence id we can play directly; no index mapping needed.
 let ezvcCloudUrl: string | undefined = undefined;
 let ezvcPlayerToken: string | undefined = undefined;
 let ezvcConfigInitialized = false;
@@ -824,7 +874,7 @@ function sendEzvcUpdate() {
     // runs only when type === 'ezplayer' and its schedule window is open.
     const vc = settings.viewerControl;
     const ezOn = viewerControlBackends(vc).includes('ezplayer');
-    const ezWindow = ezOn ? getActiveViewerControlSchedule(vc) : null;
+    const ezWindow = getActiveViewerControlSchedule(vc, 'ezplayer');
     setEzvcControlEnabled(!!ezWindow);
 
     // ---- now-playing + the upcoming song lineup ("what's coming") ---------
@@ -867,7 +917,7 @@ function sendEzvcUpdate() {
             start: new Date(x.startTimeMS).toISOString(),
             end: new Date(x.endTimeMS).toISOString(),
         }));
-    // Request windows: exactly the viewer-control schedule entries.
+    // Request windows: the viewer page's schedule entries (never Remote Falcon's own).
     const reqWindows: VcScheduleEntry[] = (ezOn ? (vc?.schedule ?? []) : []).map((e) => ({
         title: e.playlist,
         start: e.startTime,
@@ -1179,6 +1229,11 @@ function processCommand(cmd: EZPlayerCommand) {
         }
         case 'resetstats': {
             resetCumulativeCounters();
+            break;
+        }
+        case 'resyncviewercontrol': {
+            // Fire and forget; the RPC form below is the one that reports back.
+            void resyncRemoteFalcon();
             break;
         }
         case 'holdcontrollerdata': {
@@ -1494,6 +1549,7 @@ function dispatchSettings(settings: PlaybackSettings) {
     if (!rfConfigInitialized || nextToken !== lastRfRemoteToken) {
         rfConfigInitialized = true;
         lastRfRemoteToken = nextToken;
+        setRFWarningCallback((msg) => emitWarning(`Remote Falcon: ${msg}`));
         setRFConfig(
             {
                 remoteToken: nextToken,
@@ -1501,7 +1557,7 @@ function dispatchSettings(settings: PlaybackSettings) {
             (next) => {
                 const settings = latestSettings;
                 if (!settings) return;
-                const rfc = getActiveViewerControlSchedule(settings.viewerControl);
+                const rfc = getActiveViewerControlSchedule(settings.viewerControl, 'remote-falcon');
                 if (!rfc) return;
                 const pl = curPlaylists?.find((pl) => pl.title.toLowerCase() === rfc?.playlist.toLowerCase());
                 if (!pl) return;

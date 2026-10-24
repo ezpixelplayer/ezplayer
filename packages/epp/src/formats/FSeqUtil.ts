@@ -20,6 +20,28 @@ interface SparseRange {
     chcount: number;
 }
 
+/**
+ * Sparse range count of a v2 header (`hdr` holds the bytes from the file start).
+ * The count is one byte, and xLights has written tables of more than 255 ranges
+ * with only the low byte. Take the count implied by the header length (offset to
+ * the variable headers) when its low byte matches, the table fits before the
+ * channel data, and the ranges add up to the channel count.
+ */
+export function sparseRangeCount(hdr: DataView, base = 0): number {
+    const n = hdr.getUint8(base + 22);
+    const off2chdata = hdr.getUint16(base + 4, true);
+    const shdrlen = hdr.getUint16(base + 8, true);
+    const blks = ((hdr.getUint8(base + 20) & 240) << 4) + hdr.getUint8(base + 21);
+    const tableStart = 32 + blks * 8;
+    if (shdrlen <= tableStart + n * 6 || shdrlen > off2chdata || base + shdrlen > hdr.byteLength) return n;
+    if ((shdrlen - tableStart) % 6) return n;
+    const full = (shdrlen - tableStart) / 6;
+    if ((full & 255) !== n) return n;
+    let sum = 0;
+    for (let i = 0; i < full; ++i) sum += readUInt24LE(hdr, base + tableStart + i * 6 + 3);
+    return sum === hdr.getUint32(base + 10, true) ? full : n;
+}
+
 export class ModelRec {
     name: string;
     startch: number;
@@ -299,6 +321,10 @@ export class FSEQReaderSync {
 
                 // Sparse range map
                 // Sparse ranges: 3 ch num, 3 num ch
+                // readAt is positioned and leaves the sequential reads alone.
+                const at = this.fdo;
+                nranges = sparseRangeCount(await this.readAt(off2chdata, 0));
+                this.fdo = at;
                 for (let i = 0; i < nranges; ++i) {
                     const startnum = await this.read24bit();
                     const chcount = await this.read24bit();
@@ -313,6 +339,7 @@ export class FSEQReaderSync {
             while (this.fdo + 4 <= off2chdata) {
                 //console.log ("At "+str(fh.tell())+" vs " + str(shdrlen))
                 const hlen = (await this.read16bit()) - 4;
+                if (hlen < 0) break; // corrupt; a zero length would never advance
                 const hname = utfDecoder.decode(await this.read(2));
                 //console.log ("Header "+hname+": "+str(hlen))
                 const hval = utfDecoder.decode(await this.read(hlen)).replace(/\0+$/, '');
@@ -624,6 +651,7 @@ export class FSEQReaderAsync {
 
                     // Sparse range map
                     // Sparse ranges: 3 ch num, 3 num ch
+                    nranges = sparseRangeCount(buf, origoff);
                     for (let i = 0; i < nranges; ++i) {
                         const startnum = readUInt24LE(buf, off);
                         off += 3;
@@ -642,6 +670,7 @@ export class FSEQReaderAsync {
                 while (off + 4 - origoff <= off2chdata) {
                     //console.log ("At "+str(fh.tell())+" vs " + str(shdrlen))
                     const hlen = buf.getUint16(off, true) - 4;
+                    if (hlen < 0) break; // corrupt; a zero length would never advance
                     off += 2;
                     const hname = utfDecoder.decode(ibuf.subarray(off, off + 2));
                     off += 2;
