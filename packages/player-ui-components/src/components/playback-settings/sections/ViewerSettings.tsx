@@ -29,7 +29,7 @@ import type {
 import { viewerControlBackends } from '@ezplayer/ezplayer-core';
 import { Box } from '../../box/Box';
 import { playbackSettingsActions } from '../../../store/slices/PlaybackSettingsStore';
-import { callImmediateCommand } from '../../../store/slices/RuntimeStore';
+import { resyncViewerControl } from '../../../store/slices/RuntimeStore';
 import type { AppDispatch, RootState } from '../../../store/Store';
 import {
     DAY_OPTIONS,
@@ -175,7 +175,8 @@ export const ViewerSettings: React.FC = () => {
     const [dialogList, setDialogList] = useState<ViewerControlScheduleList>('schedule');
     const [pendingDelete, setPendingDelete] = useState<{ list: ViewerControlScheduleList; id: string } | null>(null);
     const [showRemoteFalconToken, setShowRemoteFalconToken] = useState(false);
-    const [resendState, setResendState] = useState<'idle' | 'busy' | 'sent'>('idle');
+    /** Outcome of the last manual song-list push, shown under the button. */
+    const [resend, setResend] = useState<{ busy: boolean; ok?: boolean; message?: string }>({ busy: false });
 
     // Both backends share `schedule` unless Remote Falcon is given its own.
     const backends = viewerControlBackends(settings.viewerControl);
@@ -198,15 +199,20 @@ export const ViewerSettings: React.FC = () => {
         );
 
     /** Push the song list to Remote Falcon even though nothing changed here —
-     *  needed when the list was edited on the site, which the player cannot see. */
+     *  needed when the list was edited on the site, which the player cannot see.
+     *  Remote Falcon refuses a list over its sequence cap with an HTTP 200, so
+     *  its own message is the only sign; show it rather than claim success. */
     const resendRemoteFalconList = async () => {
-        setResendState('busy');
+        setResend({ busy: true });
         try {
-            await dispatch(callImmediateCommand({ command: 'resyncviewercontrol' })).unwrap();
-            setResendState('sent');
-            setTimeout(() => setResendState('idle'), 4000);
-        } catch {
-            setResendState('idle');
+            const res = await dispatch(resyncViewerControl()).unwrap();
+            setResend({
+                busy: false,
+                ok: res.ok,
+                message: res.message ?? (res.ok ? 'Song list sent' : 'Remote Falcon did not accept the list'),
+            });
+        } catch (e) {
+            setResend({ busy: false, ok: false, message: e instanceof Error ? e.message : String(e) });
         }
     };
 
@@ -327,11 +333,20 @@ export const ViewerSettings: React.FC = () => {
                     <Button
                         variant="outlined"
                         size="small"
-                        disabled={!settings.viewerControl.remoteFalconToken || resendState === 'busy'}
+                        disabled={!settings.viewerControl.remoteFalconToken || resend.busy}
                         onClick={() => void resendRemoteFalconList()}
                     >
-                        {resendState === 'sent' ? 'Song list sent' : 'Send song list now'}
+                        {resend.busy ? 'Sending…' : 'Send song list now'}
                     </Button>
+                    {resend.message && (
+                        <Typography
+                            variant="caption"
+                            color={resend.ok ? 'success.main' : 'error'}
+                            sx={{ display: 'block', mt: 0.5 }}
+                        >
+                            {resend.message}
+                        </Typography>
+                    )}
                     <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
                         The player only uploads a list that has changed here. Use this after editing the sequences on
                         the Remote Falcon site, so the two agree again.

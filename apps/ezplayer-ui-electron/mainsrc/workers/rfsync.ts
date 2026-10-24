@@ -54,6 +54,12 @@ export interface NextToPlay {
     [key: string]: unknown;
 }
 
+/** Plugins-API replies answer HTTP 200 even when the call was refused, and put
+ *  the reason in `message`; a non-null value means nothing was stored. */
+export interface RFPluginAck {
+    message: string | null;
+}
+
 // Parent to Worker
 export type RFWorkerInMessage =
     | { type: 'setConfig'; config: RFApiClientConfig }
@@ -66,6 +72,7 @@ export type RFWorkerInMessage =
     | { type: 'syncPlaylists'; playlists: PlaylistSyncItem[] }
     | { type: 'requestNextSuggestion' }
     | { type: 'forgetRemoteState' }
+    | { type: 'resyncPlaylists'; requestId: string; playlists: PlaylistSyncItem[] }
     | { type: 'sendHeartbeat' };
 
 // Worker to Parent
@@ -76,6 +83,7 @@ export type RFWorkerOutMessage =
     | { type: 'playbackUpdated'; nowPlaying?: string; nextScheduled?: string }
     | { type: 'controlUpdated'; enabled: boolean }
     | { type: 'playlistsSynced' }
+    | { type: 'playlistsSyncResult'; requestId: string; ok: boolean; message?: string }
     | { type: 'nextSuggestion'; viewerMode: string; suggestion: NextToPlay | null }
     | {
           type: 'heartbeatSent';
@@ -201,8 +209,8 @@ export class RFApiClient {
         return this.delete('/purgeQueue');
     }
 
-    syncPlaylists(playlists: PlaylistSyncItem[]): Promise<unknown> {
-        return this.post('/syncPlaylists', { playlists });
+    syncPlaylists(playlists: PlaylistSyncItem[]): Promise<RFPluginAck | undefined> {
+        return this.post<RFPluginAck>('/syncPlaylists', { playlists });
     }
 
     // -----------------------
@@ -411,21 +419,48 @@ async function handleSetControlEnabled(enabled: boolean) {
     });
 }
 
-async function handleSyncPlaylists(playlists: PlaylistSyncItem[]) {
+/** POST the list and raise Remote Falcon's own refusal text as an error (it
+ *  reports a rejected list — over its sequence cap, say — in `message` with an
+ *  HTTP 200).  `lastPlaylistHash` is left alone on failure so a corrected list
+ *  is tried again rather than deduped away. */
+async function pushPlaylists(playlists: PlaylistSyncItem[]) {
     const c = ensureClient();
+    // Simple content hash via JSON string. Good enough for modest lists.
+    const hash = JSON.stringify(playlists);
+    const ack = await c.syncPlaylists(playlists);
+    if (ack?.message) {
+        throw new Error(`Remote Falcon refused the song list: ${ack.message}`);
+    }
+    lastPlaylistHash = hash;
+    send({ type: 'playlistsSynced' });
+}
 
+async function handleSyncPlaylists(playlists: PlaylistSyncItem[]) {
     await runGuarded('syncPlaylists', async () => {
-        // Simple content hash via JSON string. Good enough for modest lists.
-        const hash = JSON.stringify(playlists);
-        if (hash === lastPlaylistHash) {
+        if (JSON.stringify(playlists) === lastPlaylistHash) {
             return; // no change
         }
-
-        await c.syncPlaylists(playlists);
-        lastPlaylistHash = hash;
-
-        send({ type: 'playlistsSynced' });
+        await pushPlaylists(playlists);
     });
+}
+
+/** Operator-requested push: ignores the dedupe hash, and always answers so the
+ *  caller can show what happened instead of waiting on a log file. */
+async function handleResyncPlaylists(requestId: string, playlists: PlaylistSyncItem[]) {
+    if (inFlight['syncPlaylists']) {
+        send({ type: 'playlistsSyncResult', requestId, ok: false, message: 'A list upload is already running' });
+        return;
+    }
+    inFlight['syncPlaylists'] = true;
+    try {
+        lastPlaylistHash = null;
+        await pushPlaylists(playlists);
+        send({ type: 'playlistsSyncResult', requestId, ok: true });
+    } catch (e) {
+        send({ type: 'playlistsSyncResult', requestId, ok: false, message: errorDetail(e) });
+    } finally {
+        inFlight['syncPlaylists'] = false;
+    }
 }
 
 // -------------------------
@@ -521,6 +556,9 @@ parentPort.on('message', async (msg: RFWorkerInMessage) => {
                 break;
             case 'forgetRemoteState':
                 forgetRemoteState();
+                break;
+            case 'resyncPlaylists':
+                await handleResyncPlaylists(msg.requestId, msg.playlists);
                 break;
             case 'sendHeartbeat':
                 await handleSendHeartbeat();

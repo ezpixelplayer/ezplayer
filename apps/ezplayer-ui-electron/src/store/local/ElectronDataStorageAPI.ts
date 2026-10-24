@@ -9,6 +9,7 @@ import type {
     CloudStatus,
     CombinedPlayerStatus,
     EZPlayerCommand,
+    ViewerControlResyncResult,
     PlaylistRecord,
     ScheduledPlaylist,
     SequenceRecord,
@@ -231,6 +232,12 @@ export class ElectronDataStorageAPI implements DataStorageAPI {
 
     async issuePlayerCommand(req: EZPlayerCommand) {
         return await window.electronAPI!.immediatePlayerCommand(req);
+    }
+
+    async resyncViewerControl(): Promise<ViewerControlResyncResult> {
+        const call = window.electronAPI?.resyncViewerControl;
+        if (!call) return { ok: false, message: 'This player build cannot report the result' };
+        return await call();
     }
 
     async setPlayerSettings(s: PlaybackSettings) {

@@ -12,6 +12,7 @@ import type {
     PlayerNStatusContent,
     EZPlayerVersions,
     EZPlayerCommand,
+    ViewerControlResyncResult,
     PlaybackSettings,
     CloudCommand,
     RemoteAccessAvailability,
@@ -199,6 +200,10 @@ export interface EZPElectronAPI {
 
     // Send a command
     immediatePlayerCommand: (cmd: EZPlayerCommand) => Promise<boolean>;
+    /** Re-push the Remote Falcon song list, answering with Remote Falcon's own
+     *  message when it refuses (over its sequence cap, say).  Optional so older
+     *  preloads stay type-compatible. */
+    resyncViewerControl?: () => Promise<ViewerControlResyncResult>;
     setPlaybackSettings: (s: PlaybackSettings) => Promise<boolean>;
 
     // Get / save data  (Nobody is actually calling some of the getters; as they shouldn't... use selectors instead.)
