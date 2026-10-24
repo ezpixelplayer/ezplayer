@@ -1,0 +1,9 @@
+apps/ezplayer-ui-electron/main.ts
+apps/ezplayer-ui-electron/mainsrc/ipcmain.ts
+apps/ezplayer-ui-electron/package.json
+apps/ezplayer-ui-electron/preload.ts
+apps/ezplayer-ui-electron/src/modules/Welcome/WelcomeScreen.tsx
+apps/ezplayer-ui-electron/src/router/router.tsx
+packages/ezplayer-core/src/types/EZPElectronAPI.ts
+
+Added: pi-appliance/, mainsrc/piSystem.ts, src/components/PiSettings.tsx

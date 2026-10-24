@@ -994,6 +994,7 @@ describe('calcschedule', () => {
         for (const l of logs1) expect(l.eventType).not.toBe('Schedule Suspended');
         expect(logs1.find((e) => e.eventType === 'Schedule Prevented')).toBeDefined();
         expect(logs1.find((e) => e.eventType === 'Schedule Deferred')).toBeDefined();
+        expect(plr1.heapById.size).toBe(0);
         expect(logs1[logs1.length - 1].eventTime).toBe(bt + 18 * 60 * 60 * 1000 + 60 * 10 * 1000);
         expect(logs1[logs1.length - 1].eventType).toBe('Schedule Ended');
         //

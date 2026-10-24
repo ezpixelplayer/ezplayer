@@ -45,6 +45,14 @@
     "pnpm": {
         "overrides": {
             "esbuild@0.27": "0.28.2"
-        }
+        },
+        "onlyBuiltDependencies": [
+            "@parcel/watcher",
+            "@swc/core",
+            "electron",
+            "electron-winstaller",
+            "esbuild",
+            "ffmpeg-static"
+        ]
     }
 }

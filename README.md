@@ -102,7 +102,11 @@ sudo sysctl -p /etc/sysctl.d/99-ezplayer-ping.conf
 
 #### Raspberry Pi
 
-EZPlayer is tested on Raspberry Pi 5 and 4 (64-bit OS and 4GB or more required). The Linux ARM releases work, or you can build it yourself. Releases currently only include the application; it is not a full OS image (though that might be added later).
+The EZPlayer appliance image targets Raspberry Pi 3B+, 4, and 5 with a 64-bit OS. It uses Raspberry Pi OS Lite and starts the player as a headless systemd user service, so the Pi does not spend memory on a desktop session or a visible application window. Manage it from another device through the local web interface.
+
+Local HDMI and USB audio continue to work in appliance mode through a hidden audio process; a monitor and graphical login are not required. The Pi 3B+'s 1 GB of RAM makes it the minimum supported model, so large shows and high channel counts should be tested on the intended hardware. Pi 4 and 5 remain the better choice for heavier shows.
+
+The standalone Linux ARM packages are still available for an existing 64-bit Linux installation. The flashable appliance image and its build instructions live under [`pi-appliance`](./pi-appliance/README.md).
 
 ### Running EZPlayer
 

@@ -3,6 +3,7 @@ import { Worker } from 'node:worker_threads';
 import * as path from 'path';
 import { type DecompZStd } from '@ezplayer/epp';
 import { fileURLToPath } from 'node:url';
+import { totalmem } from 'node:os';
 
 // Polyfill for `__dirname` in ES Modules
 const __filename = fileURLToPath(import.meta.url);
@@ -26,7 +27,9 @@ type WorkerErr = {
 let nextId = 1;
 let decompTime = 0;
 
-const nworkers = 4;
+// Each worker owns a WebAssembly decoder whose linear memory stays allocated.
+// One decoder matches the low-memory FSEQ concurrency profile on 1–2 GB boards.
+const nworkers = totalmem() < 2_500_000_000 ? 1 : 4;
 const workers: Worker[] = [];
 for (let i = 0; i < nworkers; ++i) {
     workers.push(new Worker(path.join(__dirname, './zstdworker.js'), { workerData: { name: 'zstddecode' } }));

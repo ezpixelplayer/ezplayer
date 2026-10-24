@@ -1,0 +1,15 @@
+[Unit]
+Description=Initialize EZPlayer identity and controller network on this Pi
+Requires=NetworkManager.service
+After=NetworkManager.service
+Before=ezplayer-network.service ezplayer-show-output.service display-manager.service
+ConditionPathExists=!/var/lib/ezplayer-network/image-initialized
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/ezplayer-pi/image-firstboot.sh
+RemainAfterExit=yes
+TimeoutStartSec=120
+
+[Install]
+WantedBy=multi-user.target

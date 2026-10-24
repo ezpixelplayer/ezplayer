@@ -1,0 +1,4 @@
+__pycache__/
+*.pyc
+pi-gen-stage/00-ezplayer/files/
+output/

@@ -1,6 +1,5 @@
 import * as path from 'path';
 
-import { ArrayBufferPool } from '@ezplayer/epp';
 import { NeededTimePriority, needTimePriorityCompare, PrefetchCache, RefHandle } from '@ezplayer/epp';
 
 import { Worker } from 'node:worker_threads';
@@ -117,12 +116,20 @@ export class MP3PrefetchCache {
         readonly log: (msg: string) => void;
         now: number;
         mp3SpaceSeconds?: number;
+        ageoutMs?: number;
+        decodePoolBytes?: number;
+        decodeReserveSeconds?: number;
+        scratchRetainBytes?: number;
         /** Map a record audio path to the file to decode (its precomputed derivation). */
         resolveFile?: (audioFile: string, opts: { normalize: boolean }) => Promise<string>;
     }) {
         this.now = arg.now;
-        this.readBufPool = new ArrayBufferPool();
-        this.decodewc = new Mp3DecodeWorkerClient(arg.log);
+        this.ageoutMs = arg.ageoutMs ?? 25 * 3600 * 1000;
+        this.decodewc = new Mp3DecodeWorkerClient(arg.log, {
+            maxPoolBytes: arg.decodePoolBytes,
+            defaultReserveSeconds: arg.decodeReserveSeconds,
+            maxScratchRetainBytes: arg.scratchRetainBytes,
+        });
         this.mp3PrefetchCache = new PrefetchCache<MP3FileKey, MP3FileCacheVal, NeededTimePriority>({
             fetchFunction: async (key, _abort) => {
                 arg.log(`Starting mp3 load of ${key.mp3file}`);
@@ -131,7 +138,12 @@ export class MP3PrefetchCache {
                         ? await arg.resolveFile(key.mp3file, { normalize: key.normalize })
                         : key.mp3file;
                     if (filePath !== key.mp3file) arg.log(`Decoding derived audio ${filePath}`);
-                    return { decompAudio: await this.decodewc.decodeFile({ filePath }) };
+                    return {
+                        decompAudio: await this.decodewc.decodeFile({
+                            filePath,
+                            suggestedMaxAudioDur: this.durationHints.get(key.mp3file),
+                        }),
+                    };
                 } finally {
                     arg.log(`Done mp3 decode of ${key.mp3file}`);
                 }
@@ -143,9 +155,11 @@ export class MP3PrefetchCache {
             keyToId: (key) => (key.normalize ? `${key.mp3file}|norm` : key.mp3file),
             budgetLimit: arg.mp3SpaceSeconds ?? 5400,
             maxConcurrency: 1,
+            allowOversizedItem: true,
             priorityComparator: needTimePriorityCompare,
-            onDispose: (_k, v) => {
+            onDispose: (key, v) => {
                 this.decodewc.returnBuffer(v.decompAudio);
+                this.durationHints.delete(key.mp3file);
             },
         });
     }
@@ -197,26 +211,19 @@ export class MP3PrefetchCache {
     }
 
     dispatch(ageout?: number) {
-        this.mp3PrefetchCache.cleanupAndDispatchRequests(this.now, this.now - (ageout ?? 25 * 3600 * 1000)); // Keep for 25 hours
+        this.mp3PrefetchCache.cleanupAndDispatchRequests(this.now, this.now - (ageout ?? this.ageoutMs));
     }
 
     now: number;
-    readBufPool: ArrayBufferPool;
     mp3PrefetchCache: PrefetchCache<MP3FileKey, MP3FileCacheVal, NeededTimePriority>;
     decodewc: Mp3DecodeWorkerClient;
+    private readonly ageoutMs: number;
     /** mp3file -> estimated decoded length (sec), fed from prefetch hints. */
     private durationHints = new Map<string, number>();
 
     getStats() {
-        const readBufPool = this.readBufPool.getStats();
-        let totalReadMem = 0;
-        for (const di of readBufPool) {
-            totalReadMem += di.size * di.total;
-        }
         return {
             mp3Prefetch: this.mp3PrefetchCache.getStats(),
-            readBufPool,
-            totalDecompMem: totalReadMem,
             fileReadTimeCumulative: this.decodewc.fileReadTimeCumulative,
             decodeTimeCumulative: this.decodewc.decodeTimeCumulative,
         };
@@ -265,15 +272,28 @@ export class Mp3DecodeWorkerClient {
         this.decodeTimeCumulative = 0;
     }
 
-    constructor(log?: (msg: string) => void) {
+    constructor(
+        log?: (msg: string) => void,
+        options?: { maxPoolBytes?: number; defaultReserveSeconds?: number; maxScratchRetainBytes?: number },
+    ) {
         this.log = log ?? ((m) => console.error(m));
+        this.options = options;
         this.spawn();
     }
+
+    private readonly options?: {
+        maxPoolBytes?: number;
+        defaultReserveSeconds?: number;
+        maxScratchRetainBytes?: number;
+    };
 
     private spawn(): Worker {
         const worker = new Worker(path.join(__dirname, 'mp3decodeworker.js'), {
             workerData: {
                 name: 'mp3decode',
+                maxPoolBytes: this.options?.maxPoolBytes,
+                defaultReserveSeconds: this.options?.defaultReserveSeconds,
+                maxScratchRetainBytes: this.options?.maxScratchRetainBytes,
             },
         });
         this.worker = worker;
@@ -326,7 +346,13 @@ export class Mp3DecodeWorkerClient {
         }
     }
 
-    async decodeFile({ filePath }: { filePath: string }): Promise<DecodedAudio> {
+    async decodeFile({
+        filePath,
+        suggestedMaxAudioDur,
+    }: {
+        filePath: string;
+        suggestedMaxAudioDur?: number;
+    }): Promise<DecodedAudio> {
         const worker = this.worker ?? this.respawn();
         const id = this.nextId++;
         return new Promise<DecodedAudio>((resolve, reject) => {
@@ -340,6 +366,7 @@ export class Mp3DecodeWorkerClient {
                     type: 'decode',
                     id,
                     filePath,
+                    suggestedMaxAudioDur,
                 } satisfies DecodeReq);
             } catch (err) {
                 clearTimeout(timer);

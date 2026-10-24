@@ -1,0 +1,27 @@
+[Unit]
+Description=EZPlayer local Raspberry Pi settings bridge
+After=NetworkManager.service
+Requires=NetworkManager.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /usr/local/lib/ezplayer-pi/pi_service.py
+User=root
+Group=ezplayer-system
+RuntimeDirectory=ezplayer-pi
+RuntimeDirectoryMode=0750
+UMask=0077
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=read-only
+ProtectSystem=strict
+RestrictAddressFamilies=AF_UNIX
+ReadWritePaths=/run/ezplayer-pi
+StateDirectory=ezplayer-pi
+StateDirectoryMode=0700
+ReadWritePaths=/var/lib/ezplayer-pi
+
+[Install]
+WantedBy=multi-user.target

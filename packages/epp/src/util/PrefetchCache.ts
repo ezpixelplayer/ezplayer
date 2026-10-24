@@ -59,6 +59,10 @@ export interface PrefetchCacheOptions<K, V, P> {
 
     /** Maximum parallel dispatch slots */
     maxConcurrency: number;
+
+    /** Permit one item larger than the whole budget when the cache is otherwise
+     * empty. Useful for media where the current song/block must remain playable. */
+    allowOversizedItem?: boolean;
 }
 
 export interface PrefetchRequest<K, P> {
@@ -524,7 +528,8 @@ export class PrefetchCache<K, V, P> {
             // Live queued item: dispatch if it fits the budget and a slot is free.
             if (item.state === 'queued') {
                 if (
-                    committed + item.estCost <= this.options.budgetLimit &&
+                    (committed + item.estCost <= this.options.budgetLimit ||
+                        (this.options.allowOversizedItem === true && committed === 0)) &&
                     this.activeFetches.size < this.options.maxConcurrency &&
                     !this.activeFetches.has(id)
                 ) {

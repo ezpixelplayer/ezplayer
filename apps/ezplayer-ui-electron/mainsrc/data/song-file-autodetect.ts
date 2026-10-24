@@ -76,7 +76,7 @@ function getAudioNameFromFseqHeader(headers: Record<string, string> | undefined)
         if (!val) continue;
         const ext = path.extname(val).toLowerCase();
         if (AUDIO_EXTENSIONS.includes(ext)) {
-            return path.basename(val);
+            return path.posix.basename(val.replace(/\\/g, '/'));
         }
     }
     return undefined;

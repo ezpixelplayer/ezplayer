@@ -14,11 +14,14 @@ function roundSizeToTwoBitBinary(size: number): number {
 type BucketInfo<B> = {
     size: number;
     pool: B[];
-    allocated: number; // Total ever allocated
+    allocated: number; // Buffers currently checked out or retained in this bucket
 };
 
 abstract class ABufferPool<B> {
     private buckets: Map<number, BucketInfo<B>> = new Map();
+    private pooledBytes = 0;
+
+    constructor(private readonly maxPooledBytes = Number.POSITIVE_INFINITY) {}
 
     abstract alloc(n: number): B;
     abstract getLength(b: B): number;
@@ -43,7 +46,10 @@ abstract class ABufferPool<B> {
         const bucket = this.buckets.get(bucketSize)!;
 
         const buf = bucket.pool.pop();
-        if (buf) return buf;
+        if (buf) {
+            this.pooledBytes -= this.getLength(buf);
+            return buf;
+        }
 
         const b = this.alloc(bucketSize);
         bucket.allocated++;
@@ -55,7 +61,14 @@ abstract class ABufferPool<B> {
         const size = this.getLength(buf);
         const bucket = this.buckets.get(size);
         if (bucket) {
-            bucket.pool.push(buf);
+            if (this.pooledBytes + size <= this.maxPooledBytes) {
+                bucket.pool.push(buf);
+                this.pooledBytes += size;
+            } else {
+                // The caller has relinquished its reference. Do not keep this buffer
+                // alive merely to satisfy a future allocation.
+                bucket.allocated = Math.max(0, bucket.allocated - 1);
+            }
         } else {
             // Not from a known bucket — discard or track separately if you want
             // Could warn here if desired
