@@ -17,7 +17,7 @@ vi.mock('./diagnostics.js', () => ({
     getDiagnosticsConsent: () => ({ uploadEnabled: false, includePlayerId: false }),
 }));
 
-const { buildSupportBundle, nonDefault, pruneCrashDumps, redactSecrets, supportBundleName } =
+const { buildSupportBundle, crashDumpsSince, nonDefault, pruneCrashDumps, redactSecrets, supportBundleName } =
     await import('./diagbundle.js');
 const { defaultPlaybackSettings } = await import('./data/SettingsStorage.js');
 
@@ -40,7 +40,7 @@ describe('buildSupportBundle', () => {
         put('logs/ezplayer-main.log', 'main');
         put('logs/playbackmain.log.1', 'older');
         put('crashDumps/reports/a.dmp', 'a', 1 * DAY);
-        put('crashDumps/reports/b.dmp', 'b', 2 * DAY);
+        put('crashDumps/completed/b.dmp', 'b', 2 * DAY); // macOS / Linux layout
         put('crashDumps/reports/c.dmp', 'c', 3 * DAY);
         put('crashDumps/reports/old.dmp', 'old', 40 * DAY);
         put('crashDumps/reports/notes.txt', 'x');
@@ -196,6 +196,21 @@ describe('pruneCrashDumps', () => {
         put('crashDumps/reports/old.txt', 't', 91 * DAY);
         pruneCrashDumps();
         expect(fs.readdirSync(path.join(root, 'crashDumps/reports')).sort()).toEqual(['new.dmp', 'old.txt']);
+    });
+});
+
+describe('crashDumpsSince', () => {
+    it('counts dumps written since a time, with the newest one', () => {
+        put('crashDumps/reports/old.dmp', 'o', 3 * DAY);
+        put('crashDumps/pending/a.dmp', 'a', 1 * DAY);
+        put('crashDumps/completed/b.dmp', 'b', 2 * DAY);
+        put('crashDumps/completed/notes.txt', 't');
+
+        const r = crashDumpsSince(Date.now() - 2.5 * DAY);
+        expect(r.dumps).toBe(2);
+        expect(Date.now() - Date.parse(r.lastDumpAt!)).toBeLessThan(1.1 * DAY);
+        expect(crashDumpsSince(Date.now() + DAY)).toEqual({ dumps: 0 });
+        expect(crashDumpsSince(Date.parse('not a date'))).toEqual({ dumps: 0 });
     });
 });
 

@@ -47,6 +47,8 @@ const DEFAULT_DOWNLOAD_TIMEOUT_MS = 60_000;
  *  player stuck on "waiting for registration" even though the cloud had
  *  already registered the token, fixable only by restarting the player. */
 const DEFAULT_POLL_TIMEOUT_MS = 15_000;
+/** Whole-transfer cap on the presigned layout PUT; a stall would park `layoutUploadInFlight`. */
+const LAYOUT_UPLOAD_TIMEOUT_MS = 10 * 60_000;
 const DEFAULT_FAILURE_THRESHOLD = 5;
 
 let cloudUrl = '';
@@ -1327,7 +1329,7 @@ async function downloadOne(entry: CloudSeqManifestEntry, pf: PendingFile): Promi
     const stagePart = path.join(stageDir, `${safeFid}__${safeName}.part`);
     const stageFinal = path.join(stageDir, `${safeFid}__${safeName}`);
 
-    const dlRes = await fetchWithTimeout(downloadUrl, downloadTimeoutMs);
+    const dlRes = await fetchWithTimeout(downloadUrl, downloadTimeoutMs, undefined, true);
     if (!dlRes.ok || !dlRes.body) throw new Error(`download HTTP ${dlRes.status}`);
 
     const totalBytes = Number(dlRes.headers.get('content-length') ?? 0) || undefined;
@@ -1439,17 +1441,34 @@ async function downloadOne(entry: CloudSeqManifestEntry, pf: PendingFile): Promi
     return activePath;
 }
 
-async function fetchWithTimeout(url: string, timeoutMs: number, init?: RequestInit): Promise<Response> {
+/** The deadline also covers reading the body, so a stalled reply can't park the in-flight
+ *  flags; `streamBody` callers (large downloads) get it on the headers only. */
+async function fetchWithTimeout(
+    url: string,
+    timeoutMs: number,
+    init?: RequestInit,
+    streamBody = false,
+): Promise<Response> {
     const ac = new AbortController();
-    const t = setTimeout(() => ac.abort(), timeoutMs);
     // Chain the global abort so a pause/setConfig kills in-flight requests and streams.
     const onGlobalAbort = () => ac.abort();
     globalAbort.signal.addEventListener('abort', onGlobalAbort, { once: true });
-    try {
-        return await fetch(url, { ...(init ?? {}), signal: ac.signal });
-    } finally {
+    const release = () => {
         clearTimeout(t);
         globalAbort.signal.removeEventListener('abort', onGlobalAbort);
+    };
+    // Aborting after the body is fully read is a no-op, so the body case just lets this run out.
+    const t = setTimeout(() => {
+        ac.abort();
+        release();
+    }, timeoutMs);
+    try {
+        const res = await fetch(url, { ...(init ?? {}), signal: ac.signal });
+        if (streamBody) release();
+        return res;
+    } catch (e) {
+        release();
+        throw e;
     }
 }
 
@@ -1759,7 +1778,7 @@ async function downloadAndUnpackZip(entry: LayoutEntry): Promise<void> {
     const stageFinal = path.join(stageDir, `${entry.file_id}.zip`);
 
     setLayout({ status: 'fetching' });
-    const dl = await fetchWithTimeout(entry.url, downloadTimeoutMs);
+    const dl = await fetchWithTimeout(entry.url, downloadTimeoutMs, undefined, true);
     if (!dl.ok || !dl.body) throw new Error(`zip download HTTP ${dl.status}`);
     const totalBytes = Number(dl.headers.get('content-length') ?? 0) || undefined;
     setLayout({ status: 'fetching', bytes: 0, totalBytes });
@@ -1854,7 +1873,7 @@ function findLayoutRoot(entries: { name: string; dir: boolean }[]): string | und
 
 async function downloadXmlOverlay(entry: LayoutEntry, targetName: string): Promise<void> {
     setLayout({ status: 'fetching' });
-    const dl = await fetchWithTimeout(entry.url, downloadTimeoutMs);
+    const dl = await fetchWithTimeout(entry.url, downloadTimeoutMs, undefined, true);
     if (!dl.ok || !dl.body) throw new Error(`${targetName} download HTTP ${dl.status}`);
     const totalBytes = Number(dl.headers.get('content-length') ?? 0) || undefined;
     setLayout({ status: 'fetching', bytes: 0, totalBytes });
@@ -1970,7 +1989,7 @@ async function uploadLayout(): Promise<void> {
             method: 'PUT',
             headers: { 'Content-Type': 'application/zip' },
             body: new Blob([zipAb]),
-            signal: globalAbort.signal,
+            signal: AbortSignal.any([globalAbort.signal, AbortSignal.timeout(LAYOUT_UPLOAD_TIMEOUT_MS)]),
         });
         await expectOk(uploadRes, 'presigned PUT upload');
         setLayout({
