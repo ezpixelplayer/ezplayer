@@ -1,4 +1,4 @@
-import type { ControllerRefreshMode, ViewerControlBackend } from '@ezplayer/ezplayer-core';
+import type { ControllerRefreshMode, ViewerControlBackend, ViewerControlScheduleList } from '@ezplayer/ezplayer-core';
 import { controllerRefreshSettingsFor } from '@ezplayer/ezplayer-core';
 import { createAsyncThunk, createSlice, PayloadAction } from '@reduxjs/toolkit';
 import {
@@ -14,6 +14,10 @@ import { RootState } from '../Store';
 
 function newAudioOutputId(): string {
     return `aout-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function newScheduleEntryId(): string {
+    return Math.random().toString(36).slice(2, 11);
 }
 
 function defaultVolumeControl(): VolumeControlState {
@@ -94,6 +98,7 @@ function normalizePlaybackSettings(input: PlaybackSettings): PlaybackSettings {
                     ? [input.viewerControl.type]
                     : []),
             schedule: input.viewerControl?.schedule ?? [],
+            remoteFalconSchedule: input.viewerControl?.remoteFalconSchedule ?? [],
         },
         volumeControl: {
             ...input.volumeControl,
@@ -196,19 +201,41 @@ const playbackSettingsSlice = createSlice({
         setMinSongsBetweenRepeats(state, action: PayloadAction<number>) {
             state.settings.viewerControl.minSongsBetweenRepeats = action.payload;
         },
-        addViewerControlScheduleEntry(state, action: PayloadAction<ViewerControlScheduleEntry>) {
-            (state.settings.viewerControl.schedule ??= []).push(action.payload);
+        /** Turning it on with no Remote Falcon schedule yet starts from a copy of the main one. */
+        setSeparateRemoteFalconSchedule(state, action: PayloadAction<boolean>) {
+            const vc = state.settings.viewerControl;
+            vc.separateRemoteFalconSchedule = action.payload;
+            if (action.payload && !vc.remoteFalconSchedule?.length) {
+                vc.remoteFalconSchedule = (vc.schedule ?? []).map((e) => ({ ...e, id: newScheduleEntryId() }));
+            }
         },
-        removeViewerControlScheduleEntry(state, action: PayloadAction<string>) {
-            state.settings.viewerControl.schedule = (state.settings.viewerControl.schedule ?? []).filter(
-                (e) => e.id !== action.payload,
+        addViewerControlScheduleEntry(
+            state,
+            action: PayloadAction<{ list: ViewerControlScheduleList; entry: ViewerControlScheduleEntry }>,
+        ) {
+            (state.settings.viewerControl[action.payload.list] ??= []).push(action.payload.entry);
+        },
+        removeViewerControlScheduleEntry(
+            state,
+            action: PayloadAction<{ list: ViewerControlScheduleList; entryId: string }>,
+        ) {
+            const { list, entryId } = action.payload;
+            state.settings.viewerControl[list] = (state.settings.viewerControl[list] ?? []).filter(
+                (e) => e.id !== entryId,
             );
         },
-        updateViewerControlScheduleEntry(state, action: PayloadAction<ViewerControlScheduleEntry>) {
-            replaceEntry(state.settings.viewerControl.schedule, action.payload);
+        updateViewerControlScheduleEntry(
+            state,
+            action: PayloadAction<{ list: ViewerControlScheduleList; entry: ViewerControlScheduleEntry }>,
+        ) {
+            replaceEntry(state.settings.viewerControl[action.payload.list], action.payload.entry);
         },
-        moveViewerControlScheduleEntry(state, action: PayloadAction<{ entryId: string; delta: number }>) {
-            moveEntry(state.settings.viewerControl.schedule, action.payload.entryId, action.payload.delta);
+        moveViewerControlScheduleEntry(
+            state,
+            action: PayloadAction<{ list: ViewerControlScheduleList; entryId: string; delta: number }>,
+        ) {
+            const { list, entryId, delta } = action.payload;
+            moveEntry(state.settings.viewerControl[list], entryId, delta);
         },
 
         setSendIdleBlackFrames(state, action: PayloadAction<boolean>) {
@@ -344,6 +371,7 @@ export const {
     setViewerControlType,
     setRemoteFalconToken,
     setMinSongsBetweenRepeats,
+    setSeparateRemoteFalconSchedule,
     addViewerControlScheduleEntry,
     removeViewerControlScheduleEntry,
     updateViewerControlScheduleEntry,

@@ -755,7 +755,16 @@ export interface ViewerControlState {
      *  Always treat absence as empty. `normalizePlaybackSettings` and helpers
      *  in `SettingsScheduleUtils.ts` default to `[]`. */
     schedule?: ViewerControlScheduleEntry[];
+    /** When set, Remote Falcon runs on `remoteFalconSchedule` instead of
+     *  `schedule`, so its windows and playlists can differ from the viewer
+     *  page's. Older readers ignore this and use `schedule` for both. */
+    separateRemoteFalconSchedule?: boolean;
+    /** Remote Falcon's own schedule; used only while `separateRemoteFalconSchedule` is set. */
+    remoteFalconSchedule?: ViewerControlScheduleEntry[];
 }
+
+/** The two viewer-control schedule lists in `ViewerControlState`. */
+export type ViewerControlScheduleList = 'schedule' | 'remoteFalconSchedule';
 
 export interface VolumeControlState {
     defaultVolume: number;
