@@ -102,6 +102,12 @@ export class UdpClient {
         try {
             this._connAttemptInProgress = true;
             this.socket = dgram.createSocket(this.type);
+            // Connected sockets report port-unreachable (controller off or not
+            // listening) as 'error'; record it rather than throw.
+            this.socket.on('error', (err) => {
+                ++this.nErrors;
+                this.lastError = err.message;
+            });
 
             // Bind to a specific local NIC first when requested (ForceLocalIP).
             // Must complete ('listening') before connect() is issued.

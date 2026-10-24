@@ -1073,6 +1073,7 @@ export async function applyRotatePlayerToken(): Promise<void> {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ new_token: newToken }),
+        signal: AbortSignal.timeout(15_000),
     });
     if (!res.ok) throw new Error(`Token rotation failed: HTTP ${res.status}`);
     applyPlayerIdToken(newToken);
