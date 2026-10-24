@@ -483,39 +483,52 @@ export async function stopPlayerPlayback(): Promise<boolean> {
     }
 }
 
-// Exported handler functions that can be called from both IPC and REST endpoints
-export async function updatePlaylistsHandler(recs: PlaylistRecord[]): Promise<PlaylistRecord[]> {
-    const uppl = recs.map((r) => {
-        return { ...r, updatedAt: Date.now() };
-    });
-    const updList = mergePlaylists(uppl, curPlaylists);
-    const showFolder = getCurrentShowFolder();
-    if (showFolder) {
-        await savePlaylistsAPI(showFolder, updList);
-    }
-    curPlaylists = updList;
-    const filtered = updList.filter((r) => r.deleted !== true);
-    safeSend(updateWindow, 'update:playlist', filtered);
-    broadcastToWebSocket('playlists', filtered);
-    scheduleUpdated();
-    return filtered;
+/** Show-data writes and show-folder loads run one at a time, so a load's disk
+ *  read can't overwrite a write that landed while it was in flight. */
+let showDataChain: Promise<unknown> = Promise.resolve();
+function withShowData<T>(fn: () => Promise<T>): Promise<T> {
+    const next = showDataChain.then(fn);
+    showDataChain = next.catch(() => {});
+    return next;
 }
 
-export async function updateScheduleHandler(recs: ScheduledPlaylist[]): Promise<ScheduledPlaylist[]> {
-    const uppl = recs.map((r) => {
-        return { ...r, updatedAt: Date.now() };
+// Exported handler functions that can be called from both IPC and REST endpoints
+export function updatePlaylistsHandler(recs: PlaylistRecord[]): Promise<PlaylistRecord[]> {
+    return withShowData(async () => {
+        const uppl = recs.map((r) => {
+            return { ...r, updatedAt: Date.now() };
+        });
+        const updList = mergePlaylists(uppl, curPlaylists);
+        const showFolder = getCurrentShowFolder();
+        if (showFolder) {
+            await savePlaylistsAPI(showFolder, updList);
+        }
+        curPlaylists = updList;
+        const filtered = updList.filter((r) => r.deleted !== true);
+        safeSend(updateWindow, 'update:playlist', filtered);
+        broadcastToWebSocket('playlists', filtered);
+        scheduleUpdated();
+        return filtered;
     });
-    const updList = mergeSchedule(uppl, curSchedule);
-    const showFolder = getCurrentShowFolder();
-    if (showFolder) {
-        await saveScheduleAPI(showFolder, updList);
-    }
-    curSchedule = updList;
-    const filtered = updList.filter((r) => r.deleted !== true);
-    safeSend(updateWindow, 'update:schedule', filtered);
-    broadcastToWebSocket('schedule', filtered);
-    scheduleUpdated();
-    return filtered;
+}
+
+export function updateScheduleHandler(recs: ScheduledPlaylist[]): Promise<ScheduledPlaylist[]> {
+    return withShowData(async () => {
+        const uppl = recs.map((r) => {
+            return { ...r, updatedAt: Date.now() };
+        });
+        const updList = mergeSchedule(uppl, curSchedule);
+        const showFolder = getCurrentShowFolder();
+        if (showFolder) {
+            await saveScheduleAPI(showFolder, updList);
+        }
+        curSchedule = updList;
+        const filtered = updList.filter((r) => r.deleted !== true);
+        safeSend(updateWindow, 'update:schedule', filtered);
+        broadcastToWebSocket('schedule', filtered);
+        scheduleUpdated();
+        return filtered;
+    });
 }
 
 /** Adopt cloud-managed player settings (one-way show-builder -> player). Each
@@ -592,11 +605,8 @@ let lastAppliedCloudCfg: CloudConfig | undefined;
 /** Common sequence-upsert path used by both the renderer-driven IPC and the cloud
  *  content sync. Runs `mergeSequences`, persists, broadcasts to renderer + WS, kicks
  *  the playback worker, and refreshes the cloud worker's local-sequences cache. */
-let commitChain: Promise<unknown> = Promise.resolve();
-async function commitSequenceUpdates(uppl: SequenceRecord[]): Promise<SequenceRecord[]> {
-    const next = commitChain.then(() => commitSequenceUpdatesInner(uppl));
-    commitChain = next.catch(() => {});
-    return next;
+function commitSequenceUpdates(uppl: SequenceRecord[]): Promise<SequenceRecord[]> {
+    return withShowData(() => commitSequenceUpdatesInner(uppl));
 }
 async function commitSequenceUpdatesInner(uppl: SequenceRecord[]): Promise<SequenceRecord[]> {
     const showFolder = getCurrentShowFolder();
@@ -741,8 +751,13 @@ export async function loadShowFolder(forceRestart?: boolean) {
     curStatus = {};
     curErrors = [];
     // Flush out any pending writes (e.g. downloads) to show data in previous folder.
+    // These commit through withShowData, so this must happen before taking it.
     await flushPendingInstalls();
 
+    await withShowData(() => loadShowData(showFolder, forceRestart));
+}
+
+async function loadShowData(showFolder: string, forceRestart?: boolean) {
     // All our JSON lives under `.ezplayer/` in the show folder.
     await ensureEzplayerSubdir(showFolder);
     await loadInstalledFiles(showFolder);
