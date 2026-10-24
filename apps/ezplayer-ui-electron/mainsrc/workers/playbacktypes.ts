@@ -18,6 +18,7 @@ import type {
     PlayerCStatusContent,
     PlayerNStatusContent,
     EZPlayerCommand,
+    ViewerControlResyncResult,
     VcDropReason,
     PlaybackSettings,
     KnownController,
@@ -92,6 +93,8 @@ export type PlayWorkerRPCAPI = {
     add: (args: { a: number; b: number }) => number;
     fail: (args: { msg: string }) => void;
     stopPlayback: (args: Record<string, never>) => Promise<boolean> | boolean;
+    /** Re-push the Remote Falcon song list and report what Remote Falcon said. */
+    resyncViewerControl: (args: Record<string, never>) => Promise<ViewerControlResyncResult>;
     getModelCoordinates: (args: Record<string, never>) => Promise<Record<string, GetNodeResult>>;
     getModelCoordinates2D: (args: Record<string, never>) => Promise<Record<string, GetNodeResult>>;
     getFrameExportBuffer: () => Promise<SharedArrayBuffer | undefined>;

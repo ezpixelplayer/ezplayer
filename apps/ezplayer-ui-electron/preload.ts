@@ -10,6 +10,7 @@ import type {
     EZPElectronAPI,
     FileSelectOptions,
     EZPlayerCommand,
+    ViewerControlResyncResult,
     PlaybackSettings,
     CloudCommand,
     ControllerCommand,
@@ -126,6 +127,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
     immediatePlayerCommand(cmd: EZPlayerCommand): Promise<boolean> {
         return ipcRenderer.invoke('ipcImmediatePlayCommand', cmd);
+    },
+    resyncViewerControl(): Promise<ViewerControlResyncResult> {
+        return ipcRenderer.invoke('ipcResyncViewerControl');
     },
     setPlaybackSettings(s: PlaybackSettings): Promise<boolean> {
         return ipcRenderer.invoke('ipcSetPlaybackSettings', s);
