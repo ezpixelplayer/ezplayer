@@ -34,7 +34,7 @@ beforeAll(async () => {
     );
     app = await startEzPlayer(show.dir);
     fpp = new FppClient(app.base);
-    await fpp.uploadFile('sequences', 'QuietSong.fseq', buildFseq({ channels: 150, frames: 200, value: 42 })); // 10s
+    await fpp.upload('sequences', 'QuietSong.fseq', buildFseq({ channels: 150, frames: 200, value: 42 })); // 10s
     const res = await fpp.putPlaylist('QuietShow', {
         name: 'QuietShow',
         mainPlaylist: [{ type: 'sequence', sequenceName: 'QuietSong.fseq' }],
