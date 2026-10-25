@@ -1570,7 +1570,8 @@ async function startServer(config: ServerWorkerData) {
     // API: GET /api/ezp/hello
     // ----------------------------------------------
     router.get('/api/ezp/hello', async (ctx) => {
-        ctx.body = { message: 'Hello from Koa + Electron!' };
+        // File and FPP routes need the show folder; until it loads they answer errors.
+        ctx.body = { message: 'Hello from Koa + Electron!', showLoaded: wsBroadcaster.get('showFolder') !== undefined };
     });
 
     // ----------------------------------------------
