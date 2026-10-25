@@ -45,10 +45,7 @@ const CRASH_REPORT_WAIT_MS = 10_000;
 
 function crashRenderer(wc: WebContents): void {
     const pid = wc.getOSProcessId();
-    // On Linux forcefullyCrashRenderer() only asks the renderer to crash itself;
-    // signal it instead so it dies the way a real crash does.
-    if (process.platform === 'linux') process.kill(pid, 'SIGSEGV');
-    else wc.forcefullyCrashRenderer();
+    wc.forcefullyCrashRenderer();
     setTimeout(() => {
         // Crashed, or already reloaded into a new process.
         if (wc.isDestroyed() || wc.isCrashed() || wc.getOSProcessId() !== pid) return;
