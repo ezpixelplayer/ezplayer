@@ -20,7 +20,7 @@ beforeAll(async () => {
     show = await createFixtureShow({ channels: 150 });
     app = await startEzPlayer(show.dir);
     fpp = new FppClient(app.base);
-    await fpp.uploadFile('sequences', 'SyncSong.fseq', buildFseq({ channels: 150, frames: 400, value: 42 })); // 20s
+    await fpp.upload('sequences', 'SyncSong.fseq', buildFseq({ channels: 150, frames: 400, value: 42 })); // 20s
     const res = await fpp.putPlaylist('SyncShow', {
         name: 'SyncShow',
         mainPlaylist: [{ type: 'sequence', sequenceName: 'SyncSong.fseq' }],

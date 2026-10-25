@@ -62,7 +62,7 @@ async function runCase(slotFraction: string | undefined): Promise<{
     try {
         app = await startEzPlayer(show.dir);
         const fpp = new FppClient(app.base);
-        await fpp.uploadFile(
+        await fpp.upload(
             'sequences',
             'Spread.fseq',
             buildFseq({ channels: CHANNELS, frames: 240, msPerFrame: MS_PER_FRAME, value: 42 }), // 12s
