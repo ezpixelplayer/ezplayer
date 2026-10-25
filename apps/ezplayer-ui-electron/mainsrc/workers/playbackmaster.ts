@@ -106,7 +106,7 @@ import { begin as hirezTimerBegin } from '../win-hirez-timer/winhirestimer';
 import process from 'node:process';
 import { totalmem } from 'node:os';
 import { avgFrameSendTime, FrameSender, OverallFrameSendStats, resetFrameSendStats } from './framesend';
-import { MultiSyncSender } from './multisync';
+import { MultiSyncSender, type SyncFrameInfo } from './multisync';
 import { fileBaseName } from './pathnames';
 
 import { decompressZStdWithWorker, getZstdStats, resetZstdStats } from './zstdparent';
@@ -413,6 +413,15 @@ function sendPlayerStateUpdate() {
         if (pla) {
             playStatus.now_playing = { ...actionToPlayingItem(false, pla), ...groupIds };
             playStatus.status = isPaused ? 'Paused' : stoppingGracefully ? 'Stopping' : 'Playing';
+            // Where the song is at the engine clock: the action's offset is as of its
+            // `atTime`, which the readout re-clamps to the clock while it plays.
+            const sampledAt = foregroundPlayerRunState.currentTime;
+            const contentMS = contentTimeMS(pla.seq, (pla.offsetMS ?? 0) + (sampledAt - pla.atTime));
+            playStatus.position = {
+                content_ms: contentMS,
+                audio_ms: pla.seq?.files?.audio ? audioPositionMS(contentMS) : undefined,
+                sampled_at: sampledAt,
+            };
         }
     }
     // Over once nothing is playing: a later schedule must not inherit it.
@@ -1190,6 +1199,7 @@ function processCommand(cmd: EZPlayerCommand) {
         }
         case 'clearrequests': {
             foregroundPlayerRunState.removeInteractiveCommands();
+            sendPlayerStateUpdate();
             break;
         }
         case 'setvolume': {
@@ -1456,6 +1466,43 @@ function contentTimeMS(seq: SequenceRecord | undefined, slotOffsetMS: number): n
     if (!seq?.settings) return slotOffsetMS;
     const t = getSeqTimesMS(seq);
     return slotOffsetMS - t.startLeadToSeqMS + t.startTrimOffSeqMS;
+}
+
+/** The audio file's playback position as heard on this player's speakers when the
+ *  lights show `contentMS` into the sequence: the sync adjust pushes the music
+ *  later (positive) or earlier (negative) than the lights. */
+function audioPositionMS(contentMS: number): number {
+    return contentMS - playbackParams.audioTimeAdjMs;
+}
+
+/** What the MultiSync master describes for the output at `contentMS` into a
+ *  sequence's content: the fseq frame while inside the file, and the audio
+ *  position while the audio is inside it (bounded by the fseq span, which
+ *  xLights makes the same as the audio's). Pads report neither. */
+function syncFrameInfo(
+    fsf: string,
+    seq: SequenceRecord | undefined,
+    contentMS: number,
+    header: { frames: number; msperframe: number },
+): SyncFrameInfo {
+    const info: SyncFrameInfo = {};
+    const durationMS = header.frames * header.msperframe;
+    if (contentMS >= 0 && contentMS < durationMS) {
+        const frameNumber = Math.floor(contentMS / header.msperframe);
+        info.seq = {
+            file: fileBaseName(fsf),
+            frameNumber,
+            secondsElapsed: (frameNumber * header.msperframe) / 1000,
+        };
+    }
+    const audio = seq?.files?.audio;
+    if (audio) {
+        const audioMS = audioPositionMS(contentMS);
+        if (audioMS >= 0 && audioMS < durationMS) {
+            info.media = { file: fileBaseName(audio), secondsElapsed: audioMS / 1000 };
+        }
+    }
+    return info;
 }
 
 /** Prefetch confidence tiers (lower = higher priority). */
@@ -3193,6 +3240,9 @@ async function processQueue() {
 
             // Don't advance foreground schedule while paused — it will slip behind real time
             if (!isPaused) {
+                // A song starting or ending on its own is a status event like a command
+                // is: push it now rather than on the next one-second tick.
+                let statusEvent = false;
                 while (true) {
                     const plog: PlaybackLogDetail[] = [];
                     // Really want to run until time or something interesting
@@ -3200,7 +3250,7 @@ async function processQueue() {
                     let foundTime = plog.length === 0;
                     for (const l of plog) {
                         if (l.eventType === 'Sequence Ended') {
-                            // TODO - Could reset clock base here.
+                            statusEvent = true;
                         } else if (l.eventType === 'Sequence Skipped') {
                             const t = l.sequenceId ? curSequences?.find((s) => s.id === l.sequenceId)?.work?.title : '';
                             emitInfo(`Playlist skipped "${t || l.sequenceId}": played recently`);
@@ -3210,12 +3260,14 @@ async function processQueue() {
                             emitInfo(
                                 `Sequence ${verb} ${l.sequenceId ?? '?'} in ${Math.round(targetFrameRTC - Date.now())} ms`,
                             );
+                            statusEvent = true;
                             foundTime = true;
                             break;
                         }
                     }
                     if (foundTime) break;
                 }
+                if (statusEvent) sendPlayerStateUpdate();
             }
 
             //emitFrameDebug(`${iteration} - runUntil done`);
@@ -3317,7 +3369,9 @@ async function processQueue() {
             }
 
             if (targetFrameNum < 0 || targetFrameNum >= header.ref.header.frames) {
-                // Lead/trail pad: the background still shows
+                // Lead/trail pad: the background still shows. No sequence frame to
+                // sync, but the audio may still be inside the file (sync adjust).
+                const padSync = syncFrameInfo(fsf, curForegroundSeq, frameTimeOffset, header.ref.header);
                 if (bframeRef?.frame) {
                     targetFrameRTC += await sender.sendNextFrameAt({
                         frame: bframeRef,
@@ -3329,8 +3383,10 @@ async function processQueue() {
                         frameInterval,
                         skipFrameIfLateByMoreThan: playbackParams.skipFrameIfLateByMoreThan,
                         dontSleepIfDurationLessThan: playbackParams.dontSleepIfDurationLessThan,
+                        onFrameDue: () => multiSync.onFrame(padSync),
                     });
                 } else {
+                    multiSync.onFrame(padSync);
                     await sender.sendBlackFrame({
                         targetFramePN: rtcConverter.computePerfNow(targetFrameRTC),
                         playbackStats,
@@ -3345,8 +3401,10 @@ async function processQueue() {
             // At this point, all housekeeping is done.
             // Let's see if we're in time to spit out a frame, or if we have to skip
             //emitFrameDebug(`${iteration} - play the frame?`);
-            multiSync.onFrame(fileBaseName(fsf), targetFrameNum, (targetFrameNum * frameInterval) / 1000);
             const frameRef = fseqCache.getFrame(fsf, { num: targetFrameNum });
+            // Sync packets describe the frame as it goes out, not as it is prepared:
+            // the sender sleeps until the frame's deadline before calling back.
+            const syncInfo = syncFrameInfo(fsf, curForegroundSeq, frameTimeOffset, header.ref.header);
             targetFrameRTC += await sender.sendNextFrameAt({
                 frame: frameRef?.ref,
                 bframe: bframeRef,
@@ -3357,6 +3415,7 @@ async function processQueue() {
                 frameInterval,
                 skipFrameIfLateByMoreThan: playbackParams.skipFrameIfLateByMoreThan,
                 dontSleepIfDurationLessThan: playbackParams.dontSleepIfDurationLessThan,
+                onFrameDue: () => multiSync.onFrame(syncInfo),
             });
         }
     } finally {

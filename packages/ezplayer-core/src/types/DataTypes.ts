@@ -250,6 +250,15 @@ export interface PlayerPStatusContent {
     reported_time: number;
     engine_time?: number;
     now_playing?: PlayingItem;
+    /** Where `now_playing` is, for clients that follow playback closely. `content_ms`
+     *  is the position within the sequence (fseq time) that the lights show at
+     *  `sampled_at` — player epoch ms on the engine clock, i.e. the time of the frame
+     *  being output, within a frame of `reported_time`. `audio_ms` is the position
+     *  within the audio file as heard on the player's speakers (the audio sync adjust
+     *  applied); absent when the song has no audio. Frozen while paused. A push
+     *  accompanies every start, end, pause, resume and skip as well as the periodic
+     *  tick, so a client can extrapolate from the latest sample with its clock offset. */
+    position?: { content_ms: number; audio_ms?: number; sampled_at: number };
     background_now_playing?: PlayingItem;
     upcoming?: PlayingItem[];
     immediate?: PlayingItem;
@@ -893,6 +902,10 @@ export interface MultisyncSettings {
     port?: number;
     /** Multicast group override (default 239.70.80.80). */
     multicastAddress?: string;
+    /** Also send media (audio) sync packets carrying the audio file and its playback
+     *  position, as FPP and xSchedule masters do. Default on; turn off when remotes
+     *  hold copies of the audio and must stay silent. */
+    mediaSync?: boolean;
 }
 
 export interface AdvancedPlaybackSettings {

@@ -267,6 +267,10 @@ const playbackSettingsSlice = createSlice({
             const sync = (state.settings.sync ??= {});
             (sync.multisync ??= { enabled: false, remotes: [] }).multicastAddress = action.payload || undefined;
         },
+        setMultisyncMediaSync(state, action: PayloadAction<boolean>) {
+            const sync = (state.settings.sync ??= {});
+            (sync.multisync ??= { enabled: false, remotes: [] }).mediaSync = action.payload;
+        },
 
         // Advanced diagnostic overrides
         setAdvancedDdpPort(state, action: PayloadAction<number | undefined>) {
@@ -383,6 +387,7 @@ export const {
     setMultisyncRemotes,
     setMultisyncPort,
     setMultisyncMulticastAddress,
+    setMultisyncMediaSync,
     setAdvancedDdpPort,
     setMediaFolder,
     setDefaultVolume,
