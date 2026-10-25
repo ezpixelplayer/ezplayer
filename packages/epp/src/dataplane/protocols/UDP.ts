@@ -221,9 +221,13 @@ export class UdpClient {
         this.sendBatch = sendBatch;
     }
     endSendBatch(callOnComplete?: () => void) {
-        ++this.batchesInFlight;
         const sb = this.sendBatch;
+        // A sender replaced in a running job reaches here without the
+        // matching start.  Counting that batch would leave the sender
+        // looking busy for good, and a busy sender is skipped every
+        // frame -- its controller would go dark until the next reload.
         if (!sb) return sb;
+        ++this.batchesInFlight;
         sb.batchClosed = true;
         sb.callOnComplete = callOnComplete;
         if (sb.isComplete()) {
