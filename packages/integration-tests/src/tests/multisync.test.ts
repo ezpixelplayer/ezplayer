@@ -56,23 +56,23 @@ beforeAll(async () => {
     show = await createFixtureShow({ channels: 150 });
     app = await startEzPlayer(show.dir);
     fpp = new FppClient(app.base);
-    await fpp.uploadFile('sequences', 'SyncSong.fseq', numberedFrames(400)); // 20s
+    await fpp.upload('sequences', 'SyncSong.fseq', numberedFrames(400)); // 20s
     let res = await fpp.putPlaylist('SyncShow', {
         name: 'SyncShow',
         mainPlaylist: [{ type: 'sequence', sequenceName: 'SyncSong.fseq' }],
     });
     expect(res.status).toBe(200);
 
-    await fpp.uploadFile('sequences', 'MediaSong.fseq', numberedFrames(400)); // 20s
-    await fpp.uploadFile('music', 'MediaSong.wav', sineWav({ seconds: 20 }));
+    await fpp.upload('sequences', 'MediaSong.fseq', numberedFrames(400)); // 20s
+    await fpp.upload('music', 'MediaSong.wav', sineWav({ seconds: 20 }));
     res = await fpp.putPlaylist('MediaShow', {
         name: 'MediaShow',
         mainPlaylist: [{ type: 'both', sequenceName: 'MediaSong.fseq', mediaName: 'MediaSong.wav' }],
     });
     expect(res.status).toBe(200);
 
-    await fpp.uploadFile('sequences', 'ShortA.fseq', numberedFrames(60)); // 3s
-    await fpp.uploadFile('sequences', 'ShortB.fseq', numberedFrames(60)); // 3s
+    await fpp.upload('sequences', 'ShortA.fseq', numberedFrames(60)); // 3s
+    await fpp.upload('sequences', 'ShortB.fseq', numberedFrames(60)); // 3s
     res = await fpp.putPlaylist('TwoShow', {
         name: 'TwoShow',
         mainPlaylist: [

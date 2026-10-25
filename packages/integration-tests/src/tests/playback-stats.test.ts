@@ -58,7 +58,7 @@ beforeAll(async () => {
     app = await startEzPlayer(show.dir);
     fpp = new FppClient(app.base);
 
-    await fpp.uploadFile('sequences', 'SongA.fseq', buildFseq({ channels: 150, frames: 600, value: 42 })); // 30s
+    await fpp.upload('sequences', 'SongA.fseq', buildFseq({ channels: 150, frames: 600, value: 42 })); // 30s
     // Register it as a sequence record (EZP-native API; duration comes from the header).
     const reg = await fetch(`${app.base}/api/ezp/sequences`, {
         method: 'POST',
