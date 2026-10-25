@@ -39,4 +39,29 @@ describe('UdpClient', () => {
             await client.disconnect();
         }
     });
+    it('leaves no batch in flight when a batch is ended that was never started', async () => {
+        const client = new UdpClient('udp4', '127.0.0.1', await closedPort());
+        await client.connect();
+        try {
+            // A sender swapped into a running job is ended without having been
+            // started.  Counting that as in flight would make the sender look
+            // busy forever, and the scheduler skips a busy sender every frame.
+            client.endSendBatch();
+            expect(client.batchesInFlight).toBe(0);
+        } finally {
+            await client.disconnect();
+        }
+    });
+
+    it('balances batches in flight over a batch that sent nothing', async () => {
+        const client = new UdpClient('udp4', '127.0.0.1', await closedPort());
+        await client.connect();
+        try {
+            client.startSendBatch();
+            client.endSendBatch();
+            expect(client.batchesInFlight).toBe(0);
+        } finally {
+            await client.disconnect();
+        }
+    });
 });

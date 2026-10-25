@@ -221,9 +221,9 @@ export class UdpClient {
         this.sendBatch = sendBatch;
     }
     endSendBatch(callOnComplete?: () => void) {
-        ++this.batchesInFlight;
         const sb = this.sendBatch;
         if (!sb) return sb;
+        ++this.batchesInFlight;
         sb.batchClosed = true;
         sb.callOnComplete = callOnComplete;
         if (sb.isComplete()) {
