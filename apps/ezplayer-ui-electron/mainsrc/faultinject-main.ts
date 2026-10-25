@@ -40,6 +40,30 @@ export function faultPageUrl(url: string): string {
     return url;
 }
 
+/** How long a crashed renderer may take to be reported gone before we log it. */
+const CRASH_REPORT_WAIT_MS = 10_000;
+
+function crashRenderer(wc: WebContents): void {
+    const pid = wc.getOSProcessId();
+    // On Linux forcefullyCrashRenderer() only asks the renderer to crash itself;
+    // signal it instead so it dies the way a real crash does.
+    if (process.platform === 'linux') process.kill(pid, 'SIGSEGV');
+    else wc.forcefullyCrashRenderer();
+    setTimeout(() => {
+        // Crashed, or already reloaded into a new process.
+        if (wc.isDestroyed() || wc.isCrashed() || wc.getOSProcessId() !== pid) return;
+        let running = true;
+        try {
+            process.kill(pid, 0);
+        } catch {
+            running = false;
+        }
+        console.warn(
+            `[fault] renderer ${pid} not reported gone ${CRASH_REPORT_WAIT_MS} ms after crashing; process ${running ? 'still running' : 'exited'}`,
+        );
+    }, CRASH_REPORT_WAIT_MS);
+}
+
 let rendererFaultsInjected = false;
 
 /** Called once the main window's app is up. Only the first time, so a reload cannot loop. */
@@ -60,7 +84,7 @@ export function injectRendererFaults(wc: WebContents): void {
         );
     }
     if (hasFault('renderer-hang')) later(() => void wc.executeJavaScript('setTimeout(() => { for (;;) {} })'));
-    if (hasFault('renderer-crash')) later(() => wc.forcefullyCrashRenderer());
+    if (hasFault('renderer-crash')) later(() => crashRenderer(wc));
     if (hasFault('gpu-crash')) {
         later(() => {
             const w = new BrowserWindow({ show: false });
