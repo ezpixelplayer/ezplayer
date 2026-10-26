@@ -1726,27 +1726,160 @@ async function startServer(config: ServerWorkerData) {
     });
 
     // ----------------------------------------------
-    // API: POST /api/ezp/playback-settings
+    // API: GET/POST /api/ezp/playback-settings — the whole object
+    //      GET/POST /api/ezp/playback-settings/<key>[/<sub>...] — one part of it
     // ----------------------------------------------
+
+    /** Persist, push to the live player and re-broadcast — the one path every
+     *  settings write takes, so the UI, the disk and the player agree. */
+    const applyPlaybackSettings = async (settings: PlaybackSettings) => {
+        const showFolder = wsBroadcaster.get('showFolder');
+        if (showFolder) {
+            const settingsPath = path.join(showFolder, '.ezplayer', 'playbackSettings.json');
+            await rpc.call('applySettingsFromRenderer', settingsPath, settings);
+        }
+        await rpc.call('sendPlaybackSettings', settings);
+        wsBroadcaster.set('playbackSettings', settings);
+    };
+    const currentPlaybackSettings = () => wsBroadcaster.get('playbackSettings') as PlaybackSettings | undefined;
+
+    /** Keys a part path may start with. Anything else is rejected, not written. */
+    const SETTINGS_KEYS = new Set<keyof PlaybackSettings>([
+        'audioSyncAdjust',
+        'normalizeNewSongs',
+        'backgroundSequence',
+        'viewerControl',
+        'volumeControl',
+        'jukebox',
+        'testSequenceTags',
+        'sendIdleBlackFrames',
+        'sync',
+        'controllerRefresh',
+        'advanced',
+        'mediaFolder',
+        'useDefaultAudioOutput',
+        'audioOutputs',
+    ]);
+    /** The player reads these unconditionally; a part write may not remove them. */
+    const REQUIRED_KEYS = new Set<string>(['viewerControl', 'volumeControl']);
+    const PART_ROUTE = /^\/api\/ezp\/playback-settings\/(.+)$/;
+
+    /** Split and vet a part path; answers the request itself when it is bad. */
+    const partPath = (ctx: Koa.Context): string[] | undefined => {
+        const captured = (ctx.captures as string[] | undefined)?.[0] ?? '';
+        const segs = captured
+            .split('/')
+            .filter((s: string) => s.length > 0)
+            .map((s: string) => decodeURIComponent(s));
+        if (segs.length === 0 || !SETTINGS_KEYS.has(segs[0] as keyof PlaybackSettings)) {
+            ctx.status = 404;
+            ctx.body = { error: `Unknown playback setting '${segs[0] ?? ''}'` };
+            return undefined;
+        }
+        if (segs.some((s) => s === '__proto__' || s === 'constructor' || s === 'prototype')) {
+            ctx.status = 400;
+            ctx.body = { error: 'Invalid settings path' };
+            return undefined;
+        }
+        return segs;
+    };
+    const isPlainObject = (v: unknown): v is Record<string, unknown> =>
+        !!v && typeof v === 'object' && !Array.isArray(v);
+
+    router.get('/api/ezp/playback-settings', async (ctx) => {
+        const settings = currentPlaybackSettings();
+        if (!settings) {
+            ctx.status = 503;
+            ctx.body = { error: 'Playback settings not loaded yet' };
+            return;
+        }
+        ctx.body = settings;
+    });
+
     router.post('/api/ezp/playback-settings', async (ctx) => {
         try {
             const settings = ctx.request.body;
-            if (!settings || typeof settings !== 'object') {
+            if (!isPlainObject(settings)) {
                 ctx.status = 400;
                 ctx.body = { error: 'Invalid playback settings format. Expected object.' };
                 return;
             }
-            const showFolder = wsBroadcaster.get('showFolder');
-            if (showFolder) {
-                const settingsPath = path.join(showFolder, '.ezplayer', 'playbackSettings.json');
-                await rpc.call('applySettingsFromRenderer', settingsPath, settings);
-            }
-            await rpc.call('sendPlaybackSettings', settings);
-            wsBroadcaster.set('playbackSettings', settings as PlaybackSettings);
-
+            await applyPlaybackSettings(settings as unknown as PlaybackSettings);
             ctx.body = { success: true };
         } catch (error) {
             console.error('[server-worker] Error processing playback settings update:', error);
+            ctx.status = 500;
+            ctx.body = { error: 'Internal server error' };
+        }
+    });
+
+    // One part, addressed by its path in the object (`sync/multisync`,
+    // `volumeControl/defaultVolume`). GET answers 404 while it is unset.
+    router.get(PART_ROUTE, async (ctx) => {
+        const settings = currentPlaybackSettings();
+        if (!settings) {
+            ctx.status = 503;
+            ctx.body = { error: 'Playback settings not loaded yet' };
+            return;
+        }
+        const segs = partPath(ctx);
+        if (!segs) return;
+        let cur: unknown = settings;
+        for (const s of segs) {
+            if (!isPlainObject(cur) || !(s in cur)) {
+                ctx.status = 404;
+                ctx.body = { error: `Playback setting '${segs.join('/')}' is not set` };
+                return;
+            }
+            cur = cur[s];
+        }
+        ctx.body = cur === undefined ? null : cur;
+    });
+
+    // POST replaces just that part — any JSON value, `null` to unset an optional
+    // one — and leaves the rest of the settings as they are. Missing parents
+    // are created, so `sync/multisync` works before `sync` exists.
+    router.post(PART_ROUTE, async (ctx) => {
+        try {
+            const settings = currentPlaybackSettings();
+            if (!settings) {
+                ctx.status = 503;
+                ctx.body = { error: 'Playback settings not loaded yet; POST the whole object first' };
+                return;
+            }
+            const segs = partPath(ctx);
+            if (!segs) return;
+            const value = ctx.request.body;
+            if (value === undefined) {
+                ctx.status = 400;
+                ctx.body = { error: 'Expected a JSON body' };
+                return;
+            }
+            if (value === null && segs.length === 1 && REQUIRED_KEYS.has(segs[0])) {
+                ctx.status = 400;
+                ctx.body = { error: `'${segs[0]}' is required and cannot be unset` };
+                return;
+            }
+            // Copy the spine so the cached object is never mutated in place.
+            const next = { ...settings } as Record<string, unknown>;
+            let cur = next;
+            for (const s of segs.slice(0, -1)) {
+                const child = cur[s];
+                if (child !== undefined && !isPlainObject(child)) {
+                    ctx.status = 400;
+                    ctx.body = { error: `'${s}' is not an object; set it whole instead` };
+                    return;
+                }
+                cur[s] = { ...(child ?? {}) };
+                cur = cur[s] as Record<string, unknown>;
+            }
+            const leaf = segs[segs.length - 1];
+            if (value === null) delete cur[leaf];
+            else cur[leaf] = value;
+            await applyPlaybackSettings(next as unknown as PlaybackSettings);
+            ctx.body = { success: true };
+        } catch (error) {
+            console.error('[server-worker] Error processing playback settings part update:', error);
             ctx.status = 500;
             ctx.body = { error: 'Internal server error' };
         }

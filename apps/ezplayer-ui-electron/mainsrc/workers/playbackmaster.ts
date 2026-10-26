@@ -413,8 +413,8 @@ function sendPlayerStateUpdate() {
         if (pla) {
             playStatus.now_playing = { ...actionToPlayingItem(false, pla), ...groupIds };
             playStatus.status = isPaused ? 'Paused' : stoppingGracefully ? 'Stopping' : 'Playing';
-            // Where the song is at the engine clock: the action's offset is as of its
-            // `atTime`, which the readout re-clamps to the clock while it plays.
+            // Where the song is at the engine clock. `offsetMS` is the offset at
+            // `atTime`; add the time since then.
             const sampledAt = foregroundPlayerRunState.currentTime;
             const contentMS = contentTimeMS(pla.seq, (pla.offsetMS ?? 0) + (sampledAt - pla.atTime));
             playStatus.position = {
@@ -1476,9 +1476,8 @@ function audioPositionMS(contentMS: number): number {
 }
 
 /** What the MultiSync master describes for the output at `contentMS` into a
- *  sequence's content: the fseq frame while inside the file, and the audio
- *  position while the audio is inside it (bounded by the fseq span, which
- *  xLights makes the same as the audio's). Pads report neither. */
+ *  sequence: the fseq frame while inside the file, and the audio position
+ *  while that is inside the file's span too. Pads report neither. */
 function syncFrameInfo(
     fsf: string,
     seq: SequenceRecord | undefined,

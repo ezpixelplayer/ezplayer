@@ -6,12 +6,10 @@
  *   SyncPkt    { u8 action; u8 fileType; u32 frameNumber; f32 secondsElapsed;
  *                char filename[] NUL-terminated }
  *
- * Media sync packets (fileType 1) go out alongside the sequence packets, as
- * FPP and xSchedule masters send them: OPEN/START when the audio file begins,
- * a SYNC every ~500 ms carrying the audio playback position as heard on this
- * player (the audio sync adjust folded in, which the sequence packets do not
- * reflect), and STOP when it ends. Remotes without the file ignore them;
- * listeners that play the show audio themselves (phone apps) follow them.
+ * Media sync packets (fileType 1) go out alongside the sequence packets:
+ * OPEN/START when the audio file begins, a SYNC every ~500 ms carrying the
+ * audio position as heard on this player (audio sync adjust included), and
+ * STOP when it ends. Remotes without the file ignore them.
  *
  * Packets describe the frame being output *now*: the playback loop calls
  * `onFrame` at the frame's deadline, not when it starts preparing the frame.
@@ -36,8 +34,7 @@ const FILE_MEDIA = 1;
  *  re-sync on every packet, so the exact cadence is not protocol-critical. */
 const EARLY_FRAMES = 3;
 const SYNC_EVERY_FRAMES = 16;
-/** Media SYNC cadence, by time: audio has no frames. FPP sends about one a
- *  second; half that gives audio-playing listeners a tighter lock. */
+/** Media SYNC cadence. Audio has no frames, so it goes by time. */
 export const MEDIA_SYNC_INTERVAL_MS = 500;
 
 interface Remote {
