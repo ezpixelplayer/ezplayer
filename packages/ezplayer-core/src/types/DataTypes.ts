@@ -250,14 +250,12 @@ export interface PlayerPStatusContent {
     reported_time: number;
     engine_time?: number;
     now_playing?: PlayingItem;
-    /** Where `now_playing` is, for clients that follow playback closely. `content_ms`
-     *  is the position within the sequence (fseq time) that the lights show at
-     *  `sampled_at` — player epoch ms on the engine clock, i.e. the time of the frame
-     *  being output, within a frame of `reported_time`. `audio_ms` is the position
-     *  within the audio file as heard on the player's speakers (the audio sync adjust
-     *  applied); absent when the song has no audio. Frozen while paused. A push
-     *  accompanies every start, end, pause, resume and skip as well as the periodic
-     *  tick, so a client can extrapolate from the latest sample with its clock offset. */
+    /** Where `now_playing` is. `content_ms` is the position within the sequence that
+     *  the lights show at `sampled_at` (player epoch ms on the engine clock: the time
+     *  of the frame being output). `audio_ms` is the position within the audio file as
+     *  heard on the player, with the audio sync adjust applied; absent when the song
+     *  has no audio. Frozen while paused. Pushed on every playback event as well as
+     *  the periodic tick. */
     position?: { content_ms: number; audio_ms?: number; sampled_at: number };
     background_now_playing?: PlayingItem;
     upcoming?: PlayingItem[];
