@@ -22,7 +22,7 @@ import { describeExitCode } from './mainsrc/rendererCrashPolicy.js';
 import { installDiagLogRing, primeDiagEnv } from './mainsrc/diagEnv.js';
 installDiagLogRing();
 import { beginSession, captureRendererConsole, installAppLog, markSessionEnding } from './mainsrc/applog.js';
-import { pruneCrashDumps } from './mainsrc/diagbundle.js';
+import { crashDumpsSince, pruneCrashDumps } from './mainsrc/diagbundle.js';
 import { faultPageUrl, faultPreloadPath, injectMainFaults } from './mainsrc/faultinject-main.js';
 import { watchRenderer } from './mainsrc/rendererwatch.js';
 // Text-only verbs are short-lived and may run beside a player; keep them out of its log.
@@ -485,7 +485,11 @@ if (isToolVerb()) {
             console.warn(
                 `Previous run (pid ${prev.pid}, ${prev.version}, started ${prev.startedAt}) did not exit normally`,
             );
-            reportDiagEvent('unclean-exit', 'previous run did not exit normally', undefined, prev);
+            // No dump since it started suggests power loss or a kill rather than a crash.
+            reportDiagEvent('unclean-exit', 'previous run did not exit normally', undefined, {
+                ...prev,
+                ...crashDumpsSince(Date.parse(prev.startedAt)),
+            });
         }
         startOutboxRetry();
         injectMainFaults();

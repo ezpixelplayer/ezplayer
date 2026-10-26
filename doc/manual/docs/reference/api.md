@@ -1418,6 +1418,19 @@ State update broadcast. Broadcasts player state updates. Contains version number
 }
 ```
 
+**When `pStatus` is pushed:** the playback engine publishes it about once a
+second while running, and immediately on every playback event — a song
+starting or ending on its own, a play/skip/stop command, pause and resume, and
+queue changes — so a song-to-song change reaches clients within a frame rather
+than on the next tick. While playing, `position` gives where the song is:
+`content_ms` into the sequence at `sampled_at` (player epoch ms, the engine
+clock — the time of the frame being output, within a frame of `reported_time`),
+and `audio_ms`, the audio file position as heard on the player, i.e. with the
+audio sync adjust applied. Clients that follow playback should extrapolate from
+the latest `position` using their measured clock offset to the player (the
+`serverNow` in REST responses helps measure it) rather than from
+`reported_time`.
+
 **State Keys (FullPlayerState):**
 
 | Key                  | Type                 | Description                  |

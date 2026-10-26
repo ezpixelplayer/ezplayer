@@ -290,7 +290,14 @@ export {
     hasViewerControlBackend,
     primaryViewerControlType,
     viewerControlBackends,
+    viewerControlSchedule,
+    viewerControlScheduleList,
     withViewerControlBackends,
 } from './util/viewerControlBackends';
-export type { ViewerControlBackend, PlaySongSource } from './types/DataTypes';
+export type {
+    ViewerControlBackend,
+    ViewerControlScheduleList,
+    ViewerControlResyncResult,
+    PlaySongSource,
+} from './types/DataTypes';
 export type { VcPickSource, VcDropReason } from './types/ViewerControlWire';

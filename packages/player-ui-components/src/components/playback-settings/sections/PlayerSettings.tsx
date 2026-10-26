@@ -292,6 +292,20 @@ export const PlayerSettings: React.FC = () => {
                 }
                 label="FPP MultiSync master"
             />
+            <FormControlLabel
+                control={
+                    <Switch
+                        checked={multisync?.mediaSync !== false}
+                        disabled={!multisync?.enabled}
+                        onChange={(e) => dispatch(playbackSettingsActions.setMultisyncMediaSync(e.target.checked))}
+                    />
+                }
+                label="Send audio sync too"
+            />
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+                Media packets name the song's audio file and its playback position (with the audio sync adjust applied).
+                Remotes holding the same audio file will play it; turn off to keep them silent.
+            </Typography>
             <TextField
                 size="small"
                 fullWidth

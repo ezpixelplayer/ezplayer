@@ -25,10 +25,6 @@ const DUMP_MAX_AGE_MS = 30 * 24 * 3600 * 1000;
 const DUMPS_INCLUDED = 2;
 const DUMP_PRUNE_AGE_MS = 90 * 24 * 3600 * 1000;
 
-function dumpReportsDir(): string {
-    return path.join(app.getPath('crashDumps'), 'reports');
-}
-
 interface FoundFile {
     file: string;
     name: string;
@@ -54,10 +50,25 @@ function listFiles(dir: string, accept: (name: string) => boolean): FoundFile[] 
     }
 }
 
+/** Crashpad keeps dumps in reports/ on Windows, completed/ and pending/ elsewhere. */
+const DUMP_SUBDIRS = ['reports', 'completed', 'pending'];
+
+function listCrashDumps(): FoundFile[] {
+    const root = app.getPath('crashDumps');
+    return DUMP_SUBDIRS.flatMap((d) => listFiles(path.join(root, d), (n) => n.endsWith('.dmp')));
+}
+
+/** Count and newest time of crash dumps written at or after `sinceMs`. */
+export function crashDumpsSince(sinceMs: number): { dumps: number; lastDumpAt?: string } {
+    const found = Number.isFinite(sinceMs) ? listCrashDumps().filter((f) => f.mtimeMs >= sinceMs) : [];
+    if (!found.length) return { dumps: 0 };
+    return { dumps: found.length, lastDumpAt: new Date(Math.max(...found.map((f) => f.mtimeMs))).toISOString() };
+}
+
 /** Delete crash dumps older than DUMP_PRUNE_AGE_MS; nothing else removes them. */
 export function pruneCrashDumps(): void {
     const now = Date.now();
-    for (const f of listFiles(dumpReportsDir(), (n) => n.endsWith('.dmp'))) {
+    for (const f of listCrashDumps()) {
         if (now - f.mtimeMs > DUMP_PRUNE_AGE_MS) {
             try {
                 fs.rmSync(f.file, { force: true });
@@ -204,7 +215,7 @@ export async function buildSupportBundle(
     }
 
     const now = Date.now();
-    const dumps = listFiles(dumpReportsDir(), (n) => n.endsWith('.dmp'))
+    const dumps = listCrashDumps()
         .filter((f) => now - f.mtimeMs < DUMP_MAX_AGE_MS)
         .sort((a, b) => b.mtimeMs - a.mtimeMs)
         .slice(0, DUMPS_INCLUDED);

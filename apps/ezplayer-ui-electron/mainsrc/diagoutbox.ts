@@ -97,7 +97,7 @@ export class DiagOutbox {
         return out;
     }
 
-    private list(): { file: string; time: number; pid: number }[] {
+    private list(): { file: string; time: number; pid: number; seq: number }[] {
         let names: string[];
         try {
             names = fs.readdirSync(this.dir);
@@ -107,8 +107,11 @@ export class DiagOutbox {
         return names
             .flatMap((name) => {
                 const m = NAME.exec(name);
-                return m ? [{ file: path.join(this.dir, name), time: Number(m[1]), pid: Number(m[2]) }] : [];
+                return m
+                    ? [{ file: path.join(this.dir, name), time: Number(m[1]), pid: Number(m[2]), seq: Number(m[3]) }]
+                    : [];
             })
-            .sort((a, b) => a.time - b.time);
+            // readdir order is arbitrary (hash order on Linux), so break same-millisecond ties by seq.
+            .sort((a, b) => a.time - b.time || a.pid - b.pid || a.seq - b.seq);
     }
 }

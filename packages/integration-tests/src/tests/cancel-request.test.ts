@@ -71,8 +71,8 @@ beforeAll(async () => {
     app = await startEzPlayer(show.dir);
     fpp = new FppClient(app.base);
 
-    await fpp.uploadFile('sequences', 'Sched.fseq', buildFseq({ channels: 150, frames: 2400, value: 77 })); // 120s
-    await fpp.uploadFile('sequences', 'Request.fseq', buildFseq({ channels: 150, frames: 1200, value: 99 })); // 60s
+    await fpp.upload('sequences', 'Sched.fseq', buildFseq({ channels: 150, frames: 2400, value: 77 })); // 120s
+    await fpp.upload('sequences', 'Request.fseq', buildFseq({ channels: 150, frames: 1200, value: 99 })); // 60s
     for (const [name, file] of [
         ['Nightly', 'Sched.fseq'],
         ['Requests', 'Request.fseq'],

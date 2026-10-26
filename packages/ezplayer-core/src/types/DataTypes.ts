@@ -250,6 +250,15 @@ export interface PlayerPStatusContent {
     reported_time: number;
     engine_time?: number;
     now_playing?: PlayingItem;
+    /** Where `now_playing` is, for clients that follow playback closely. `content_ms`
+     *  is the position within the sequence (fseq time) that the lights show at
+     *  `sampled_at` — player epoch ms on the engine clock, i.e. the time of the frame
+     *  being output, within a frame of `reported_time`. `audio_ms` is the position
+     *  within the audio file as heard on the player's speakers (the audio sync adjust
+     *  applied); absent when the song has no audio. Frozen while paused. A push
+     *  accompanies every start, end, pause, resume and skip as well as the periodic
+     *  tick, so a client can extrapolate from the latest sample with its clock offset. */
+    position?: { content_ms: number; audio_ms?: number; sampled_at: number };
     background_now_playing?: PlayingItem;
     upcoming?: PlayingItem[];
     immediate?: PlayingItem;
@@ -600,6 +609,9 @@ export type EZPlayerCommand =
           command: 'resetstats'; // Reset cumulative stats counters
       }
     | {
+          command: 'resyncviewercontrol'; // Re-send the song list and state to Remote Falcon
+      }
+    | {
           command: 'stopnow'; // Stop all playing
       }
     | {
@@ -733,6 +745,14 @@ export interface CloudPollScheduleEntry {
 
 export type ViewerControlBackend = 'remote-falcon' | 'ezplayer';
 
+/** Outcome of an operator-requested Remote Falcon song-list push.  `message`
+ *  carries Remote Falcon's own words when it refuses the list — it answers
+ *  HTTP 200 either way, so that text is the only sign of a refusal. */
+export interface ViewerControlResyncResult {
+    ok: boolean;
+    message?: string;
+}
+
 export interface ViewerControlState {
     enabled: boolean;
     /** `'ezplayer'` = the built-in EZPlayer viewer control. Unlike
@@ -755,7 +775,16 @@ export interface ViewerControlState {
      *  Always treat absence as empty. `normalizePlaybackSettings` and helpers
      *  in `SettingsScheduleUtils.ts` default to `[]`. */
     schedule?: ViewerControlScheduleEntry[];
+    /** When set, Remote Falcon runs on `remoteFalconSchedule` instead of
+     *  `schedule`, so its windows and playlists can differ from the viewer
+     *  page's. Older readers ignore this and use `schedule` for both. */
+    separateRemoteFalconSchedule?: boolean;
+    /** Remote Falcon's own schedule; used only while `separateRemoteFalconSchedule` is set. */
+    remoteFalconSchedule?: ViewerControlScheduleEntry[];
 }
+
+/** The two viewer-control schedule lists in `ViewerControlState`. */
+export type ViewerControlScheduleList = 'schedule' | 'remoteFalconSchedule';
 
 export interface VolumeControlState {
     defaultVolume: number;
@@ -873,6 +902,10 @@ export interface MultisyncSettings {
     port?: number;
     /** Multicast group override (default 239.70.80.80). */
     multicastAddress?: string;
+    /** Also send media (audio) sync packets carrying the audio file and its playback
+     *  position, as FPP and xSchedule masters do. Default on; turn off when remotes
+     *  hold copies of the audio and must stay silent. */
+    mediaSync?: boolean;
 }
 
 export interface AdvancedPlaybackSettings {

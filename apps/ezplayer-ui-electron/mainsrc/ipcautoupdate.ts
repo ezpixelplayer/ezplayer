@@ -144,6 +144,7 @@ async function listReleases() {
     try {
         const resp = await fetch(`https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/releases?per_page=30`, {
             headers: { Accept: 'application/vnd.github+json' },
+            signal: AbortSignal.timeout(15_000),
         });
         if (!resp.ok) throw new Error(`GitHub releases request failed: ${resp.status}`);
         const releases = (await resp.json()) as {

@@ -434,6 +434,36 @@ interface CloudBridge {
 }
 let cloudBridge: CloudBridge | undefined;
 
+/** Bounds a dial; an unbounded CONNECTING socket counts as alive and blocks redial forever. */
+const BRIDGE_HANDSHAKE_TIMEOUT_MS = 15_000;
+const BRIDGE_PING_INTERVAL_MS = 30_000;
+
+/** A link that dies silently leaves the socket OPEN forever, which also blocks redial;
+ *  ping it and terminate (close → next checkin redials) when a full interval hears nothing. */
+function watchBridgeLiveness(ws: WebSocket, label: string): void {
+    let heard = true;
+    const mark = () => {
+        heard = true;
+    };
+    ws.on('pong', mark);
+    ws.on('ping', mark);
+    ws.on('message', mark);
+    const timer = setInterval(() => {
+        if (!heard) {
+            console.warn(`[server-worker] ${label} silent for ${BRIDGE_PING_INTERVAL_MS / 1000}s; terminating`);
+            ws.terminate();
+            return;
+        }
+        heard = false;
+        try {
+            ws.ping();
+        } catch {
+            /* closing; close handler cleans up */
+        }
+    }, BRIDGE_PING_INTERVAL_MS);
+    ws.once('close', () => clearInterval(timer));
+}
+
 /** Open, or still dialing (CONNECTING). Anything else is dead and gets redialed. */
 function bridgeAlive(b: { ws: WebSocket; open: boolean }): boolean {
     return b.open || b.ws.readyState === WebSocket.CONNECTING;
@@ -470,7 +500,7 @@ function openCloudBridge(
     }
     let ws: WebSocket;
     try {
-        ws = new WebSocket(wsUrl);
+        ws = new WebSocket(wsUrl, { handshakeTimeout: BRIDGE_HANDSHAKE_TIMEOUT_MS });
     } catch (err) {
         console.error('[server-worker] cloud bridge dial failed:', err);
         return;
@@ -481,6 +511,7 @@ function openCloudBridge(
     ws.on('open', () => {
         if (cloudBridge?.ws === ws) cloudBridge.open = true;
         console.log(`[server-worker] cloud bridge open sessionId=${sessionId.slice(0, 8)}... ttl=${ttlSeconds}s`);
+        watchBridgeLiveness(ws, 'cloud bridge');
         // Hand the live socket to the broadcaster. From here it's just another
         // Conn — first round dumps a snapshot of every cached key, subsequent
         // updates fan out via the existing set() path. The cloud relay
@@ -547,7 +578,7 @@ function openCloudProxyBridge(wsUrl: string, sessionId: string, ttlSeconds: numb
     }
     let ws: WebSocket;
     try {
-        ws = new WebSocket(wsUrl);
+        ws = new WebSocket(wsUrl, { handshakeTimeout: BRIDGE_HANDSHAKE_TIMEOUT_MS });
     } catch (err) {
         console.error('[server-worker] cloud proxy bridge dial failed:', err);
         return;
@@ -640,6 +671,7 @@ function openCloudProxyBridge(wsUrl: string, sessionId: string, ttlSeconds: numb
     ws.on('open', () => {
         if (cloudProxyBridge?.ws === ws) cloudProxyBridge.open = true;
         console.log(`[server-worker] cloud proxy bridge open sessionId=${sessionId.slice(0, 8)}...`);
+        watchBridgeLiveness(ws, 'cloud proxy bridge');
     });
     ws.on('message', (raw) => {
         // Errors at any layer become a 500 with the same reqId so the cloud's
@@ -908,7 +940,7 @@ function openCloudAudioBridge(wsUrl: string, sessionId: string, ttlSeconds: numb
     }
     let ws: WebSocket;
     try {
-        ws = new WebSocket(wsUrl);
+        ws = new WebSocket(wsUrl, { handshakeTimeout: BRIDGE_HANDSHAKE_TIMEOUT_MS });
     } catch (err) {
         console.error('[server-worker] cloud audio bridge dial failed:', err);
         return;
@@ -922,6 +954,7 @@ function openCloudAudioBridge(wsUrl: string, sessionId: string, ttlSeconds: numb
         if (cloudAudioBridge?.ws !== ws) return;
         cloudAudioBridge.open = true;
         console.log(`[server-worker] cloud audio bridge open sessionId=${sessionId.slice(0, 8)}...`);
+        watchBridgeLiveness(ws, 'cloud audio bridge');
         ensureAudioPump();
     });
     ws.on('message', (data, isBinary) => {
@@ -1537,7 +1570,8 @@ async function startServer(config: ServerWorkerData) {
     // API: GET /api/ezp/hello
     // ----------------------------------------------
     router.get('/api/ezp/hello', async (ctx) => {
-        ctx.body = { message: 'Hello from Koa + Electron!' };
+        // File and FPP routes need the show folder; until it loads they answer errors.
+        ctx.body = { message: 'Hello from Koa + Electron!', showLoaded: wsBroadcaster.get('showFolder') !== undefined };
     });
 
     // ----------------------------------------------

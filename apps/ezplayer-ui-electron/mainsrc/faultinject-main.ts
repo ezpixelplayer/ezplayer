@@ -40,6 +40,49 @@ export function faultPageUrl(url: string): string {
     return url;
 }
 
+/** How long a crashed renderer may take to be reported gone before we log it. */
+const CRASH_REPORT_WAIT_MS = 10_000;
+
+function crashRenderer(wc: WebContents): void {
+    const pid = wc.getOSProcessId();
+    wc.forcefullyCrashRenderer();
+    setTimeout(() => {
+        // Crashed, or already reloaded into a new process.
+        if (wc.isDestroyed() || wc.isCrashed() || wc.getOSProcessId() !== pid) return;
+        console.warn(
+            `[fault] renderer ${pid} not reported gone ${CRASH_REPORT_WAIT_MS} ms after crashing: ${describeProcess(pid)}`,
+        );
+    }, CRASH_REPORT_WAIT_MS);
+}
+
+function readOr(file: string, fallback: string): string {
+    try {
+        return fs.readFileSync(file, 'utf8');
+    } catch {
+        return fallback;
+    }
+}
+
+/** Whether `pid` still exists and, on Linux, its state, tracer and wait channel. */
+function describeProcess(pid: number): string {
+    try {
+        process.kill(pid, 0);
+    } catch {
+        return 'process exited';
+    }
+    if (process.platform !== 'linux') return 'process still running';
+    try {
+        const status = fs.readFileSync(`/proc/${pid}/status`, 'utf8');
+        const field = (name: string) => new RegExp(`^${name}:\\s*(.*)$`, 'm').exec(status)?.[1] ?? '?';
+        const wchan = fs.readFileSync(`/proc/${pid}/wchan`, 'utf8');
+        const tracer = field('TracerPid');
+        const tracerName = tracer === '0' ? '' : ` (${readOr(`/proc/${tracer}/comm`, '?').trim()})`;
+        return `State ${field('State')}, TracerPid ${tracer}${tracerName}, wchan ${wchan || '-'}`;
+    } catch (e) {
+        return `process still running (${(e as Error).message})`;
+    }
+}
+
 let rendererFaultsInjected = false;
 
 /** Called once the main window's app is up. Only the first time, so a reload cannot loop. */
@@ -60,7 +103,7 @@ export function injectRendererFaults(wc: WebContents): void {
         );
     }
     if (hasFault('renderer-hang')) later(() => void wc.executeJavaScript('setTimeout(() => { for (;;) {} })'));
-    if (hasFault('renderer-crash')) later(() => wc.forcefullyCrashRenderer());
+    if (hasFault('renderer-crash')) later(() => crashRenderer(wc));
     if (hasFault('gpu-crash')) {
         later(() => {
             const w = new BrowserWindow({ show: false });
