@@ -166,9 +166,22 @@ OPEN/START on begin, SYNC frames every ~16 frames (every frame for the first
 few so remotes lock on fast), and STOP on end/pause/idle. `remotes` is a list
 of `host[:port]`; an empty list broadcasts to the FPP multicast group
 239.70.80.80 (port and multicast address are overridable under Advanced).
-Media sync packets are not sent (audio plays on the master), and EZPlayer
-does not act as a sync *remote*. Default is **off** — sync-master is a
-topology decision; exactly one master should exist on a network.
+EZPlayer does not act as a sync *remote*. Default is **off** — sync-master is
+a topology decision; exactly one master should exist on a network.
+
+Media sync packets (`fileType` 1) go out alongside the sequence packets, as
+FPP and xSchedule masters send them: OPEN/START naming the song's audio file
+(basename) when it begins, a SYNC about every 500 ms whose `secondsElapsed` is
+the audio position as heard on the player — the audio sync adjust is folded
+in, which the sequence packets do not reflect — and STOP when it ends. Media
+packets carry no frame number. An FPP remote that holds the same audio file
+will play it; the "Send audio sync too" switch (`mediaSync: false`) keeps the
+sequence packets and drops the media ones.
+
+Every packet describes the frame being output at that instant: the playback
+loop stamps and sends the sync as the frame's deadline arrives, not when it
+starts preparing the frame, so a packet is never ahead of the lights it
+describes.
 
 The packets carry FPP's own `SYNC_PKT_*` action codes (`src/MultiSync.h`):
 START 0, STOP 1, SYNC 2, OPEN 3 — not the order the flow suggests.
