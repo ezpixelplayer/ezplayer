@@ -839,9 +839,9 @@ whole-object POST so unrelated settings survive the round trip.
 
 ---
 
-### GET /api/ezp/playback-settings/{path}
+### GET /api/ezp/playback-settings/:path
 
-### POST /api/ezp/playback-settings/{path}
+### POST /api/ezp/playback-settings/:path
 
 One part of the settings, addressed by its path in the object with `/`
 between levels: `sync`, `sync/multisync`, `sync/multisync/remotes`,
