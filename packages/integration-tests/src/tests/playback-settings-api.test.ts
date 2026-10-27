@@ -26,9 +26,20 @@ const getJson = async (p = '') => {
 const post = (p: string, value: unknown) =>
     fetch(url(p), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(value) });
 
-/** The settings file the player keeps in the show folder. */
-const onDisk = async () =>
-    JSON.parse(await fsp.readFile(path.join(show.dir, '.ezplayer', 'playbackSettings.json'), 'utf8'));
+/** The settings file the player keeps in the show folder. The player writes it
+ *  after answering the POST, so give the write a moment to land. */
+const onDisk = async () => {
+    const file = path.join(show.dir, '.ezplayer', 'playbackSettings.json');
+    const deadline = Date.now() + 5000;
+    for (;;) {
+        try {
+            return JSON.parse(await fsp.readFile(file, 'utf8'));
+        } catch (err) {
+            if ((err as NodeJS.ErrnoException).code !== 'ENOENT' || Date.now() > deadline) throw err;
+            await new Promise((r) => setTimeout(r, 200));
+        }
+    }
+};
 
 beforeAll(async () => {
     show = await createFixtureShow({ channels: 150 });
