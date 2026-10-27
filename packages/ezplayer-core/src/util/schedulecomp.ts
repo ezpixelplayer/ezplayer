@@ -1,4 +1,8 @@
 import type {
+    PlaybackItemOrder,
+    PlaybackPendingEntry,
+    PlaybackStackEntry,
+    PlaybackView,
     PlayingItem,
     PlaylistRecord,
     ScheduledPlaylist,
@@ -497,7 +501,9 @@ export type PlaybackLogDetailType =
     | 'Sequence Started'
     | 'Sequence Ended'
     | 'Sequence Paused'
-    | 'Sequence Resumed';
+    | 'Sequence Resumed'
+    /** A scheduled playlist passed over a song that started too recently ({@link RepeatGuard}). */
+    | 'Sequence Skipped';
 
 export interface PlaybackLogDetail {
     /** What happened */
@@ -568,6 +574,49 @@ interface PlaybackCursor {
     item: PlaybackItem;
 }
 
+/**
+ * Recently started songs, so a scheduled playlist can pass over one that just
+ * played (typically because a viewer requested it). A repeat the schedule made
+ * itself is left alone. Owned by the run state and cloned with its snapshots, so
+ * predictions skip the same songs playback will.
+ */
+export class RepeatGuard {
+    static readonly HISTORY_CAP = 100;
+    /** Other songs that must start before a repeat; 0 = off. */
+    spacing = 0;
+    /** Most recent first. `scheduled`: started by a scheduled item rather than a request. */
+    recent: { seqId: string; scheduled: boolean }[] = [];
+
+    clone(): RepeatGuard {
+        const g = new RepeatGuard();
+        g.spacing = this.spacing;
+        g.recent = [...this.recent];
+        return g;
+    }
+
+    noteStart(seqId: string, scheduled: boolean) {
+        this.recent.unshift({ seqId, scheduled });
+        if (this.recent.length > RepeatGuard.HISTORY_CAP) this.recent.length = RepeatGuard.HISTORY_CAP;
+    }
+
+    /** How many other songs have started since `seqId` last did; undefined if not in the history. */
+    songsSince(seqId: string): number | undefined {
+        const i = this.recent.findIndex((r) => r.seqId === seqId);
+        return i < 0 ? undefined : i;
+    }
+
+    /** Whether a playlist of `distinctSongs` should pass over `seqId`. The spacing is held to
+     *  40% of the playlist's distinct songs (a shuffle already keeps a song half the playlist
+     *  apart), so a short playlist is never starved by a long spacing. A song whose last start
+     *  was scheduled too is never skipped: the schedule chose that repeat. */
+    playlistShouldSkip(seqId: string, distinctSongs: number): boolean {
+        const n = Math.min(this.spacing, Math.floor(distinctSongs * 0.4));
+        if (n <= 0) return false;
+        const since = this.songsSince(seqId);
+        return since !== undefined && since < n && !this.recent[since].scheduled;
+    }
+}
+
 function forkState<T extends object>(state: T): T {
     return Object.assign(Object.create(Object.getPrototypeOf(state)), state);
 }
@@ -600,6 +649,8 @@ class PlaybackStateEntry {
 
     item: PlaybackItem; // The expanded item, full instructions
     itemId: string = '';
+    /** The owning run state's guard; set when pushed on its stack. */
+    repeatGuard?: RepeatGuard = undefined;
 
     seqSections: [SequenceRecord[], SequenceRecord[], SequenceRecord[]];
     seqDurs: [number[], number[], number[]];
@@ -667,6 +718,11 @@ class PlaybackStateEntry {
     }
 
     addLog(depth: number, et: PlaybackLogDetailType, ctime: number, c: PlaybackCursor, log?: PlaybackLogDetail[]) {
+        // Only this entry's own cursor, while it runs, is playback; other cursors are readahead.
+        if (et === 'Sequence Started' && c === this && this.suspendTime === undefined) {
+            const id = this.seqIdAt(c);
+            if (id) this.repeatGuard?.noteStart(id, c.item.itemType === 'Scheduled');
+        }
         log?.push({
             eventType: et,
             eventTime: ctime,
@@ -675,10 +731,22 @@ class PlaybackStateEntry {
             scheduleId: c.item.scheduleId,
             playlistId: c.item.playlistIds?.[c.itemPart],
             stackDepth: depth,
-            sequenceId: this.seqSections[c.itemPart]?.[c.itemCursor % (this.seqSections[c.itemPart].length || 1)]?.id,
+            sequenceId: this.seqIdAt(c),
             entryIntoPlaylist: [c.itemPart, c.itemCursor],
             timeIntoSeqMS: c.offsetInto,
         });
+    }
+
+    private seqIdAt(c: PlaybackCursor): string | undefined {
+        return this.seqSections[c.itemPart]?.[c.itemCursor % (this.seqSections[c.itemPart].length || 1)]?.id;
+    }
+
+    /** Whether a scheduled playlist should pass over the main-section song under the cursor. */
+    private shouldSkipRepeat(c: PlaybackCursor): boolean {
+        const g = this.repeatGuard;
+        if (!g || g.spacing <= 0 || c.item.itemType !== 'Scheduled' || this.suspendTime !== undefined) return false;
+        const id = this.seqIdAt(c);
+        return !!id && g.playlistShouldSkip(id, c.item.distinctMainCount());
     }
 
     nextItem(depth: number, c: PlaybackCursor, ctime: number, loop: boolean, log?: PlaybackLogDetail[]) {
@@ -737,6 +805,9 @@ class PlaybackStateEntry {
         if (dbg && runToTime < c.baseTime + c.offsetInto) {
             console.log(`PSE running backwards by ${c.baseTime + c.offsetInto - runToTime}; ${Date.now() - runToTime}`);
         }
+        // Bounds repeat skips to one pass of the main section.
+        let repeatSkips = 0;
+
         if (runToTime > c.baseTime + c.offsetInto && this.suspendTime) {
             //This is bad but the prefetcher does it and we have taken steps to make that unimportant
             //console.log(`PSE running forwards while suspended ${c.baseTime + c.offsetInto-runToTime}; ${Date.now()-runToTime}`);
@@ -842,6 +913,13 @@ class PlaybackStateEntry {
                 continue;
             } else if (c.itemPart === 1) {
                 // Main (loop?)
+                if (c.offsetInto === 0 && repeatSkips < this.seqSections[1].length && this.shouldSkipRepeat(c)) {
+                    ++repeatSkips;
+                    if (c === this) this.addLog(depth, 'Sequence Skipped', curTime, c, log);
+                    ++c.itemCursor;
+                    if (c.item.mainSectionLoop && c.itemCursor >= this.seqSections[1].length) c.itemCursor = 0;
+                    continue;
+                }
                 const itime = c.item.mainSectionDurs[c.itemCursor % c.item.mainSectionDurs.length];
 
                 // Advanced outro calculation
@@ -1112,8 +1190,12 @@ class PlaybackStateEntry {
 }
 
 // Track items that we may start
+let bakeCounter = 0;
+
 class PlaybackItem implements SchedulerHeapItem {
     itemType?: 'Scheduled' | 'Immediate' | 'Queued';
+    /** Distinguishes one baking of this item's song order from a later one. */
+    readonly bake: number = ++bakeCounter;
     priorityTier: number = 10;
     timeBasedPri: number = 0;
     cutOffPrevious: boolean = false; // Tie breaker, which wins, existing (false) or new (true)?
@@ -1146,6 +1228,11 @@ class PlaybackItem implements SchedulerHeapItem {
     mainSection: SequenceRecord[] = [];
     mainSectionDurs: number[] = [];
     mainSectionLoop: boolean = false;
+
+    /** Distinct songs in the main section. */
+    distinctMainCount(): number {
+        return new Set(this.mainSection.map((s) => s.id)).size;
+    }
 }
 
 // Loop a schedule for time
@@ -1284,6 +1371,9 @@ export class PlayerRunState {
      *  Entries are pruned once currentTime passes the end time. */
     stoppedIds: Map<string, number> = new Map();
 
+    /** Recent starts; carry it over when replacing the run state. */
+    repeatGuard: RepeatGuard = new RepeatGuard();
+
     constructor(currentTime: number) {
         this.currentTime = currentTime;
     }
@@ -1297,7 +1387,11 @@ export class PlayerRunState {
         // Clone stack entries (each tracks cursor position into read-only PlaybackItems)
         copy.stack = this.stack.map((e) => e.clone());
         copy.stackById = new Map();
-        for (const e of copy.stack) copy.stackById.set(e.itemId, e);
+        copy.repeatGuard = this.repeatGuard.clone();
+        for (const e of copy.stack) {
+            copy.stackById.set(e.itemId, e);
+            e.repeatGuard = copy.repeatGuard;
+        }
 
         // Clone heap (items get popped/inserted during runUntil)
         copy.heap = this.heap.clone();
@@ -1474,6 +1568,7 @@ export class PlayerRunState {
         return;
     }
     #stackPush(e: PlaybackStateEntry) {
+        e.repeatGuard = this.repeatGuard;
         this.stackById.set(e.itemId, e);
         this.stack.push(e);
     }
@@ -2167,7 +2262,68 @@ export class PlayerRunState {
     stopImmediately(currentTime: number, log?: PlaybackLogDetail[]) {
         this.interactiveQueue = [];
         this.immediateItem = undefined;
+        this.#stopTopNow(currentTime, log);
+    }
 
+    /** Graceful stop: finish the current sequence, play the outro (post-section)
+     *  of the current schedule if it has one, then let it end naturally.
+     *  Schedules and heap remain intact. */
+    stopGracefully(currentTime: number, _log?: PlaybackLogDetail[]) {
+        this.interactiveQueue = [];
+        this.immediateItem = undefined;
+        this.#stopTopGracefully(currentTime);
+    }
+
+    /**
+     * Stop one item and nothing else. The item that is on ends now or gracefully;
+     * an item under it, or one waiting its turn, is simply dropped so it never
+     * plays, and a schedule stays stopped until its end time. Returns what was found.
+     */
+    stopItem(
+        key: string,
+        graceful: boolean,
+        currentTime: number,
+        log?: PlaybackLogDetail[],
+    ): 'playing' | 'removed' | 'none' {
+        const top = this.#stackTop;
+        if (top && top.itemId === key) {
+            if (graceful) this.#stopTopGracefully(currentTime);
+            else this.#stopTopNow(currentTime, log);
+            return 'playing';
+        }
+
+        const idx = this.stack.findIndex((e) => e.itemId === key);
+        if (idx >= 0) {
+            const e = this.stack[idx];
+            e.stopAtTime(idx + 1, currentTime, log);
+            this.stack = [...this.stack.slice(0, idx), ...this.stack.slice(idx + 1)];
+            this.stackById.delete(key);
+            this.#keepStopped(e.item);
+            return 'removed';
+        }
+
+        const due = this.heapById.get(key);
+        if (due) {
+            this.heapById.delete(key);
+            const at = this.heap.findIndex((h) => h.itemId === key);
+            if (at !== undefined && at >= 0) this.heap.deleteAt(at);
+            this.#keepStopped(due);
+            return 'removed';
+        }
+
+        if (this.immediateItem?.requestId === key || this.interactiveQueue.some((q) => q.requestId === key)) {
+            this.removeInteractiveCommand(key, log);
+            return 'removed';
+        }
+        return 'none';
+    }
+
+    /** A stopped schedule must not be loaded again while its window is still open. */
+    #keepStopped(item: PlaybackItem) {
+        if (item.itemType === 'Scheduled') this.stoppedIds.set(item.itemId, item.schedEnd);
+    }
+
+    #stopTopNow(currentTime: number, log?: PlaybackLogDetail[]) {
         const st = this.#stackTop;
         if (!st) return;
 
@@ -2184,13 +2340,7 @@ export class PlayerRunState {
         }
     }
 
-    /** Graceful stop: finish the current sequence, play the outro (post-section)
-     *  of the current schedule if it has one, then let it end naturally.
-     *  Schedules and heap remain intact. */
-    stopGracefully(currentTime: number, _log?: PlaybackLogDetail[]) {
-        this.interactiveQueue = [];
-        this.immediateItem = undefined;
-
+    #stopTopGracefully(currentTime: number) {
         const st = this.#stackTop;
         if (!st) return;
 
@@ -2356,6 +2506,97 @@ export class PlayerRunState {
             });
         }
         return items;
+    }
+
+    /**
+     * The engine's structure, for the detailed playback view: the stack top first,
+     * then what waits, then what comes. Whether the top is paused or ending is the
+     * caller's to say; the engine only knows that it is on.
+     */
+    getStatusView(flags: { paused?: boolean; ending?: boolean } = {}): PlaybackView {
+        const stack: PlaybackStackEntry[] = [];
+        for (let i = this.stack.length - 1; i >= 0; --i) {
+            const top = i === this.stack.length - 1;
+            const state = !top ? 'suspended' : flags.paused ? 'paused' : flags.ending ? 'ending' : 'playing';
+            stack.push(this.#stackEntryView(this.stack[i], state));
+        }
+
+        const pending: PlaybackPendingEntry[] = this.getQueueItems().map((q) => ({ ...q, why: 'waiting' }));
+        for (const it of this.heapById.values()) {
+            if (it.itemType !== 'Scheduled') continue;
+            pending.push({
+                type: 'Scheduled',
+                item: 'Schedule',
+                title: this.titleForIds(undefined, undefined, it.scheduleId),
+                schedule_id: it.scheduleId,
+                at: it.schedStart,
+                until: it.schedEnd,
+                why: 'deferred',
+            });
+        }
+
+        return {
+            stack,
+            pending,
+            upcoming: [...this.predictUpcoming(600_000, 10), ...this.getUpcomingSchedules()],
+        };
+    }
+
+    #stackEntryView(e: PlaybackStateEntry, state: PlaybackStackEntry['state']): PlaybackStackEntry {
+        const it = e.item;
+        const byRequest = !!it.requestId && !it.scheduleId;
+        const view: PlaybackStackEntry = {
+            key: e.itemId,
+            origin: it.itemType ?? 'Scheduled',
+            state,
+            title: this.titleForIds(
+                byRequest && !it.playlistIds?.[1] ? it.mainSection[0]?.id : undefined,
+                byRequest ? it.playlistIds?.[1] : undefined,
+                it.scheduleId || undefined,
+            ),
+            schedule_id: it.scheduleId || undefined,
+            playlist_id: it.playlistIds?.[1],
+            request_id: it.requestId,
+            ends_at: it.scheduleId ? it.schedEnd : undefined,
+            order_key: `${e.itemId}#${it.bake}`,
+        };
+
+        if (e.itemPart >= 0 && e.itemPart <= 2 && e.itemCursor >= 0) {
+            const songs = e.seqSections[e.itemPart];
+            const durs = e.seqDurs[e.itemPart];
+            const count = songs.length;
+            const loop = e.itemPart === 1 && it.mainSectionLoop;
+            const index = loop && count ? e.itemCursor % count : e.itemCursor;
+            if (index < count) {
+                view.section = (['intro', 'main', 'outro'] as const)[e.itemPart];
+                view.position = { index, count, loop };
+                const seq = songs[index];
+                view.song = {
+                    sequence_id: seq.id,
+                    title: this.titleForIds(seq.id),
+                    offset_ms: e.offsetInto,
+                    // The top entry is advanced to now; a suspended one stopped where it was.
+                    at: state === 'suspended' ? (e.suspendTime ?? this.currentTime) : this.currentTime,
+                    duration_ms: durs[index] ?? 0,
+                };
+            }
+        }
+        return view;
+    }
+
+    /** The baked song order of a loaded item: on the stack, due, or still to come. */
+    getItemOrder(key: string): PlaybackItemOrder | undefined {
+        const it = this.stackById.get(key)?.item ?? this.heapById.get(key) ?? this.upcomingById.get(key);
+        if (!it) return undefined;
+        const list = (seqs: SequenceRecord[], durs: number[]) =>
+            seqs.map((seq, i) => ({ sequence_id: seq.id, title: this.titleForIds(seq.id), duration_ms: durs[i] ?? 0 }));
+        return {
+            key,
+            order_key: `${key}#${it.bake}`,
+            intro: list(it.preSection, it.preSectionDurs),
+            main: list(it.mainSection, it.mainSectionDurs),
+            outro: list(it.postSection, it.postSectionDurs),
+        };
     }
 
     getUpcomingSchedules(): PlayingItem[] {

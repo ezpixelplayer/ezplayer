@@ -20,6 +20,62 @@ interface SparseRange {
     chcount: number;
 }
 
+/**
+ * Sparse range count of a v2 header (`hdr` holds the bytes from the file start).
+ * The count is one byte, and xLights has written tables of more than 255 ranges
+ * with only the low byte. Take the count implied by the header length (offset to
+ * the variable headers) when its low byte matches, the table fits before the
+ * channel data, and the ranges add up to the channel count.
+ */
+export function sparseRangeCount(hdr: DataView, base = 0): number {
+    const n = hdr.getUint8(base + 22);
+    const off2chdata = hdr.getUint16(base + 4, true);
+    const shdrlen = hdr.getUint16(base + 8, true);
+    const blks = ((hdr.getUint8(base + 20) & 240) << 4) + hdr.getUint8(base + 21);
+    const tableStart = 32 + blks * 8;
+    if (shdrlen <= tableStart + n * 6 || shdrlen > off2chdata || base + shdrlen > hdr.byteLength) return n;
+    if ((shdrlen - tableStart) % 6) return n;
+    const full = (shdrlen - tableStart) / 6;
+    if ((full & 255) !== n) return n;
+    let sum = 0;
+    for (let i = 0; i < full; ++i) sum += readUInt24LE(hdr, base + tableStart + i * 6 + 3);
+    return sum === hdr.getUint32(base + 10, true) ? full : n;
+}
+
+/**
+ * FSEQ 2.3 keeps the first 255 ranges in the header with byte 22 = 255, so 255 is
+ * not a count either, and stores the whole table in an 'SR' variable header
+ * (normally extended data after the frames). Take it only when it extends the
+ * header's 255 and adds up to the channel count; a stale copy carried along by an
+ * older writer fails that.
+ */
+export function applySparseRangeTable(h: FSEQHeader, table: Uint8Array) {
+    if (table.length % 6 || table.length / 6 <= 255 || h.nsparseranges !== 255) return;
+    const dv = toDataView(table);
+    const ranges: SparseRange[] = [];
+    let sum = 0;
+    for (let p = 0; p < table.length; p += 6) {
+        const r = { startch: readUInt24LE(dv, p), chcount: readUInt24LE(dv, p + 3) };
+        const hr = h.chranges[ranges.length];
+        if (ranges.length < 255 && (hr.startch !== r.startch || hr.chcount !== r.chcount)) return;
+        ranges.push(r);
+        sum += r.chcount;
+    }
+    if (sum !== h.channels) return;
+    h.chranges = ranges;
+    h.nsparseranges = ranges.length;
+}
+
+/** An extended data ('ED') variable header's body: the real code, u64 file offset, u32 length. */
+function extendedData(body: Uint8Array) {
+    const dv = toDataView(body);
+    return {
+        code: utfDecoder.decode(body.subarray(0, 2)),
+        offset: dv.getUint32(2, true) + dv.getUint32(6, true) * 2 ** 32,
+        length: dv.getUint32(10, true),
+    };
+}
+
 export class ModelRec {
     name: string;
     startch: number;
@@ -82,6 +138,9 @@ export class FSEQHeader {
     headers: { [key: string]: string } = {};
     /** Extended variable headers: an `ED` entry points at data stored after the channel data. */
     extendedHeaders: { [key: string]: ExtendedHeaderRef } = {};
+
+    /** Where a 2.3 'SR' table in extended data is, until it is read (applySparseRangeTable). */
+    extsparse?: { offset: number; length: number };
 }
 
 export interface ExtendedHeaderRef {
@@ -89,8 +148,6 @@ export interface ExtendedHeaderRef {
     offset: number;
     length: number;
 }
-
-const ED_ENTRY_DATA_BYTES = 14; // code(2) + offset(8) + length(4)
 
 class CompBlockIndex {
     startFrame: number = 0; // Note that this is 0-based and inclusive
@@ -237,6 +294,7 @@ export class FSEQReaderSync {
             uuid2 = 0;
         let blks = 0;
         let nranges = 0;
+        let srTable: Uint8Array | undefined;
 
         if (isEseq) {
             off2chdata = 20;
@@ -311,10 +369,19 @@ export class FSEQReaderSync {
 
                 // Sparse range map
                 // Sparse ranges: 3 ch num, 3 num ch
+                // readAt is positioned and leaves the sequential reads alone.
+                const at = this.fdo;
+                nranges = sparseRangeCount(await this.readAt(off2chdata, 0));
+                this.fdo = at;
                 for (let i = 0; i < nranges; ++i) {
                     const startnum = await this.read24bit();
                     const chcount = await this.read24bit();
                     chrangelist.push({ startch: startnum, chcount: chcount });
+                }
+
+                // Uncompressed files may have no block entries: the frames are one contiguous run.
+                if (comp === 0 && !compblocklist.length) {
+                    compblocklist.push({ framenum: 0, blocksize: nframes * stepsz });
                 }
             }
 
@@ -325,16 +392,25 @@ export class FSEQReaderSync {
             while (this.fdo + 4 <= off2chdata) {
                 //console.log ("At "+str(fh.tell())+" vs " + str(shdrlen))
                 const hlen = (await this.read16bit()) - 4;
+                if (hlen < 0) break; // corrupt; a zero length would never advance
                 const hname = utfDecoder.decode(await this.read(2));
                 //console.log ("Header "+hname+": "+str(hlen))
-                if (hname === 'ED' && hlen === ED_ENTRY_DATA_BYTES) {
-                    const ed = await this.read(ED_ENTRY_DATA_BYTES);
-                    const code = utfDecoder.decode(new Uint8Array(ed.buffer, 0, 2));
-                    extHeaders[code] = { offset: Number(ed.getBigUint64(2, true)), length: ed.getUint32(10, true) };
+                const hdata = toUint8Array(await this.read(hlen));
+                if (hname === 'ED') {
+                    const ed = hlen >= 14 ? extendedData(hdata) : undefined;
+                    if (ed) extHeaders[ed.code] = { offset: ed.offset, length: ed.length };
+                    if (ed?.code === 'SR') {
+                        const at = this.fdo;
+                        srTable = toUint8Array(await this.readAt(ed.length, ed.offset));
+                        this.fdo = at;
+                    }
                     continue;
                 }
-                const hval = utfDecoder.decode(await this.read(hlen)).replace(/\0+$/, '');
-                v1headers[hname] = hval;
+                if (hname === 'SR') {
+                    srTable = hdata;
+                    continue;
+                }
+                v1headers[hname] = utfDecoder.decode(hdata).replace(/\0+$/, '');
             }
         }
         this.header = {
@@ -366,6 +442,7 @@ export class FSEQReaderSync {
             headers: v1headers,
             extendedHeaders: extHeaders,
         };
+        if (srTable) applySparseRangeTable(this.header, srTable);
     }
 
     async processFrames(
@@ -508,7 +585,17 @@ export class FSEQReaderAsync {
         };
         const { readBytes: readBytes2 } = await fr.asyncRead(hreq2);
         if (readBytes2 !== realhlen) throw new Error(`Did not read full proper header from purported FSEQ file`);
-        return FSEQReaderAsync.decodeFSEQHeader(hreq2.buf!, hreq2.bufoffset!, false);
+        const header = FSEQReaderAsync.decodeFSEQHeader(hreq2.buf!, hreq2.bufoffset!, false);
+        const ext = header.extsparse;
+        if (ext) {
+            delete header.extsparse;
+            const hreq3: FileReadRequest = { clientid, fileid, reqid, offset: ext.offset, length: ext.length };
+            const { readBytes: readBytes3 } = await fr.asyncRead(hreq3);
+            if (readBytes3 === ext.length) {
+                applySparseRangeTable(header, hreq3.buf!.subarray(hreq3.bufoffset!, hreq3.bufoffset! + ext.length));
+            }
+        }
+        return header;
     }
 
     static decodeFSEQHeader(ibuf: Uint8Array, off: number, fixed: boolean, flen?: number): FSEQHeader {
@@ -549,6 +636,8 @@ export class FSEQReaderAsync {
             uuid2 = 0;
         let blks = 0;
         let nranges = 0;
+        let srTable: Uint8Array | undefined;
+        let extsparse: { offset: number; length: number } | undefined;
 
         if (isEseq) {
             off2chdata = 20;
@@ -644,12 +733,18 @@ export class FSEQReaderAsync {
 
                     // Sparse range map
                     // Sparse ranges: 3 ch num, 3 num ch
+                    nranges = sparseRangeCount(buf, origoff);
                     for (let i = 0; i < nranges; ++i) {
                         const startnum = readUInt24LE(buf, off);
                         off += 3;
                         const chcount = readUInt24LE(buf, off);
                         off += 3;
                         chrangelist.push({ startch: startnum, chcount: chcount });
+                    }
+
+                    // Uncompressed files may have no block entries: the frames are one contiguous run.
+                    if (comp === 0 && !compblocklist.length) {
+                        compblocklist.push({ framenum: 0, blocksize: nframes * stepsz });
                     }
                 }
             }
@@ -662,22 +757,24 @@ export class FSEQReaderAsync {
                 while (off + 4 - origoff <= off2chdata) {
                     //console.log ("At "+str(fh.tell())+" vs " + str(shdrlen))
                     const hlen = buf.getUint16(off, true) - 4;
+                    if (hlen < 0) break; // corrupt; a zero length would never advance
                     off += 2;
                     const hname = utfDecoder.decode(ibuf.subarray(off, off + 2));
                     off += 2;
                     //console.log ("Header "+hname+": "+str(hlen))
-                    if (hname === 'ED' && hlen === ED_ENTRY_DATA_BYTES) {
-                        const code = utfDecoder.decode(ibuf.subarray(off, off + 2));
-                        extHeaders[code] = {
-                            offset: Number(buf.getBigUint64(off + 2, true)),
-                            length: buf.getUint32(off + 10, true),
-                        };
-                        off += ED_ENTRY_DATA_BYTES;
+                    const hdata = ibuf.subarray(off, off + hlen);
+                    off += hlen;
+                    if (hname === 'ED') {
+                        const ed = hlen >= 14 ? extendedData(hdata) : undefined;
+                        if (ed) extHeaders[ed.code] = { offset: ed.offset, length: ed.length };
+                        if (ed?.code === 'SR') extsparse = { offset: ed.offset, length: ed.length };
                         continue;
                     }
-                    const hval = utfDecoder.decode(ibuf.subarray(off, off + hlen)).replace(/\0+$/, '');
-                    off += hlen;
-                    v1headers[hname] = hval;
+                    if (hname === 'SR') {
+                        srTable = hdata;
+                        continue;
+                    }
+                    v1headers[hname] = utfDecoder.decode(hdata).replace(/\0+$/, '');
                 }
             }
         }
@@ -711,6 +808,8 @@ export class FSEQReaderAsync {
             headers: v1headers,
             extendedHeaders: extHeaders,
         };
+        if (srTable) applySparseRangeTable(header, srTable);
+        else if (extsparse) header.extsparse = extsparse;
         return header;
     }
 

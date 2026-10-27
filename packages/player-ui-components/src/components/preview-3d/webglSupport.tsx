@@ -1,6 +1,7 @@
 import React, { type ErrorInfo } from 'react';
 import { Typography } from '@mui/material';
 import { Box } from '../box/Box';
+import { reportUiError } from '../../util/uiErrorReporter';
 
 /**
  * WebGL availability probe + an error boundary for the preview viewers.
@@ -145,6 +146,7 @@ export class PreviewErrorBoundary extends React.Component<BoundaryProps, Boundar
 
     componentDidCatch(error: Error, info: ErrorInfo) {
         console.error('[Preview] viewer failed to render:', error, info.componentStack);
+        reportUiError('Preview', error, info.componentStack);
     }
 
     componentDidUpdate(prev: BoundaryProps) {

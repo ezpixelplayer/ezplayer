@@ -10,6 +10,7 @@ import {
     LOCAL_STATS_EPOCH,
     trimViewerStatsEvents,
     type StoredViewerStatsEvent,
+    type VcDropReason,
     type VcPickSource,
     type VcStatsEventKind,
     type VcStatsResponse,
@@ -103,7 +104,15 @@ export function applyViewerStatsPull(res: VcStatsResponse, now = Date.now()): nu
  *  server's, and the pull cursor ignores them. */
 export function appendLocalViewerStatsEvent(
     // Spelled out rather than Omit<>: the wire type's index signature makes Omit drop the known keys.
-    ev: { ts: number; kind: VcStatsEventKind; songId?: string; title?: string; source?: VcPickSource },
+    ev: {
+        ts: number;
+        kind: VcStatsEventKind;
+        songId?: string;
+        title?: string;
+        source?: VcPickSource;
+        dropReason?: VcDropReason;
+        count?: number;
+    },
     now = Date.now(),
 ): void {
     let seq = 0;

@@ -21,6 +21,11 @@ export type {
     PrefetchCacheStats,
     PlaybackStatistics,
     PlayingItem,
+    PlaybackStackEntry,
+    PlaybackPendingEntry,
+    PlaybackView,
+    PlaybackOrderEntry,
+    PlaybackItemOrder,
     UIConnectSnapshot,
     RemoteAccessAvailability,
     EZPlayerCommand,
@@ -72,6 +77,7 @@ export type {
     UpdateCommand,
     AutoUpdateOpsState,
     DiagnosticsConsent,
+    SupportBundleLevel,
     LoginItemState,
     AppSettingsState,
     AppSettingsCommand,
@@ -79,7 +85,12 @@ export type {
     ControllerRefreshMode,
 } from './types/DataTypes';
 
-export { controllerRefreshSettingsFor, controllerRefreshMode } from './types/DataTypes';
+export {
+    controllerRefreshSettingsFor,
+    controllerRefreshMode,
+    SUPPORT_BUNDLE_LEVELS,
+    isSupportBundleLevel,
+} from './types/DataTypes';
 
 export type {
     ControllerDetailNode,
@@ -224,6 +235,7 @@ export {
     playlistsToMap,
     priorityToNumber,
     PlayerRunState,
+    RepeatGuard,
 } from './util/schedulecomp';
 
 export {
@@ -279,7 +291,14 @@ export {
     hasViewerControlBackend,
     primaryViewerControlType,
     viewerControlBackends,
+    viewerControlSchedule,
+    viewerControlScheduleList,
     withViewerControlBackends,
 } from './util/viewerControlBackends';
-export type { ViewerControlBackend, PlaySongSource } from './types/DataTypes';
-export type { VcPickSource } from './types/ViewerControlWire';
+export type {
+    ViewerControlBackend,
+    ViewerControlScheduleList,
+    ViewerControlResyncResult,
+    PlaySongSource,
+} from './types/DataTypes';
+export type { VcPickSource, VcDropReason } from './types/ViewerControlWire';

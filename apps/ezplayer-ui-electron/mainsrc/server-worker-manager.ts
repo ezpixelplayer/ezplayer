@@ -25,10 +25,14 @@ import {
     dispatchCloudCommand,
     putSequencesWithDurations,
     playWorkerOverlay,
+    getPlaybackItemOrder,
 } from './ipcezplayer.js';
 import { getCurrentShowFolder } from '../showfolder.js';
 import { updateShowFolderLock } from './showfolder-lock.js';
 import { reportDiagEvent } from './diagnostics.js';
+import { buildSupportBundle, supportBundleName } from './diagbundle.js';
+import { getSettingsCache } from './data/SettingsStorage.js';
+import { getCloudConfigCache } from './data/CloudConfigStorage.js';
 import { safeSend } from './safe-send.js';
 import { syncAudioOutputsFromSettings } from './audioWindows.js';
 import { applySettingsFromRenderer } from './data/SettingsStorage.js';
@@ -133,6 +137,7 @@ const rpcHandlers: ServerWorkerRPCAPI = {
             });
         }
     },
+    getPlaybackItemOrder: async (key: string) => await getPlaybackItemOrder(key),
     sendPlaybackSettings: (settings: unknown) => {
         const playbackSettings = settings as PlaybackSettings;
         syncAudioOutputsFromSettings(playbackSettings);
@@ -176,6 +181,14 @@ const rpcHandlers: ServerWorkerRPCAPI = {
     },
     remoteAccessReloadConfig: async () => {
         return publishRemoteAccessAvailability();
+    },
+    buildSupportBundle: async (level) => {
+        const data = await buildSupportBundle(level, {
+            showFolder: getCurrentShowFolder() ?? undefined,
+            playbackSettings: getSettingsCache(),
+            cloudConfig: getCloudConfigCache(),
+        });
+        return { name: supportBundleName(level), data };
     },
 };
 

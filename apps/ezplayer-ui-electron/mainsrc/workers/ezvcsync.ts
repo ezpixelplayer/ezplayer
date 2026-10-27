@@ -19,6 +19,7 @@
 import { parentPort } from 'worker_threads';
 import type { VcPlayingUpdate, VcScheduleEntry, VcSong } from '@ezplayer/ezplayer-core';
 import { trustSystemCAs } from '../trustSystemCAs.js';
+import { errorDetail } from '../errorDetail.js';
 
 // Trust the OS cert store before any cloud fetch in this worker.
 trustSystemCAs();
@@ -221,7 +222,7 @@ async function runGuarded(key: string, fn: () => Promise<void>) {
     try {
         await fn();
     } catch (e) {
-        send({ type: 'log', level: 'error', msg: (e as Error).message });
+        send({ type: 'log', level: 'error', msg: errorDetail(e) });
     } finally {
         inFlight[key] = false;
     }
@@ -240,7 +241,7 @@ function handleSetConfig(newConfig: EzvcConfig) {
         ensureClient(); // validate eagerly so bad config surfaces now
         send({ type: 'configStatus', ok: true });
     } catch (e) {
-        send({ type: 'configStatus', ok: false, error: (e as Error).message });
+        send({ type: 'configStatus', ok: false, error: errorDetail(e) });
     }
 }
 

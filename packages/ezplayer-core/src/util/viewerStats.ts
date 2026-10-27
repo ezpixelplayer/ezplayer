@@ -28,6 +28,8 @@ export interface ViewerStatsCounts {
     picks: number;
     /** `picks` split by who chose. */
     picksBySource: PicksBySource;
+    /** Picks the player dropped as repeats (see `VcDropReason`). */
+    dropped: number;
     plays: number;
     /** Distinct viewer hashes that requested / voted (or were refused). Hashes
      *  are salted per server process, so a server restart can double count. */
@@ -49,6 +51,7 @@ export interface ViewerStatsSong {
     refused: number;
     picks: number;
     picksBySource: PicksBySource;
+    dropped: number;
     plays: number;
     lastAt: number;
 }
@@ -119,6 +122,7 @@ function emptyCounts(): ViewerStatsCounts {
         refused: 0,
         picks: 0,
         picksBySource: emptyPicksBySource(),
+        dropped: 0,
         plays: 0,
         uniqueViewers: 0,
         peakViewers: 0,
@@ -174,6 +178,7 @@ export function summarizeViewerStats(
                 refused: 0,
                 picks: 0,
                 picksBySource: emptyPicksBySource(),
+                dropped: 0,
                 plays: 0,
                 lastAt: 0,
             };
@@ -220,6 +225,11 @@ export function summarizeViewerStats(
                 }
                 break;
             }
+            case 'dropped':
+                day.dropped++;
+                window.dropped++;
+                if (sg) sg.dropped++;
+                break;
             case 'play':
                 day.plays++;
                 window.plays++;
@@ -251,7 +261,7 @@ export function summarizeViewerStats(
     window.uniqueViewers = windowViewers.size;
 
     const songList = Array.from(songs.values())
-        .filter((s) => s.requests + s.votes + s.picks + s.plays + s.refused > 0)
+        .filter((s) => s.requests + s.votes + s.picks + s.plays + s.refused + s.dropped > 0)
         .sort((a, b) => b.requests + b.votes - (a.requests + a.votes) || b.picks - a.picks || b.lastAt - a.lastAt)
         .slice(0, topSongs);
 

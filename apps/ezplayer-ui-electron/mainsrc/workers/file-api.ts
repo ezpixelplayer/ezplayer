@@ -19,9 +19,10 @@
  *   POST /api/ezp/sequences/batch-upload-import  upload many files + import in one request
  *     Body: uint32BE manifestLen + UTF-8 JSON manifest + concatenated file bytes
  *
- * Show folders are flat, so each logical FPP directory is the show root plus
- * an extension filter. This router must mount BEFORE jsonBody() so upload
- * bodies are never consumed by the JSON parser.
+ * Each logical FPP directory is the show root plus an extension filter;
+ * reads by name also find files kept elsewhere (see locateShowFile). This
+ * router must mount BEFORE jsonBody() so upload bodies are never consumed by
+ * the JSON parser.
  */
 
 import Router from '@koa/router';
@@ -155,6 +156,95 @@ async function listDir(showFolder: string, exts?: Set<string>): Promise<string[]
         .filter((n) => !n.startsWith('.') && !PROTECTED_NAMES.has(n.toLowerCase()))
         .filter((n) => !exts || exts.has(path.extname(n).toLowerCase()))
         .sort((a, b) => a.localeCompare(b));
+}
+
+async function isFile(p: string): Promise<boolean> {
+    try {
+        return (await fsp.stat(p)).isFile();
+    } catch {
+        return false;
+    }
+}
+
+/** Paths of the files registered songs use, by lowercased basename. */
+function songFiles(sequences: SequenceRecord[] | undefined, exts?: Set<string>): Map<string, string> {
+    const out = new Map<string, string>();
+    for (const s of sequences ?? []) {
+        if (s.deleted) continue;
+        for (const p of [s.files?.fseq, s.files?.audio, s.files?.thumb]) {
+            if (!p || !path.isAbsolute(p)) continue;
+            const name = fileBaseName(p);
+            if (exts && !exts.has(path.extname(name).toLowerCase())) continue;
+            if (!out.has(name.toLowerCase())) out.set(name.toLowerCase(), p);
+        }
+    }
+    return out;
+}
+
+/** Folders the subfolder search skips; xLights backups hold stale copies
+ *  under the same names. */
+const SEARCH_SKIP_DIRS = new Set(['backup', 'node_modules', '__macosx', '$recycle.bin']);
+const SEARCH_MAX_DEPTH = 4;
+
+/** A file called `name` in a show subfolder, shallowest first (case-insensitive). */
+async function findInSubfolders(showFolder: string, name: string): Promise<string | undefined> {
+    const want = name.toLowerCase();
+    let level = [path.resolve(showFolder)];
+    for (let depth = 0; depth <= SEARCH_MAX_DEPTH && level.length; depth++) {
+        const next: string[] = [];
+        for (const dir of level) {
+            let entries: fs.Dirent[];
+            try {
+                entries = await fsp.readdir(dir, { withFileTypes: true });
+            } catch {
+                continue;
+            }
+            for (const e of entries) {
+                if (e.name.startsWith('.')) continue;
+                // The caller already checked the root.
+                if (depth > 0 && e.isFile() && e.name.toLowerCase() === want) return path.join(dir, e.name);
+                if (e.isDirectory() && !SEARCH_SKIP_DIRS.has(e.name.toLowerCase())) next.push(path.join(dir, e.name));
+            }
+        }
+        level = next;
+    }
+    return undefined;
+}
+
+/**
+ * The file to read for the basename `name` (FPP clients send no folders): the
+ * show root, then the file a registered song uses, then the media folder, then
+ * show subfolders. Songs come before the search, which can find stale copies.
+ * Falls back to the root path, so a missing file still answers 404.
+ */
+export async function locateShowFile(
+    showFolder: string,
+    name: string,
+    sequences: SequenceRecord[] | undefined,
+    mediaFolder: string | undefined,
+): Promise<string> {
+    const root = path.join(showFolder, name);
+    if (await isFile(root)) return root;
+    const song = songFiles(sequences).get(name.toLowerCase());
+    if (song && (await isFile(song))) return song;
+    if (mediaFolder && (await isFile(path.join(mediaFolder, name)))) return path.join(mediaFolder, name);
+    return (await findInSubfolders(showFolder, name)) ?? root;
+}
+
+/** Names of the root's files plus those registered songs use elsewhere. */
+async function listShowFiles(
+    showFolder: string,
+    exts: Set<string> | undefined,
+    sequences: SequenceRecord[] | undefined,
+): Promise<string[]> {
+    const names = await listDir(showFolder, exts);
+    const seen = new Set(names.map((n) => n.toLowerCase()));
+    for (const [lower, p] of songFiles(sequences, exts)) {
+        if (seen.has(lower) || !(await isFile(p))) continue;
+        seen.add(lower);
+        names.push(fileBaseName(p));
+    }
+    return names.sort((a, b) => a.localeCompare(b));
 }
 
 // ---------------------------------------------------------------------------
@@ -539,10 +629,18 @@ export function createFileApiRouter(deps: FileApiDeps): Router {
         return resolved;
     }
 
+    /** The file a :name route reads (see locateShowFile), or undefined with
+     *  the error set. */
+    async function requireReadTarget(ctx: Koa.Context, showFolder: string): Promise<string | undefined> {
+        const target = requireTarget(ctx, showFolder, false);
+        if (!target) return undefined;
+        return locateShowFile(showFolder, path.basename(target), deps.getSequences(), deps.getMediaFolder?.());
+    }
+
     /** Playtime from the cached SequenceRecords (fseq or audio basename match),
      *  falling back to the FSEQ header for unregistered sequence files. */
-    async function playtimeSecondsFor(showFolder: string, name: string): Promise<number | undefined> {
-        const lower = name.toLowerCase();
+    async function playtimeSecondsFor(filePath: string): Promise<number | undefined> {
+        const lower = path.basename(filePath).toLowerCase();
         const seqs = deps.getSequences() ?? [];
         for (const s of seqs) {
             const fseq = s.files?.fseq ? fileBaseName(s.files.fseq).toLowerCase() : undefined;
@@ -551,7 +649,7 @@ export function createFileApiRouter(deps: FileApiDeps): Router {
         }
         if (path.extname(lower) === '.fseq') {
             try {
-                const rdr = new FSEQReaderAsync(path.join(showFolder, name));
+                const rdr = new FSEQReaderAsync(filePath);
                 await rdr.open();
                 const secs = ((rdr.header!.msperframe ?? 50) * (rdr.header!.frames ?? 0)) / 1000;
                 await rdr.close();
@@ -573,21 +671,23 @@ export function createFileApiRouter(deps: FileApiDeps): Router {
         const dir = requireDir(ctx);
         if (!dir) return;
 
-        const names = await listDir(showFolder, dir.exts);
+        const sequences = deps.getSequences();
+        const names = await listShowFiles(showFolder, dir.exts, sequences);
         if (ctx.query.nameOnly !== undefined && ctx.query.nameOnly !== '0') {
             ctx.body = names;
             return;
         }
         const files = [];
         for (const name of names) {
-            const st = await fsp.stat(path.join(showFolder, name));
+            const filePath = await locateShowFile(showFolder, name, sequences, deps.getMediaFolder?.());
+            const st = await fsp.stat(filePath);
             files.push({
                 name,
                 mtime: fppMtime(st.mtime),
                 // FPP reports the size as a string.
                 sizeBytes: String(st.size),
                 sizeHuman: fppSizeHuman(st.size),
-                playtimeSeconds: fppPlaytime(await playtimeSecondsFor(showFolder, name)),
+                playtimeSeconds: fppPlaytime(await playtimeSecondsFor(filePath)),
             });
         }
         ctx.body = { status: 'ok', files };
@@ -596,14 +696,14 @@ export function createFileApiRouter(deps: FileApiDeps): Router {
     router.get('/api/media', async (ctx) => {
         const showFolder = requireShowFolder(ctx);
         if (!showFolder) return;
-        const music = await listDir(showFolder, AUDIO_EXTS);
-        const videos = await listDir(showFolder, VIDEO_EXTS);
+        const music = await listShowFiles(showFolder, AUDIO_EXTS, deps.getSequences());
+        const videos = await listShowFiles(showFolder, VIDEO_EXTS, deps.getSequences());
         ctx.body = [...music, ...videos].sort((a, b) => a.localeCompare(b));
     });
 
     /** The media file `name` refers to, or undefined with the 404 already sent. */
     async function mediaTarget(ctx: Koa.Context, showFolder: string): Promise<string | undefined> {
-        const target = requireTarget(ctx, showFolder, false);
+        const target = await requireReadTarget(ctx, showFolder);
         if (!target) return undefined;
         try {
             const st = await fsp.stat(target);
@@ -628,7 +728,7 @@ export function createFileApiRouter(deps: FileApiDeps): Router {
         const target = await mediaTarget(ctx, showFolder);
         if (!target) return;
         const st = await fsp.stat(target);
-        const seconds = await playtimeSecondsFor(showFolder, path.basename(target));
+        const seconds = await playtimeSecondsFor(target);
         const format: Record<string, unknown> = {
             filename: target,
             size: String(st.size),
@@ -644,7 +744,7 @@ export function createFileApiRouter(deps: FileApiDeps): Router {
         const target = await mediaTarget(ctx, showFolder);
         if (!target) return;
         const name = path.basename(target);
-        const seconds = await playtimeSecondsFor(showFolder, name);
+        const seconds = await playtimeSecondsFor(target);
         if (seconds === undefined) {
             ctx.status = 404;
             ctx.type = 'text/plain';
@@ -657,7 +757,7 @@ export function createFileApiRouter(deps: FileApiDeps): Router {
     router.get('/api/sequence', async (ctx) => {
         const showFolder = requireShowFolder(ctx);
         if (!showFolder) return;
-        const names = await listDir(showFolder, SEQ_EXTS);
+        const names = await listShowFiles(showFolder, SEQ_EXTS, deps.getSequences());
         ctx.body = names.map((n) => n.replace(/\.fseq$/i, ''));
     });
 
@@ -686,7 +786,7 @@ export function createFileApiRouter(deps: FileApiDeps): Router {
         const showFolder = requireShowFolder(ctx);
         if (!showFolder) return;
         if (!requireDir(ctx)) return;
-        const target = requireTarget(ctx, showFolder, false);
+        const target = await requireReadTarget(ctx, showFolder);
         if (!target) return;
         await serveDownload(ctx, target, ctx.query.play !== undefined || ctx.query.attach === '0');
     });
@@ -695,7 +795,7 @@ export function createFileApiRouter(deps: FileApiDeps): Router {
         const showFolder = requireShowFolder(ctx);
         if (!showFolder) return;
         ctx.params.name = /\.fseq$/i.test(String(ctx.params.name)) ? ctx.params.name : `${ctx.params.name}.fseq`;
-        const target = requireTarget(ctx, showFolder, false);
+        const target = await requireReadTarget(ctx, showFolder);
         if (!target) return;
         const rdr = new FSEQReaderAsync(target);
         try {
@@ -717,7 +817,7 @@ export function createFileApiRouter(deps: FileApiDeps): Router {
         const showFolder = requireShowFolder(ctx);
         if (!showFolder) return;
         ctx.params.name = /\.fseq$/i.test(String(ctx.params.name)) ? ctx.params.name : `${ctx.params.name}.fseq`;
-        const target = requireTarget(ctx, showFolder, false);
+        const target = await requireReadTarget(ctx, showFolder);
         if (!target) return;
         await serveDownload(ctx, target, false);
     });

@@ -32,6 +32,7 @@ import { collectReferencedAssets } from '../data/layoutAssets.js';
 import { FSEQReaderAsync } from '@ezplayer/epp';
 import { canonicalIdTags, crc32, generateNodeFingerprint, parseAudioTags } from 'audiofile';
 import { trustSystemCAs } from '../trustSystemCAs.js';
+import { errorDetail } from '../errorDetail.js';
 
 // Trust the OS cert store before any cloud fetch in this worker.
 trustSystemCAs();
@@ -46,6 +47,8 @@ const DEFAULT_DOWNLOAD_TIMEOUT_MS = 60_000;
  *  player stuck on "waiting for registration" even though the cloud had
  *  already registered the token, fixable only by restarting the player. */
 const DEFAULT_POLL_TIMEOUT_MS = 15_000;
+/** Whole-transfer cap on the presigned layout PUT; a stall would park `layoutUploadInFlight`. */
+const LAYOUT_UPLOAD_TIMEOUT_MS = 10 * 60_000;
 const DEFAULT_FAILURE_THRESHOLD = 5;
 
 let cloudUrl = '';
@@ -380,8 +383,8 @@ async function electHomeServerOnce(): Promise<boolean> {
         announce();
         return true;
     } catch (e) {
-        log('warn', `electHomeServer: ${(e as Error).message}`);
-        electionIssue = `Choosing a regional server failed: ${(e as Error).message}`;
+        log('warn', `electHomeServer: ${errorDetail(e)}`);
+        electionIssue = `Choosing a regional server failed: ${errorDetail(e)}`;
         return false;
     }
 }
@@ -550,14 +553,14 @@ async function pollRegistration() {
         }
     } catch (e) {
         const err = e as Error;
-        log('warn', `checkin error: ${err.message}`);
+        log('warn', `checkin error: ${errorDetail(err)}`);
         wasRegistered = false;
         post({
             type: 'cloudStatus',
             status: {
                 playerIdIsRegistered: false,
                 lastCheckedAt: Date.now(),
-                lastError: err.message,
+                lastError: errorDetail(err),
             },
         });
     } finally {
@@ -596,7 +599,7 @@ async function pollManifest() {
             await fetchLayout();
         } catch (e) {
             // fetchLayout already logs and writes to cStatus; don't fail the manifest tick.
-            log('warn', `pre-manifest layout fetch error: ${(e as Error).message}`);
+            log('warn', `pre-manifest layout fetch error: ${errorDetail(e)}`);
         }
     } else {
         // Local-master mode: the player IS the layout source of truth, so
@@ -622,8 +625,8 @@ async function pollManifest() {
         await reconcileManifest(sequences);
     } catch (e) {
         const err = e as Error;
-        log('warn', `manifest poll error: ${err.message}`);
-        recordFailure(err.message);
+        log('warn', `manifest poll error: ${errorDetail(err)}`);
+        recordFailure(errorDetail(err));
     } finally {
         manifestInFlight = false;
     }
@@ -651,7 +654,7 @@ async function fetchPlaylistsAndSchedule() {
             log('warn', `playlists HTTP ${res.status}`);
         }
     } catch (e) {
-        log('warn', `playlists fetch error: ${(e as Error).message}`);
+        log('warn', `playlists fetch error: ${errorDetail(e)}`);
     }
 
     const schUrl = `${cloudUrl}${CLOUD_API_ENDPOINTS.EZP_GET_SCHEDULE}${playerIdToken}`;
@@ -670,7 +673,7 @@ async function fetchPlaylistsAndSchedule() {
             log('warn', `schedule HTTP ${res.status}`);
         }
     } catch (e) {
-        log('warn', `schedule fetch error: ${(e as Error).message}`);
+        log('warn', `schedule fetch error: ${errorDetail(e)}`);
     }
 }
 
@@ -695,7 +698,7 @@ async function fetchPlayerSettings() {
             parentPort?.postMessage({ type: 'cloudSettings', settings } satisfies CloudPollOutMessage);
         }
     } catch (e) {
-        log('warn', `settings fetch error: ${(e as Error).message}`);
+        log('warn', `settings fetch error: ${errorDetail(e)}`);
     }
 }
 
@@ -1232,7 +1235,7 @@ async function scanMediaRights(folder: string | undefined, ffmpeg: string | unde
         // Newly proven music unblocks downloads on the next manifest pass.
         if (toSubmit.length > 0) void pollManifest();
     } catch (e) {
-        const msg = (e as Error).message;
+        const msg = errorDetail(e);
         log('warn', `rights scan failed: ${msg}`);
         setRightsScan({ status: 'error', error: msg, lastRunAt: Date.now() });
     } finally {
@@ -1265,19 +1268,19 @@ async function downloadSet(entry: CloudSeqManifestEntry, pending: PendingFile[])
                 });
                 return { ok: false, installed };
             }
-            log('warn', `download ${pf.kind} ${pf.file_id} failed: ${err.message}`);
+            log('warn', `download ${pf.kind} ${pf.file_id} failed: ${errorDetail(err)}`);
             setFile(pf.file_id, {
                 vseq_id: entry.vseq_id,
                 kind: pf.kind,
                 file_id: pf.file_id,
                 file_time: pf.file_time,
                 status: 'error',
-                error: err.message,
+                error: errorDetail(err),
             });
             // Thumbs are decorative — don't let stale URLs trip the
             // breaker before fseq/audio get a chance.
             if (pf.kind !== 'thumb') {
-                recordFailure(`download ${pf.kind}: ${err.message}`);
+                recordFailure(`download ${pf.kind}: ${errorDetail(err)}`);
             }
             return { ok: false, installed };
         }
@@ -1326,7 +1329,7 @@ async function downloadOne(entry: CloudSeqManifestEntry, pf: PendingFile): Promi
     const stagePart = path.join(stageDir, `${safeFid}__${safeName}.part`);
     const stageFinal = path.join(stageDir, `${safeFid}__${safeName}`);
 
-    const dlRes = await fetchWithTimeout(downloadUrl, downloadTimeoutMs);
+    const dlRes = await fetchWithTimeout(downloadUrl, downloadTimeoutMs, undefined, true);
     if (!dlRes.ok || !dlRes.body) throw new Error(`download HTTP ${dlRes.status}`);
 
     const totalBytes = Number(dlRes.headers.get('content-length') ?? 0) || undefined;
@@ -1438,17 +1441,34 @@ async function downloadOne(entry: CloudSeqManifestEntry, pf: PendingFile): Promi
     return activePath;
 }
 
-async function fetchWithTimeout(url: string, timeoutMs: number, init?: RequestInit): Promise<Response> {
+/** The deadline also covers reading the body, so a stalled reply can't park the in-flight
+ *  flags; `streamBody` callers (large downloads) get it on the headers only. */
+async function fetchWithTimeout(
+    url: string,
+    timeoutMs: number,
+    init?: RequestInit,
+    streamBody = false,
+): Promise<Response> {
     const ac = new AbortController();
-    const t = setTimeout(() => ac.abort(), timeoutMs);
     // Chain the global abort so a pause/setConfig kills in-flight requests and streams.
     const onGlobalAbort = () => ac.abort();
     globalAbort.signal.addEventListener('abort', onGlobalAbort, { once: true });
-    try {
-        return await fetch(url, { ...(init ?? {}), signal: ac.signal });
-    } finally {
+    const release = () => {
         clearTimeout(t);
         globalAbort.signal.removeEventListener('abort', onGlobalAbort);
+    };
+    // Aborting after the body is fully read is a no-op, so the body case just lets this run out.
+    const t = setTimeout(() => {
+        ac.abort();
+        release();
+    }, timeoutMs);
+    try {
+        const res = await fetch(url, { ...(init ?? {}), signal: ac.signal });
+        if (streamBody) release();
+        return res;
+    } catch (e) {
+        release();
+        throw e;
     }
 }
 
@@ -1744,8 +1764,8 @@ async function fetchLayout(): Promise<void> {
         post({ type: 'layoutInstalled', layoutMeta: newMeta });
     } catch (e) {
         const err = e as Error;
-        log('warn', `layout fetch error: ${err.message}`);
-        setLayout({ status: 'error', error: err.message });
+        log('warn', `layout fetch error: ${errorDetail(err)}`);
+        setLayout({ status: 'error', error: errorDetail(err) });
     } finally {
         layoutInFlight = false;
     }
@@ -1758,7 +1778,7 @@ async function downloadAndUnpackZip(entry: LayoutEntry): Promise<void> {
     const stageFinal = path.join(stageDir, `${entry.file_id}.zip`);
 
     setLayout({ status: 'fetching' });
-    const dl = await fetchWithTimeout(entry.url, downloadTimeoutMs);
+    const dl = await fetchWithTimeout(entry.url, downloadTimeoutMs, undefined, true);
     if (!dl.ok || !dl.body) throw new Error(`zip download HTTP ${dl.status}`);
     const totalBytes = Number(dl.headers.get('content-length') ?? 0) || undefined;
     setLayout({ status: 'fetching', bytes: 0, totalBytes });
@@ -1853,7 +1873,7 @@ function findLayoutRoot(entries: { name: string; dir: boolean }[]): string | und
 
 async function downloadXmlOverlay(entry: LayoutEntry, targetName: string): Promise<void> {
     setLayout({ status: 'fetching' });
-    const dl = await fetchWithTimeout(entry.url, downloadTimeoutMs);
+    const dl = await fetchWithTimeout(entry.url, downloadTimeoutMs, undefined, true);
     if (!dl.ok || !dl.body) throw new Error(`${targetName} download HTTP ${dl.status}`);
     const totalBytes = Number(dl.headers.get('content-length') ?? 0) || undefined;
     setLayout({ status: 'fetching', bytes: 0, totalBytes });
@@ -1969,7 +1989,7 @@ async function uploadLayout(): Promise<void> {
             method: 'PUT',
             headers: { 'Content-Type': 'application/zip' },
             body: new Blob([zipAb]),
-            signal: globalAbort.signal,
+            signal: AbortSignal.any([globalAbort.signal, AbortSignal.timeout(LAYOUT_UPLOAD_TIMEOUT_MS)]),
         });
         await expectOk(uploadRes, 'presigned PUT upload');
         setLayout({
@@ -2002,8 +2022,8 @@ async function uploadLayout(): Promise<void> {
         });
     } catch (e) {
         const err = e as Error;
-        log('warn', `layout upload error: ${err.message}`);
-        setLayout({ status: 'error', direction: 'upload', error: err.message });
+        log('warn', `layout upload error: ${errorDetail(err)}`);
+        setLayout({ status: 'error', direction: 'upload', error: errorDetail(err) });
     } finally {
         layoutUploadInFlight = false;
     }

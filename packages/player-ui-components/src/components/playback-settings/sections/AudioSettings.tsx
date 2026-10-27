@@ -1,4 +1,4 @@
-import { Add, Delete, ExpandMore } from '@mui/icons-material';
+import { Add, ExpandMore, Save } from '@mui/icons-material';
 import {
     Accordion,
     AccordionDetails,
@@ -12,7 +12,6 @@ import {
     Divider,
     FormControl,
     FormControlLabel,
-    IconButton,
     List,
     ListItem,
     ListItemSecondaryAction,
@@ -39,6 +38,7 @@ import {
     getDaysDisplayName,
     isValidExtendedTimeFormat,
     isValidTimeFormat,
+    ScheduleEntryActions,
     TimeInput,
 } from './sectionHelpers';
 
@@ -83,6 +83,8 @@ export const AudioSettings: React.FC = () => {
     const [addOpen, setAddOpen] = useState(false);
     const [scheduleTarget, setScheduleTarget] = useState<ScheduleDialogTarget>({ kind: 'primary' });
     const [newEntry, setNewEntry] = useState<Partial<VolumeScheduleEntry>>(FRESH_ENTRY);
+    /** Id of the entry the dialog is editing; null when adding. */
+    const [editingId, setEditingId] = useState<string | null>(null);
     const [pendingDelete, setPendingDelete] = useState<
         { kind: 'primary'; entryId: string } | { kind: 'output'; outputId: string; entryId: string } | null
     >(null);
@@ -118,6 +120,14 @@ export const AudioSettings: React.FC = () => {
     const openAddSchedule = (target: ScheduleDialogTarget) => {
         setScheduleTarget(target);
         setNewEntry(FRESH_ENTRY);
+        setEditingId(null);
+        setAddOpen(true);
+    };
+
+    const openEditSchedule = (target: ScheduleDialogTarget, entry: VolumeScheduleEntry) => {
+        setScheduleTarget(target);
+        setNewEntry(entry);
+        setEditingId(entry.id);
         setAddOpen(true);
     };
 
@@ -132,16 +142,25 @@ export const AudioSettings: React.FC = () => {
     const submitAddSchedule = () => {
         if (!isAddValid) return;
         const entry: VolumeScheduleEntry = {
-            id: generateId(),
+            id: editingId ?? generateId(),
             days: newEntry.days!,
             startTime: formatTime24Hour(newEntry.startTime!),
             endTime: formatTime24Hour(newEntry.endTime!),
             volumeLevel: newEntry.volumeLevel!,
         };
         if (scheduleTarget.kind === 'primary') {
-            dispatch(playbackSettingsActions.addVolumeScheduleEntry(entry));
+            dispatch(
+                editingId
+                    ? playbackSettingsActions.updateVolumeScheduleEntry(entry)
+                    : playbackSettingsActions.addVolumeScheduleEntry(entry),
+            );
         } else {
-            dispatch(playbackSettingsActions.addAudioOutputScheduleEntry({ id: scheduleTarget.outputId, entry }));
+            const payload = { id: scheduleTarget.outputId, entry };
+            dispatch(
+                editingId
+                    ? playbackSettingsActions.updateAudioOutputScheduleEntry(payload)
+                    : playbackSettingsActions.addAudioOutputScheduleEntry(payload),
+            );
         }
         setNewEntry(FRESH_ENTRY);
         setAddOpen(false);
@@ -183,10 +202,15 @@ export const AudioSettings: React.FC = () => {
         '& .MuiSlider-rail': { height: 6 },
     };
 
-    const renderVolumeScheduleList = (
-        schedule: VolumeScheduleEntry[] | undefined,
-        onDelete: (entryId: string) => void,
-    ) => {
+    const moveScheduleEntry = (target: ScheduleDialogTarget, entryId: string, delta: number) => {
+        dispatch(
+            target.kind === 'primary'
+                ? playbackSettingsActions.moveVolumeScheduleEntry({ entryId, delta })
+                : playbackSettingsActions.moveAudioOutputScheduleEntry({ id: target.outputId, entryId, delta }),
+        );
+    };
+
+    const renderVolumeScheduleList = (schedule: VolumeScheduleEntry[] | undefined, target: ScheduleDialogTarget) => {
         const entries = schedule ?? [];
         if (entries.length === 0) return null;
         return (
@@ -197,7 +221,7 @@ export const AudioSettings: React.FC = () => {
                 <List dense>
                     {entries.map((entry, index) => (
                         <React.Fragment key={entry.id}>
-                            <ListItem>
+                            <ListItem sx={{ pr: 20 }}>
                                 <ListItemText
                                     primary={
                                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
@@ -213,17 +237,22 @@ export const AudioSettings: React.FC = () => {
                                             />
                                         </Box>
                                     }
-                                    secondary={`Priority: ${entries.length - index}`}
+                                    secondary={`Priority: ${index + 1}`}
                                 />
                                 <ListItemSecondaryAction>
-                                    <IconButton
-                                        edge="end"
-                                        onClick={() => onDelete(entry.id)}
-                                        size="small"
-                                        color="error"
-                                    >
-                                        <Delete />
-                                    </IconButton>
+                                    <ScheduleEntryActions
+                                        index={index}
+                                        count={entries.length}
+                                        onEdit={() => openEditSchedule(target, entry)}
+                                        onMove={(delta) => moveScheduleEntry(target, entry.id, delta)}
+                                        onDelete={() =>
+                                            setPendingDelete(
+                                                target.kind === 'primary'
+                                                    ? { kind: 'primary', entryId: entry.id }
+                                                    : { kind: 'output', outputId: target.outputId, entryId: entry.id },
+                                            )
+                                        }
+                                    />
                                 </ListItemSecondaryAction>
                             </ListItem>
                             {index < entries.length - 1 && <Divider />}
@@ -299,9 +328,10 @@ export const AudioSettings: React.FC = () => {
                         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
                             Overrides for this device only. Last entry takes priority for overlapping times.
                         </Typography>
-                        {renderVolumeScheduleList(output.volumeControl.schedule, (entryId) =>
-                            setPendingDelete({ kind: 'output', outputId: output.id, entryId }),
-                        )}
+                        {renderVolumeScheduleList(output.volumeControl.schedule, {
+                            kind: 'output',
+                            outputId: output.id,
+                        })}
                         <Button
                             variant="outlined"
                             size="small"
@@ -392,9 +422,7 @@ export const AudioSettings: React.FC = () => {
                             times.
                         </Typography>
 
-                        {renderVolumeScheduleList(settings.volumeControl?.schedule, (entryId) =>
-                            setPendingDelete({ kind: 'primary', entryId }),
-                        )}
+                        {renderVolumeScheduleList(settings.volumeControl?.schedule, { kind: 'primary' })}
 
                         <Button
                             variant="contained"
@@ -510,7 +538,7 @@ export const AudioSettings: React.FC = () => {
 
             <Dialog open={addOpen} onClose={() => setAddOpen(false)}>
                 <DialogTitle>
-                    <Typography variant="h5">Add Volume Override</Typography>
+                    <Typography variant="h5">{editingId ? 'Edit' : 'Add'} Volume Override</Typography>
                 </DialogTitle>
                 <DialogContent>
                     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1, minWidth: '500px' }}>
@@ -608,12 +636,12 @@ export const AudioSettings: React.FC = () => {
                             </Button>
                             <Button
                                 variant="contained"
-                                startIcon={<Add />}
+                                startIcon={editingId ? <Save /> : <Add />}
                                 onClick={submitAddSchedule}
                                 disabled={!isAddValid}
                                 sx={{ minWidth: 140 }}
                             >
-                                Add Volume Override
+                                {editingId ? 'Save' : 'Add Volume Override'}
                             </Button>
                         </Box>
                     </Box>

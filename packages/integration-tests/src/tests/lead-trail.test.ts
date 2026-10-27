@@ -244,7 +244,7 @@ describe('lead/trail time', () => {
             ch.fill(0);
             ch[2] = 0x3c;
         };
-        await fpp.uploadFile(
+        await fpp.upload(
             'sequences',
             'BG.fseq',
             buildFseq({ channels: CHANNELS, frames: 300, msPerFrame: FRAME_MS, pattern: (_f, ch) => bgPattern(ch) }),

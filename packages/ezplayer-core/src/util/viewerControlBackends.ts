@@ -7,9 +7,17 @@
  * Storage: newer players write `backends`; `type` remains the *primary*
  * backend so older readers (and older builds opening the same settings file)
  * keep working. Absent `backends` is derived from `type`.
+ *
+ * Both backends run on `schedule` unless `separateRemoteFalconSchedule` gives
+ * Remote Falcon its own `remoteFalconSchedule` (`viewerControlSchedule()`).
  */
 
-import type { ViewerControlBackend, ViewerControlState } from '../types/DataTypes';
+import type {
+    ViewerControlBackend,
+    ViewerControlScheduleEntry,
+    ViewerControlScheduleList,
+    ViewerControlState,
+} from '../types/DataTypes';
 
 const KNOWN: readonly ViewerControlBackend[] = ['remote-falcon', 'ezplayer'];
 
@@ -26,6 +34,22 @@ export function hasViewerControlBackend(
     backend: ViewerControlBackend,
 ): boolean {
     return viewerControlBackends(vc).includes(backend);
+}
+
+/** Which schedule list a backend runs on: Remote Falcon has its own only
+ *  when `separateRemoteFalconSchedule` is set. */
+export function viewerControlScheduleList(
+    vc: ViewerControlState | undefined | null,
+    backend: ViewerControlBackend,
+): ViewerControlScheduleList {
+    return backend === 'remote-falcon' && vc?.separateRemoteFalconSchedule ? 'remoteFalconSchedule' : 'schedule';
+}
+
+export function viewerControlSchedule(
+    vc: ViewerControlState | undefined | null,
+    backend: ViewerControlBackend,
+): ViewerControlScheduleEntry[] {
+    return vc?.[viewerControlScheduleList(vc, backend)] ?? [];
 }
 
 /** The single `type` value that best describes a backend set, for legacy

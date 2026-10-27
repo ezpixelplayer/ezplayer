@@ -4,6 +4,7 @@ import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader.js';
 import * as THREE from 'three';
 import type { ViewObject, Point3D } from '../../types/model3d';
+import { reportUiError } from '../../util/uiErrorReporter';
 import { LatestFrameRingBuffer } from '@ezplayer/ezplayer-core';
 import {
     type AssetResolver,
@@ -377,6 +378,7 @@ class HouseMeshErrorBoundary extends React.Component<
         if (error?.message?.includes('403') || error?.message?.includes('Forbidden')) {
             console.error('[HouseMesh] 403 Forbidden – check server-worker logs.');
         }
+        reportUiError('HouseMesh', error, errorInfo.componentStack);
     }
 
     render() {

@@ -29,6 +29,7 @@ import type {
     PlayerNStatusContent,
     PlaybackSettings,
     EZPlayerCommand,
+    VcDropReason,
     VcSong,
     VcPlayingItem,
     VcScheduleEntry,
@@ -52,6 +53,8 @@ import {
     resolveVolumeTargets,
     type VolumeTarget,
     viewerControlBackends,
+    viewerControlSchedule,
+    type ViewerControlResyncResult,
 } from '@ezplayer/ezplayer-core';
 
 if (!parentPort) throw new Error('No parentPort in worker');
@@ -102,14 +105,23 @@ import { totalmem } from 'node:os';
 import { OverallFrameSendStats, resetFrameSendStats, xbusySleep } from './framesend';
 import { PixelPipeline, blendModeFromSettings } from './pixelpipeline';
 import type { OverlayCommand, OverlayResult } from './overlaytypes';
-import { MultiSyncSender } from './multisync';
+import { MultiSyncSender, type SyncFrameInfo } from './multisync';
 import { fileBaseName } from './pathnames';
 
 import { decompressZStdWithWorker, getZstdStats, resetZstdStats } from './zstdparent';
 import { setPingConfig, getLatestPingStats, stopPing } from './pingparent';
 import type { PingTarget } from './pingworker';
 
-import { sendRFInitiateCheck, setRFConfig, setRFControlEnabled, setRFNowPlaying, setRFPlaylist } from './rfparent';
+import {
+    resyncRF,
+    resyncRFPlaylist,
+    sendRFInitiateCheck,
+    setRFConfig,
+    setRFControlEnabled,
+    setRFNowPlaying,
+    setRFPlaylist,
+    setRFWarningCallback,
+} from './rfparent';
 import { PlaylistSyncItem } from './rfsync';
 import {
     sendEzvcInitiateCheck,
@@ -123,6 +135,7 @@ import {
 } from './ezvcparent';
 import { randomUUID } from 'node:crypto';
 import { playableAudioPath } from '../data/derived-audio.js';
+import { throwLater } from '../faultinject.js';
 
 //import { setThreadAffinity } from '../affinity/affinity.js';
 //setThreadAffinity([3]);
@@ -146,13 +159,30 @@ process.on('uncaughtException', (err) => {
     });
     // Ensure non-zero exit so main 'exit' handler knows it wasn't clean.
     process.exitCode = 1;
+    forwardUncaught('uncaughtException', err);
 });
 
 // Promote unhandled rejections to real failures (or at least log them)
 process.on('unhandledRejection', (reason, _promise) => {
     console.error(tag('unhandledRejection'), { reason });
     process.exitCode = 1;
+    forwardUncaught('unhandledRejection', reason);
 });
+
+/** Forward to main for reporting; must not throw. */
+function forwardUncaught(what: 'uncaughtException' | 'unhandledRejection', reason: unknown) {
+    try {
+        const r = reason as { message?: unknown; stack?: unknown } | undefined;
+        send({
+            type: 'uncaught',
+            what,
+            message: String(r?.message ?? reason),
+            stack: typeof r?.stack === 'string' ? r.stack : undefined,
+        });
+    } catch {
+        /* parent port gone */
+    }
+}
 
 // When the event loop is about to go idle; good for final flushes
 process.on('beforeExit', (code) => {
@@ -257,6 +287,7 @@ const handlers: PlayWorkerRPCAPI = {
     fail: ({ msg }) => {
         throw new Error(msg);
     },
+    resyncViewerControl: async (_args: Record<string, never>) => resyncRemoteFalcon(),
     stopPlayback: async (_args: Record<string, never>) => {
         // Send black frame once as part of shutdown behavior
         isStopped = true;
@@ -285,6 +316,9 @@ const handlers: PlayWorkerRPCAPI = {
         return frameExportBuffer;
     },
     overlay: async (cmd: OverlayCommand): Promise<OverlayResult> => overlayCommand(cmd),
+    getPlaybackItemOrder: async ({ key }) => {
+        return foregroundPlayerRunState.getItemOrder(key) ?? backgroundPlayerRunState.getItemOrder(key);
+    },
 };
 
 function playingItemDesc(item?: PlayAction, runState?: PlayerRunState) {
@@ -379,6 +413,15 @@ function sendPlayerStateUpdate() {
         if (pla) {
             playStatus.now_playing = { ...actionToPlayingItem(false, pla), ...groupIds };
             playStatus.status = isPaused ? 'Paused' : stoppingGracefully ? 'Stopping' : 'Playing';
+            // Where the song is at the engine clock. `offsetMS` is the offset at
+            // `atTime`; add the time since then.
+            const sampledAt = foregroundPlayerRunState.currentTime;
+            const contentMS = contentTimeMS(pla.seq, (pla.offsetMS ?? 0) + (sampledAt - pla.atTime));
+            playStatus.position = {
+                content_ms: contentMS,
+                audio_ms: pla.seq?.files?.audio ? audioPositionMS(contentMS) : undefined,
+                sampled_at: sampledAt,
+            };
         }
     }
     // Over once nothing is playing: a later schedule must not inherit it.
@@ -391,6 +434,10 @@ function sendPlayerStateUpdate() {
         ...foregroundPlayerRunState.predictUpcoming(600_000, 10),
         ...foregroundPlayerRunState.getUpcomingSchedules(),
     ];
+    playStatus.view = foregroundPlayerRunState.getStatusView({
+        paused: isPaused,
+        ending: stoppingGracefully && !!playStatus.now_playing,
+    });
     playStatus.suspendedItems = foregroundPlayerRunState.getHeapItems();
     playStatus.preemptedItems = foregroundPlayerRunState.getStackItems();
 
@@ -562,14 +609,16 @@ let lastRFCheck: number = Date.now();
 
 // With both backends on, each round asks the built-in request line first and polls
 // Remote Falcon only when that had nothing (see the ezvc suggestion callback). The
-// two checks fire in the same tick because they share the schedule and the timing.
+// two checks fire in the same tick because they share the timing. Remote Falcon is
+// held only while the built-in window is open: the two schedules may differ, and a
+// closed built-in window sends no check, so nothing would release the hold.
 let rfCheckDeferred = false;
 let rfCheckDeferredAt = 0;
 /** If the built-in check never answers (cloud unreachable), stop holding Remote Falcon. */
 const RF_DEFER_MAX_MS = 3000;
 function initiateRFCheck() {
     const vc = latestSettings?.viewerControl;
-    const bothOn = viewerControlBackends(vc).includes('ezplayer') && !!ezvcCloudUrl && !!ezvcPlayerToken;
+    const bothOn = !!vc && !!getActiveViewerControlSchedule(vc, 'ezplayer') && !!ezvcCloudUrl && !!ezvcPlayerToken;
     if (!bothOn) {
         sendRFInitiateCheck();
         return;
@@ -589,17 +638,66 @@ function releaseDeferredRFCheck() {
     sendRFInitiateCheck();
 }
 
+/** The RF song list for a playlist, or undefined when there is no such
+ *  playlist (renamed since the schedule entry was written).  Undefined rather
+ *  than empty: an empty list would clear the list on the site. */
+function remotePlaylistItems(playlistName: string | undefined): PlaylistSyncItem[] | undefined {
+    const pl = curPlaylists?.find((p) => p.title.toLowerCase() === playlistName?.toLowerCase());
+    if (!pl) return undefined;
+    const items: PlaylistSyncItem[] = [];
+    for (const i of pl.items) {
+        const s = foregroundPlayerRunState.sequencesById.get(i.id);
+        if (!s) continue;
+        items.push({
+            playlistType: 'SEQUENCE',
+            playlistDuration: s.work.length,
+            playlistIndex: i.sequence,
+            playlistName: `${s.work.title} - ${s.work.artist}${s.sequence?.vendor ? ' - ' + s.sequence.vendor : ''}`,
+        });
+    }
+    return items;
+}
+
+/** The playlist Remote Falcon should be showing: the active window's, or
+ *  outside show hours the last configured entry's (last wins overlaps). */
+function remoteFalconPlaylistName(): string | undefined {
+    const vc = latestSettings?.viewerControl;
+    if (!vc) return undefined;
+    const active = getActiveViewerControlSchedule(vc, 'remote-falcon');
+    if (active) return active.playlist;
+    const entries = viewerControlSchedule(vc, 'remote-falcon');
+    return entries.length ? entries[entries.length - 1].playlist : undefined;
+}
+
+/** Re-push the song list whatever the worker believes RF already has, and
+ *  report what RF said.  Works outside show hours, when there is no active
+ *  entry to take the playlist name from. */
+async function resyncRemoteFalcon(): Promise<ViewerControlResyncResult> {
+    const vc = latestSettings?.viewerControl;
+    if (!vc?.remoteFalconToken) return { ok: false, message: 'No Remote Falcon token is set' };
+    resyncRF();
+    const name = remoteFalconPlaylistName();
+    const items = remotePlaylistItems(name);
+    if (!items) {
+        return {
+            ok: false,
+            message: name ? `There is no playlist named "${name}"` : 'No Remote Falcon schedule entry is configured',
+        };
+    }
+    const res = await resyncRFPlaylist(items);
+    if (res.ok) emitInfo(`Sent ${items.length} songs to Remote Falcon`);
+    // A failure is already reported through setRFWarningCallback.
+    sendRemoteUpdate(); // now-playing and enabled were forgotten too
+    return res;
+}
+
 function sendRemoteUpdate() {
     const settings = latestSettings;
     if (!settings || !settings.viewerControl?.remoteFalconToken) {
         //emitInfo("No RF token");
         return;
     }
-    if (!viewerControlBackends(settings.viewerControl).includes('remote-falcon')) {
-        setRFControlEnabled(false);
-        return;
-    }
-    const rfStat = getActiveViewerControlSchedule(settings.viewerControl);
+    const rfStat = getActiveViewerControlSchedule(settings.viewerControl, 'remote-falcon');
     if (!rfStat) {
         //emitInfo('Disable RF');
         setRFControlEnabled(false);
@@ -612,22 +710,9 @@ function sendRemoteUpdate() {
     const upcoming = foregroundPlayerRunState.predictUpcoming(600_000, 1)[0];
     //emitInfo("Set RF Now Playing");
     setRFNowPlaying(now_playing?.title, upcoming?.title);
-    const pl = curPlaylists?.find((p) => p.title.toLowerCase() === rfStat?.playlist.toLowerCase());
-    const items: PlaylistSyncItem[] = [];
-    if (pl) {
-        for (const i of pl.items) {
-            const s = foregroundPlayerRunState.sequencesById.get(i.id);
-            if (!s) continue;
-            items.push({
-                playlistType: 'SEQUENCE',
-                playlistDuration: s.work.length,
-                playlistIndex: i.sequence,
-                playlistName: `${s.work.title} - ${s.work.artist}${s.sequence?.vendor ? ' - ' + s.sequence.vendor : ''}`,
-            });
-        }
-        //emitInfo(`Set RF Now Playlists ${JSON.stringify(items)}`);
-        setRFPlaylist(items);
-    }
+    const items = remotePlaylistItems(rfStat.playlist);
+    //emitInfo(`Set RF Now Playlists ${JSON.stringify(items)}`);
+    if (items) setRFPlaylist(items);
     if (now_playing) {
         const diff = (now_playing.until ?? 0) - foregroundPlayerRunState.currentTime;
         if (diff >= 3000 && diff < 4000) {
@@ -644,10 +729,52 @@ function sendRemoteUpdate() {
     }
 }
 
+// ---- Viewer-pick repeat guard ---------------------------------------------
+// Remote Falcon and the viewer page each apply their own cooldown, but neither
+// sees the other's picks or the playlist's own plays. The player has the whole
+// picture, so it drops a pick that would repeat a song too soon. The history is
+// the run state's RepeatGuard, which also lets a scheduled playlist pass over a
+// song that just played.
+
+/** Why a viewer pick of `songId` should be dropped, or undefined to play it. */
+function viewerPickDropReason(songId: string): { reason: VcDropReason; songsAgo?: number } | undefined {
+    const fs = foregroundPlayerRunState;
+    const n = fs.repeatGuard.spacing;
+    if (!(n > 0)) return undefined;
+    if (currentForegroundPlayingItem()?.sequence_id === songId) return { reason: 'playing' };
+    if (fs.immediateItem?.seqId === songId || fs.interactiveQueue.some((q) => q.seqId === songId)) {
+        return { reason: 'queued' };
+    }
+    if (fs.predictUpcoming(600_000, 1)[0]?.sequence_id === songId) return { reason: 'next' };
+    const since = fs.repeatGuard.songsSince(songId);
+    if (since !== undefined && since < n) return { reason: 'recent', songsAgo: since };
+    return undefined;
+}
+
+const DROP_REASON_TEXT: Record<VcDropReason, string> = {
+    playing: 'playing now',
+    next: 'up next',
+    queued: 'already requested',
+    recent: 'played recently',
+};
+
+/** True if the pick may play; logs and records it when it is dropped. */
+function admitViewerPick(songId: string, source: 'remote-falcon' | 'viewer'): boolean {
+    const drop = viewerPickDropReason(songId);
+    if (!drop) return true;
+    const title = curSequences?.find((s) => s.id === songId)?.work?.title;
+    const ago = drop.songsAgo !== undefined ? ` (${drop.songsAgo} song${drop.songsAgo === 1 ? '' : 's'} ago)` : '';
+    emitWarning(`Dropped ${source} pick of "${title ?? songId}": ${DROP_REASON_TEXT[drop.reason]}${ago}`);
+    // Viewer-page picks are counted by the cloud; Remote Falcon's only here.
+    if (source === 'remote-falcon') send({ type: 'viewerPick', source, songId, title });
+    send({ type: 'viewerPickDropped', source, songId, title, reason: drop.reason, songsAgo: drop.songsAgo });
+    return false;
+}
+
 // ---- EZPlayer viewer control (ViewerControlState.type === 'ezplayer') ------
-// The schedule gating is shared (`getActiveViewerControlSchedule`); only the
-// backend differs. The cloud owns the mode/policy, so the suggestion is a
-// sequence id we can play directly — no index mapping needed.
+// Gated by the main schedule (`getActiveViewerControlSchedule`), which Remote
+// Falcon shares unless it has its own. The cloud owns the mode/policy, so the
+// suggestion is a sequence id we can play directly; no index mapping needed.
 let ezvcCloudUrl: string | undefined = undefined;
 let ezvcPlayerToken: string | undefined = undefined;
 let ezvcConfigInitialized = false;
@@ -688,6 +815,11 @@ function configureEzvc() {
     setEzvcConfig({ cloudUrl: ezvcCloudUrl, playerToken: ezvcPlayerToken, tz }, (next) => {
         if (!next.songId) {
             // Nothing requested on the viewer page: Remote Falcon's turn.
+            releaseDeferredRFCheck();
+            return;
+        }
+        if (!admitViewerPick(next.songId, 'viewer')) {
+            // Dropped, so nothing from the built-in line this round: Remote Falcon's turn.
             releaseDeferredRFCheck();
             return;
         }
@@ -742,7 +874,7 @@ function sendEzvcUpdate() {
     // runs only when type === 'ezplayer' and its schedule window is open.
     const vc = settings.viewerControl;
     const ezOn = viewerControlBackends(vc).includes('ezplayer');
-    const ezWindow = ezOn ? getActiveViewerControlSchedule(vc) : null;
+    const ezWindow = getActiveViewerControlSchedule(vc, 'ezplayer');
     setEzvcControlEnabled(!!ezWindow);
 
     // ---- now-playing + the upcoming song lineup ("what's coming") ---------
@@ -785,7 +917,7 @@ function sendEzvcUpdate() {
             start: new Date(x.startTimeMS).toISOString(),
             end: new Date(x.endTimeMS).toISOString(),
         }));
-    // Request windows: exactly the viewer-control schedule entries.
+    // Request windows: the viewer page's schedule entries (never Remote Falcon's own).
     const reqWindows: VcScheduleEntry[] = (ezOn ? (vc?.schedule ?? []) : []).map((e) => ({
         title: e.playlist,
         start: e.startTime,
@@ -1058,6 +1190,7 @@ function processCommand(cmd: EZPlayerCommand) {
         }
         case 'clearrequests': {
             foregroundPlayerRunState.removeInteractiveCommands();
+            sendPlayerStateUpdate();
             break;
         }
         case 'setvolume': {
@@ -1097,6 +1230,11 @@ function processCommand(cmd: EZPlayerCommand) {
         }
         case 'resetstats': {
             resetCumulativeCounters();
+            break;
+        }
+        case 'resyncviewercontrol': {
+            // Fire and forget; the RPC form below is the one that reports back.
+            void resyncRemoteFalcon();
             break;
         }
         case 'holdcontrollerdata': {
@@ -1155,6 +1293,26 @@ function processCommand(cmd: EZPlayerCommand) {
             emitInfo('Stop graceful command received');
             stoppingGracefully = true;
             foregroundPlayerRunState.stopGracefully(foregroundPlayerRunState.currentTime);
+            sendPlayerStateUpdate();
+            break;
+        }
+        case 'stopitem': {
+            emitInfo(`Stop item ${cmd.key}${cmd.graceful ? ' gracefully' : ''}`);
+            const was = foregroundPlayerRunState.stopItem(
+                cmd.key,
+                !!cmd.graceful,
+                foregroundPlayerRunState.currentTime,
+            );
+            if (was === 'playing') {
+                if (cmd.graceful) {
+                    stoppingGracefully = true;
+                } else {
+                    // Cut its audio over, as stopnow does.
+                    stoppingGracefully = false;
+                    audioPlayerRunTime = foregroundPlayerRunState.currentTime;
+                    ++curAudioSyncNum;
+                }
+            }
             sendPlayerStateUpdate();
             break;
         }
@@ -1257,6 +1415,8 @@ send({ type: 'ready' });
 const rpcs = new RPCServer<PlayWorkerRPCAPI>(parentPort, handlers);
 const rpcc = new RPCClient<MainRPCAPI>(parentPort);
 
+throwLater('playback-worker-throw', 3000);
+
 ///////
 // Playback params
 const playbackParams = {
@@ -1299,6 +1459,42 @@ function contentTimeMS(seq: SequenceRecord | undefined, slotOffsetMS: number): n
     if (!seq?.settings) return slotOffsetMS;
     const t = getSeqTimesMS(seq);
     return slotOffsetMS - t.startLeadToSeqMS + t.startTrimOffSeqMS;
+}
+
+/** The audio file's playback position as heard on this player's speakers when the
+ *  lights show `contentMS` into the sequence: the sync adjust pushes the music
+ *  later (positive) or earlier (negative) than the lights. */
+function audioPositionMS(contentMS: number): number {
+    return contentMS - playbackParams.audioTimeAdjMs;
+}
+
+/** What the MultiSync master describes for the output at `contentMS` into a
+ *  sequence: the fseq frame while inside the file, and the audio position
+ *  while that is inside the file's span too. Pads report neither. */
+function syncFrameInfo(
+    fsf: string,
+    seq: SequenceRecord | undefined,
+    contentMS: number,
+    header: { frames: number; msperframe: number },
+): SyncFrameInfo {
+    const info: SyncFrameInfo = {};
+    const durationMS = header.frames * header.msperframe;
+    if (contentMS >= 0 && contentMS < durationMS) {
+        const frameNumber = Math.floor(contentMS / header.msperframe);
+        info.seq = {
+            file: fileBaseName(fsf),
+            frameNumber,
+            secondsElapsed: (frameNumber * header.msperframe) / 1000,
+        };
+    }
+    const audio = seq?.files?.audio;
+    if (audio) {
+        const audioMS = audioPositionMS(contentMS);
+        if (audioMS >= 0 && audioMS < durationMS) {
+            info.media = { file: fileBaseName(audio), secondsElapsed: audioMS / 1000 };
+        }
+    }
+    return info;
 }
 
 /** Prefetch confidence tiers (lower = higher priority). */
@@ -1376,6 +1572,10 @@ function dispatchSettings(settings: PlaybackSettings) {
     multiSync.configure(settings.sync?.multisync);
     sendIdleBlackFrames = settings.sendIdleBlackFrames !== false;
     curPipeline?.settings({ blackFramesEnabled: sendIdleBlackFrames });
+    foregroundPlayerRunState.repeatGuard.spacing = Math.max(
+        0,
+        Math.floor(settings.viewerControl?.minSongsBetweenRepeats ?? 0),
+    );
     const nasa = settings.audioSyncAdjust ?? 0;
     if (nasa != playbackParams.audioTimeAdjMs) {
         playbackParams.audioTimeAdjMs = nasa;
@@ -1388,6 +1588,7 @@ function dispatchSettings(settings: PlaybackSettings) {
     if (!rfConfigInitialized || nextToken !== lastRfRemoteToken) {
         rfConfigInitialized = true;
         lastRfRemoteToken = nextToken;
+        setRFWarningCallback((msg) => emitWarning(`Remote Falcon: ${msg}`));
         setRFConfig(
             {
                 remoteToken: nextToken,
@@ -1395,12 +1596,13 @@ function dispatchSettings(settings: PlaybackSettings) {
             (next) => {
                 const settings = latestSettings;
                 if (!settings) return;
-                const rfc = getActiveViewerControlSchedule(settings.viewerControl);
+                const rfc = getActiveViewerControlSchedule(settings.viewerControl, 'remote-falcon');
                 if (!rfc) return;
                 const pl = curPlaylists?.find((pl) => pl.title.toLowerCase() === rfc?.playlist.toLowerCase());
                 if (!pl) return;
                 const s = pl.items.find((seq) => seq.sequence === next.playlistIndex);
                 if (!s) return;
+                if (!admitViewerPick(s.id, 'remote-falcon')) return;
                 processCommand({
                     command: 'playsong',
                     immediate: false,
@@ -2696,7 +2898,9 @@ async function processQueue() {
                     const preserveBGFseqTime = backgroundPlayerRunState?.currentTime || initializeTime;
                     const preserveFGStops = foregroundPlayerRunState.stoppedIds;
                     const preserveBGStops = backgroundPlayerRunState.stoppedIds;
+                    const preserveRepeatGuard = foregroundPlayerRunState.repeatGuard;
                     foregroundPlayerRunState = new PlayerRunState(initializeTime);
+                    foregroundPlayerRunState.repeatGuard = preserveRepeatGuard;
                     backgroundPlayerRunState = new PlayerRunState(initializeTime);
                     if (preserveStops) {
                         foregroundPlayerRunState.stoppedIds = new Map(preserveFGStops);
@@ -3030,6 +3234,9 @@ async function processQueue() {
 
             // Don't advance foreground schedule while paused — it will slip behind real time
             if (!isPaused) {
+                // A song starting or ending on its own is a status event like a command
+                // is: push it now rather than on the next one-second tick.
+                let statusEvent = false;
                 while (true) {
                     const plog: PlaybackLogDetail[] = [];
                     // Really want to run until time or something interesting
@@ -3037,16 +3244,24 @@ async function processQueue() {
                     let foundTime = plog.length === 0;
                     for (const l of plog) {
                         if (l.eventType === 'Sequence Ended') {
-                            // TODO - Could reset clock base here.
+                            statusEvent = true;
+                        } else if (l.eventType === 'Sequence Skipped') {
+                            const t = l.sequenceId ? curSequences?.find((s) => s.id === l.sequenceId)?.work?.title : '';
+                            emitInfo(`Playlist skipped "${t || l.sequenceId}": played recently`);
                         } else if (l.eventType === 'Sequence Started' || l.eventType === 'Sequence Resumed') {
                             targetFrameRTC = foregroundPlayerRunState.currentTime;
-                            emitInfo(`Sequence start in ${targetFrameRTC - Date.now()}`);
+                            const verb = l.eventType === 'Sequence Started' ? 'start' : 'resume';
+                            emitInfo(
+                                `Sequence ${verb} ${l.sequenceId ?? '?'} in ${Math.round(targetFrameRTC - Date.now())} ms`,
+                            );
+                            statusEvent = true;
                             foundTime = true;
                             break;
                         }
                     }
                     if (foundTime) break;
                 }
+                if (statusEvent) sendPlayerStateUpdate();
             }
 
             //emitFrameDebug(`${iteration} - runUntil done`);
@@ -3142,13 +3357,16 @@ async function processQueue() {
             }
 
             if (targetFrameNum < 0 || targetFrameNum >= header.ref.header.frames) {
-                // Lead/trail pad: the background still shows
+                // Lead/trail pad: the background still shows. No sequence frame to
+                // sync, but the audio may still be inside the file (sync adjust).
+                const padSync = syncFrameInfo(fsf, curForegroundSeq, frameTimeOffset, header.ref.header);
                 if (bframeRef?.frame) {
                     targetFrameRTC += await presentFrame(pipeline, {
                         fg: bframeRef,
                         targetRTC: targetFrameRTC,
                         frameNumber: bframeNum,
                         frameInterval,
+                        onFrameDue: () => multiSync.onFrame(padSync),
                     });
                 } else {
                     bframeRef?.release();
@@ -3156,6 +3374,7 @@ async function processQueue() {
                         targetRTC: targetFrameRTC,
                         frameNumber: -1,
                         frameInterval,
+                        onFrameDue: () => multiSync.onFrame(padSync),
                     });
                 }
                 continue;
@@ -3164,15 +3383,18 @@ async function processQueue() {
             // At this point, all housekeeping is done.
             // Let's see if we're in time to spit out a frame, or if we have to skip
             //emitFrameDebug(`${iteration} - play the frame?`);
-            multiSync.onFrame(fileBaseName(fsf), targetFrameNum, (targetFrameNum * frameInterval) / 1000);
             const frameRef = fseqCacheNow.getFrame(fsf, { num: targetFrameNum });
             if (!frameRef?.ref?.frame) ++playbackStats.missedFramesCumulative;
+            // Sync packets describe the frame as it goes out, not as it is prepared:
+            // presentFrame calls back at the frame's deadline.
+            const syncInfo = syncFrameInfo(fsf, curForegroundSeq, frameTimeOffset, header.ref.header);
             targetFrameRTC += await presentFrame(pipeline, {
                 fg: frameRef?.ref,
                 bg: bframeRef,
                 targetRTC: targetFrameRTC,
                 frameNumber: targetFrameNum,
                 frameInterval,
+                onFrameDue: () => multiSync.onFrame(syncInfo),
             });
         }
     } finally {
@@ -3266,7 +3488,16 @@ function presentIdleBlack(pipeline: PixelPipeline, targetRTC: number) {
  */
 async function presentFrame(
     pipeline: PixelPipeline,
-    args: { fg?: FrameReference; bg?: FrameReference; targetRTC: number; frameNumber: number; frameInterval: number },
+    args: {
+        fg?: FrameReference;
+        bg?: FrameReference;
+        targetRTC: number;
+        frameNumber: number;
+        frameInterval: number;
+        /** Called at the frame's deadline, when it goes out (not when it is composed, one lead earlier);
+         *  skipped and deferred frames never call it. */
+        onFrameDue?: () => void;
+    },
 ): Promise<number> {
     try {
         const lead = Math.min(args.frameInterval, playbackParams.composeLeadMs);
@@ -3305,6 +3536,11 @@ async function presentFrame(
         });
         playbackStatsAgg.totalMixTime += performance.now() - t;
         if (!ok) ++playbackStats.framesSkippedDueToManyOutstandingFramesCumulative;
+        if (args.onFrameDue) {
+            const wait = targetPN - performance.now();
+            if (wait <= 0.5) args.onFrameDue();
+            else setTimeout(args.onFrameDue, wait);
+        }
         return args.frameInterval;
     } finally {
         args.fg?.release();

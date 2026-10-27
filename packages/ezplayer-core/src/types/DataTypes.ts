@@ -169,6 +169,72 @@ export interface PlayingItem {
     schedule_id?: string;
 }
 
+/** One item on the playback stack: what is on, or what it interrupted and will
+ *  resume when it ends. Mirrors the engine's own structure, which is what the
+ *  detailed playback view shows. */
+export interface PlaybackStackEntry {
+    /** Identifies the item to commands (`stopitem`) and to the song-order fetch. */
+    key: string;
+    origin: 'Scheduled' | 'Immediate' | 'Queued';
+    /** Only the top entry plays, pauses or ends; everything under it is suspended. */
+    state: 'playing' | 'paused' | 'ending' | 'suspended';
+    /** Show, playlist or song name, whichever the item is. */
+    title: string;
+    schedule_id?: string;
+    playlist_id?: string;
+    request_id?: string;
+    /** Which part of the item the cursor is in; absent before it starts or after it ends. */
+    section?: 'intro' | 'main' | 'outro';
+    /** The cursor within the section: 0-based `index` of `count`. A looping main
+     *  section starts over at 0 when it wraps. */
+    position?: { index: number; count: number; loop: boolean };
+    /** The song at the cursor. For a suspended entry, where it resumes. */
+    song?: {
+        sequence_id: string;
+        title: string;
+        /** How far into the song the cursor is, and when it got there (player clock). */
+        offset_ms: number;
+        at: number;
+        duration_ms: number;
+    };
+    /** When the item is due to end, for scheduled items. */
+    ends_at?: number;
+    /** Changes whenever the item's song order is baked; the order is fetched by it. */
+    order_key: string;
+}
+
+/** Something that will play when its turn comes but is not on the stack. */
+export interface PlaybackPendingEntry extends PlayingItem {
+    /** `waiting`: a request in line. `deferred`: a show whose time has come but
+     *  which something of higher standing is keeping off the stage. */
+    why: 'waiting' | 'deferred';
+}
+
+/** The engine's structure, for the detailed playback view. */
+export interface PlaybackView {
+    /** Top first; `[0]` is what is on. */
+    stack: PlaybackStackEntry[];
+    pending: PlaybackPendingEntry[];
+    /** Songs to come, as the engine will choose them, then shows due to start. */
+    upcoming: PlayingItem[];
+}
+
+export interface PlaybackOrderEntry {
+    sequence_id: string;
+    title: string;
+    duration_ms: number;
+}
+
+/** The baked song order of one playback item, fetched on demand by its `order_key`
+ *  (a shuffled show's order exists only here). */
+export interface PlaybackItemOrder {
+    key: string;
+    order_key: string;
+    intro: PlaybackOrderEntry[];
+    main: PlaybackOrderEntry[];
+    outro: PlaybackOrderEntry[];
+}
+
 export interface PlayerPStatusContent {
     // P - Player
     ptype: 'EZP' | 'FPP'; // FPP or EZP
@@ -184,12 +250,22 @@ export interface PlayerPStatusContent {
     reported_time: number;
     engine_time?: number;
     now_playing?: PlayingItem;
+    /** Where `now_playing` is. `content_ms` is the position within the sequence that
+     *  the lights show at `sampled_at` (player epoch ms on the engine clock: the time
+     *  of the frame being output). `audio_ms` is the position within the audio file as
+     *  heard on the player, with the audio sync adjust applied; absent when the song
+     *  has no audio. Frozen while paused. Pushed on every playback event as well as
+     *  the periodic tick. */
+    position?: { content_ms: number; audio_ms?: number; sampled_at: number };
     background_now_playing?: PlayingItem;
     upcoming?: PlayingItem[];
     immediate?: PlayingItem;
     queue?: PlayingItem[];
     suspendedItems?: PlayingItem[];
     preemptedItems?: PlayingItem[];
+    /** The engine's structure for the detailed playback view; the lists above are
+     *  flattened views of the same state and remain for older readers. */
+    view?: PlaybackView;
 
     volume?: {
         /** 0-100. The default output's level, or in `outputs` mode the loudest
@@ -531,6 +607,9 @@ export type EZPlayerCommand =
           command: 'resetstats'; // Reset cumulative stats counters
       }
     | {
+          command: 'resyncviewercontrol'; // Re-send the song list and state to Remote Falcon
+      }
+    | {
           command: 'stopnow'; // Stop all playing
       }
     | {
@@ -588,6 +667,11 @@ export type EZPlayerCommand =
     | {
           command: 'deleterequest';
           requestId: string; // Identity, for canceling, of a song or a
+      }
+    | {
+          command: 'stopitem'; // Stop one playback item by its stack/pending key, leaving the rest alone
+          key: string;
+          graceful?: boolean; // Only meaningful for the item that is on; others are simply removed
       }
     | {
           command: 'clearrequests'; // Clear all requests
@@ -659,6 +743,14 @@ export interface CloudPollScheduleEntry {
 
 export type ViewerControlBackend = 'remote-falcon' | 'ezplayer';
 
+/** Outcome of an operator-requested Remote Falcon song-list push.  `message`
+ *  carries Remote Falcon's own words when it refuses the list — it answers
+ *  HTTP 200 either way, so that text is the only sign of a refusal. */
+export interface ViewerControlResyncResult {
+    ok: boolean;
+    message?: string;
+}
+
 export interface ViewerControlState {
     enabled: boolean;
     /** `'ezplayer'` = the built-in EZPlayer viewer control. Unlike
@@ -671,11 +763,26 @@ export interface ViewerControlState {
      *  (`viewerControlBackends()`). */
     backends?: ViewerControlBackend[];
     remoteFalconToken?: string;
+    /** Other songs that must start before the same song plays again. The player
+     *  drops viewer picks (Remote Falcon or the viewer page) of a song playing,
+     *  next up, already queued, or among this many recent starts, whatever the
+     *  backend allowed; scheduled playlists pass over such a song too, with the
+     *  spacing capped per playlist (`RepeatGuard`). 0 / absent = off. */
+    minSongsBetweenRepeats?: number;
     /** Optional in the type because legacy persisted shapes can lack it.
      *  Always treat absence as empty. `normalizePlaybackSettings` and helpers
      *  in `SettingsScheduleUtils.ts` default to `[]`. */
     schedule?: ViewerControlScheduleEntry[];
+    /** When set, Remote Falcon runs on `remoteFalconSchedule` instead of
+     *  `schedule`, so its windows and playlists can differ from the viewer
+     *  page's. Older readers ignore this and use `schedule` for both. */
+    separateRemoteFalconSchedule?: boolean;
+    /** Remote Falcon's own schedule; used only while `separateRemoteFalconSchedule` is set. */
+    remoteFalconSchedule?: ViewerControlScheduleEntry[];
 }
+
+/** The two viewer-control schedule lists in `ViewerControlState`. */
+export type ViewerControlScheduleList = 'schedule' | 'remoteFalconSchedule';
 
 export interface VolumeControlState {
     defaultVolume: number;
@@ -810,6 +917,10 @@ export interface MultisyncSettings {
     port?: number;
     /** Multicast group override (default 239.70.80.80). */
     multicastAddress?: string;
+    /** Also send media (audio) sync packets carrying the audio file and its playback
+     *  position, as FPP and xSchedule masters do. Default on; turn off when remotes
+     *  hold copies of the audio and must stay silent. */
+    mediaSync?: boolean;
 }
 
 export interface AdvancedPlaybackSettings {
@@ -1023,6 +1134,14 @@ export interface RemoteAccessAvailability {
     shell: boolean;
     /** Show-folder files. */
     files: boolean;
+}
+
+/** What a support bundle holds; each level adds to the one before. */
+export const SUPPORT_BUNDLE_LEVELS = ['logs', 'setup', 'layout'] as const;
+export type SupportBundleLevel = (typeof SUPPORT_BUNDLE_LEVELS)[number];
+
+export function isSupportBundleLevel(v: unknown): v is SupportBundleLevel {
+    return (SUPPORT_BUNDLE_LEVELS as readonly unknown[]).includes(v);
 }
 
 /** Machine-wide diagnostics/crash-report consent. `uploadEnabled` defaults

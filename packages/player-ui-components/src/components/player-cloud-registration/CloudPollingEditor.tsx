@@ -1,4 +1,4 @@
-import { Add, Delete } from '@mui/icons-material';
+import { Add, Delete, Edit } from '@mui/icons-material';
 import {
     Button,
     Chip,
@@ -65,6 +65,8 @@ export const CloudPollingScheduleEditor: React.FC = () => {
     const [addOpen, setAddOpen] = useState(false);
     const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
     const [newWindow, setNewWindow] = useState<Partial<CloudPollScheduleEntry>>(FRESH_WINDOW);
+    /** Id of the window the dialog is editing; null when adding. */
+    const [editingId, setEditingId] = useState<string | null>(null);
 
     const handleModeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const v = e.target.value === 'scheduled' ? 'scheduled' : 'always';
@@ -82,7 +84,7 @@ export const CloudPollingScheduleEditor: React.FC = () => {
             return;
         }
         const entry: CloudPollScheduleEntry = {
-            id: generateId(),
+            id: editingId ?? generateId(),
             days: newWindow.days,
             startTime: formatTime24Hour(newWindow.startTime),
             endTime: formatTime24Hour(newWindow.endTime),
@@ -90,7 +92,7 @@ export const CloudPollingScheduleEditor: React.FC = () => {
         void dispatch(
             issueCloudCommand({
                 type: 'setCloudPolling',
-                schedule: [...schedule, entry],
+                schedule: editingId ? schedule.map((e) => (e.id === editingId ? entry : e)) : [...schedule, entry],
             }),
         );
         setNewWindow(FRESH_WINDOW);
@@ -147,7 +149,7 @@ export const CloudPollingScheduleEditor: React.FC = () => {
                         <List dense sx={{ mb: 2 }}>
                             {schedule.map((entry, index) => (
                                 <React.Fragment key={entry.id}>
-                                    <ListItem>
+                                    <ListItem sx={{ pr: 10 }}>
                                         <ListItemText
                                             primary={
                                                 <Box
@@ -167,6 +169,16 @@ export const CloudPollingScheduleEditor: React.FC = () => {
                                             }
                                         />
                                         <ListItemSecondaryAction>
+                                            <IconButton
+                                                onClick={() => {
+                                                    setNewWindow(entry);
+                                                    setEditingId(entry.id);
+                                                    setAddOpen(true);
+                                                }}
+                                                size="small"
+                                            >
+                                                <Edit />
+                                            </IconButton>
                                             <IconButton
                                                 edge="end"
                                                 onClick={() => setPendingDeleteId(entry.id)}
@@ -188,6 +200,7 @@ export const CloudPollingScheduleEditor: React.FC = () => {
                         startIcon={<Add />}
                         onClick={() => {
                             setNewWindow(FRESH_WINDOW);
+                            setEditingId(null);
                             setAddOpen(true);
                         }}
                     >
@@ -196,9 +209,9 @@ export const CloudPollingScheduleEditor: React.FC = () => {
                 </>
             )}
 
-            {/* Add window dialog */}
+            {/* Add / edit window dialog */}
             <Dialog open={addOpen} onClose={() => setAddOpen(false)}>
-                <DialogTitle>Add Sync Time Window</DialogTitle>
+                <DialogTitle>{editingId ? 'Edit' : 'Add'} Sync Time Window</DialogTitle>
                 <DialogContent>
                     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1, minWidth: 420 }}>
                         <FormControl fullWidth size="small">
@@ -239,7 +252,7 @@ export const CloudPollingScheduleEditor: React.FC = () => {
                 <DialogActions>
                     <Button onClick={() => setAddOpen(false)}>Cancel</Button>
                     <Button variant="contained" onClick={submitAddWindow} disabled={!isAddValid}>
-                        Add
+                        {editingId ? 'Save' : 'Add'}
                     </Button>
                 </DialogActions>
             </Dialog>

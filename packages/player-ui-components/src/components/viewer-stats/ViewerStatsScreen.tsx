@@ -7,7 +7,13 @@
  * reasons and a recent-activity feed. Pure MUI + inline boxes; no chart lib.
  */
 
-import type { VcSelectionReason, VcStatsEvent, ViewerStatsDay, ViewerStatsSummary } from '@ezplayer/ezplayer-core';
+import type {
+    VcDropReason,
+    VcSelectionReason,
+    VcStatsEvent,
+    ViewerStatsDay,
+    ViewerStatsSummary,
+} from '@ezplayer/ezplayer-core';
 import { PageHeader } from '@ezplayer/shared-ui-components';
 import {
     Alert,
@@ -46,6 +52,13 @@ const REASON_TEXT: Record<VcSelectionReason | 'unknown', string> = {
     'viewer-limit': 'Per-viewer limit',
     'queue-full': 'Queue full',
     unknown: 'Other',
+};
+
+const DROP_TEXT: Record<VcDropReason, string> = {
+    playing: 'already playing',
+    next: 'already up next',
+    queued: 'already requested',
+    recent: 'played recently',
 };
 
 function ago(ts: number | undefined, now: number): string {
@@ -92,6 +105,15 @@ function describe(ev: VcStatsEvent): string {
             if (ev.source === 'remote-falcon') return `Remote Falcon picked “${title}”`;
             if (ev.source === 'jukebox') return `Jukebox: “${title}”`;
             return `Picked “${title}” to play next (${ev.mode === 'vote' ? 'vote winner' : 'from queue'})`;
+        case 'dropped': {
+            const who = ev.source === 'remote-falcon' ? 'Remote Falcon' : 'viewer page';
+            const reason = ev.dropReason ? DROP_TEXT[ev.dropReason] : 'repeat';
+            const since =
+                ev.dropReason === 'recent' && ev.count !== undefined
+                    ? ` (${ev.count} song${ev.count === 1 ? '' : 's'} ago)`
+                    : '';
+            return `Skipped ${who} pick “${title}” — ${reason}${since}`;
+        }
         case 'play':
             return `Now playing “${title}”`;
         case 'viewers':
@@ -108,6 +130,7 @@ const KIND_COLOR: Record<string, 'primary' | 'secondary' | 'success' | 'warning'
     vote: 'secondary',
     refused: 'warning',
     pick: 'success',
+    dropped: 'error',
     play: 'info',
 };
 
@@ -347,6 +370,7 @@ export function ViewerStatsBody() {
                                     <StatTile label="Peak on page" value={summary.today.peakViewers} />
                                     <StatTile label="Peak listening" value={summary.today.peakListeners} />
                                     <StatTile label="Refused" value={summary.today.refused} />
+                                    <StatTile label="Picks skipped as repeats" value={summary.today.dropped} />
                                 </Stack>
                             </CardContent>
                         </Card>
@@ -377,6 +401,7 @@ export function ViewerStatsBody() {
                                     <StatTile label="Viewers who acted" value={summary.window.uniqueViewers} />
                                     <StatTile label="Peak on page" value={summary.window.peakViewers} />
                                     <StatTile label="Peak listening" value={summary.window.peakListeners} />
+                                    <StatTile label="Picks skipped as repeats" value={summary.window.dropped} />
                                 </Stack>
                                 <DayBars days={summary.days} />
                             </CardContent>
@@ -415,6 +440,7 @@ export function ViewerStatsBody() {
                                                 <TableCell align="right">Picked</TableCell>
                                                 <TableCell align="right">Plays</TableCell>
                                                 <TableCell align="right">Refused</TableCell>
+                                                <TableCell align="right">Skipped</TableCell>
                                             </TableRow>
                                         </TableHead>
                                         <TableBody>
@@ -426,6 +452,7 @@ export function ViewerStatsBody() {
                                                     <TableCell align="right">{s.picks}</TableCell>
                                                     <TableCell align="right">{s.plays}</TableCell>
                                                     <TableCell align="right">{s.refused}</TableCell>
+                                                    <TableCell align="right">{s.dropped}</TableCell>
                                                 </TableRow>
                                             ))}
                                         </TableBody>

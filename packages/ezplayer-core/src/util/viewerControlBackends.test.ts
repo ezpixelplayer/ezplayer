@@ -5,6 +5,8 @@ import {
     hasViewerControlBackend,
     primaryViewerControlType,
     viewerControlBackends,
+    viewerControlSchedule,
+    viewerControlScheduleList,
     withViewerControlBackends,
 } from './viewerControlBackends';
 
@@ -41,5 +43,25 @@ describe('viewerControlBackends', () => {
         expect(both).toMatchObject({ backends: ['remote-falcon', 'ezplayer'], type: 'ezplayer', enabled: true });
         const none = withViewerControlBackends(both, []);
         expect(none).toMatchObject({ backends: [], type: 'disabled', enabled: false });
+    });
+});
+
+describe('viewerControlSchedule', () => {
+    const page = { id: 'p', days: 'all' as const, startTime: '17:00', endTime: '23:00', playlist: 'Page' };
+    const rf = { id: 'r', days: 'all' as const, startTime: '18:00', endTime: '22:00', playlist: 'RF' };
+    const vc: ViewerControlState = { ...base, schedule: [page], remoteFalconSchedule: [rf] };
+
+    it('shares the main schedule unless Remote Falcon is separated', () => {
+        expect(viewerControlScheduleList(vc, 'remote-falcon')).toBe('schedule');
+        expect(viewerControlSchedule(vc, 'remote-falcon')).toEqual([page]);
+        expect(viewerControlSchedule(vc, 'ezplayer')).toEqual([page]);
+    });
+
+    it('gives Remote Falcon its own list when separated; the viewer page keeps the main one', () => {
+        const sep = { ...vc, separateRemoteFalconSchedule: true };
+        expect(viewerControlScheduleList(sep, 'remote-falcon')).toBe('remoteFalconSchedule');
+        expect(viewerControlSchedule(sep, 'remote-falcon')).toEqual([rf]);
+        expect(viewerControlSchedule(sep, 'ezplayer')).toEqual([page]);
+        expect(viewerControlSchedule({ ...base, separateRemoteFalconSchedule: true }, 'remote-falcon')).toEqual([]);
     });
 });

@@ -23,7 +23,7 @@ const FILES: ScenarioFiles = {
     song: 'CompatSong.fseq',
     fseq: buildFseq({ channels: 150, frames: 1200, value: 42 }), // 60 s
     audio: 'CompatSong.wav',
-    wav: sineWav({ seconds: 2 }),
+    wav: sineWav({ seconds: 10 }), // long enough to read status while it plays
     scratch: 'CompatScratch.wav',
     show: 'CompatShow',
 };
@@ -120,8 +120,9 @@ describe.skipIf(!FPP_URL)('FPP-compat API vs a real FPP', () => {
         );
 
         // The same session, run against each target in turn.
-        ours = await runCompatScenario(ezp, FILES);
-        theirs = await runCompatScenario(fpp, FILES);
+        const files = { ...FILES, playBoth: fppMajor < 10 };
+        ours = await runCompatScenario(ezp, files);
+        theirs = await runCompatScenario(fpp, files);
     }, 300_000);
 
     afterAll(async () => {

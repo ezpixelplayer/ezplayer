@@ -6,6 +6,7 @@ import {
     PlayerNStatusContent,
     PlayerCStatusContent,
     EZPlayerCommand,
+    ViewerControlResyncResult,
 } from '@ezplayer/ezplayer-core';
 import { DataStorageAPI } from '../api/DataStorageAPI';
 
@@ -46,6 +47,19 @@ export const callImmediateCommand = createAsyncThunk<boolean, EZPlayerCommand, {
     async (arg, { extra }) => {
         const response = await extra.issuePlayerCommand(arg);
         return response;
+    },
+);
+
+/** Re-push the Remote Falcon song list.  Backends without the round-trip API
+ *  fall back to the fire-and-forget command, which cannot report a refusal. */
+export const resyncViewerControl = createAsyncThunk<ViewerControlResyncResult, void, { extra: DataStorageAPI }>(
+    'player/resyncViewerControl',
+    async (_, { extra }) => {
+        if (!extra.resyncViewerControl) {
+            await extra.issuePlayerCommand({ command: 'resyncviewercontrol' });
+            return { ok: true };
+        }
+        return await extra.resyncViewerControl();
     },
 );
 

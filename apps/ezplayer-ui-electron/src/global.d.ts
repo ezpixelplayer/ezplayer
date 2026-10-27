@@ -5,5 +5,7 @@ export {}; // Ensure this file is treated as a module
 declare global {
     interface Window {
         electronAPI?: EZPElectronAPI;
+        /** Installed by the inline script in index.html. */
+        __ezpReportError?: (message: string, stack?: string) => void;
     }
 }

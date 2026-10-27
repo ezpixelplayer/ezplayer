@@ -12,6 +12,7 @@ import type {
     PlayerNStatusContent,
     EZPlayerVersions,
     EZPlayerCommand,
+    ViewerControlResyncResult,
     PlaybackSettings,
     CloudCommand,
     RemoteAccessAvailability,
@@ -164,6 +165,8 @@ export interface EZPElectronAPI {
      *  React render) to main's diagnostics reporter, which applies the
      *  consent gate and upload throttle. */
     reportRendererError?: (message: string, stack?: string) => Promise<void>;
+    /** The app has mounted; main's not-ready watchdog stands down. */
+    rendererReady?: () => void;
 
     /** Set the BrowserWindow's zoom factor (1.0 = 100%). Native page zoom — handles
      *  canvas/WebGL correctly, unlike CSS `zoom`. Used for the UI scale slider. */
@@ -197,6 +200,10 @@ export interface EZPElectronAPI {
 
     // Send a command
     immediatePlayerCommand: (cmd: EZPlayerCommand) => Promise<boolean>;
+    /** Re-push the Remote Falcon song list, answering with Remote Falcon's own
+     *  message when it refuses (over its sequence cap, say).  Optional so older
+     *  preloads stay type-compatible. */
+    resyncViewerControl?: () => Promise<ViewerControlResyncResult>;
     setPlaybackSettings: (s: PlaybackSettings) => Promise<boolean>;
 
     // Get / save data  (Nobody is actually calling some of the getters; as they shouldn't... use selectors instead.)

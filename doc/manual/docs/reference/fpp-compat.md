@@ -39,7 +39,7 @@ exactly one entry, the idle placeholder when nothing is playing.
 
 | Method | Path | Notes |
 | ------ | ---- | ----- |
-| GET    | `/api/player`, `/api/player/status` | `{playlists: [{name, desc, currentState, currentEntry, size, repeat, …, details, status, scheduled, position, startTime, stopTime, priority}]}`. `details` is the running playlist's config with each entry's run state; `currentEntry` carries `secondsElapsed`, `millisecondsElapsed` and `secondsRemaining` |
+| GET    | `/api/player`, `/api/player/status` | `{playlists: [{name, desc, currentState, currentEntry, size, repeat, …, details, status, scheduled, position, startTime, stopTime, priority}]}`. `details` is the running playlist's config with each entry's run state; `currentEntry` carries `duration`, `secondsElapsed`, `millisecondsElapsed` and `secondsRemaining`; a sequence+media (`both`) entry also nests `media` and `sequence` objects carrying the same elapsed fields, as FPP does |
 | GET    | `/api/player/current` | `{playlist: {…the same info, without details…}}` |
 | GET    | `/api/fppd/playlists` | `{playlists: [name]}` while playing, `[]` when idle |
 | GET    | `/api/fppd/playlist/config` | the running playlist's config (as in `details` above); only the status fields when idle |
@@ -103,6 +103,10 @@ EZPlayer playlists are ordered lists of sequences, so the FPP format maps with
   or title (case-insensitive, extension optional). If the name isn't
   registered but the `.fseq` file exists in the show folder (e.g. it was just
   uploaded via the file API), a sequence record is **auto-registered**.
+- A `both` entry's `mediaName` becomes the sequence's audio when that file is
+  in the show folder and the sequence has no audio yet. A sequence already
+  paired with different audio keeps it (EZPlayer songs have one audio file),
+  with a warning.
 - Audio-only `media` entries and `pause` entries are skipped.
 - Nested `playlist` entries are rejected (400).
 - `repeat`/`loopCount` are not stored — pass repeat to `Start Playlist` or set
@@ -162,9 +166,22 @@ OPEN/START on begin, SYNC frames every ~16 frames (every frame for the first
 few so remotes lock on fast), and STOP on end/pause/idle. `remotes` is a list
 of `host[:port]`; an empty list broadcasts to the FPP multicast group
 239.70.80.80 (port and multicast address are overridable under Advanced).
-Media sync packets are not sent (audio plays on the master), and EZPlayer
-does not act as a sync *remote*. Default is **off** — sync-master is a
-topology decision; exactly one master should exist on a network.
+EZPlayer does not act as a sync *remote*. Default is **off** — sync-master is
+a topology decision; exactly one master should exist on a network.
+
+Media sync packets (`fileType` 1) go out alongside the sequence packets, as
+FPP and xSchedule masters send them: OPEN/START naming the song's audio file
+(basename) when it begins, a SYNC about every 500 ms whose `secondsElapsed` is
+the audio position as heard on the player — the audio sync adjust is folded
+in, which the sequence packets do not reflect — and STOP when it ends. Media
+packets carry no frame number. An FPP remote that holds the same audio file
+will play it; the "Send audio sync too" switch (`mediaSync: false`) keeps the
+sequence packets and drops the media ones.
+
+Every packet describes the frame being output at that instant: the playback
+loop stamps and sends the sync as the frame's deadline arrives, not when it
+starts preparing the frame, so a packet is never ahead of the lights it
+describes.
 
 The packets carry FPP's own `SYNC_PKT_*` action codes (`src/MultiSync.h`):
 START 0, STOP 1, SYNC 2, OPEN 3 — not the order the flow suggests.

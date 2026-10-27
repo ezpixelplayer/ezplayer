@@ -47,7 +47,7 @@ export interface PointShaderAttributes {
 export interface PointShaderUniforms {
     /** Time for animated procedural colors */
     time: number;
-    /** Brightness multiplier */
+    /** Dimming-curve brightness factor (0..1) baked into live data */
     brightness: number;
     /** Gamma correction value */
     gamma: number;
@@ -198,8 +198,15 @@ void main() {
         color = calculateProceduralColor(position, originalIndex);
     }
     
-    // Apply brightness
-    color *= brightness;
+    // xLights bakes out = pow(v, gamma) * brightness. Undo in reverse order:
+    // divide brightness out (clamped to 0..1), then 1/gamma. Lossy on 8-bit.
+    // Procedural "off" colors are not file data; they keep the dimmed look.
+    if (useLiveData > 0.5) {
+        color = min(color / max(brightness, 0.001), vec3(1.0));
+        color = pow(color, vec3(1.0 / gamma));
+    } else {
+        color = pow(color * brightness, vec3(1.0 / gamma));
+    }
     
     // Pass to fragment shader
     vColor = color;
@@ -213,10 +220,10 @@ void main() {
 
 /**
  * Fragment shader for point rendering
- * Handles color selection, hover highlighting, gamma correction, and pixel shape
+ * Handles color selection, hover highlighting, and pixel shape
+ * (dimming-curve inversion lives in the vertex shader)
  */
 export const pointFragmentShader = `
-uniform float gamma;
 uniform vec3 selectedColor;
 uniform vec3 hoveredColor;
 uniform int pixelStyle; // 0 = square, 1 = circle/round, 2 = blended circle
@@ -278,8 +285,7 @@ void main() {
         color = vStartColor;
     }
 
-    // Apply gamma correction
-    color = pow(color, vec3(1.0 / gamma));
+    // Dimming already undone in the vertex shader; selection/hover colors stay true.
     
     // Apply model transparency (opacity = 1 - transparency/100, passed as uniform)
     // Multiply the fragment alpha by opacity: 1.0 = fully opaque, 0.0 = fully transparent

@@ -1,4 +1,5 @@
-import { TextField } from '@mui/material';
+import { ArrowDownward, ArrowUpward, Delete, Edit } from '@mui/icons-material';
+import { IconButton, TextField, Tooltip } from '@mui/material';
 import type { SxProps, Theme } from '@mui/material';
 import React from 'react';
 import type { ViewerControlScheduleEntry } from '@ezplayer/ezplayer-core';
@@ -188,3 +189,39 @@ export const isValidExtendedTimeFormat = (timeString: string): boolean => {
 };
 
 export const generateId = () => Math.random().toString(36).substr(2, 9);
+
+/** Edit / reorder / delete buttons for a schedule list row. Later rows take priority. */
+export const ScheduleEntryActions: React.FC<{
+    index: number;
+    count: number;
+    onEdit: () => void;
+    onMove: (delta: number) => void;
+    onDelete: () => void;
+}> = ({ index, count, onEdit, onMove, onDelete }) => (
+    <>
+        <Tooltip title="Edit">
+            <IconButton onClick={onEdit} size="small">
+                <Edit />
+            </IconButton>
+        </Tooltip>
+        <Tooltip title="Lower priority">
+            <span>
+                <IconButton onClick={() => onMove(-1)} size="small" disabled={index === 0}>
+                    <ArrowUpward />
+                </IconButton>
+            </span>
+        </Tooltip>
+        <Tooltip title="Higher priority">
+            <span>
+                <IconButton onClick={() => onMove(1)} size="small" disabled={index === count - 1}>
+                    <ArrowDownward />
+                </IconButton>
+            </span>
+        </Tooltip>
+        <Tooltip title="Delete">
+            <IconButton edge="end" onClick={onDelete} size="small" color="error">
+                <Delete />
+            </IconButton>
+        </Tooltip>
+    </>
+);

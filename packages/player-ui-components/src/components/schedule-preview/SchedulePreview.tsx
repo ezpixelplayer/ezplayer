@@ -6,7 +6,7 @@ import { RootState } from '../../store/Store';
 import SchedulePreviewSettings from './SchedulePreviewSettings';
 import { generateSchedulePreview } from '../../util/schedulePreviewUtils';
 import { SchedulePreviewSettings as SettingsType, ParallelSchedulePreviewData } from '../../types/SchedulePreviewTypes';
-import { DEFAULT_SCHEDULE_PREVIEW_SETTINGS } from '../../constants/schedulePreviewConstants';
+import { defaultSchedulePreviewSettings } from '../../constants/schedulePreviewConstants';
 import ScheduledPlaylistsList, {
     ScheduleData,
     ScheduledPlaylistsListRef,
@@ -72,7 +72,7 @@ function splitAndSortSchedulesByType(filteredSchedules: ScheduledPlaylist[]) {
 }
 
 export const SchedulePreview: React.FC<SchedulePreviewProps> = ({ className = '' }) => {
-    const [settings, setSettings] = useState<SettingsType>(DEFAULT_SCHEDULE_PREVIEW_SETTINGS);
+    const [settings, setSettings] = useState<SettingsType>(defaultSchedulePreviewSettings);
     const [previewData, setPreviewData] = useState<ParallelSchedulePreviewData | null>(null);
     const [isGenerating, setIsGenerating] = useState(false);
     const [error, setError] = useState<string | null>(null);

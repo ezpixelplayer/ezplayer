@@ -41,7 +41,7 @@ beforeAll(async () => {
     app = await startEzPlayer(show.dir);
     fpp = new FppClient(app.base);
 
-    await fpp.uploadFile('sequences', 'SongA.fseq', buildFseq({ channels: 150, frames: 400, value: 42 })); // 20s
+    await fpp.upload('sequences', 'SongA.fseq', buildFseq({ channels: 150, frames: 400, value: 42 })); // 20s
     const res = await fpp.putPlaylist('Main Show', {
         name: 'Main Show',
         mainPlaylist: [{ type: 'sequence', sequenceName: 'SongA.fseq' }],
@@ -190,7 +190,7 @@ describe('playback', () => {
 
     it('natural end clears now_playing in raw pStatus', async () => {
         // Short 5s sequence so the playlist ends on its own.
-        await fpp.uploadFile('sequences', 'SongB.fseq', buildFseq({ channels: 150, frames: 100, value: 17 }));
+        await fpp.upload('sequences', 'SongB.fseq', buildFseq({ channels: 150, frames: 100, value: 17 }));
         const res = await fpp.putPlaylist('Short Show', {
             name: 'Short Show',
             mainPlaylist: [{ type: 'sequence', sequenceName: 'SongB.fseq' }],

@@ -1,10 +1,12 @@
 import {
     ScheduleDays,
+    ViewerControlBackend,
     ViewerControlScheduleEntry,
     ViewerControlState,
     VolumeControlState,
     VolumeScheduleEntry,
 } from '../types/DataTypes';
+import { hasViewerControlBackend, viewerControlSchedule } from './viewerControlBackends';
 
 const MINUTES_PER_DAY = 24 * 60;
 const MINUTES_PER_WEEK = 7 * MINUTES_PER_DAY;
@@ -130,17 +132,17 @@ export function findMatchingScheduleEntry<T extends BaseScheduleEntry>(
     return null;
 }
 
+/** The open window for `backend`, or null if that backend is off or outside its schedule. */
 export function getActiveViewerControlSchedule(
     viewerControl: ViewerControlState,
+    backend: ViewerControlBackend,
     now: Date = new Date(),
 ): ViewerControlScheduleEntry | null {
-    // Backend-agnostic: any enabled, non-disabled viewer-control backend
-    // (`remote-falcon` or `ezplayer`) uses the same schedule gating.
-    if (!viewerControl.enabled || viewerControl.type === 'disabled') {
+    if (!hasViewerControlBackend(viewerControl, backend)) {
         return null;
     }
 
-    return findMatchingScheduleEntry(viewerControl.schedule, now);
+    return findMatchingScheduleEntry(viewerControlSchedule(viewerControl, backend), now);
 }
 
 export function getActiveVolumeSchedule(

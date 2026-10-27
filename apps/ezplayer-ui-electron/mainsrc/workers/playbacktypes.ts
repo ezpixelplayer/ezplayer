@@ -16,9 +16,12 @@ import type {
     ScheduledPlaylist,
     PlaybackStatistics,
     PlayerPStatusContent,
+    PlaybackItemOrder,
     PlayerCStatusContent,
     PlayerNStatusContent,
     EZPlayerCommand,
+    ViewerControlResyncResult,
+    VcDropReason,
     PlaybackSettings,
     KnownController,
 } from '@ezplayer/ezplayer-core';
@@ -92,11 +95,15 @@ export type PlayWorkerRPCAPI = {
     add: (args: { a: number; b: number }) => number;
     fail: (args: { msg: string }) => void;
     stopPlayback: (args: Record<string, never>) => Promise<boolean> | boolean;
+    /** Re-push the Remote Falcon song list and report what Remote Falcon said. */
+    resyncViewerControl: (args: Record<string, never>) => Promise<ViewerControlResyncResult>;
     getModelCoordinates: (args: Record<string, never>) => Promise<Record<string, GetNodeResult>>;
     getModelCoordinates2D: (args: Record<string, never>) => Promise<Record<string, GetNodeResult>>;
     getFrameExportBuffer: () => Promise<SharedArrayBuffer | undefined>;
     /** Overlay lease operations (see overlaytypes.ts). */
     overlay: (cmd: OverlayCommand) => Promise<OverlayResult>;
+    /** The baked song order of a loaded item, for the detailed playback view. */
+    getPlaybackItemOrder: (args: { key: string }) => Promise<PlaybackItemOrder | undefined>;
 };
 
 export type MainRPCAPI = {
@@ -149,10 +156,21 @@ export type WorkerToMainMessage =
     | { type: 'pixelpool'; buffer: SharedArrayBuffer | undefined; manifest: LayoutManifest | undefined }
     | { type: 'done' }
     | { type: 'error'; message: string }
+    /** An uncaught exception or unhandled rejection the worker survived; main reports it. */
+    | { type: 'uncaught'; what: 'uncaughtException' | 'unhandledRejection'; message: string; stack?: string }
     | { type: 'stats'; stats: PlaybackStatistics }
     | { type: 'cstatus'; status: PlayerCStatusContent }
     | { type: 'nstatus'; status: PlayerNStatusContent }
     | { type: 'viewerPick'; source: 'remote-falcon' | 'jukebox'; songId: string; title?: string }
+    | {
+          type: 'viewerPickDropped';
+          source: 'remote-falcon' | 'viewer';
+          songId: string;
+          title?: string;
+          reason: VcDropReason;
+          /** `recent`: songs started since this one last did. */
+          songsAgo?: number;
+      }
     | { type: 'pstatus'; status: PlayerPStatusContent }
     | {
           type: 'modelCoordinates';

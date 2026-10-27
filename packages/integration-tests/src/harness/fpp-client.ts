@@ -60,6 +60,12 @@ export class FppClient {
         });
     }
 
+    /** uploadFile for setup: throws unless the upload succeeded. */
+    async upload(dir: string, name: string, bytes: Uint8Array): Promise<void> {
+        const res = await this.uploadFile(dir, name, bytes);
+        if (!res.ok) throw new Error(`upload of ${name} failed: ${res.status} ${await res.text()}`);
+    }
+
     async uploadFileChunked(dir: string, name: string, bytes: Uint8Array, chunkSize: number): Promise<void> {
         for (let off = 0; off < bytes.length; off += chunkSize) {
             const chunk = bytes.subarray(off, Math.min(off + chunkSize, bytes.length));
