@@ -265,6 +265,8 @@ export {
 
 export {
     summarizeViewerStats,
+    dedupeViewerStatsEvents,
+    viewerStatsEventKey,
     trimViewerStatsEvents,
     LOCAL_STATS_EPOCH,
     emptyPicksBySource,

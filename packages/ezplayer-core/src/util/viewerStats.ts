@@ -76,8 +76,8 @@ export interface ViewerStatsSummary {
     days: ViewerStatsDay[];
     /** Most requested / voted songs in the window, busiest first. */
     songs: ViewerStatsSong[];
-    /** Newest first. */
-    recent: VcStatsEvent[];
+    /** Newest first. Keyed by `epoch` + `seq` (unique per server process). */
+    recent: StoredViewerStatsEvent[];
     /** Refusal reasons in the window, most common first. */
     refusals: Array<{ reason: VcSelectionReason | 'unknown'; count: number }>;
     /** Total events retained on the player. */
@@ -147,10 +147,15 @@ export function viewerStatsDayKeys(now: number, tz: string, windowDays: number):
     return keys.reverse();
 }
 
-export function summarizeViewerStats(
-    events: readonly VcStatsEvent[],
+export type ViewerStatsParts<T extends VcStatsEvent> = Pick<
+    ViewerStatsSummary,
+    'today' | 'window' | 'days' | 'songs' | 'refusals' | 'tz' | 'windowDays'
+> & { recent: T[] };
+
+export function summarizeViewerStats<T extends VcStatsEvent>(
+    events: readonly T[],
     opts: SummarizeOptions,
-): Pick<ViewerStatsSummary, 'today' | 'window' | 'days' | 'songs' | 'recent' | 'refusals' | 'tz' | 'windowDays'> {
+): ViewerStatsParts<T> {
     const now = opts.now ?? Date.now();
     const windowDays = opts.windowDays ?? 30;
     const recentLimit = opts.recentLimit ?? 50;
@@ -284,6 +289,28 @@ export function summarizeViewerStats(
         recent,
         refusals: refusalList,
     };
+}
+
+/** The identity of a stored event: a server's `seq` only means something within
+ *  its `epoch`, and the pull cursor cannot tell which process will answer. */
+export function viewerStatsEventKey(ev: { epoch: string; seq: number }): string {
+    return `${ev.epoch}:${ev.seq}`;
+}
+
+/** Drop repeats of the same (epoch, seq), keeping the first. Pulls can re-send
+ *  events the player already holds when its target server changes (central vs.
+ *  home server, or a home-server re-election), because the `afterSeq` cursor it
+ *  sends belongs to the previous process. */
+export function dedupeViewerStatsEvents<T extends { epoch: string; seq: number }>(events: T[]): T[] {
+    const seen = new Set<string>();
+    const out: T[] = [];
+    for (const ev of events) {
+        const k = viewerStatsEventKey(ev);
+        if (seen.has(k)) continue;
+        seen.add(k);
+        out.push(ev);
+    }
+    return out.length === events.length ? events : out;
 }
 
 /** Retention applied on the player: drop events older than `retainMs` and
