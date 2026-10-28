@@ -58,6 +58,8 @@ export interface DiscoveredController {
     inputs?: ControllerInputInfo;
     /** Actions the driver enumerated (filled on status deep-reads). */
     actions?: ControllerDeviceAction[];
+    /** What show content this device holds, from the last distribution or check. */
+    contentStatus?: ControllerContentStatus;
     error?: string;
     /**
      * Set when the device was seen before but nothing answers at its address
@@ -70,7 +72,7 @@ export interface DiscoveredController {
     seenAt: string;
 }
 
-export type ControllerOpKind = 'scan' | 'status' | 'action' | 'upload';
+export type ControllerOpKind = 'scan' | 'status' | 'action' | 'upload' | 'distribute';
 /** `queued` = waiting for a free slot (the player limits how many of a kind
  *  run at once); `cancelled` = stopped on request before completion, partial
  *  results kept. */
@@ -135,6 +137,8 @@ export interface ControllerOpsState {
     known?: KnownController[];
     /** Persisted per-network policies, keyed by CIDR. */
     networkPolicies?: NetworkPolicy[];
+    /** Live and last-finished show-content distribution. */
+    contentDist?: ContentDistState;
 }
 
 /** A command that mutates controller ops — one shape for LAN HTTP, LAN
@@ -195,6 +199,17 @@ export type ControllerCommand =
           fullControl?: boolean;
       }
     | {
+          /** Send show content (sequences and the media they name) to FPP
+           *  targets and register it in the inventory playlist. Omit `ids` for
+           *  every target that should hold content, `sequences` for the whole
+           *  show. */
+          cmd: 'distribute';
+          ids?: string[];
+          sequences?: string[];
+          /** Work out what each target is missing and report it, send nothing. */
+          checkOnly?: boolean;
+      }
+    | {
           /** Create/update/soft-delete/associate/promote a persisted controller
            *  record: `patch` is merged into the record named `name` (created if
            *  absent), then `known` is re-derived and broadcast. */
@@ -202,6 +217,151 @@ export type ControllerCommand =
           name: string;
           patch: EzpControllerRecordPatch;
       };
+
+// ---------------------------------------------------------------------------
+// Show-content distribution — sequences and their media onto the devices that
+// play them. The engine lives in @ezplayer/epp-controllers; these are the
+// serializable shapes broadcast to every UI, as `DiscoveredController` mirrors
+// the discovery library's own device type.
+// ---------------------------------------------------------------------------
+
+/** How a file was sent: FPP 7+ chunked PATCH, or FPP 6's upload-then-move. */
+export type ContentUploadMethod = 'patch' | 'jqupload';
+
+/** What this device holds, as of the last distribution or check. */
+export interface ControllerContentStatus {
+    /** ISO timestamp of the check or distribution this came from. */
+    checkedAt: string;
+    /** Items already present and current. */
+    current: number;
+    /** Items the device still needs. */
+    missing: number;
+    /** What sending the missing items would transfer. */
+    missingBytes: number;
+    /** Items whose last send failed — the reason to re-run against this device. */
+    failed: number;
+    /** Set when the device could not be reached or refused the transfer. */
+    error?: string;
+    uploadMethod?: ContentUploadMethod;
+}
+
+/** True when this device is behind the show and a run would send something. */
+export function needsContentDelivery(status: ControllerContentStatus | undefined): boolean {
+    return !!status && (status.missing > 0 || status.failed > 0 || !!status.error);
+}
+
+export type ContentDistPhase = 'waiting' | 'checking' | 'uploading' | 'registering' | 'done' | 'failed';
+
+export type ContentItemKind = 'sequence' | 'media' | 'playlist';
+
+/** `planned` is a check-only result: what a real run would have sent. */
+export type ContentItemAction = 'uploaded' | 'skipped' | 'failed' | 'planned';
+
+/** One file's outcome against one device. */
+export interface ContentDistItem {
+    kind: ContentItemKind;
+    name: string;
+    action: ContentItemAction;
+    /** Why it was sent or skipped, in the words the device's own metadata gave. */
+    reason: string;
+    bytes: number;
+    ms: number;
+    method?: ContentUploadMethod;
+}
+
+export interface ContentDistTargetReport {
+    /** Device id, matching `ControllerOpsState.devices`. */
+    id: string;
+    label: string;
+    hostName: string;
+    version?: string;
+    platform?: string;
+    supported: boolean;
+    uploadMethod?: ContentUploadMethod;
+    items: ContentDistItem[];
+    bytesUploaded: number;
+    startedAt: string;
+    finishedAt: string;
+    /** Set when nothing was attempted against this device, with the reason —
+     *  passed over (too old, nothing to hold) or abandoned part way. */
+    note?: string;
+}
+
+/** Whether a device came out of a run behind the show: it was skipped, it
+ *  stopped part way, or one of its files would not go. */
+export function contentTargetFailed(target: ContentDistTargetReport): boolean {
+    return !target.supported || !!target.note || target.items.some((i) => i.action === 'failed');
+}
+
+export interface ContentDistTotals {
+    targets: number;
+    targetsFailed: number;
+    uploaded: number;
+    skipped: number;
+    failed: number;
+    planned: number;
+    bytes: number;
+}
+
+/** A finished run — what the details dialog shows. */
+export interface ContentDistReport {
+    startedAt: string;
+    finishedAt: string;
+    /** A check: nothing was sent, and every item reads `planned`. */
+    checkOnly: boolean;
+    cancelled: boolean;
+    /** Why the run happened, for the Show Status card's one-line summary. */
+    trigger: ContentDistTrigger;
+    targets: ContentDistTargetReport[];
+    totals: ContentDistTotals;
+}
+
+/** What started a run. `songs` is the automatic follow-up to content the user
+ *  or the cloud poller added. */
+export type ContentDistTrigger = 'manual' | 'schedule' | 'songs';
+
+export interface ContentDistTargetProgress {
+    id: string;
+    label: string;
+    phase: ContentDistPhase;
+    /** The file in flight. */
+    item?: string;
+    /** 0..1 for this device. */
+    fraction: number;
+    bytesSent: number;
+    bytesTotal: number;
+    itemsDone: number;
+    itemsTotal: number;
+    failures: number;
+    message?: string;
+}
+
+/** A run in flight. Byte totals are known before the first byte moves, so the
+ *  fraction is honest rather than a guess that lurches. */
+export interface ContentDistRun {
+    /** The `distribute` op this run belongs to, for cancel and for the op list. */
+    opId: string;
+    startedAt: string;
+    checkOnly: boolean;
+    trigger: ContentDistTrigger;
+    /** 0..1 over the whole run; never goes backwards. */
+    fraction: number;
+    bytesSent: number;
+    bytesTotal: number;
+    targets: ContentDistTargetProgress[];
+}
+
+export interface ContentDistState {
+    /** Present only while a run is in flight. */
+    run?: ContentDistRun;
+    /** The last run that finished, check or real. */
+    lastReport?: ContentDistReport;
+    /** Sequences waiting for the next automatic run, by file name. */
+    queued?: string[];
+    /** Why automatic distribution is not acting right now, for the card to
+     *  explain itself: off by setting, outside its window, or nothing to do. */
+    autoHold?: 'off' | 'outside-window' | 'idle';
+}
 
 // ---------------------------------------------------------------------------
 // Reconciliation — known records vs. what the scan actually found.

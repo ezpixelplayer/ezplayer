@@ -43,6 +43,8 @@ import {
 } from './ControllerHelpers';
 import { QueueCard } from './QueueCard';
 import { ViewerControlCard } from './ViewerControlCard';
+import { ContentDistributionCard } from './ContentDistributionCard';
+import { hasContentDistribution } from '../content-dist/contentDistHelpers';
 import { callImmediateCommand } from '../../store/slices/RuntimeStore';
 import { normalizeTagList, songMatchesAnyTag } from '../../services/jukeboxFilter';
 import type { EZPElectronAPI } from '@ezplayer/ezplayer-core';
@@ -111,6 +113,10 @@ export const ShowStatusScreen = ({ title, statusArea, allowTestControls = true }
     const runtime = useSelector((s: RootState) => s.runtime);
     const testSequenceTags = useSelector((s: RootState) => s.playbackSettings.settings.testSequenceTags);
     const sequenceData = useSelector((s: RootState) => s.sequences.sequenceData);
+    const contentDevices = useSelector((s: RootState) => s.controllerOps.devices);
+    const contentDist = useSelector((s: RootState) => s.controllerOps.contentDist);
+    const distributionMode = useSelector((s: RootState) => s.playbackSettings.settings.contentDistribution?.mode);
+    const showContentDist = hasContentDistribution(contentDevices, distributionMode, contentDist);
     const [testSongId, setTestSongId] = useState<string | null>(null);
     /** The test request we started, so Stop can target only our own. */
     const [testRequest, setTestRequest] = useState<{ songId: string; requestId: string } | null>(null);
@@ -521,6 +527,13 @@ export const ShowStatusScreen = ({ title, statusArea, allowTestControls = true }
                 <Grid item xs={12}>
                     <ViewerControlCard />
                 </Grid>
+
+                {/* Content Distribution & Sync — only where a player holds its own copy. */}
+                {showContentDist && (
+                    <Grid item xs={12}>
+                        <ContentDistributionCard />
+                    </Grid>
+                )}
 
                 {/* Controller Status */}
                 {controller && (

@@ -82,6 +82,7 @@ export type {
     AppSettingsCommand,
     ControllerRefreshSettings,
     ControllerRefreshMode,
+    ContentDistributionSettings,
 } from './types/DataTypes';
 
 export {
@@ -107,6 +108,19 @@ export type {
     ControllerOpsState,
     ControllerSenderStats,
     ControllerCommand,
+    ControllerContentStatus,
+    ContentUploadMethod,
+    ContentDistPhase,
+    ContentItemKind,
+    ContentItemAction,
+    ContentDistItem,
+    ContentDistTargetReport,
+    ContentDistTotals,
+    ContentDistReport,
+    ContentDistTrigger,
+    ContentDistTargetProgress,
+    ContentDistRun,
+    ContentDistState,
     KnownController,
     EzpControllerRecord,
     EzpControllerRecordPatch,
@@ -132,7 +146,7 @@ export type {
     PanelMatrixReconcile,
     VirtualMatrixReconcile,
 } from './types/ControllerOps';
-export { effectiveMaxFps } from './types/ControllerOps';
+export { effectiveMaxFps, needsContentDelivery, contentTargetFailed } from './types/ControllerOps';
 
 export {
     reconcileControllers,

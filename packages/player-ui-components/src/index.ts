@@ -25,6 +25,8 @@ export { JukeboxArea, JukeboxFullScreen, JukeboxScreen } from './components/juke
 export { ShowStatusScreen } from './components/status/ShowStatusScreen';
 export { ViewerStatsScreen, ViewerStatsBody } from './components/viewer-stats/ViewerStatsScreen';
 export { ViewerControlCard } from './components/status/ViewerControlCard';
+export { ContentDistributionCard } from './components/status/ContentDistributionCard';
+export { ContentDistributionDialog } from './components/content-dist/ContentDistributionDialog';
 export { StatsDialog } from './components/status/StatsDialog';
 export { SettingsDrawer } from './components/playback-settings/SettingsDrawer';
 export type { SettingsSection } from './components/playback-settings/SettingsDrawer';
@@ -45,6 +47,10 @@ export {
     DiagnosticsSettings,
     DIAGNOSTICS_SETTINGS_SECTION_KEY,
 } from './components/playback-settings/sections/DiagnosticsSettings';
+export {
+    ContentSyncSettings,
+    CONTENT_SYNC_SETTINGS_SECTION_KEY,
+} from './components/playback-settings/sections/ContentSyncSettings';
 export {
     SoftwareUpdateSettings,
     canControlUpdates,

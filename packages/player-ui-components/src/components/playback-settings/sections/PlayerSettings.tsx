@@ -43,7 +43,6 @@ const PortField: React.FC<{
 export const PlayerSettings: React.FC = () => {
     const dispatch = useDispatch<AppDispatch>();
     const settings = useSelector((s: RootState) => s.playbackSettings.settings);
-    const multisync = settings.sync?.multisync;
 
     // App-global settings (start at sign-in) are pushed by the player like any
     // other state; null until the first snapshot arrives.
@@ -155,78 +154,6 @@ export const PlayerSettings: React.FC = () => {
                 Allowing a read mid-show keeps a controller that just came back up to date; it joins the show once the
                 read finishes.
             </Typography>
-
-            <Divider sx={{ my: 3 }} />
-            <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
-                Sync Output
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                Let other players follow this one. FPP and xSchedule remotes understand FPP MultiSync.
-            </Typography>
-            <FormControlLabel
-                control={
-                    <Switch
-                        checked={!!multisync?.enabled}
-                        onChange={(e) => dispatch(playbackSettingsActions.setMultisyncEnabled(e.target.checked))}
-                    />
-                }
-                label="FPP MultiSync master"
-            />
-            <FormControlLabel
-                control={
-                    <Switch
-                        checked={multisync?.mediaSync !== false}
-                        disabled={!multisync?.enabled}
-                        onChange={(e) => dispatch(playbackSettingsActions.setMultisyncMediaSync(e.target.checked))}
-                    />
-                }
-                label="Send audio sync too"
-            />
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
-                Media packets name the song's audio file and its playback position (with the audio sync adjust applied).
-                Remotes holding the same audio file will play it; turn off to keep them silent.
-            </Typography>
-            <TextField
-                size="small"
-                fullWidth
-                sx={{ mt: 1 }}
-                label="Remotes"
-                disabled={!multisync?.enabled}
-                value={(multisync?.remotes ?? []).join(', ')}
-                placeholder="host[:port], host[:port], …"
-                helperText="Comma-separated host[:port]. Empty sends to the FPP multicast group so all listening remotes follow."
-                InputLabelProps={{ shrink: true }}
-                onChange={(e) =>
-                    dispatch(
-                        playbackSettingsActions.setMultisyncRemotes(
-                            e.target.value
-                                .split(',')
-                                .map((r) => r.trim())
-                                .filter((r) => r.length > 0),
-                        ),
-                    )
-                }
-            />
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 2 }}>
-                <PortField
-                    label="MultiSync port"
-                    value={multisync?.port}
-                    placeholder="32320"
-                    disabled={!multisync?.enabled}
-                    onCommit={(v) => dispatch(playbackSettingsActions.setMultisyncPort(v))}
-                />
-                <TextField
-                    size="small"
-                    label="MultiSync multicast address"
-                    value={multisync?.multicastAddress ?? ''}
-                    placeholder="239.70.80.80"
-                    disabled={!multisync?.enabled}
-                    InputLabelProps={{ shrink: true }}
-                    onChange={(e) =>
-                        dispatch(playbackSettingsActions.setMultisyncMulticastAddress(e.target.value.trim()))
-                    }
-                />
-            </Box>
 
             <Divider sx={{ my: 3 }} />
             <Typography variant="subtitle2" sx={{ mb: 0.5 }}>

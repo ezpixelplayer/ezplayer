@@ -8,6 +8,7 @@
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import type {
+    ContentDistTrigger,
     ControllerCommand,
     ControllerModelIntent,
     ControllerOp,
@@ -21,6 +22,8 @@ import type {
     EzpControllerRecord,
     KnownController,
     NetworkPolicy,
+    PlaybackSettings,
+    SequenceRecord,
 } from '@ezplayer/ezplayer-core';
 import { applyOverrides, ipInCidr } from '@ezplayer/ezplayer-core';
 import type {
@@ -39,6 +42,16 @@ import type {
     VirtualMatrixConfig,
     VirtualMatrixInfo,
 } from '@ezplayer/epp-controllers';
+import { ContentSyncRun } from '@ezplayer/epp-controllers';
+import {
+    buildContentPlan,
+    contentAutoDecision,
+    contentStatusFor,
+    contentTargetsFor,
+    isContentTarget,
+    toContentDistReport,
+    toContentDistRun,
+} from './content-dist.js';
 import {
     discover,
     probeController,
@@ -196,6 +209,7 @@ function publish(): void {
         operations: { ...state.operations },
         known: [...(state.known ?? [])],
         networkPolicies: [...(state.networkPolicies ?? [])],
+        ...(state.contentDist ? { contentDist: { ...state.contentDist } } : {}),
     });
 }
 
@@ -437,9 +451,11 @@ function findActiveOp(kind: ControllerOp['kind'], target: string): ControllerOp 
 // ---------------------------------------------------------------------------
 
 type SlotKind = Exclude<ControllerOp['kind'], 'scan'>;
-const OP_CONCURRENCY: Record<SlotKind, number> = { status: 8, action: 8, upload: 6 };
-const slotsInUse: Record<SlotKind, number> = { status: 0, action: 0, upload: 0 };
-const slotWaiters: Record<SlotKind, (() => void)[]> = { status: [], action: [], upload: [] };
+// One distribution at a time: a run already covers every target it was given,
+// and two runs would race to write the same inventory playlist.
+const OP_CONCURRENCY: Record<SlotKind, number> = { status: 8, action: 8, upload: 6, distribute: 1 };
+const slotsInUse: Record<SlotKind, number> = { status: 0, action: 0, upload: 0, distribute: 0 };
+const slotWaiters: Record<SlotKind, (() => void)[]> = { status: [], action: [], upload: [], distribute: [] };
 
 /** A new op, `running` if a slot of its kind is free now, else `queued`. */
 function newOp(kind: SlotKind, target: string, label: string, origin: ControllerOpOrigin): ControllerOp {
@@ -538,6 +554,9 @@ export async function dispatchControllerCommand(
         case 'upload':
             await runUpload(command, origin);
             return undefined;
+        case 'distribute':
+            await runDistribute(command, origin);
+            return undefined;
         case 'record':
             await runRecord(command);
             return undefined;
@@ -608,6 +627,12 @@ export function hasRunningControllerOps(opts?: { ignoreAutomatic?: boolean }): b
 export function resetControllerOps(): void {
     resetGeneration++;
     for (const job of scanJobs.values()) job.cancel();
+    contentRun?.cancel();
+    // A new show means a new set of content; what the old one needed no
+    // longer means anything.
+    contentQueue.clear();
+    lastContentRunMs = undefined;
+    delete state.contentDist;
     state.devices = {};
     for (const [id, op] of Object.entries(state.operations)) {
         // A queued op never starts: it would act on state just cleared.
@@ -647,6 +672,11 @@ function runCancel(command: Extract<ControllerCommand, { cmd: 'cancel' }>): void
         return;
     }
     if (op.status !== 'running') return; // already finished — nothing to do
+    if (op.kind === 'distribute') {
+        if (!contentRun) throw new Error(`operation ${command.opId} is not cancelable`);
+        contentRun.cancel();
+        return;
+    }
     const job = scanJobs.get(command.opId);
     if (!job) throw new Error(`operation ${command.opId} (${op.kind}) is not cancelable`);
     job.cancel();
@@ -703,6 +733,7 @@ async function runStatus(
 
     let slot = false;
     let release: (() => void) | undefined;
+    let checkContentAfter = false;
     try {
         slot = await started;
         if (!slot) return;
@@ -756,6 +787,7 @@ async function runStatus(
         };
         op.status = 'done';
         op.finishedAt = nowIso();
+        checkContentAfter = true;
     } catch (err) {
         op.status = 'error';
         op.error = (err as Error).message;
@@ -766,6 +798,14 @@ async function runStatus(
         if (slot) releaseSlot('status');
         publish();
         retireOlderOps(op);
+        // What this device holds is part of its detail, but reading it is many
+        // small requests — so it runs after the data hold is released and
+        // outside the op, and a failure is not a failed read.
+        if (checkContentAfter) {
+            void refreshContentStatus(command.id).catch((e) =>
+                console.warn(`[controller-ops] content check for ${dev.ip} failed:`, (e as Error).message),
+            );
+        }
     }
 }
 
@@ -1089,6 +1129,232 @@ async function runUpload(
     } finally {
         release?.();
         if (slot) releaseSlot('upload');
+        publish();
+        retireOlderOps(op);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Content distribution — this show's sequences and media onto the devices that
+// hold their own copy. One run covers every target; see content-dist.ts for
+// target selection, the plan, and the mapping to the broadcast shapes.
+// ---------------------------------------------------------------------------
+
+/** What the player is currently showing, supplied by the owner of that state. */
+export interface ContentSourceInfo {
+    sequences: SequenceRecord[];
+    settings?: PlaybackSettings;
+    /** False while a show is playing; automatic runs wait for a stopped player. */
+    idle: boolean;
+}
+
+let contentSource: (() => ContentSourceInfo) | undefined;
+/** Injected by the show owner (ipcezplayer), which holds songs and settings. */
+export function setContentSource(fn: () => ContentSourceInfo): void {
+    contentSource = fn;
+}
+
+/** The run in flight, for cancel and for progress. */
+let contentRun: ContentSyncRun | undefined;
+/** Sequences waiting for the next automatic run, by fseq file name. */
+const contentQueue = new Set<string>();
+let lastContentRunMs: number | undefined;
+
+/** Progress is published on a timer: a chunk-by-chunk publish would broadcast
+ *  the whole controller state hundreds of times for one file. */
+const CONTENT_PUBLISH_MS = 400;
+
+function contentDistState(): NonNullable<ControllerOpsState['contentDist']> {
+    state.contentDist ??= {};
+    return state.contentDist;
+}
+
+function publishQueue(): void {
+    const cd = contentDistState();
+    if (contentQueue.size) cd.queued = [...contentQueue].sort();
+    else delete cd.queued;
+}
+
+/**
+ * Queue content for the next automatic run — a song the user just added, or one
+ * the cloud poller installed. Nothing is sent here: whether to act, and when,
+ * is `contentAutoDecision`'s call.
+ */
+export function queueContentForDistribution(fseqNames: string[]): void {
+    let added = false;
+    for (const name of fseqNames) {
+        if (!name) continue;
+        const base = path.basename(name);
+        if (!contentQueue.has(base)) {
+            contentQueue.add(base);
+            added = true;
+        }
+    }
+    if (!added) return;
+    publishQueue();
+    publish();
+}
+
+/**
+ * One tick of automatic distribution. Called on a timer by the show owner;
+ * does nothing unless the settings allow it, the player is idle, and there is
+ * either queued content or a poll due.
+ */
+export async function maybeDistributeAutomatically(): Promise<void> {
+    if (!contentSource) return;
+    if (state.contentDist?.run) return;
+    const info = contentSource();
+    const settings = info.settings?.contentDistribution;
+    const now = new Date();
+    const decision = contentAutoDecision(settings, now, {
+        queued: contentQueue.size,
+        lastRunMs: lastContentRunMs,
+        nowMs: now.getTime(),
+    });
+    if (!decision.act) {
+        const cd = contentDistState();
+        if (cd.autoHold !== decision.hold) {
+            cd.autoHold = decision.hold;
+            publish();
+        }
+        return;
+    }
+    // Sending a show competes with playing one for disk and network.
+    if (!info.idle) return;
+    const queued = [...contentQueue];
+    contentQueue.clear();
+    publishQueue();
+    try {
+        await runDistribute(
+            { cmd: 'distribute', ...(decision.trigger === 'songs' && queued.length ? { sequences: queued } : {}) },
+            'auto',
+            decision.trigger,
+        );
+    } catch (e) {
+        // The op carries its own failure; put the queue back so the next tick
+        // tries again rather than losing what was asked for.
+        for (const name of queued) contentQueue.add(name);
+        publishQueue();
+        console.warn('[controller-ops] automatic distribution failed:', (e as Error).message);
+    }
+}
+
+/**
+ * A content check costs two metadata reads per sequence, so a refresh only
+ * re-checks a device whose answer has gone stale. A "refresh all" right after
+ * a distribution therefore adds nothing.
+ */
+const CONTENT_CHECK_FRESH_MS = 10 * 60_000;
+
+/**
+ * Fill in one device's `contentStatus` after a deep read, so its row and
+ * detail show what it holds without waiting for a distribution. Quiet and
+ * best-effort: this is a detail of a status read, not the point of it, and it
+ * leaves the last run's report alone.
+ */
+async function refreshContentStatus(id: string): Promise<void> {
+    if (!contentSource) return;
+    if (state.contentDist?.run) return; // a run is already reading these
+    const dev = state.devices[id];
+    if (!dev || !isContentTarget(dev) || dev.unreachable) return;
+    const checkedAt = dev.contentStatus?.checkedAt;
+    if (checkedAt && Date.now() - Date.parse(checkedAt) < CONTENT_CHECK_FRESH_MS) return;
+
+    const { sequences, settings } = contentSource();
+    const { plan } = await buildContentPlan(sequences, settings);
+    if (!plan.sequences.length) return;
+    const targets = contentTargetsFor([dev], [dev.id]);
+    if (!targets.length) return;
+
+    // Check only: this reads the device's own file list and sends nothing.
+    const report = toContentDistReport(await new ContentSyncRun(plan, targets, { dryRun: true }).run(), {
+        checkOnly: true,
+        trigger: 'manual',
+    });
+    const target = report.targets[0];
+    const current = state.devices[id];
+    if (target && current) {
+        state.devices[id] = { ...current, contentStatus: contentStatusFor(target) };
+        publish();
+    }
+}
+
+/** Send show content to the chosen targets, or work out what is missing. */
+async function runDistribute(
+    command: Extract<ControllerCommand, { cmd: 'distribute' }>,
+    origin: ControllerOpOrigin,
+    trigger: ContentDistTrigger = 'manual',
+): Promise<void> {
+    if (!contentSource) throw new Error('no show is open to distribute');
+    if (state.contentDist?.run) return; // one at a time; the running op is the answer
+    const checkOnly = !!command.checkOnly;
+    const { sequences, settings } = contentSource();
+
+    const targets = contentTargetsFor(Object.values(state.devices), command.ids);
+    if (!targets.length) {
+        throw new Error('no FPP targets known — scan for controllers first');
+    }
+    const { plan, skipped } = await buildContentPlan(sequences, settings, command.sequences);
+    if (!plan.sequences.length) {
+        throw new Error(
+            command.sequences?.length ? 'none of those sequences have a file on disk' : 'this show has no sequences',
+        );
+    }
+    for (const s of skipped) console.warn(`[controller-ops] not distributing ${s.name}: ${s.reason}`);
+
+    const label = `${checkOnly ? 'Check' : 'Distribute'} ${plan.sequences.length} sequence${
+        plan.sequences.length === 1 ? '' : 's'
+    } to ${targets.length} device${targets.length === 1 ? '' : 's'}`;
+    const op = newOp('distribute', `distribute:${targets.map((t) => t.id).join(',')}`, label, origin);
+    state.operations[op.id] = op;
+    const started = waitForSlot(op);
+    publish();
+
+    let slot = false;
+    let timer: NodeJS.Timeout | undefined;
+    try {
+        slot = await started;
+        if (!slot) return;
+
+        const run = new ContentSyncRun(plan, targets, { dryRun: checkOnly });
+        contentRun = run;
+        const pushProgress = () => {
+            contentDistState().run = toContentDistRun(run.snapshot, { opId: op.id, checkOnly, trigger });
+            publish();
+        };
+        pushProgress();
+        timer = setInterval(pushProgress, CONTENT_PUBLISH_MS);
+
+        const report = await run.run();
+        lastContentRunMs = Date.now();
+
+        const cd = contentDistState();
+        delete cd.run;
+        cd.lastReport = toContentDistReport(report, { checkOnly, trigger });
+        delete cd.autoHold;
+
+        // Each device's row learns what it now holds.
+        for (const target of cd.lastReport.targets) {
+            const dev = state.devices[target.id];
+            if (dev) state.devices[target.id] = { ...dev, contentStatus: contentStatusFor(target) };
+        }
+
+        op.status = report.cancelled ? 'cancelled' : 'done';
+        op.finishedAt = nowIso();
+        if (report.totals.targetsFailed > 0) {
+            op.status = 'error';
+            op.error = `${report.totals.targetsFailed} of ${report.totals.targets} device(s) failed`;
+        }
+    } catch (err) {
+        delete contentDistState().run;
+        op.status = 'error';
+        op.error = (err as Error).message;
+        op.finishedAt = nowIso();
+        throw err;
+    } finally {
+        if (timer) clearInterval(timer);
+        contentRun = undefined;
+        if (slot) releaseSlot('distribute');
         publish();
         retireOlderOps(op);
     }

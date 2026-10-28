@@ -1,4 +1,9 @@
-import type { ControllerRefreshMode, ViewerControlBackend, ViewerControlScheduleList } from '@ezplayer/ezplayer-core';
+import type {
+    CloudPollScheduleEntry,
+    ControllerRefreshMode,
+    ViewerControlBackend,
+    ViewerControlScheduleList,
+} from '@ezplayer/ezplayer-core';
 import { controllerRefreshSettingsFor } from '@ezplayer/ezplayer-core';
 import { createAsyncThunk, createSlice, PayloadAction } from '@reduxjs/toolkit';
 import {
@@ -272,6 +277,24 @@ const playbackSettingsSlice = createSlice({
             (sync.multisync ??= { enabled: false, remotes: [] }).mediaSync = action.payload;
         },
 
+        // Content distribution — whether and when the player sends this show's
+        // sequences and media to the devices that hold their own copy.
+        setContentDistributionMode(state, action: PayloadAction<'off' | 'scheduled' | 'always'>) {
+            (state.settings.contentDistribution ??= {}).mode = action.payload;
+        },
+        setContentDistributionSchedule(state, action: PayloadAction<CloudPollScheduleEntry[]>) {
+            (state.settings.contentDistribution ??= {}).schedule = action.payload;
+        },
+        setContentDistributionPollMinutes(state, action: PayloadAction<number | undefined>) {
+            (state.settings.contentDistribution ??= {}).pollMinutes = action.payload;
+        },
+        setContentDistributionFollowSongAdds(state, action: PayloadAction<boolean>) {
+            (state.settings.contentDistribution ??= {}).followSongAdds = action.payload;
+        },
+        setContentDistributionPlaylistName(state, action: PayloadAction<string | undefined>) {
+            (state.settings.contentDistribution ??= {}).playlistName = action.payload;
+        },
+
         // Advanced diagnostic overrides
         setAdvancedDdpPort(state, action: PayloadAction<number | undefined>) {
             (state.settings.advanced ??= {}).ddpPort = action.payload;
@@ -388,6 +411,11 @@ export const {
     setMultisyncPort,
     setMultisyncMulticastAddress,
     setMultisyncMediaSync,
+    setContentDistributionMode,
+    setContentDistributionSchedule,
+    setContentDistributionPollMinutes,
+    setContentDistributionFollowSongAdds,
+    setContentDistributionPlaylistName,
     setAdvancedDdpPort,
     setMediaFolder,
     setDefaultVolume,

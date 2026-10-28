@@ -125,6 +125,9 @@ import {
     resetControllerOps,
     hasRunningControllerOps,
     setKnownControllers,
+    setContentSource,
+    queueContentForDistribution,
+    maybeDistributeAutomatically,
 } from './controller-ops.js';
 import type { ControllerCommand, PlayerNStatusContent } from '@ezplayer/ezplayer-core';
 import {
@@ -194,6 +197,20 @@ function holdControllerData(address: string): (() => void) | undefined {
     };
 }
 setControllerDataHold(holdControllerData);
+
+// Content distribution needs the show's songs, the distribution policy, and
+// whether a show is playing; this module owns all three.
+setContentSource(() => ({
+    sequences: curSequences,
+    settings: getSettingsCache() ?? undefined,
+    // Only an explicit Stopped counts as idle, as for automatic reads.
+    idle: curStatus.player?.status === 'Stopped',
+}));
+
+/** How often automatic distribution looks for something to do. The decision
+ *  itself (mode, window, poll cadence) is made inside controller-ops. */
+const CONTENT_AUTO_TICK_MS = 60_000;
+setInterval(() => void maybeDistributeAutomatically(), CONTENT_AUTO_TICK_MS).unref();
 
 /** Last connectivity seen per controller address, to spot when it turns Up. */
 const lastConnectivity = new Map<string, string>();
@@ -610,6 +627,14 @@ function commitSequenceUpdates(uppl: SequenceRecord[]): Promise<SequenceRecord[]
 }
 async function commitSequenceUpdatesInner(uppl: SequenceRecord[]): Promise<SequenceRecord[]> {
     const showFolder = getCurrentShowFolder();
+    // Content that is new to the show, or re-rendered to a new file, is content
+    // the devices do not have yet. A re-render lands at a new versioned path,
+    // so comparing the fseq path catches both.
+    const wasFseq = new Map((curSequences ?? []).map((r) => [r.id, r.files?.fseq]));
+    const newlyRendered = uppl
+        .filter((r) => !r.deleted && r.files?.fseq && wasFseq.get(r.id) !== r.files.fseq)
+        .map((r) => r.files!.fseq!);
+
     const updList = mergeSequences(uppl, curSequences ?? []);
     if (showFolder) {
         await saveSequencesAPI(showFolder, updList);
@@ -620,6 +645,7 @@ async function commitSequenceUpdatesInner(uppl: SequenceRecord[]): Promise<Seque
     broadcastToWebSocket('sequences', filtered);
     scheduleUpdated();
     updateCloudWorkerSequences(curSequences);
+    if (newlyRendered.length) queueContentForDistribution(newlyRendered);
     return filtered;
 }
 

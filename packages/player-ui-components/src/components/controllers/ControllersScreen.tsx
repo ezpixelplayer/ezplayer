@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import {
     Box as MuiBox,
@@ -48,6 +48,9 @@ import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
 import FiberManualRecordOutlinedIcon from '@mui/icons-material/FiberManualRecordOutlined';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
+import UploadFileIcon from '@mui/icons-material/UploadFile';
+import SendIcon from '@mui/icons-material/Send';
+import ListAltIcon from '@mui/icons-material/ListAlt';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import PublishIcon from '@mui/icons-material/Publish';
@@ -76,7 +79,10 @@ import {
     findOffNetworkControllers,
     effectiveMaxFps,
     isPlaybackActive,
+    needsContentDelivery,
 } from '@ezplayer/ezplayer-core';
+import { ContentDistributionDialog } from '../content-dist/ContentDistributionDialog';
+import { contentStatusLines, contentTargets } from '../content-dist/contentDistHelpers';
 import type {
     ControllerCommand,
     ControllerDetailNode,
@@ -647,6 +653,7 @@ const GridRow: React.FC<{
     onDismiss: (opId: string) => void;
     serverBase: string | undefined;
     onStatus: (id: string, address?: string) => void;
+    onDistribute: (id: string, checkOnly: boolean) => void;
     onAction: (id: string, action: ControllerDeviceAction) => void;
     onUpload: (id: string, fullControl: boolean) => void;
     onActivate: (name: string, active: boolean) => void;
@@ -661,6 +668,7 @@ const GridRow: React.FC<{
     onDismiss,
     serverBase,
     onStatus,
+    onDistribute,
     onAction,
     onUpload,
     onActivate,
@@ -745,6 +753,27 @@ const GridRow: React.FC<{
             onClick: () => onStatus(statusId, d ? undefined : row.address),
             disabled: busy,
         });
+    // Devices that keep their own copy of the show can be sent it.
+    const holdsContent = d?.driverType === 'FPP' && !d.unreachable;
+    if (holdsContent && d) {
+        const behind = needsContentDelivery(d.contentStatus);
+        actions.push({
+            key: 'distribute',
+            label: behind ? 'Send content' : 'Distribute content',
+            icon: <SendIcon fontSize="small" />,
+            onClick: () => onDistribute(d.id, false),
+            disabled: busy,
+            title: 'Send this show’s sequences and their audio to this device',
+        });
+        actions.push({
+            key: 'content-check',
+            label: 'Check content',
+            icon: <UploadFileIcon fontSize="small" />,
+            onClick: () => onDistribute(d.id, true),
+            disabled: busy,
+            title: 'Read this device’s own file list and report what a send would transfer',
+        });
+    }
     if (url)
         actions.push({
             key: 'open',
@@ -931,6 +960,18 @@ const GridRow: React.FC<{
                                 <HelpOutlineIcon color="info" fontSize="small" />
                             </MuiBox>
                         )
+                    )}
+                    {/* Content is a separate axis from configuration drift: a device
+                        can be configured correctly and still be missing the show,
+                        so this badge stands outside the status slot above. */}
+                    {needsContentDelivery(d?.contentStatus) && (
+                        <MuiBox
+                            component="span"
+                            title={`Content delivery needed — ${contentStatusLines(d!.contentStatus!).join(', ')}`}
+                            sx={{ display: 'inline-flex', ml: 0.25, verticalAlign: 'middle' }}
+                        >
+                            <UploadFileIcon color="warning" fontSize="small" />
+                        </MuiBox>
                     )}
                 </TableCell>
                 {/* Enabled / disabled / xLights-only, in its own column so the pill can
@@ -1162,6 +1203,41 @@ const GridRow: React.FC<{
                                                 ? inputRec.actualSummary
                                                 : inputRec.intentSummary}
                                         </Typography>
+                                    </Stack>
+                                )}
+                                {d?.contentStatus && (
+                                    <Stack
+                                        direction="row"
+                                        spacing={1}
+                                        alignItems="center"
+                                        sx={{ mb: hasDetail ? 2 : 0, flexWrap: 'wrap' }}
+                                    >
+                                        <Typography variant="subtitle2">Content</Typography>
+                                        {needsContentDelivery(d.contentStatus) ? (
+                                            <SyncProblemIcon
+                                                color="warning"
+                                                fontSize="small"
+                                                titleAccess="this device does not hold the show as it is now"
+                                            />
+                                        ) : (
+                                            <CheckCircleOutlineIcon
+                                                color="success"
+                                                fontSize="small"
+                                                titleAccess="this device holds the show"
+                                            />
+                                        )}
+                                        <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                                            {contentStatusLines(d.contentStatus).join(' · ')} ·{' '}
+                                            {new Date(d.contentStatus.checkedAt).toLocaleString()}
+                                        </Typography>
+                                        <Button
+                                            size="small"
+                                            startIcon={<SendIcon />}
+                                            onClick={() => onDistribute(d.id, false)}
+                                            disabled={busy}
+                                        >
+                                            Send
+                                        </Button>
                                     </Stack>
                                 )}
                                 {hasDetail && <DetailSections nodes={d!.detail!} />}
@@ -1457,7 +1533,17 @@ interface ControllersScreenProps {
 
 export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, statusArea }) => {
     const dispatch = useDispatch<AppDispatch>();
-    const { interfaces, devices, operations, known, networkPolicies } = useSelector((s: RootState) => s.controllerOps);
+    const { interfaces, devices, operations, known, networkPolicies, contentDist } = useSelector(
+        (s: RootState) => s.controllerOps,
+    );
+    const [contentDialogOpen, setContentDialogOpen] = useState(false);
+    // Devices that hold their own copy of the show, and how many are behind it.
+    const contentTargetCount = useMemo(() => contentTargets(devices).length, [devices]);
+    const contentBehindCount = useMemo(
+        () => contentTargets(devices).filter((d) => needsContentDelivery(d.contentStatus)).length,
+        [devices],
+    );
+    const contentRun = contentDist?.run;
     // Live per-controller health, overlaid onto the grid rows.
     const statusesRaw = useSelector((s: RootState) => s.runtime?.combined?.controller?.controllers);
     // Base URL for the player's /proxy bridge (see controllerUrl).
@@ -1609,6 +1695,15 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
     const busyTargets = new Set(running.map((o) => o.target));
     const loadDetail = (id: string, address?: string) =>
         dispatch(issueControllerCommand({ cmd: 'status', id, address, depth: 'full' }));
+    /** Send (or price) this show's content, to one device or to all of them. */
+    const distribute = (ids: string[] | undefined, checkOnly: boolean) =>
+        dispatch(
+            issueControllerCommand({
+                cmd: 'distribute',
+                ...(ids?.length ? { ids } : {}),
+                ...(checkOnly ? { checkOnly: true } : {}),
+            }),
+        );
     const runDeviceAction = (id: string, a: ControllerDeviceAction) => {
         const blurb = a.description ? ` ${a.description}.` : '';
         if (!a.dangerous || window.confirm(`${a.label} now?${blurb}`)) {
@@ -1887,6 +1982,28 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
                         >
                             {bulkBusy === 'reboot' ? 'Rebooting…' : `Reboot all (${rebootAllRows.length})`}
                         </Button>
+                        {contentTargetCount > 0 && (
+                            <>
+                                <Button
+                                    size="small"
+                                    startIcon={<SendIcon />}
+                                    onClick={() => distribute(undefined, false)}
+                                    disabled={!!contentRun}
+                                    title="Send this show’s sequences and their audio to every device that holds its own copy"
+                                >
+                                    {contentRun ? 'Distributing…' : `Distribute content (${contentTargetCount})`}
+                                </Button>
+                                <Button
+                                    size="small"
+                                    startIcon={<ListAltIcon />}
+                                    onClick={() => setContentDialogOpen(true)}
+                                    title="What each device holds, and what the last run did"
+                                >
+                                    Content status
+                                    {contentBehindCount > 0 ? ` (${contentBehindCount} behind)` : ''}
+                                </Button>
+                            </>
+                        )}
                     </Box>
                     {rows.length === 0 ? (
                         <Typography variant="body2" sx={{ color: 'text.secondary' }}>
@@ -1938,6 +2055,7 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
                                             onDismiss={dismissError}
                                             serverBase={serverBase}
                                             onStatus={loadDetail}
+                                            onDistribute={(id, checkOnly) => distribute([id], checkOnly)}
                                             onAction={runDeviceAction}
                                             onUpload={upload}
                                             onActivate={setActive}
@@ -1951,6 +2069,8 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
                         </Box>
                     )}
                 </Card>
+
+                <ContentDistributionDialog open={contentDialogOpen} onClose={() => setContentDialogOpen(false)} />
 
                 {/* Networks + scan — below the grid: finding controllers is the
                      occasional task, reading the grid is the frequent one. */}
