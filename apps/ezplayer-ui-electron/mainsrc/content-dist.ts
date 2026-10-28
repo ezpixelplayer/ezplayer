@@ -501,13 +501,19 @@ export function contentStatusFor(target: ContentDistTargetReport): ControllerCon
                 break;
         }
     }
+    // Nothing was attempted (too old, unreachable, passed over), or everything
+    // attempted failed: either way it is the device that is the problem, not
+    // one file, so the row says why.
+    const firstFailure = target.items.find((i) => i.action === 'failed')?.reason;
+    const error = target.note ?? (current === 0 && failed > 0 ? firstFailure : undefined);
+
     return {
         checkedAt: target.finishedAt,
         current,
         missing,
         missingBytes,
         failed,
-        ...(target.note ? { error: target.note } : {}),
+        ...(error ? { error } : {}),
         ...(target.uploadMethod ? { uploadMethod: target.uploadMethod } : {}),
     };
 }

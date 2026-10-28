@@ -25,6 +25,7 @@ const COMMAND_VERBS = [
     'status',
     'action',
     'upload',
+    'distribute',
     'record',
     'network',
     'refreshInterfaces',
@@ -67,6 +68,14 @@ function validateCommand(body: unknown): { command?: ControllerCommand; error?: 
         o[field] && typeof o[field] === 'object' && !Array.isArray(o[field])
             ? undefined
             : `'${cmd}' needs an object '${field}'`;
+    /** Optional string array: absent is fine, present must be all strings. */
+    const optStrings = (field: string): string | undefined => {
+        const v = o[field];
+        if (v === undefined) return undefined;
+        return Array.isArray(v) && v.every((e) => typeof e === 'string' && e !== '')
+            ? undefined
+            : `'${cmd}' needs '${field}' to be an array of non-empty strings`;
+    };
     let error: string | undefined;
     switch (cmd) {
         case 'scan':
@@ -84,6 +93,14 @@ function validateCommand(body: unknown): { command?: ControllerCommand; error?: 
             error = needString('id');
             if (!error && !(UPLOAD_SCOPES as readonly string[]).includes(o.scope as string)) {
                 error = `'upload' needs scope (${UPLOAD_SCOPES.join(' | ')})`;
+            }
+            break;
+        case 'distribute':
+            // Everything is optional: no ids means every target that holds
+            // content, no sequences means the whole show.
+            error = optStrings('ids') ?? optStrings('sequences');
+            if (!error && o.checkOnly !== undefined && typeof o.checkOnly !== 'boolean') {
+                error = `'distribute' needs 'checkOnly' to be a boolean`;
             }
             break;
         case 'record':

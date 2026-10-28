@@ -1840,7 +1840,7 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
     return (
         <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
             <Box sx={{ flexShrink: 0, padding: 2, paddingBottom: 0 }}>
-                <PageHeader heading={`${title} (alpha)`} children={statusArea} />
+                <PageHeader heading={title} children={statusArea} />
             </Box>
             {/* Gap lives inside the scroll box so the first card's top edge isn't clipped. */}
             <Box sx={{ padding: 2, overflowY: 'auto', flexGrow: 1 }}>
