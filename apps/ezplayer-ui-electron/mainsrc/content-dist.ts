@@ -10,6 +10,7 @@
  * distribution queues, cancels, and reports like a scan or an upload.
  */
 
+import * as os from 'os';
 import * as path from 'path';
 import * as fsp from 'fs/promises';
 import type {
@@ -24,6 +25,7 @@ import type {
     ControllerContentStatus,
     ContentUploadMethod,
     DiscoveredController,
+    KnownController,
     PlaybackSettings,
     SequenceRecord,
 } from '@ezplayer/ezplayer-core';
@@ -36,13 +38,18 @@ import type {
     ContentSyncSnapshot,
     ContentSyncTargetReport,
     ContentSyncTargetSpec,
+    FseqIdentity,
+    ResolvedSequence,
 } from '@ezplayer/epp-controllers';
 import {
+    FSEQ_COMPRESSION,
     blobFromFile,
     createFppContentEndpoint,
     hostSpecificMediaCandidates,
     readFseqIdentityFromFile,
 } from '@ezplayer/epp-controllers';
+import type { FSEQHeader, FseqRange } from '@ezplayer/epp';
+import { FSEQReaderSync, parseChannelRanges, planFseqSlice, sliceFseqFile } from '@ezplayer/epp';
 
 /** Inventory playlist name when the setting does not say. */
 export const DEFAULT_CONTENT_PLAYLIST = 'EZPlayer Content';
@@ -121,6 +128,89 @@ export function contentTargetsFor(devices: DiscoveredController[], ids?: string[
 }
 
 // ---------------------------------------------------------------------------
+// Slicing — a remote only needs its own channels
+// ---------------------------------------------------------------------------
+
+/** The channels one target drives, and where we learned them. */
+export interface ContentSlicing {
+    ranges: FseqRange[];
+    source: 'device' | 'xlights';
+}
+
+/**
+ * Whether this device should get a cut-down copy of each sequence, and of
+ * what. Only an FPP running as a remote is sliced for: a player drives the
+ * show and needs it whole. This is the rule xLights follows too.
+ *
+ * The device's own `channelRanges` is preferred over the xLights layout, since
+ * it is the device describing what it actually drives; the layout is the
+ * fallback for a build too old to report it.
+ */
+export function slicingFor(dev: DiscoveredController, known: KnownController[] = []): ContentSlicing | null {
+    if (!isContentTarget(dev)) return null;
+    if ((dev.mode ?? '').toLowerCase() !== 'remote') return null;
+
+    const reported = parseChannelRanges(dev.channelRanges);
+    if (reported.length) return { ranges: reported, source: 'device' };
+
+    const host = dev.hostname?.toLowerCase();
+    const record = known.find(
+        (k) => !!k.address && (k.address === dev.ip || (!!host && k.address.toLowerCase() === host)),
+    );
+    if (record?.startChannel && record.channelCount) {
+        // xLights counts channels from 1; a sequence's ranges count from 0.
+        return {
+            ranges: [{ startch: record.startChannel - 1, chcount: record.channelCount }],
+            source: 'xlights',
+        };
+    }
+    return null;
+}
+
+/** A place for the slices of one run, removed when the run is done. */
+export interface SliceWorkspace {
+    dir: string;
+    dispose(): Promise<void>;
+}
+
+export async function createSliceWorkspace(): Promise<SliceWorkspace> {
+    const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'ezplayer-slice-'));
+    return {
+        dir,
+        async dispose() {
+            await fsp.rm(dir, { recursive: true, force: true });
+        },
+    };
+}
+
+/** A file name that cannot collide between targets or sequences. */
+function sliceName(targetId: string, sequenceName: string): string {
+    return `${targetId.replace(/[^A-Za-z0-9._-]/g, '_')}__${sequenceName}`;
+}
+
+/** The identity a slice will have, built from the plan rather than the file. */
+function slicedIdentity(source: FseqIdentity, plan: NonNullable<ReturnType<typeof planFseqSlice>>): FseqIdentity {
+    const ranges = plan.ranges.map((r) => ({ start: r.startch, length: r.chcount }));
+    let maxChannel = plan.stride;
+    for (const r of ranges) maxChannel = Math.max(maxChannel, r.start + r.length);
+    return {
+        magic: source.magic,
+        versionMajor: 2,
+        versionMinor: 2,
+        channelCount: plan.stride,
+        maxChannel,
+        numFrames: plan.numFrames,
+        stepTimeMs: plan.stepTimeMs,
+        // The writer compresses with zstd, which is what FPP will report back.
+        compressionType: FSEQ_COMPRESSION.zstd,
+        uniqueId: plan.uniqueId.toString(),
+        ranges,
+        extendedRanges: false,
+        ...(plan.mediaName ? { mediaName: plan.mediaName } : {}),
+    };
+}
+
+// ---------------------------------------------------------------------------
 // The plan — what this show consists of
 // ---------------------------------------------------------------------------
 
@@ -161,6 +251,15 @@ export interface ContentPlanResult {
     skipped: { name: string; reason: string }[];
 }
 
+export interface ContentPlanOptions {
+    /** Only these fseq file names (what the automatic queue holds). */
+    only?: string[];
+    /** Per-target channels, keyed by device id; targets absent get the show whole. */
+    slicing?: Map<string, ContentSlicing>;
+    /** Where slices are written. Required for slicing to happen at all. */
+    workspace?: SliceWorkspace;
+}
+
 /**
  * Turn the registered songs into a transfer plan. `only` limits it to those
  * fseq file names (what the automatic queue holds).
@@ -171,15 +270,17 @@ export interface ContentPlanResult {
 export async function buildContentPlan(
     sequences: SequenceRecord[],
     settings: PlaybackSettings | undefined,
-    only?: string[],
+    opts: ContentPlanOptions = {},
 ): Promise<ContentPlanResult> {
-    const wanted = only?.length ? new Set(only.map((n) => n.toLowerCase())) : undefined;
+    const wanted = opts.only?.length ? new Set(opts.only.map((n) => n.toLowerCase())) : undefined;
     const out: ContentSequenceSource[] = [];
     const skipped: { name: string; reason: string }[] = [];
     const seen = new Set<string>();
     // Where each sequence's media was read from, so a per-host variant can be
     // looked for beside it. A blob carries bytes, not a path.
     const mediaDirs = new Map<string, string>();
+    /** The show's own file for each sequence, which slicing reads. */
+    const sourceFiles = new Map<string, string>();
 
     for (const record of sequences) {
         if (record.deleted || record.render_enabled === false) continue;
@@ -206,6 +307,7 @@ export async function buildContentPlan(
         }
         const found = await mediaFor(record, identity.mediaName);
         if (found) mediaDirs.set(name, found.localDir);
+        sourceFiles.set(name, file);
         out.push({
             name,
             identity,
@@ -217,6 +319,26 @@ export async function buildContentPlan(
 
     out.sort((a, b) => a.name.localeCompare(b.name));
     const playlistName = settings?.contentDistribution?.playlistName ?? DEFAULT_CONTENT_PLAYLIST;
+
+    // One header read per source file, however many targets ask about it.
+    const headers = new Map<string, FSEQHeader | null>();
+    const headerFor = async (file: string): Promise<FSEQHeader | null> => {
+        const held = headers.get(file);
+        if (held !== undefined) return held;
+        const reader = new FSEQReaderSync(file);
+        let header: FSEQHeader | null = null;
+        try {
+            await reader.open();
+            await reader.readHeader();
+            header = reader.header ?? null;
+        } catch (e) {
+            console.warn(`[content-dist] cannot read ${path.basename(file)} for slicing:`, (e as Error).message);
+        } finally {
+            await reader.close().catch(() => undefined);
+        }
+        headers.set(file, header);
+        return header;
+    };
 
     const plan: ContentPlan = {
         sequences: out,
@@ -233,6 +355,39 @@ export async function buildContentPlan(
                 if (size !== null) return { name: candidate, size, blob: blobFromFile(file, size) };
             }
             return undefined;
+        },
+        // A remote gets only its own channels. The identity is worked out from
+        // the plan, so a device that already holds the right slice costs one
+        // header read and no slicing at all.
+        async resolveSequence(sequence, target): Promise<ResolvedSequence | undefined> {
+            const slicing = opts.slicing?.get(target.id);
+            const workspace = opts.workspace;
+            if (!slicing?.ranges.length || !workspace) return undefined;
+            const file = sourceFiles.get(sequence.name);
+            if (!file) return undefined;
+            const header = await headerFor(file);
+            if (!header) return undefined;
+
+            const slice = planFseqSlice(header, slicing.ranges);
+            // Nothing to cut, or it cannot be cut safely: send the show's file.
+            if (!slice || slice.stride >= sequence.identity.channelCount) return undefined;
+
+            const note =
+                `sliced to ${slice.stride.toLocaleString()} of ` +
+                `${sequence.identity.channelCount.toLocaleString()} channels` +
+                (slicing.source === 'xlights' ? ', from the xLights layout' : '') +
+                (slice.droppedChannels > 0 ? `, ${slice.droppedChannels.toLocaleString()} not in the show` : '');
+
+            return {
+                identity: slicedIdentity(sequence.identity, slice),
+                note,
+                async open() {
+                    const dest = path.join(workspace.dir, sliceName(target.id, sequence.name));
+                    const written = await sliceFseqFile(file, dest, slicing.ranges);
+                    if (!written) throw new Error(`could not slice ${sequence.name} for ${target.label}`);
+                    return { blob: blobFromFile(dest, written.bytes), size: written.bytes };
+                },
+            };
         },
     };
     return { plan, skipped };

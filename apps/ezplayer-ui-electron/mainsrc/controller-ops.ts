@@ -43,12 +43,15 @@ import type {
     VirtualMatrixInfo,
 } from '@ezplayer/epp-controllers';
 import { ContentSyncRun } from '@ezplayer/epp-controllers';
+import type { ContentSlicing, SliceWorkspace } from './content-dist.js';
 import {
     buildContentPlan,
     contentAutoDecision,
     contentStatusFor,
     contentTargetsFor,
+    createSliceWorkspace,
     isContentTarget,
+    slicingFor,
     toContentDistReport,
     toContentDistRun,
 } from './content-dist.js';
@@ -781,6 +784,8 @@ async function runStatus(
             virtualMatrices: probe.report.virtualMatrices?.map(toControllerVirtualMatrix),
             inputs: probe.report.inputs,
             actions: probe.driver?.getActions(),
+            mode: probe.report.mode ?? dev.mode,
+            channelRanges: probe.report.channelRanges ?? dev.channelRanges,
             error: undefined,
             unreachable: false,
             seenAt: nowIso(),
@@ -1261,7 +1266,13 @@ async function refreshContentStatus(id: string): Promise<void> {
     if (checkedAt && Date.now() - Date.parse(checkedAt) < CONTENT_CHECK_FRESH_MS) return;
 
     const { sequences, settings } = contentSource();
-    const { plan } = await buildContentPlan(sequences, settings);
+    const cut = slicingFor(dev, state.known ?? []);
+    const { plan } = await buildContentPlan(sequences, settings, {
+        ...(cut ? { slicing: new Map([[dev.id, cut]]) } : {}),
+        // A check never writes a slice, but the plan needs somewhere to say
+        // they would go; the identity alone decides what is missing.
+        ...(cut ? { workspace: { dir: '', dispose: async () => undefined } } : {}),
+    });
     if (!plan.sequences.length) return;
     const targets = contentTargetsFor([dev], [dev.id]);
     if (!targets.length) return;
@@ -1294,8 +1305,24 @@ async function runDistribute(
     if (!targets.length) {
         throw new Error('no FPP targets known — scan for controllers first');
     }
-    const { plan, skipped } = await buildContentPlan(sequences, settings, command.sequences);
+
+    // An FPP running as a remote only drives its own channels, so it is sent a
+    // slice rather than the whole show.
+    const slicing = new Map<string, ContentSlicing>();
+    for (const target of targets) {
+        const dev = state.devices[target.id];
+        const cut = dev ? slicingFor(dev, state.known ?? []) : null;
+        if (cut) slicing.set(target.id, cut);
+    }
+    const workspace: SliceWorkspace | undefined = slicing.size ? await createSliceWorkspace() : undefined;
+
+    const { plan, skipped } = await buildContentPlan(sequences, settings, {
+        ...(command.sequences ? { only: command.sequences } : {}),
+        ...(slicing.size ? { slicing } : {}),
+        ...(workspace ? { workspace } : {}),
+    });
     if (!plan.sequences.length) {
+        await workspace?.dispose();
         throw new Error(
             command.sequences?.length ? 'none of those sequences have a file on disk' : 'this show has no sequences',
         );
@@ -1354,6 +1381,9 @@ async function runDistribute(
     } finally {
         if (timer) clearInterval(timer);
         contentRun = undefined;
+        // Slices are derived files; they are read during the upload and are of
+        // no use once it is done.
+        await workspace?.dispose().catch(() => undefined);
         if (slot) releaseSlot('distribute');
         publish();
         retireOlderOps(op);

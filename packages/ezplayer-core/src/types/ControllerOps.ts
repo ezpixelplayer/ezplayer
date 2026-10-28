@@ -58,6 +58,14 @@ export interface DiscoveredController {
     inputs?: ControllerInputInfo;
     /** Actions the driver enumerated (filled on status deep-reads). */
     actions?: ControllerDeviceAction[];
+    /** Device role, e.g. an FPP's player / remote / bridge (full depth). */
+    mode?: string;
+    /**
+     * Channels this device outputs, as it reports them ("0-509,1024-2047",
+     * 0-based with inclusive ends).  What a sequence is cut down to when the
+     * device only needs its own part of the show.
+     */
+    channelRanges?: string;
     /** What show content this device holds, from the last distribution or check. */
     contentStatus?: ControllerContentStatus;
     error?: string;

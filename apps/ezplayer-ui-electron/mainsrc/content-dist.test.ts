@@ -12,16 +12,21 @@ import type {
     CloudPollScheduleEntry,
     ContentDistTargetReport,
     DiscoveredController,
+    KnownController,
     SequenceRecord,
 } from '@ezplayer/ezplayer-core';
-import type { ContentSyncReport, ContentSyncSnapshot } from '@ezplayer/epp-controllers';
+import type { ContentSyncReport, ContentSyncSnapshot, ContentSyncTargetSpec } from '@ezplayer/epp-controllers';
+import { readFseqIdentity } from '@ezplayer/epp-controllers';
+import { FseqV2Writer } from '@ezplayer/epp';
 import {
     buildContentPlan,
     contentAutoDecision,
     contentStatusFor,
     contentTargetsFor,
+    createSliceWorkspace,
     DEFAULT_CONTENT_PLAYLIST,
     isContentTarget,
+    slicingFor,
     toContentDistReport,
     toContentDistRun,
 } from './content-dist.js';
@@ -165,7 +170,7 @@ describe('the plan', () => {
         const { plan } = await buildContentPlan(
             [record({ id: 'a', files: { fseq: one } }), record({ id: 'b', files: { fseq: two } })],
             undefined,
-            ['Two.fseq'],
+            { only: ['Two.fseq'] },
         );
         expect(plan.sequences.map((s) => s.name)).toEqual(['Two.fseq']);
     });
@@ -366,5 +371,144 @@ describe('when automatic distribution acts', () => {
         expect(
             contentAutoDecision({ mode: 'always', pollMinutes: 0 }, now, { queued: 0, lastRunMs: undefined, nowMs }),
         ).toEqual({ act: false, hold: 'idle' });
+    });
+});
+
+describe('slicing for a remote', () => {
+    const remote = (over: Partial<DiscoveredController> = {}) =>
+        device({ ip: '10.0.0.5', driverType: 'FPP', mode: 'remote', ...over });
+
+    const layout = (over: Partial<KnownController> & { name: string }): KnownController => ({
+        source: 'xlights',
+        ...over,
+    });
+
+    it('takes the ranges the device reports, in preference to the layout', () => {
+        const known = [layout({ name: 'Far Side', address: '10.0.0.5', startChannel: 1, channelCount: 9999 })];
+        expect(slicingFor(remote({ channelRanges: '0-509,1024-2047' }), known)).toEqual({
+            source: 'device',
+            ranges: [
+                { startch: 0, chcount: 510 },
+                { startch: 1024, chcount: 1024 },
+            ],
+        });
+    });
+
+    it('falls back to the xLights span, counting from zero', () => {
+        const known = [layout({ name: 'Far Side', address: '10.0.0.5', startChannel: 2049, channelCount: 1024 })];
+        expect(slicingFor(remote(), known)).toEqual({
+            source: 'xlights',
+            // xLights' channel 2049 is a sequence's channel 2048.
+            ranges: [{ startch: 2048, chcount: 1024 }],
+        });
+    });
+
+    it('matches an xLights record by hostname as well as address', () => {
+        const known = [layout({ name: 'Far Side', address: 'FPP-Far', startChannel: 1, channelCount: 64 })];
+        expect(slicingFor(remote({ hostname: 'fpp-far' }), known)?.source).toBe('xlights');
+    });
+
+    it('does not slice for a player, which drives the whole show', () => {
+        expect(slicingFor(remote({ mode: 'player', channelRanges: '0-509' }))).toBeNull();
+        expect(slicingFor(remote({ mode: 'bridge', channelRanges: '0-509' }))).toBeNull();
+        expect(slicingFor(device({ ip: '10.0.0.5', driverType: 'FPP', channelRanges: '0-509' }))).toBeNull();
+    });
+
+    it('does not slice for a device that is not ours to fill, or says nothing', () => {
+        expect(slicingFor(device({ ip: '10.0.0.6', driverType: 'Falcon', mode: 'remote' }))).toBeNull();
+        expect(slicingFor(remote(), [])).toBeNull();
+    });
+});
+
+describe('a plan that slices', () => {
+    const record = (over: Partial<SequenceRecord> & { id: string }): SequenceRecord => ({
+        instanceId: `i-${over.id}`,
+        work: { title: over.id, artist: '', length: 0 },
+        ...over,
+    });
+
+    /** A real, readable source: 2,048 channels of a recognisable pattern. */
+    async function showWithOneSequence(dir: string) {
+        const file = path.join(dir, 'Song.fseq');
+        const w = new FseqV2Writer(file, {
+            numFrames: 4,
+            stepTimeMs: 25,
+            channelCount: 2048,
+            uniqueId: '424242',
+            mediaName: 'Song.mp3',
+        });
+        const frame = new Uint8Array(2048);
+        for (let f = 0; f < 4; f++) {
+            for (let c = 0; c < 2048; c++) frame[c] = (c + f) & 0xff;
+            w.addFrame(frame);
+        }
+        w.close();
+        return [record({ id: 'a', files: { fseq: file } })];
+    }
+
+    const target = (id: string): ContentSyncTargetSpec =>
+        contentTargetsFor([device({ ip: '10.0.0.5', driverType: 'FPP', mode: 'remote' })], [id])[0];
+
+    it('offers the remote a sliced identity, and writes the slice only when asked', async () => {
+        const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'ezp-slice-plan-'));
+        const sequences = await showWithOneSequence(dir);
+        const workspace = await createSliceWorkspace();
+        try {
+            const id = '10.0.0.5|direct';
+            const slicing = new Map([[id, { source: 'device' as const, ranges: [{ startch: 100, chcount: 64 }] }]]);
+            const { plan } = await buildContentPlan(sequences, undefined, { slicing, workspace });
+            const seq = plan.sequences[0];
+            expect(seq.identity.channelCount).toBe(2048);
+
+            const resolved = await plan.resolveSequence!(seq, target(id));
+            expect(resolved).toBeTruthy();
+            // The identity describes the slice without having written it.
+            expect(resolved!.identity.channelCount).toBe(64);
+            expect(resolved!.identity.ranges).toEqual([{ start: 100, length: 64 }]);
+            expect(resolved!.identity.maxChannel).toBe(164);
+            expect(resolved!.identity.numFrames).toBe(4);
+            // Same sequence, same audio: only the channels differ.
+            expect(resolved!.identity.uniqueId).toBe('424242');
+            expect(resolved!.identity.mediaName).toBe('Song.mp3');
+            expect(resolved!.note).toMatch(/sliced to 64 of 2,048 channels/);
+            expect(await fsp.readdir(workspace.dir)).toEqual([]);
+
+            // Only now is a file written, and it holds the right bytes.
+            const bytes = await resolved!.open();
+            expect(bytes.size).toBeGreaterThan(0);
+            expect(await fsp.readdir(workspace.dir)).toHaveLength(1);
+            const written = await bytes.blob.read(0, bytes.size);
+            expect(readFseqIdentity(written).ranges).toEqual([{ start: 100, length: 64 }]);
+        } finally {
+            await workspace.dispose();
+            await fsp.rm(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('leaves a target with no slicing on the show file', async () => {
+        const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'ezp-slice-plan-'));
+        try {
+            const sequences = await showWithOneSequence(dir);
+            const { plan } = await buildContentPlan(sequences, undefined);
+            expect(await plan.resolveSequence!(plan.sequences[0], target('10.0.0.5|direct'))).toBeUndefined();
+        } finally {
+            await fsp.rm(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('sends the show file when a slice would be no smaller', async () => {
+        const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'ezp-slice-plan-'));
+        const workspace = await createSliceWorkspace();
+        try {
+            const sequences = await showWithOneSequence(dir);
+            const id = '10.0.0.5|direct';
+            // The remote drives the whole show: cutting it would gain nothing.
+            const slicing = new Map([[id, { source: 'device' as const, ranges: [{ startch: 0, chcount: 4096 }] }]]);
+            const { plan } = await buildContentPlan(sequences, undefined, { slicing, workspace });
+            expect(await plan.resolveSequence!(plan.sequences[0], target(id))).toBeUndefined();
+        } finally {
+            await workspace.dispose();
+            await fsp.rm(dir, { recursive: true, force: true });
+        }
     });
 });
