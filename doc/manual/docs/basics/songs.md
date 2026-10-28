@@ -133,6 +133,6 @@ See [Getting Started (Cloud)](./getting-started-cloud.md) and
 - Set a [Media Folder](../settings/show-folder.md#media-folder) if companion
   audio lives outside the show folder
 - Play a song from the [Jukebox](./jukebox.md), and watch the
-  [Preview](./preview.md)
+  [Show View](./preview.md)
 - Add songs to [Playlists](./playlists.md) and
   [Schedules](./simple-schedules.md)

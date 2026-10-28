@@ -880,7 +880,7 @@ curl http://127.0.0.1:8080/api/ezp/playback-settings/sync/multisync
 
 ### GET /api/ezp/model-coordinates
 
-Get model coordinates for 3D preview. Returns coordinate data used to render the 3D light layout preview.
+Get model coordinates for the Show View. Returns coordinate data used to render the 3D light layout preview.
 
 **Request:**
 
@@ -1099,7 +1099,7 @@ curl http://localhost:3000/api/ezp/audio?afterSeq=42 --output audio.bin
 
 ### GET /api/ezp/view-objects
 
-Get view objects for the 3D preview. Returns the list of view objects (meshes and image planes) parsed from the xLights XML layout. Each entry describes an OBJ mesh or background image with its position, rotation, scale, brightness, and channel mapping.
+Get view objects for the Show View. Returns the list of view objects (meshes and image planes) parsed from the xLights XML layout. Each entry describes an OBJ mesh or background image with its position, rotation, scale, brightness, and channel mapping.
 
 **Request:**
 

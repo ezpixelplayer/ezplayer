@@ -66,7 +66,7 @@ describe('PreviewErrorBoundary', () => {
                 <Thrower message="Error creating WebGL context." />
             </PreviewErrorBoundary>,
         );
-        expect(screen.getByText('3D preview unavailable')).toBeTruthy();
+        expect(screen.getByText('Show View unavailable')).toBeTruthy();
         expect(screen.getByText(/could not create a WebGL context/i)).toBeTruthy();
     });
 
@@ -88,7 +88,7 @@ describe('PreviewErrorBoundary', () => {
                 <Thrower message="Error creating WebGL context." />
             </PreviewErrorBoundary>,
         );
-        expect(screen.getByText('3D preview unavailable')).toBeTruthy();
+        expect(screen.getByText('Show View unavailable')).toBeTruthy();
         rerender(
             <PreviewErrorBoundary resetKey="2d">
                 <div>fine now</div>
