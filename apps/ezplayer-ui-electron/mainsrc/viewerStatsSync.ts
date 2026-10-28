@@ -160,6 +160,9 @@ export async function pullViewerStats(): Promise<void> {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const body = (await res.json()) as VcStatsResponse;
         if (!body || typeof body.epoch !== 'string' || !Array.isArray(body.events)) throw new Error('bad response');
+        // The show folder was reset or reloaded while we waited: this answer was for the
+        // old store's cursor and would duplicate what the new one loaded from disk.
+        if (getViewerStatsStore() !== store) return;
         applyViewerStatsPull(body);
         lastError = undefined;
         publishViewerStats();
