@@ -318,24 +318,37 @@ One player setting: **use controller brightness and gamma** (default off).
 
 Independently of the setting, a file whose descriptor says `curvesApplied` has its curves inverted on ingest so the canonical frame is renderer intent; the loss is logged per file.
 
-## 15. Implementation status (branch `moc/pixel-pipeline`, 2026-09-14)
+## 15. Implementation status (branch `moc/pixel-pipeline`, 2026-10-28)
 
-Done and verified against the integration harness (frame fidelity at the mock controller: zero unknown frames):
+Main is merged through 0.6.12. The send-path fixes from main (#286, #288, #290) live in epp's UDP client, which this branch does not modify.
 
-- `packages/epp/src/pipeline/`: `FramePool`, `Layout` (with RGB8/RGBX8 stride and the white X byte), `InputMap` (sparse-aware, applied in the zstd worker), `OutputMap` (channel-range derivation, port segments, player/controller policy), `Kernels` (blend modes, LUTs, dynamic gamma, test patterns), `Params`, `Stats`, `Overlays`, and the xLights adapter with pin-on-first-sight descriptors. Unit tests cover the byte-exact round trip.
-- Playback runs through the pipeline: the conductor composes one interval ahead into the pool; a new output worker owns the sockets, encodes per output, publishes the legacy channel-space export for existing previews, and runs the paced send. Idle, pause and pad black are ordinary frames. E1.31 honors per-universe sizes.
-- Overlay leases over HTTP and UDP, composited into every frame, with a Tetris client (`packages/epp/src/tools/overlay-tetris.ts`).
-- Virtual matrix outputs: `/api/ezp/pool/model/:name` and the `/matrix` page; kiosk windows per configured display; settings UI.
+### Done and exercised by tests
 
-- Layout descriptors (section 12): the fseq readers parse `ED` extended headers; `EZ` descriptors are encoded and decoded (prefix plus zstd JSON); descriptors are derived from embedded `XR`/`XN`; the player resolves EZ, then XR/XN, then the current layout, and re-stats referenced files so a re-render under the same name drops its cached frames. Not yet: xlrender writing `EZ`.
+- **Canonical frames.** `packages/epp/src/pipeline/`: `FramePool` (preallocated SAB slots, refcounts, latest pinned), `Layout` (RGB8 or RGBX8 stride, 16-node alignment, raw region for non-pixel channels), `InputMap` (sparse-aware, applied in the zstd worker), `OutputMap` (channel-range derivation, port segments, player or controller policy with LUTs), `Kernels`, `Params`, `Stats`, `Overlays`. The frame fidelity test shows zero unknown frames at the mock controller.
+- **Per-file layout descriptors (section 12).** The fseq readers parse `ED` extended headers; `EZ` descriptors encode and decode as a 16-byte prefix plus zstd JSON; descriptors derive from embedded `XR`/`XN`. The player resolves EZ, then XR/XN, then the current layout, caches the result in memory only, and re-stats referenced files so a re-render under the same name drops its cached frames. No fseq is ever rewritten and there is no on-disk registry.
+- **Output worker.** Owns the sockets; encodes per output, publishes the legacy channel-space export for the existing previews, runs the paced send and controller FPS, and reopens controllers on settings changes (the #262 port). The conductor composes one interval ahead into the pool; the PulseMesh frame-due hook fires at the frame's deadline.
+- **Unified black.** Idle, pause and pad black are ordinary pool frames, so previews see them.
+- **Overlay leases** over HTTP (`/api/ezp/overlays`) and UDP (`EZO1` packets), composited into every frame, with expiry; the Tetris client is `packages/epp/src/tools/overlay-tetris.ts`. Integration test: `overlay.test.ts`.
+- **Virtual matrix outputs.** `/api/ezp/pool/manifest`, `/api/ezp/pool/model/:name`, the `/matrix` page, kiosk windows per configured display, and the settings UI.
+- **E1.31 per-universe sizes**, the prerequisite for port segments landing on universe boundaries.
 
-Not done yet, in the order they should come:
+### Built but not wired to settings or an API
+
+- **Brightness and dynamic gamma.** The brightness param, LUT, scale and dynamic-gamma kernels exist; nothing sets them (no schedule, API or UI).
+- **Dynamic port mapping.** The output map supports segments, nulls, grouping, reverse, color order and the player policy; the app only builds controller-policy outputs straight from the networks file.
+- **Blend modes.** Nine modes in kernels; the background setting selects only max or underlay.
+- **Test patterns.** Kernel exists; no route or UI calls it.
+- **RGBX8.** Layout supports it; no setting selects it.
+- **Aliases.** Descriptor resolution does not yet consult the rgbeffects alias list for unmatched model names.
+
+### Not done, in the order they should come
 
 - `EZ` written by xlrender and the cloud renderer (`encodeDescriptorHeader` and `buildExtendedHeaders` exist in epp).
-- The compose pool (intraframe parallelism) and the params block are in place but composition still runs on the conductor thread.
-- Brightness schedules and per-controller `player` gamma policy have kernels and map support but no settings or reconcile UI.
-- New preview readers for the canonical pool (the 3D preview still reads the channel-space export).
-- xlrender effect stage, effect sequences, coordinate kernels.
+- The "use controller brightness/gamma" setting and uploading defaults to controllers (section 14).
+- Settings and UI for brightness schedules, blend modes, port mapping and test modes.
+- Preview readers on the canonical pool; the 3D preview and the cloud still read the channel-space export, and simplified cloud models (section 13) are not served.
+- Compose workers. Composition still runs on the conductor thread, so the throughput goal is unmeasured.
+- Effect sequences, effect generation, shaders, 3D coordinate kernels, RGBW and warm-white temperature model, non-FSEQ input, blending suppressed frames into the next one.
 
 ## 16. Open questions
 
