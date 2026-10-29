@@ -18,9 +18,6 @@ export default tseslint.config(
         },
         rules: {
             '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
-            // New in eslint:recommended 10; existing findings stay warnings until fixed.
-            'no-useless-assignment': 'warn',
-            'preserve-caught-error': 'warn',
             'no-empty': 'off',
             'no-constant-condition': 'off',
             '@typescript-eslint/no-misused-promises': 'error',
