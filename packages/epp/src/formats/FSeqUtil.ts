@@ -259,17 +259,17 @@ export class FSEQReaderSync {
         }
 
         // Things we will need to read the frames
-        let nframes = 0; // Number of frames
-        let stepsz = 0; // Size of uncompressed frame
+        let nframes: number; // Number of frames
+        let stepsz: number; // Size of uncompressed frame
         const compblocklist: CompBlock[] = []; // Bit about reading the file and decompressing
         const chrangelist: SparseRange[] = [];
         const v1headers: { [key: string]: string } = {};
         let comp = 0;
-        let ccount = 0;
+        let ccount: number;
         let stepms = 50;
-        let off2chdata = 0;
-        let minver = 0;
-        let majver = 0;
+        let off2chdata: number;
+        let minver: number;
+        let majver: number;
         let modelcnt = 0;
         let modelstart = 0;
         let modelsize = 0;
@@ -333,7 +333,7 @@ export class FSEQReaderSync {
                 blks = (compandblks & 240) * 16;
                 blks += await this.read8bit();
                 //console.log ("blocks: "+str(blks))
-                nranges = await this.read8bit();
+                await this.read8bit(); // sparse range count; recounted from the table below
                 reserved2 = await this.read8bit();
                 uuid1 = await this.read32bit();
                 uuid2 = await this.read32bit();
@@ -598,17 +598,17 @@ export class FSEQReaderAsync {
         }
 
         // Things we will need to read the frames
-        let nframes = 0; // Number of frames
-        let stepsz = 0; // Size of uncompressed frame
+        let nframes: number; // Number of frames
+        let stepsz: number; // Size of uncompressed frame
         const compblocklist: CompBlock[] = []; // Bit about reading the file and decompressing
         const chrangelist: SparseRange[] = [];
         const v1headers: { [key: string]: string } = {};
         let comp = 0;
-        let ccount = 0;
+        let ccount: number;
         let stepms = 50;
-        let off2chdata = 0;
-        let minver = 0;
-        let majver = 0;
+        let off2chdata: number;
+        let minver: number;
+        let majver: number;
         let modelcnt = 0;
         let modelstart = 0;
         let modelsize = 0;
@@ -638,7 +638,6 @@ export class FSEQReaderAsync {
             modelstart = buf.getUint32(off, true);
             off += 4;
             ccount = buf.getUint32(off, true);
-            off += 4;
             modelsize = ccount;
 
             // Noting the lack of #frames, frame timing, or any compression.  This format sucks.
