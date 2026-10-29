@@ -2191,6 +2191,14 @@ export class PlayerRunState {
         return upcoming;
     }
 
+    /** Take over the requests `from` has not started yet, for a rebuild that replaces
+     *  it. Call after setUpSequences; requests whose target is gone are dropped. */
+    adoptPendingRequests(from: PlayerRunState) {
+        for (const cmd of [...(from.immediateItem ? [from.immediateItem] : []), ...from.interactiveQueue]) {
+            if (this.#requestResolves(cmd)) this.addInteractiveCommand(cmd);
+        }
+    }
+
     // Interactive cmd to consider?
     addInteractiveCommand(cmd: InteractivePlayCommand) {
         if (cmd.immediate) {
