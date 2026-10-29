@@ -246,8 +246,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/epp
       '@ezplayer/epp-controllers':
-        specifier: file:..\..\libs\ezplayer-epp-controllers-0.0.34.tgz
-        version: file:libs/ezplayer-epp-controllers-0.0.34.tgz(@ezplayer/epp@packages+epp)(@ezplayer/icmp-ping@packages+icmp-ping)
+        specifier: file:..\..\libs\ezplayer-epp-controllers-0.0.35.tgz
+        version: file:libs/ezplayer-epp-controllers-0.0.35.tgz(@ezplayer/epp@packages+epp)(@ezplayer/icmp-ping@packages+icmp-ping)
       '@ezplayer/ezplayer-client':
         specifier: workspace:*
         version: link:../../packages/ezplayer-client
@@ -667,8 +667,8 @@ importers:
         specifier: workspace:*
         version: link:../epp
       '@ezplayer/epp-mock-controller':
-        specifier: file:..\..\libs\ezplayer-epp-mock-controller-0.0.1-dev.10.tgz
-        version: file:libs/ezplayer-epp-mock-controller-0.0.1-dev.10.tgz
+        specifier: file:..\..\libs\ezplayer-epp-mock-controller-0.0.1-dev.11.tgz
+        version: file:libs/ezplayer-epp-mock-controller-0.0.1-dev.11.tgz
       '@ezplayer/ezplayer-core':
         specifier: workspace:*
         version: link:../ezplayer-core
@@ -1532,9 +1532,9 @@ packages:
       '@noble/hashes':
         optional: true
 
-  '@ezplayer/epp-controllers@file:libs/ezplayer-epp-controllers-0.0.34.tgz':
-    resolution: {integrity: sha512-P+1xz7UnD/cvG1dTEfmU0e8toOwDmFXHl7AwWJbg5flnO5S5UF9/4Z7S/DpvA8lKkfSGzdmE1I+uXDeK3S6drg==, tarball: file:libs/ezplayer-epp-controllers-0.0.34.tgz}
-    version: 0.0.34
+  '@ezplayer/epp-controllers@file:libs/ezplayer-epp-controllers-0.0.35.tgz':
+    resolution: {integrity: sha512-l0grxLCG2ew/3xCnpNdsTrdpjuVXQv2Su9wSykxRsJiEJCMwd5C3Rx5b/H4w/Il22xe3YYplsQ9BGMsLtYc76w==, tarball: file:libs/ezplayer-epp-controllers-0.0.35.tgz}
+    version: 0.0.35
     peerDependencies:
       '@ezplayer/epp': 0.1.12
       '@ezplayer/icmp-ping': 0.1.2
@@ -1542,9 +1542,9 @@ packages:
       '@ezplayer/icmp-ping':
         optional: true
 
-  '@ezplayer/epp-mock-controller@file:libs/ezplayer-epp-mock-controller-0.0.1-dev.10.tgz':
-    resolution: {integrity: sha512-FHQci8Afqpzf7AQAjkbCYOdwkBlHn6nOkY3FBwfWUFae/i90iY9miqkCykfYHBAjQmqqLYgBbsZJOk4kXlxU1w==, tarball: file:libs/ezplayer-epp-mock-controller-0.0.1-dev.10.tgz}
-    version: 0.0.1-dev.10
+  '@ezplayer/epp-mock-controller@file:libs/ezplayer-epp-mock-controller-0.0.1-dev.11.tgz':
+    resolution: {integrity: sha512-upA3yVDjYQpKs+DnR3tCGlslo34opHQW/m6XuiCoG9LfwnmE3hiU378js1FPl88cFofqNFdxQVKhvHemx+PSEQ==, tarball: file:libs/ezplayer-epp-mock-controller-0.0.1-dev.11.tgz}
+    version: 0.0.1-dev.11
     hasBin: true
 
   '@floating-ui/core@1.8.0':
@@ -6171,7 +6171,7 @@ snapshots:
     optionalDependencies:
       '@noble/hashes': 1.8.0
 
-  '@ezplayer/epp-controllers@file:libs/ezplayer-epp-controllers-0.0.34.tgz(@ezplayer/epp@packages+epp)(@ezplayer/icmp-ping@packages+icmp-ping)':
+  '@ezplayer/epp-controllers@file:libs/ezplayer-epp-controllers-0.0.35.tgz(@ezplayer/epp@packages+epp)(@ezplayer/icmp-ping@packages+icmp-ping)':
     dependencies:
       '@ezplayer/epp': link:packages/epp
       '@xmldom/xmldom': 0.8.15
@@ -6179,7 +6179,7 @@ snapshots:
     optionalDependencies:
       '@ezplayer/icmp-ping': link:packages/icmp-ping
 
-  '@ezplayer/epp-mock-controller@file:libs/ezplayer-epp-mock-controller-0.0.1-dev.10.tgz': {}
+  '@ezplayer/epp-mock-controller@file:libs/ezplayer-epp-mock-controller-0.0.1-dev.11.tgz': {}
 
   '@floating-ui/core@1.8.0':
     dependencies:
