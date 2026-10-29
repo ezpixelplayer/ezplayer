@@ -68,7 +68,7 @@ function validateCommand(body: unknown): { command?: ControllerCommand; error?: 
         o[field] && typeof o[field] === 'object' && !Array.isArray(o[field])
             ? undefined
             : `'${cmd}' needs an object '${field}'`;
-    /** Optional string array: absent is fine, present must be all strings. */
+    /** Absent is fine; present must be an array of non-empty strings. */
     const optStrings = (field: string): string | undefined => {
         const v = o[field];
         if (v === undefined) return undefined;

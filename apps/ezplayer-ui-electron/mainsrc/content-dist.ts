@@ -501,9 +501,8 @@ export function contentStatusFor(target: ContentDistTargetReport): ControllerCon
                 break;
         }
     }
-    // Nothing was attempted (too old, unreachable, passed over), or everything
-    // attempted failed: either way it is the device that is the problem, not
-    // one file, so the row says why.
+    // When a device took nothing at all, the first failure becomes the row's
+    // reason: it is the device that is wrong, not one file.
     const firstFailure = target.items.find((i) => i.action === 'failed')?.reason;
     const error = target.note ?? (current === 0 && failed > 0 ? firstFailure : undefined);
 

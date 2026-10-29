@@ -1267,26 +1267,31 @@ async function refreshContentStatus(id: string): Promise<void> {
 
     const { sequences, settings } = contentSource();
     const cut = slicingFor(dev, state.known ?? []);
-    const { plan } = await buildContentPlan(sequences, settings, {
-        ...(cut ? { slicing: new Map([[dev.id, cut]]) } : {}),
-        // A check never writes a slice, but the plan needs somewhere to say
-        // they would go; the identity alone decides what is missing.
-        ...(cut ? { workspace: { dir: '', dispose: async () => undefined } } : {}),
-    });
-    if (!plan.sequences.length) return;
-    const targets = contentTargetsFor([dev], [dev.id]);
-    if (!targets.length) return;
+    // A check reports exact byte counts, so a slice it finds missing is still
+    // written to measure it: that needs a real directory to write into.
+    const workspace = cut ? await createSliceWorkspace() : undefined;
+    try {
+        const { plan } = await buildContentPlan(sequences, settings, {
+            ...(cut ? { slicing: new Map([[dev.id, cut]]) } : {}),
+            ...(workspace ? { workspace } : {}),
+        });
+        if (!plan.sequences.length) return;
+        const targets = contentTargetsFor([dev], [dev.id]);
+        if (!targets.length) return;
 
-    // Check only: this reads the device's own file list and sends nothing.
-    const report = toContentDistReport(await new ContentSyncRun(plan, targets, { dryRun: true }).run(), {
-        checkOnly: true,
-        trigger: 'manual',
-    });
-    const target = report.targets[0];
-    const current = state.devices[id];
-    if (target && current) {
-        state.devices[id] = { ...current, contentStatus: contentStatusFor(target) };
-        publish();
+        // Check only: this reads the device's own file list and sends nothing.
+        const report = toContentDistReport(await new ContentSyncRun(plan, targets, { dryRun: true }).run(), {
+            checkOnly: true,
+            trigger: 'manual',
+        });
+        const target = report.targets[0];
+        const current = state.devices[id];
+        if (target && current) {
+            state.devices[id] = { ...current, contentStatus: contentStatusFor(target) };
+            publish();
+        }
+    } finally {
+        await workspace?.dispose().catch(() => undefined);
     }
 }
 

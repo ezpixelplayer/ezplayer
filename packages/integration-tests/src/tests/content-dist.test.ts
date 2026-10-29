@@ -2,11 +2,13 @@
  * Content distribution against a live headless app, driven entirely through the
  * HTTP API — the surface a script has, with no UI involved.
  *
- * Two runs through it:
+ * Three runs through it:
  *  - add a song, send it, confirm each device holds it, then play it and watch
  *    the output arrive;
  *  - send with one device down, see it reported behind, bring it back, see that
- *    it still needs the content, send again, and play again.
+ *    it still needs the content, send again, and play again;
+ *  - send to a remote that drives only part of the show, and check that it gets
+ *    a cut-down sequence.
  *
  * The mock controllers answer FPP's content API in process, so what they end up
  * holding can be read directly rather than inferred from our own report.
@@ -103,11 +105,10 @@ describe('add a song, send it, play it', () => {
         await learnAbout(primary);
         const seen = await device(primary);
         expect(seen?.driverType).toBe('FPP');
-        // The mock answers as a remote, so the player will cut the show down.
+        // It answers as a remote, but covers the whole show, so nothing is cut.
         expect(seen?.mode).toBe('remote');
         expect(seen?.channelRanges).toBeTruthy();
 
-        // Nothing has been sent yet.
         expect(heldSequences(primary)).toEqual([]);
 
         await command({ cmd: 'distribute' });
@@ -119,10 +120,10 @@ describe('add a song, send it, play it', () => {
         expect(after?.contentStatus?.current).toBeGreaterThan(0);
         expect(after?.contentStatus?.error).toBeUndefined();
 
-        // The inventory playlist is an FYI list of what we left there.
+        // The inventory playlist records what we left on the device.
         expect([...primary.http.content.playlists.keys()]).toContain('EZPlayer Content');
 
-        // The report says the same, and names the path it took.
+        // The report agrees, and records which upload API was used.
         const dist = (await controllers()).contentDist;
         expect(dist?.lastReport?.totals.failed).toBe(0);
         expect(dist?.lastReport?.totals.uploaded).toBeGreaterThan(0);

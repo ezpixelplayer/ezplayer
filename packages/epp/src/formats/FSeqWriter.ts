@@ -22,10 +22,8 @@
  *   then  variable headers: u16 total length (including these 4 bytes),
  *         two ascii code bytes, payload
  *
- * This writes version 2.2 at the newest. FSEQ 2.3 moved a long range table
- * into an 'SR' variable header, and no released controller image reads it, so
- * a file that needs more than 255 ranges has its ranges merged down instead
- * (see `limitRanges`).
+ * This writes version 2.2 at the newest: a file that needs more than 255
+ * sparse ranges has them merged down to fit (see `limitRanges`).
  */
 
 import * as fs from 'fs';
@@ -43,7 +41,7 @@ export type FseqCompression = 'none' | 'zstd';
 /** FPP's own limit: the block count is 12 bits. */
 const MAX_BLOCKS = 4095;
 
-/** One byte holds the count, and 2.3's escape hatch is not safe to use yet. */
+/** The sparse range count is one byte. */
 export const MAX_SPARSE_RANGES = 255;
 
 const STANDARD_HEADER_LEN = 32;
@@ -94,8 +92,8 @@ export function fseqStride(opts: Pick<FseqWriteOptions, 'ranges' | 'channelCount
  * extra between them, which is real data from the same sequence and so
  * harmless. Overlapping or touching runs are merged regardless of `max`.
  *
- * This is how a file stays within version 2.2: a long table is cut down rather
- * than moved into 2.3's 'SR' header, which no controller image reads.
+ * Cutting the table down is what keeps the file at version 2.2. FSEQ 2.3 moved
+ * a longer table into an 'SR' variable header, which no controller image reads.
  */
 export function limitRanges(ranges: FseqRange[], max: number = MAX_SPARSE_RANGES): FseqRange[] {
     const sorted = ranges

@@ -1,7 +1,6 @@
 /**
- * The HTTP face of controller ops: what the command funnel accepts, and what
- * the read routes expose. This is the surface a script drives, so a verb that
- * works over the WebSocket but not here is a bug a UI would never show.
+ * The HTTP face of controller ops — the surface a script drives: what the
+ * command funnel accepts, and what the read routes expose.
  */
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
