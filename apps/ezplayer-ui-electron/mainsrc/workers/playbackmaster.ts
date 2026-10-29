@@ -1149,8 +1149,8 @@ function processCommand(cmd: EZPlayerCommand) {
             {
                 emitInfo(`PLAY CMD: ${cmd?.command}: ${cmd?.songId}`);
                 stoppingGracefully = false;
-                // pendingSchedule (not yet installed by the loop) is newer than curSequences
-                const liveSequences = (pendingSchedule?.type === 'schedupdate' && pendingSchedule.seqs) || curSequences;
+                // latestSchedule (maybe not yet installed by the loop) is newer than curSequences
+                const liveSequences = latestSchedule?.seqs || curSequences;
                 const seq = liveSequences?.find((s) => s.id === cmd.songId);
                 if (!seq) {
                     emitError(`Unable to identify sequence ${cmd.songId}`);
@@ -1268,7 +1268,7 @@ function processCommand(cmd: EZPlayerCommand) {
             {
                 emitInfo(`PLAY CMD: ${cmd?.command}: ${cmd?.playlistId}`);
                 stoppingGracefully = false;
-                const livePlaylists = (pendingSchedule?.type === 'schedupdate' && pendingSchedule.pls) || curPlaylists;
+                const livePlaylists = latestSchedule?.pls || curPlaylists;
                 const pl = livePlaylists?.find((p) => p.id === cmd.playlistId);
                 if (!pl) {
                     emitError(`Unable to identify playlist ${cmd.playlistId}`);
@@ -1340,6 +1340,7 @@ function processCommand(cmd: EZPlayerCommand) {
 parentPort.on('message', async (command: PlayerCommand) => {
     switch (command.type) {
         case 'schedupdate': {
+            latestSchedule = command;
             const folderChanged =
                 command.showFolder &&
                 command.showFolder !== '<no show folder yet>' &&
@@ -1371,8 +1372,9 @@ parentPort.on('message', async (command: PlayerCommand) => {
                 }
             }
 
-            // Set pendingSchedule after old loop has exited
-            pendingSchedule = command;
+            // Set pendingSchedule after old loop has exited. Updates that arrived
+            // while this one waited are newer, and the old loop may have taken one.
+            pendingSchedule = latestSchedule;
 
             if (!running) {
                 shouldRestart = false;
@@ -1767,6 +1769,8 @@ let volumeTargetsNow: VolumeTarget[] = [];
 let outputGains: Record<string, number> = {};
 let curAudioSyncNum = 1;
 let pendingSchedule: PlayerCommand | undefined = undefined;
+/** The newest schedupdate received. A handler still awaiting may hold an older one. */
+let latestSchedule: Extract<PlayerCommand, { type: 'schedupdate' }> | undefined = undefined;
 let curSequences: SequenceRecord[] | undefined = undefined;
 let curPlaylists: PlaylistRecord[] | undefined = undefined;
 let curSchedule: ScheduledPlaylist[] | undefined = undefined;
@@ -2731,13 +2735,19 @@ async function processQueue() {
         sender.nChannels = nChannels;
         sender.blackFrame = new Uint8Array(nChannels);
         sender.mixFrame = new Uint8Array(nChannels);
-        frameExportBuffer = LatestFrameRingBuffer.allocate(nChannels, 4, true) as SharedArrayBuffer;
-        frameExportRing = new LatestFrameRingBuffer({
-            buffer: frameExportBuffer,
-            frameSize: nChannels,
-            slotCount: 4,
-            isWriter: true,
-        });
+        if (nChannels > 0) {
+            frameExportBuffer = LatestFrameRingBuffer.allocate(nChannels, 4, true) as SharedArrayBuffer;
+            frameExportRing = new LatestFrameRingBuffer({
+                buffer: frameExportBuffer,
+                frameSize: nChannels,
+                slotCount: 4,
+                isWriter: true,
+            });
+        } else {
+            // No models or controllers: there is no frame to export.
+            frameExportBuffer = undefined;
+            frameExportRing = undefined;
+        }
         sender.exportBuffer = frameExportRing;
         send({ type: 'pixelbuffer', buffer: frameExportBuffer });
 
@@ -2906,6 +2916,7 @@ async function processQueue() {
                     const preserveFGStops = foregroundPlayerRunState.stoppedIds;
                     const preserveBGStops = backgroundPlayerRunState.stoppedIds;
                     const preserveRepeatGuard = foregroundPlayerRunState.repeatGuard;
+                    const prevForeground = foregroundPlayerRunState;
                     foregroundPlayerRunState = new PlayerRunState(initializeTime);
                     foregroundPlayerRunState.repeatGuard = preserveRepeatGuard;
                     backgroundPlayerRunState = new PlayerRunState(initializeTime);
@@ -2915,6 +2926,8 @@ async function processQueue() {
                     }
                     foregroundPlayerRunState.setUpSequences(curSequences ?? [], curPlaylists ?? [], mainSched, errs);
                     backgroundPlayerRunState.setUpSequences(curSequences ?? [], curPlaylists ?? [], bgSched, errs);
+                    // Includes a play sent while the player was still starting.
+                    foregroundPlayerRunState.adoptPendingRequests(prevForeground);
                     foregroundPlayerRunState.addTimeRangeToSchedule(
                         initializeTime,
                         initializeTime + playbackParams.scheduleLoadTime,
