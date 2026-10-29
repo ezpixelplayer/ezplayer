@@ -4,6 +4,7 @@ _An easy-to-use pixel show player for the xLights ecosystem._
 
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)
 ![License](https://img.shields.io/badge/license-AGPL--3.0-red)
+![Docs License](https://img.shields.io/badge/docs-CC--BY--SA--4.0-lightgrey)
 ![Build](https://img.shields.io/badge/build-passing-brightgreen.svg)
 
 ---
@@ -106,7 +107,7 @@ EZPlayer is tested on Raspberry Pi 5 and 4 (64-bit OS and 4GB or more required).
 
 ### Running EZPlayer
 
-For detailed documentation, see the [EZPlayer manual](https://docs.ezplayer.dev/).
+For detailed documentation, see the [EZPlayer manual](https://docs.ezplayer.dev/). The manual is [CC BY-SA 4.0](doc/LICENSE), so feel free to quote and share it.
 
 #### Running EZPlayer Locally
 
@@ -161,7 +162,7 @@ So, we started a new one, featuring:
 
 - Node.js / Electron stack / React, for a modern UI that supports the same look both on the desktop and on the web (local or cloud)
 - Simplicity, starting with how songs and playlists are maintained
-- Affero GPL licensing, so it is free forever
+- Affero GPL licensing, so it is free forever (the documentation is CC BY-SA 4.0; see [doc/LICENSE](doc/LICENSE))
 
 ### Roadmap
 

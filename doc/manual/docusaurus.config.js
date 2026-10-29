@@ -108,7 +108,7 @@ const config = {
                         ],
                     },
                 ],
-                copyright: `Copyright © ${new Date().getFullYear()} EZPlayer. Built with Docusaurus.`,
+                copyright: `Copyright © ${new Date().getFullYear()} EZPlayer. Manual licensed <a href="https://creativecommons.org/licenses/by-sa/4.0/" rel="license">CC BY-SA 4.0</a>. Built with Docusaurus.`,
             },
             prism: {
                 theme: prismThemes.github,

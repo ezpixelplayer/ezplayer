@@ -2,6 +2,7 @@
     "name": "manual",
     "version": "0.0.0",
     "private": true,
+    "license": "CC-BY-SA-4.0",
     "scripts": {
         "diagrams": "node ../slides/build-tool/compile-diagrams.mjs",
         "docusaurus": "docusaurus",
