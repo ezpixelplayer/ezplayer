@@ -203,6 +203,7 @@ setControllerDataHold(holdControllerData);
 setContentSource(() => ({
     sequences: curSequences,
     settings: getSettingsCache() ?? undefined,
+    showFolder: getCurrentShowFolder() ?? undefined,
     // Only an explicit Stopped counts as idle, as for automatic reads.
     idle: curStatus.player?.status === 'Stopped',
 }));

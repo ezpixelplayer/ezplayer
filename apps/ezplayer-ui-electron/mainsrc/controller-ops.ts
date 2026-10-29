@@ -1149,6 +1149,8 @@ async function runUpload(
 export interface ContentSourceInfo {
     sequences: SequenceRecord[];
     settings?: PlaybackSettings;
+    /** Where derived audio lives, so a run sends what playback would decode. */
+    showFolder?: string;
     /** False while a show is playing; automatic runs wait for a stopped player. */
     idle: boolean;
 }
@@ -1265,7 +1267,7 @@ async function refreshContentStatus(id: string): Promise<void> {
     const checkedAt = dev.contentStatus?.checkedAt;
     if (checkedAt && Date.now() - Date.parse(checkedAt) < CONTENT_CHECK_FRESH_MS) return;
 
-    const { sequences, settings } = contentSource();
+    const { sequences, settings, showFolder } = contentSource();
     const cut = slicingFor(dev, state.known ?? []);
     // A check reports exact byte counts, so a slice it finds missing is still
     // written to measure it: that needs a real directory to write into.
@@ -1274,6 +1276,7 @@ async function refreshContentStatus(id: string): Promise<void> {
         const { plan } = await buildContentPlan(sequences, settings, {
             ...(cut ? { slicing: new Map([[dev.id, cut]]) } : {}),
             ...(workspace ? { workspace } : {}),
+            ...(showFolder ? { showFolder } : {}),
         });
         if (!plan.sequences.length) return;
         const targets = contentTargetsFor([dev], [dev.id]);
@@ -1304,7 +1307,7 @@ async function runDistribute(
     if (!contentSource) throw new Error('no show is open to distribute');
     if (state.contentDist?.run) return; // one at a time; the running op is the answer
     const checkOnly = !!command.checkOnly;
-    const { sequences, settings } = contentSource();
+    const { sequences, settings, showFolder } = contentSource();
 
     const targets = contentTargetsFor(Object.values(state.devices), command.ids);
     if (!targets.length) {
@@ -1325,6 +1328,7 @@ async function runDistribute(
         ...(command.sequences ? { only: command.sequences } : {}),
         ...(slicing.size ? { slicing } : {}),
         ...(workspace ? { workspace } : {}),
+        ...(showFolder ? { showFolder } : {}),
     });
     if (!plan.sequences.length) {
         await workspace?.dispose();

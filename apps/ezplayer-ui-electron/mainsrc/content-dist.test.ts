@@ -18,6 +18,7 @@ import type {
 import type { ContentSyncReport, ContentSyncSnapshot, ContentSyncTargetSpec } from '@ezplayer/epp-controllers';
 import { readFseqIdentity } from '@ezplayer/epp-controllers';
 import { FseqV2Writer } from '@ezplayer/epp';
+import { derivedAudioPathFor } from './data/derived-audio.js';
 import {
     buildContentPlan,
     contentAutoDecision,
@@ -123,6 +124,42 @@ describe('the plan', () => {
         ...over,
     });
 
+    it('sends the audio playback would decode, named for the song', async () => {
+        // A .wav source plays from a derived mp3, so that is what a device has
+        // to be given: the same bytes, under a name that reads as the song.
+        const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'ezp-dist-'));
+        const fseq = path.join(dir, 'Carol.fseq');
+        const audio = path.join(dir, 'Carol Of The Bells.wav');
+        await fsp.writeFile(fseq, fseqBytes({ channels: 16, frames: 4 }));
+        await fsp.writeFile(audio, Buffer.alloc(4096, 3));
+        const derived = await derivedAudioPathFor(audio, dir, { normalize: false });
+        await fsp.mkdir(path.dirname(derived!), { recursive: true });
+        await fsp.writeFile(derived!, Buffer.alloc(512, 9));
+
+        const { plan } = await buildContentPlan([record({ id: 'a', files: { fseq, audio } })], undefined, {
+            showFolder: dir,
+        });
+
+        expect(plan.sequences[0].media?.name).toBe('Carol Of The Bells.mp3');
+        // The derived bytes, not the 4096-byte source.
+        expect(plan.sequences[0].media?.size).toBe(512);
+    });
+
+    it('falls back to the source when the derived audio is not built', async () => {
+        const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'ezp-dist-'));
+        const fseq = path.join(dir, 'Carol.fseq');
+        const audio = path.join(dir, 'Carol.wav');
+        await fsp.writeFile(fseq, fseqBytes({ channels: 16, frames: 4 }));
+        await fsp.writeFile(audio, Buffer.alloc(4096, 3));
+
+        const { plan } = await buildContentPlan([record({ id: 'a', files: { fseq, audio } })], undefined, {
+            showFolder: dir,
+        });
+
+        expect(plan.sequences[0].media?.name).toBe('Carol.wav');
+        expect(plan.sequences[0].media?.size).toBe(4096);
+    });
+
     it('takes sequences with a file on disk, names media from the fseq header, and skips the rest', async () => {
         const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'ezp-dist-'));
         const fseq = path.join(dir, 'Carol.fseq');
@@ -143,7 +180,7 @@ describe('the plan', () => {
 
         expect(plan.sequences.map((s) => s.name)).toEqual(['Carol.fseq']);
         expect(plan.sequences[0].identity.numFrames).toBe(4);
-        // The device will ask for the name its own header carries, not ours.
+        // The song's own name, as the fseq header gives it.
         expect(plan.sequences[0].media?.name).toBe('Carol.mp3');
         expect(plan.sequences[0].media?.size).toBe(2048);
         expect(skipped).toEqual([{ name: 'Gone.fseq', reason: 'file not on disk' }]);

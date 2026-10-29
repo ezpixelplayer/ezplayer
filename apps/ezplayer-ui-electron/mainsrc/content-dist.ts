@@ -50,6 +50,7 @@ import {
 } from '@ezplayer/epp-controllers';
 import type { FSEQHeader, FseqRange } from '@ezplayer/epp';
 import { FSEQReaderSync, parseChannelRanges, planFseqSlice, sliceFseqFile } from '@ezplayer/epp';
+import { playableAudioPath } from './data/derived-audio.js';
 
 /** Inventory playlist name when the setting does not say. */
 export const DEFAULT_CONTENT_PLAYLIST = 'EZPlayer Content';
@@ -224,25 +225,42 @@ async function fileSize(file: string): Promise<number | null> {
 }
 
 /**
- * The media to send with a sequence. The name on the device comes from the
- * fseq's own `mf` header when it has one, so a device playing the sequence by
- * itself asks for a file that is there; the bytes come from whatever the song
- * record points at.
+ * The media to send with a sequence: the bytes EZPlayer itself would play, so
+ * a device playing on its own sounds like the show does here. A normalized or
+ * non-mp3 song plays from its derived mp3, not from the source file.
+ *
+ * The name keeps the song's own file name — the fseq's `mf` name when it has
+ * one — with the extension of what is actually sent. FPP pairs media with a
+ * sequence from the playlist entry and never reads the fseq header, so the
+ * name is chosen to read well in its own media list.
  */
 async function mediaFor(
     record: SequenceRecord,
     headerName: string | undefined,
+    showFolder: string | undefined,
 ): Promise<{ media: ContentMediaSource; localDir: string } | null> {
     const local = record.files?.audio;
     if (!local) return null;
     if (!AUDIO_EXTENSIONS.has(path.extname(local).toLowerCase())) return null;
-    const size = await fileSize(local);
+
+    // Before the derived file has been built the source is all there is: send
+    // it rather than no audio at all, and say so in the log.
+    let shipped = local;
+    if (showFolder) {
+        try {
+            shipped = await playableAudioPath(local, showFolder, { normalize: !!record.settings?.normalize });
+        } catch (e) {
+            console.warn(`[content-dist] sending source audio for ${path.basename(local)}: ${(e as Error).message}`);
+        }
+    }
+    const size = await fileSize(shipped);
     if (size === null) return null;
-    const name =
-        headerName && AUDIO_EXTENSIONS.has(path.extname(headerName).toLowerCase())
-            ? path.basename(headerName)
-            : path.basename(local);
-    return { media: { name, size, blob: blobFromFile(local, size) }, localDir: path.dirname(local) };
+
+    const named = headerName && AUDIO_EXTENSIONS.has(path.extname(headerName).toLowerCase()) ? headerName : local;
+    const name = path.basename(named, path.extname(named)) + path.extname(shipped).toLowerCase();
+    // The source's folder, not the derived one: a host-specific variant of this
+    // media is something the user put beside their own file.
+    return { media: { name, size, blob: blobFromFile(shipped, size) }, localDir: path.dirname(local) };
 }
 
 export interface ContentPlanResult {
@@ -254,6 +272,8 @@ export interface ContentPlanResult {
 export interface ContentPlanOptions {
     /** Only these fseq file names (what the automatic queue holds). */
     only?: string[];
+    /** The show's folder, which is where derived (playable) audio lives. */
+    showFolder?: string;
     /** Per-target channels, keyed by device id; targets absent get the show whole. */
     slicing?: Map<string, ContentSlicing>;
     /** Where slices are written. Required for slicing to happen at all. */
@@ -305,7 +325,7 @@ export async function buildContentPlan(
             skipped.push({ name, reason: `unreadable: ${(e as Error).message}` });
             continue;
         }
-        const found = await mediaFor(record, identity.mediaName);
+        const found = await mediaFor(record, identity.mediaName, opts.showFolder);
         if (found) mediaDirs.set(name, found.localDir);
         sourceFiles.set(name, file);
         out.push({
