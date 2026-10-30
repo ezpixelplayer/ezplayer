@@ -24,6 +24,24 @@ To confirm the app is registered for startup on Windows, go to
 This setting is not available on Linux.  The recommendation there is systemd
 services.
 
+## Prevent the computer from sleeping
+
+_(Desktop app)_
+
+A computer that goes to sleep stops the show, and EZPlayer cannot wake it
+back up for the next scheduled start or for a request from the cloud or a
+viewer.  Catching up after a wake also reports every missed song as played.
+
+- **Always, while EZPlayer is running** (default) — the machine stays awake
+  the whole time the app is open, so a show scheduled for later tonight still
+  starts even if you set it up in the afternoon and walked away.
+- **Only while playing** — the machine may sleep between shows.  Use this only
+  if you start every show by hand.
+- **Never** — EZPlayer leaves the power settings alone.
+
+This only holds off system sleep.  The display can still turn off on its own
+schedule, and closing a laptop lid follows the OS lid setting regardless.
+
 ## Background Sequence
 
 Whether a background schedule blends **over** or **under** the main sequence.

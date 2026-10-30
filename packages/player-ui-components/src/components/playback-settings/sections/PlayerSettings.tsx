@@ -2,7 +2,7 @@ import { Checkbox, Divider, FormControl, FormControlLabel, Switch, TextField, Ty
 import React from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { Select } from '@ezplayer/shared-ui-components';
-import type { AppSettingsCommand, ControllerRefreshMode } from '@ezplayer/ezplayer-core';
+import type { AppSettingsCommand, ControllerRefreshMode, PreventSleepMode } from '@ezplayer/ezplayer-core';
 import { controllerRefreshMode } from '@ezplayer/ezplayer-core';
 import { Box } from '../../box/Box';
 import { TagListInput } from '../../tag-list-input/TagListInput';
@@ -82,6 +82,31 @@ export const PlayerSettings: React.FC = () => {
                     {startupHelp}
                 </Typography>
             </Box>
+            <FormControl fullWidth size="small" sx={{ mb: 2 }}>
+                <Select
+                    options={[
+                        { id: 'always', name: 'Always, while EZPlayer is running (recommended)' },
+                        { id: 'playing', name: 'Only while playing' },
+                        { id: 'never', name: 'Never' },
+                    ]}
+                    itemText="name"
+                    itemValue="id"
+                    disabled={!appSettings}
+                    onChange={(e) =>
+                        sendAppSettings({
+                            type: 'setPreventSleep',
+                            mode: (e.target as HTMLSelectElement).value as PreventSleepMode,
+                        })
+                    }
+                    label="Prevent the computer from sleeping"
+                    value={appSettings?.preventSleep ?? 'always'}
+                />
+            </FormControl>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                {appSettings
+                    ? 'A sleeping computer cannot start a show or answer a remote request, and EZPlayer cannot wake it. The display may still turn off.'
+                    : 'Prevent sleeping is set in the EZPlayer desktop app.'}
+            </Typography>
             <Divider sx={{ my: 3 }} />
 
             <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
