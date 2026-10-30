@@ -678,7 +678,10 @@ export type EZPlayerCommand =
       }
     | {
           command: 'setvolume';
+          /** Sets the default volume (persisted; the player ramps to it). Not a
+           *  live override: a scheduled window in effect keeps its own level. */
           volume?: number;
+          /** Live mute. */
           mute?: boolean;
       };
 
