@@ -80,6 +80,7 @@ export type {
     LoginItemState,
     AppSettingsState,
     AppSettingsCommand,
+    PreventSleepMode,
     ControllerRefreshSettings,
     ControllerRefreshMode,
 } from './types/DataTypes';

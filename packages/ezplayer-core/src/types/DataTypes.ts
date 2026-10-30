@@ -678,7 +678,10 @@ export type EZPlayerCommand =
       }
     | {
           command: 'setvolume';
+          /** Sets the default volume (persisted; the player ramps to it). Not a
+           *  live override: a scheduled window in effect keeps its own level. */
           volume?: number;
+          /** Live mute. */
           mute?: boolean;
       };
 
@@ -1139,16 +1142,24 @@ export interface LoginItemState {
     openAtLogin: boolean;
 }
 
+/** When the desktop player keeps the machine from sleeping. 'always' (the
+ *  default) holds it the whole time the app runs, so later shows and remote
+ *  requests still find it awake; 'playing' only during playback. Display sleep
+ *  is never blocked. */
+export type PreventSleepMode = 'always' | 'playing' | 'never';
+
 /** App-global settings that live outside the show folder (electron-store / OS).
  *  Pushed to every UI as one snapshot; changed via `AppSettingsCommand`. */
 export interface AppSettingsState {
     diagnostics: DiagnosticsConsent;
     loginItem: LoginItemState;
+    preventSleep: PreventSleepMode;
 }
 
 export type AppSettingsCommand =
     | { type: 'setDiagnosticsConsent'; patch: Partial<DiagnosticsConsent> }
-    | { type: 'setOpenAtLogin'; openAtLogin: boolean };
+    | { type: 'setOpenAtLogin'; openAtLogin: boolean }
+    | { type: 'setPreventSleep'; mode: PreventSleepMode };
 
 export type PlayerWebSocketSnapshot = {
     type: 'snapshot';
