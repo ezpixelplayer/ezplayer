@@ -49,7 +49,7 @@ automatic poll.
 ![Play on jukebox](/img/jukebox.png)
 
 Use the **Jukebox** to queue sequences and let them run. Want to see it before
-it hits the real lights? The **3D Preview** screen renders the show on screen as it plays.
+it hits the real lights? The **Show View** screen renders the show on screen as it plays.
 
 ## 4. Build a playlist
 
@@ -104,5 +104,5 @@ manage the show from anywhere. Details:
 ## Where to next
 
 - [Songs](../basics/songs.md), [Playlists](../basics/playlists.md), and [Schedules](../basics/simple-schedules.md) - How to set up songs, playlists, and schedules.
-- [Player](../basics/player-screen.md), [Jukebox](../basics/jukebox.md), and [Preview](../basics/preview.md) - How to control and see your show.
+- [Player](../basics/player-screen.md), [Jukebox](../basics/jukebox.md), and [Show View](../basics/preview.md) - How to control and see your show.
 - [Web UI](../basics/local-web-interface.md) - How to control the show over your local network
