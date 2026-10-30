@@ -6,6 +6,7 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 
 import { BrowserWindow, ipcMain } from 'electron';
+import { syncPowerBlock } from './powerblock.js';
 
 import { Worker } from 'node:worker_threads';
 
@@ -750,6 +751,7 @@ export async function loadShowFolder(forceRestart?: boolean) {
 
     // Reset combined player status.
     curStatus = {};
+    syncPowerBlock(undefined);
     curErrors = [];
     // Flush out any pending writes (e.g. downloads) to show data in previous folder.
     // These commit through withShowData, so this must happen before taking it.
@@ -1448,6 +1450,7 @@ export async function registerContentHandlers(mainWindow: BrowserWindow | null, 
                     stopAutomaticReadsForPlayback();
                 }
                 curStatus = { ...curStatus, player: msg.status, player_updated: Date.now() };
+                syncPowerBlock(msg.status);
                 safeSend(mainWindow, 'playback:pstatus', msg.status);
                 broadcastToWebSocket('pStatus', msg.status);
                 break;
