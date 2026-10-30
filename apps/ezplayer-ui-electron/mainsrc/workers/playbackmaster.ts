@@ -1203,17 +1203,14 @@ function processCommand(cmd: EZPlayerCommand) {
             break;
         }
         case 'setvolume': {
-            if (cmd?.volume !== undefined) {
-                // Applies to every output; the schedule slew then pulls each back
-                // toward its own target.
-                volume = cmd.volume;
-                for (const id of outputLevels.keys()) outputLevels.set(id, cmd.volume);
-            }
+            // Only mute is live here. A level is a default-volume settings write
+            // (server worker); applied as an override it would be slewed straight
+            // back toward the schedule.
             if (cmd.mute !== undefined) {
                 muted = cmd.mute;
+                recomputeVolumeGains();
+                sendPlayerStateUpdate(); // keep pStatus.volume fresh for status polls
             }
-            recomputeVolumeGains();
-            sendPlayerStateUpdate(); // keep pStatus.volume fresh for status polls
             break;
         }
         case 'pause': {

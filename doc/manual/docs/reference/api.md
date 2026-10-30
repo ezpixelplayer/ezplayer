@@ -190,7 +190,7 @@ Send player command. Sends a command to control player playback, volume, or requ
 | `deleterequest`     | Cancel a pending song or playlist request                                            | `requestId`                                        |
 | `clearrequests`     | Clear all pending requests                                                           |                                                    |
 | `endsong`           | End the current song (skip to the next item)                                         | `songId?` (only skip if this song is playing)      |
-| `setvolume`         | Set volume level and/or mute                                                         | `volume?`, `mute?`                                 |
+| `setvolume`         | Set the default volume (persisted) and/or mute (live); see the note below            | `volume?`, `mute?`                                 |
 
 **Request Body Examples:**
 
@@ -236,11 +236,33 @@ Set volume:
 }
 ```
 
+Volume in EZPlayer is automated: the player ramps toward the **default
+volume**, or toward the **scheduled volume window** in effect (see
+[Volume](../advanced/volume.md)). A one-shot live level would be ramped
+straight back, so `volume` here sets the default volume instead, for every
+output, and persists it in playback settings. If no window is in effect the
+player ramps to the new level within about a second. If a window is in
+effect the default is still written, but the window keeps the level until it
+ends; the response says which (`defaultInEffect`, and a `warning` naming the
+window). `mute` is live and takes effect at once either way. Per-output
+defaults and the windows themselves are managed through
+[`/api/ezp/volume`](#get-apiezpvolume).
+
+```json
+{
+    "success": true,
+    "message": "Command sent",
+    "defaultInEffect": false,
+    "warning": "A scheduled volume window is in effect (System default: 20:00-22:00 at 40%); the default applies when it ends",
+    "volume": { "mode": "default", "targets": [{ "id": "default", "label": "System default", "defaultVolume": 75, "level": 40, "activeWindow": { "startTime": "20:00", "endTime": "22:00", "volumeLevel": 40, "days": "all", "id": "w1" }, "schedule": [] }] }
+}
+```
+
 **Response:**
 
 - Status: 200 OK - Command sent successfully
-- Status: 400 Bad Request - Invalid command format
-- Status: 503 Service Unavailable - Playback worker not available
+- Status: 400 Bad Request - Invalid command format (or `setvolume` with a non-numeric `volume`)
+- Status: 503 Service Unavailable - Playback worker not available (or `setvolume` before settings have loaded)
 - Status: 500 Internal Server Error - Server error
 
 **Success Response:**
@@ -875,6 +897,87 @@ curl http://127.0.0.1:8080/api/ezp/playback-settings/sync/multisync
 - Status: 400 Bad Request - no JSON body, an intermediate segment is not an object, or unsetting a required part
 - Status: 404 Not Found - the first segment is not a settings key, or (GET) the part is not set
 - Status: 503 Service Unavailable - settings not loaded yet; POST the whole object first
+
+---
+
+### GET /api/ezp/volume
+
+Volume as the player automates it: for each output, the **default volume**,
+its **scheduled windows**, the window in effect right now (if any), and the
+live level the slew has reached. In `default` mode there is one target,
+`default` (the system default output, governed by `volumeControl`); in
+`outputs` mode there is one per named output in `audioOutputs`, keyed by that
+output's id. These ids are how the writes below address an output, which the
+`playback-settings/:path` route cannot do for the `audioOutputs` array.
+
+```json
+{
+    "mode": "outputs",
+    "targets": [
+        {
+            "id": "o1",
+            "label": "Yard speakers",
+            "deviceId": "7c1b…",
+            "defaultVolume": 80,
+            "schedule": [{ "id": "w1", "days": "all", "startTime": "20:00", "endTime": "22:00", "volumeLevel": 40 }],
+            "activeWindow": { "id": "w1", "days": "all", "startTime": "20:00", "endTime": "22:00", "volumeLevel": 40 },
+            "level": 40
+        },
+        { "id": "o2", "label": "Porch", "deviceId": "e9a0…", "defaultVolume": 60, "schedule": [], "activeWindow": null, "level": 60 }
+    ]
+}
+```
+
+- Status: 200 OK - the overview
+- Status: 503 Service Unavailable - settings not loaded yet
+
+### POST /api/ezp/volume
+
+Set the default volume: `{ "volume": 65 }` writes every output's default,
+`{ "volume": 65, "target": "o2" }` just that output's. The value is clamped to
+0–100 and persisted; the player ramps to it when its default is in effect.
+Windows are left alone, so an output inside one keeps that level until it
+ends. The `setvolume` player command is this call without a `target`.
+
+```json
+{
+    "success": true,
+    "defaultInEffect": false,
+    "warning": "A scheduled volume window is in effect (Yard speakers: 20:00-22:00 at 40%); the default applies when it ends",
+    "volume": { "mode": "outputs", "targets": ["… as GET …"] }
+}
+```
+
+- Status: 200 OK - written; `defaultInEffect` is false and `warning` present when any output is inside a window
+- Status: 400 Bad Request - `volume` is not a number
+- Status: 404 Not Found - unknown `target`
+- Status: 503 Service Unavailable - settings not loaded yet
+
+### GET /api/ezp/volume/:target/schedule
+
+That output's windows, the `schedule` array from the overview. `:target` is
+`default` or an output id.
+
+### POST /api/ezp/volume/:target/schedule
+
+Replace that output's windows with the posted array. Each entry needs `days`
+(`all`, `weekday-mon-fri`, `weekday-sun-thu`, `weekend-fri-sat`,
+`weekend-sat-sun`, or a day name), `startTime` and `endTime` as `HH:MM`
+(`endTime` may pass `24:00` for a window that crosses midnight) and
+`volumeLevel` 0–100; `id` is kept when given and generated otherwise. Later
+entries win where windows overlap. An empty array clears the schedule, after
+which the default applies at all times. Answers like `POST /api/ezp/volume`.
+
+```bash
+curl -X POST http://127.0.0.1:8080/api/ezp/volume/default/schedule \
+  -H 'Content-Type: application/json' \
+  -d '[{ "days": "all", "startTime": "21:00", "endTime": "23:00", "volumeLevel": 35 }]'
+```
+
+- Status: 200 OK - replaced
+- Status: 400 Bad Request - not an array, or an entry is malformed (the error names the field)
+- Status: 404 Not Found - unknown target
+- Status: 503 Service Unavailable - settings not loaded yet
 
 ---
 
