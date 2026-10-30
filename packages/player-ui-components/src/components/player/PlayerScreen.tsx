@@ -1,13 +1,13 @@
 import { PageHeader } from '@ezplayer/shared-ui-components';
 import { Alert, Card, CardContent, Chip, CircularProgress, Grid, Typography } from '@mui/material';
 import { Box } from '../box/Box';
-import { endOfDay, startOfDay } from 'date-fns';
+import { addDays, addHours, endOfDay, startOfDay, startOfHour } from 'date-fns';
 import React, { useMemo, useRef } from 'react';
 import { useSelector } from 'react-redux';
 import { RootState } from '../../store/Store';
 import { SchedulePreviewSettings } from '../../types/SchedulePreviewTypes';
 import { generateSchedulePreview } from '../../util/schedulePreviewUtils';
-import { DEFAULT_SCHEDULE_PREVIEW_SETTINGS } from '../../constants/schedulePreviewConstants';
+import { DEFAULT_SCHEDULE_PREVIEW_MAX_EVENTS } from '../../constants/schedulePreviewConstants';
 import GraphForSchedule from '../schedule-preview/GraphForSchedule';
 import { NowPlayingCard } from './NowPlayingCard';
 import { getControllerStats } from '../status/ControllerHelpers';
@@ -180,12 +180,15 @@ const TimelineView = () => {
         (state: RootState) => state.sequences.loading || state.playlists.loading || state.schedule.loading,
     );
 
-    // Get today's time boundaries
-    const startTime = startOfDay(new Date()).getTime();
-    const endTime = endOfDay(new Date()).getTime();
+    // Today and tomorrow are simulated and scrollable. The timeline opens on today plus the
+    // next 24 hours, rounded up to the hour so re-renders don't keep resetting the view.
+    const now = new Date();
+    const startTime = startOfDay(now).getTime();
+    const endTime = endOfDay(addDays(now, 1)).getTime();
+    const viewEndTime = Math.min(startOfHour(addHours(now, 25)).getTime(), endTime);
 
-    // Filter and process schedules for today
-    const todaysSchedules = useMemo(() => {
+    // Filter and process schedules for today and tomorrow
+    const upcomingSchedules = useMemo(() => {
         return schedules.filter((sch: { date: number; scheduleType?: string }) => {
             const schDate = new Date(sch.date);
             return schDate >= new Date(startTime) && schDate <= new Date(endTime);
@@ -194,12 +197,12 @@ const TimelineView = () => {
 
     // Separate schedules into background and main
     const { backgroundSchedules, mainSchedules } = useMemo(() => {
-        const background = todaysSchedules.filter(
+        const background = upcomingSchedules.filter(
             (sch: { scheduleType?: string }) => sch.scheduleType === 'background',
         );
-        const main = todaysSchedules.filter((sch: { scheduleType?: string }) => sch.scheduleType !== 'background');
+        const main = upcomingSchedules.filter((sch: { scheduleType?: string }) => sch.scheduleType !== 'background');
         return { backgroundSchedules: background, mainSchedules: main };
-    }, [todaysSchedules]);
+    }, [upcomingSchedules]);
 
     const previewWindow: SchedulePreviewSettings = useMemo(
         () => ({
@@ -207,7 +210,7 @@ const TimelineView = () => {
             endDate: new Date(endTime),
             startTime: '00:00',
             endTime: '23:59',
-            maxEvents: DEFAULT_SCHEDULE_PREVIEW_SETTINGS.maxEvents,
+            maxEvents: DEFAULT_SCHEDULE_PREVIEW_MAX_EVENTS,
             scheduleTypeFilter: 'all',
         }),
         [startTime, endTime],
@@ -221,7 +224,7 @@ const TimelineView = () => {
     const lastGoodPreviewRef = useRef<PreviewBundle | null>(null);
 
     const { data: previewData, error } = useMemo(() => {
-        if (!sequences.length || !playlists.length || !todaysSchedules.length) {
+        if (!sequences.length || !playlists.length || !upcomingSchedules.length) {
             return { data: null, error: null as string | null };
         }
 
@@ -249,13 +252,13 @@ const TimelineView = () => {
         playlists,
         backgroundSchedules,
         mainSchedules,
-        todaysSchedules.length, // or a stable identifier for "today's"
+        upcomingSchedules.length, // or a stable identifier for the window's schedules
         previewWindow,
     ]);
 
     if (previewData) lastGoodPreviewRef.current = previewData;
     const renderableData = previewData ?? (isLoading ? lastGoodPreviewRef.current : null);
-    const noScheduleData = !sequences.length || !playlists.length || !todaysSchedules.length;
+    const noScheduleData = !sequences.length || !playlists.length || !upcomingSchedules.length;
 
     return (
         <Box
@@ -274,15 +277,22 @@ const TimelineView = () => {
 
             <Box sx={{ height: '100%', overflow: 'hidden' }}>
                 {renderableData ? (
-                    <GraphForSchedule data={renderableData} selectedStartTime={startTime} selectedEndTime={endTime} />
+                    <GraphForSchedule
+                        data={renderableData}
+                        selectedStartTime={startTime}
+                        selectedEndTime={endTime}
+                        viewStartTime={startTime}
+                        viewEndTime={viewEndTime}
+                        showScheduledMarkers={false}
+                    />
                 ) : isLoading ? (
                     <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
                         <CircularProgress />
                     </Box>
                 ) : noScheduleData ? (
-                    <Alert severity="info">No schedule data available for today.</Alert>
+                    <Alert severity="info">No schedule data available for today or tomorrow.</Alert>
                 ) : (
-                    <Alert severity="info">No schedule events for today.</Alert>
+                    <Alert severity="info">No schedule events for today or tomorrow.</Alert>
                 )}
             </Box>
         </Box>

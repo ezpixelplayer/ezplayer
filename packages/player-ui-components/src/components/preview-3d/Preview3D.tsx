@@ -31,6 +31,7 @@ import VolumeUpIcon from '@mui/icons-material/VolumeUp';
 import VolumeOffIcon from '@mui/icons-material/VolumeOff';
 import { Viewer3D, type CameraState3D } from './Viewer3D';
 import { Viewer2D, type CameraState2D } from './Viewer2D';
+import { probeWebGLSupport, PreviewErrorBoundary, WebGLUnavailableMessage } from './webglSupport';
 import { useOrbitPreference } from '../../util/orbitPreference';
 import { ModelList } from './ModelList';
 import {
@@ -46,7 +47,7 @@ import type { LayoutGroupInfo, MhFixtureInfo, ViewpointInfo } from 'xllayoutcalc
 import { viewpointToCameraState } from './viewpointCamera';
 import { GetNodeResult, LatestFrameRingBuffer } from '@ezplayer/ezplayer-core';
 import { useFrameServerUrl } from '../../hooks/useFrameServerUrl';
-import { useAudioStream } from '../../hooks/useAudioStream';
+import { deriveAudioStreamOptions, useAudioListenSession } from '../../audio';
 import { isElectron } from '@ezplayer/shared-ui-components';
 import type { RootState } from '../../store/Store';
 import {
@@ -296,6 +297,9 @@ export const Preview3D: React.FC<Preview3DProps> = ({
             backgroundBrightness: activeLayoutGroup.backgroundBrightness ?? layoutSettings.backgroundBrightness,
             previewWidth: activeLayoutGroup.paneWidth ?? layoutSettings.previewWidth,
             previewHeight: activeLayoutGroup.paneHeight ?? layoutSettings.previewHeight,
+            // Per-group "Fill" is its own xLights attribute (default off), not inherited
+            // from the default preview.
+            scaleImage: activeLayoutGroup.scaleImage ?? false,
         };
     }, [layoutSettings, activeLayoutGroup]);
     const renderedModelData = filteredModelData;
@@ -486,11 +490,10 @@ export const Preview3D: React.FC<Preview3DProps> = ({
     );
 
     // Audio stream for the standalone web client. In embedded mode the host (e.g. the browser
-    // preview dialog) owns audio, so we pass no baseUrl — that short-circuits `useAudioStream`
-    // before any HTTP polling, even if audioEnabled somehow flips on.
-    const { audioEnabled, toggleAudio } = useAudioStream({
-        baseUrl: embedded ? undefined : effectiveFrameServerUrl,
-    });
+    // preview dialog) owns audio, so we pass no base — the session comes back inert.
+    const { active: audioEnabled, toggle: toggleAudio } = useAudioListenSession(
+        deriveAudioStreamOptions(embedded ? undefined : effectiveFrameServerUrl, 'EZPlayer preview'),
+    );
 
     // Clear stale state immediately when show folder changes so old data
     // is never rendered with new frame buffers (or vice versa).
@@ -978,26 +981,11 @@ export const Preview3D: React.FC<Preview3DProps> = ({
         [filteredModelData, selectedModelNames],
     );
 
-    // Check WebGL support
-    const [webglSupported, setWebglSupported] = useState<boolean | null>(null);
-    const [webglError, setWebglError] = useState<string | null>(null);
-
-    useEffect(() => {
-        try {
-            const canvas = document.createElement('canvas');
-            const gl =
-                canvas.getContext('webgl') || canvas.getContext('webgl2') || canvas.getContext('experimental-webgl');
-            if (gl) {
-                setWebglSupported(true);
-            } else {
-                setWebglSupported(false);
-                setWebglError('WebGL is not supported in this environment');
-            }
-        } catch (err) {
-            setWebglSupported(false);
-            setWebglError(err instanceof Error ? err.message : 'Failed to check WebGL support');
-        }
-    }, []);
+    // Check WebGL support synchronously, before the first render commits. The
+    // r3f <Canvas> builds its WebGLRenderer in a layout effect and three.js
+    // throws if no context can be created, so an effect-based check would run
+    // too late and the throw would blank the whole app.
+    const [webglSupport] = useState(probeWebGLSupport);
 
     if (loading) {
         return (
@@ -1015,34 +1003,8 @@ export const Preview3D: React.FC<Preview3DProps> = ({
         );
     }
 
-    if (webglSupported === false) {
-        return (
-            <Box
-                sx={{
-                    display: 'flex',
-                    justifyContent: 'center',
-                    alignItems: 'center',
-                    height: '100%',
-                    minHeight: 600,
-                    flexDirection: 'column',
-                    gap: 2,
-                    p: 3,
-                }}
-            >
-                <Box sx={{ color: 'error.main', textAlign: 'center' }}>
-                    <Typography variant="h6" gutterBottom>
-                        WebGL Not Supported
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                        {webglError ||
-                            'WebGL is required to display 3D content but is not available in this environment.'}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-                        In Electron, ensure WebGL is enabled in webPreferences.
-                    </Typography>
-                </Box>
-            </Box>
-        );
+    if (!webglSupport.supported) {
+        return <WebGLUnavailableMessage reason={webglSupport.reason} />;
     }
 
     if (error && !renderedModelData) {
@@ -1328,12 +1290,8 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                             </Typography>
                         </Box>
                     ) : (
-                        (() => {
-                            // Use ONLY house model brightness - do NOT use background image brightness
-                            // The slider value (0-200) is converted to a multiplier (0-2x)
-                            // Example: slider at 100% = 1x multiplier, slider at 200% = 2x multiplier
-
-                            return viewMode === '3d' ? (
+                        <PreviewErrorBoundary resetKey={viewMode}>
+                            {viewMode === '3d' ? (
                                 <Viewer3D
                                     points={renderedModelData?.points ?? []}
                                     shapes={renderedModelData?.shapes}
@@ -1361,6 +1319,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                                     forceOrbitControls={preferOrbitControls}
                                     renderOnDemand={renderOnDemand}
                                     onRenderHandle={onRenderHandle}
+                                    glAttributes={webglSupport.attributes}
                                 />
                             ) : (
                                 <Viewer2D
@@ -1380,6 +1339,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                                     assetResolver={assetResolver}
                                     movingHeadFixtures={movingHeadFixtures}
                                     backgroundBrightness={undefined}
+                                    brightnessMultiplier={previewSettings.brightnessMultiplier}
                                     pixelSizeMultiplier={previewSettings.pixelSize}
                                     cameraState={cameraState2D}
                                     shouldAutoFit={shouldAutoFit}
@@ -1389,9 +1349,10 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                                     fillContainer
                                     renderOnDemand={renderOnDemand}
                                     onRenderHandle={onRenderHandle}
+                                    glAttributes={webglSupport.attributes}
                                 />
-                            );
-                        })()
+                            )}
+                        </PreviewErrorBoundary>
                     )}
                     {expanded && (
                         <Paper

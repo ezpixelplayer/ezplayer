@@ -54,7 +54,7 @@ let layoutInstalledListener: ((layoutMeta: NonNullable<CloudConfig['layoutMeta']
 let playlistsListener: ((playlists: PlaylistRecord[]) => void) | undefined;
 let scheduleListener: ((schedule: ScheduledPlaylist[]) => void) | undefined;
 let settingsListener: ((settings: CloudPlayerSettings) => void) | undefined;
-let homeServerUrlListener: ((url: string) => void) | undefined;
+let homeServerUrlListener: ((url: string | undefined) => void) | undefined;
 let vcResyncListener: (() => void) | undefined;
 
 /** Forward an out-of-band command from the cloud to the server worker, which
@@ -136,7 +136,7 @@ function ensureWorker() {
                 for (const cmd of msg.commands) applyOutOfBandCommand(cmd);
                 break;
             case 'homeServerUrl':
-                console.log(`[cloudpoll] homeServerUrl ${msg.url}`);
+                console.log(`[cloudpoll] homeServerUrl ${msg.url ?? '(none)'}`);
                 homeServerUrlListener?.(msg.url);
                 break;
             case 'log':
@@ -162,6 +162,8 @@ export function setCloudWorkerConfig(
     tuning?: CloudWorkerTuning,
     pollMode?: 'always' | 'scheduled',
     pollSchedule?: CloudPollScheduleEntry[],
+    mediaFolder?: string,
+    ffmpegPath?: string,
 ) {
     console.log(
         `[cloudpoll] setCloudWorkerConfig cloudUrl=${cloudUrl ? '"' + cloudUrl + '"' : '(empty)'} playerIdToken=${playerIdToken ? playerIdToken.slice(0, 8) + '...' : '(empty)'} showFolder="${showFolder}" layoutSource=${layoutSource ?? '(absent)'} pollMode=${pollMode ?? '(absent)'} schedule=${pollSchedule?.length ?? 0}`,
@@ -193,7 +195,14 @@ export function setCloudWorkerConfig(
         pollMode,
         pollSchedule,
         tuning,
+        mediaFolder,
+        ffmpegPath,
     });
+}
+
+/** Fingerprint local media and submit proof of music ownership to the cloud. */
+export function scanMediaRightsNow(mediaFolder?: string, ffmpegPath?: string) {
+    send({ type: 'scanMediaRights', mediaFolder, ffmpegPath });
 }
 
 /** Refresh the worker's cached snapshot of local sequences (used to diff against
@@ -266,6 +275,6 @@ export function onVcResync(listener: () => void) {
     vcResyncListener = listener;
 }
 
-export function onHomeServerUrl(listener: (url: string) => void) {
+export function onHomeServerUrl(listener: (url: string | undefined) => void) {
     homeServerUrlListener = listener;
 }

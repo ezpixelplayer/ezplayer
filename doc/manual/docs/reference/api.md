@@ -47,7 +47,8 @@ Get current show data. Returns the complete current show state, including sequen
 **Response:**
 
 - Status: 200 OK
-- Body: FullPlayerState object
+- Body: the cached broadcast state — the same keys the WebSocket `snapshot`
+  carries for the show itself
 
 ```json
 {
@@ -55,13 +56,16 @@ Get current show data. Returns the complete current show state, including sequen
   "sequences": [...],
   "playlists": [...],
   "schedule": [...],
-  "user": {...},
-  "show": {...},
   "pStatus": {...},
   "cStatus": {...},
   "nStatus": {...}
 }
 ```
+
+The three status objects are absent until their workers have reported once,
+so a freshly started player answers with the arrays and `showFolder` alone.
+The other `FullPlayerState` keys (settings, cloud, controller ops) come from
+the WebSocket snapshot or their own endpoints.
 
 ---
 
@@ -74,6 +78,7 @@ Get sequence thumbnail image. Serves thumbnail images for sequences by sequence 
 - Method: GET
 - Path Parameters:
     - `sequenceId` (string, required) - Sequence identifier (alphanumeric, hyphens, underscores only)
+- Query form: `GET /api/ezp/getimage?id=<sequenceId>` is also accepted
 
 **Response:**
 
@@ -184,7 +189,8 @@ Send player command. Sends a command to control player playback, volume, or requ
 | `playplaylist`      | Play or enqueue a playlist                                                           | `playlistId`, `immediate`, `priority`, `requestId` |
 | `deleterequest`     | Cancel a pending song or playlist request                                            | `requestId`                                        |
 | `clearrequests`     | Clear all pending requests                                                           |                                                    |
-| `setvolume`         | Set volume level and/or mute                                                         | `volume?`, `mute?`                                 |
+| `endsong`           | End the current song (skip to the next item)                                         | `songId?` (only skip if this song is playing)      |
+| `setvolume`         | Set the default volume (persisted) and/or mute (live); see the note below            | `volume?`, `mute?`                                 |
 
 **Request Body Examples:**
 
@@ -230,11 +236,33 @@ Set volume:
 }
 ```
 
+Volume in EZPlayer is automated: the player ramps toward the **default
+volume**, or toward the **scheduled volume window** in effect (see
+[Volume](../advanced/volume.md)). A one-shot live level would be ramped
+straight back, so `volume` here sets the default volume instead, for every
+output, and persists it in playback settings. If no window is in effect the
+player ramps to the new level within about a second. If a window is in
+effect the default is still written, but the window keeps the level until it
+ends; the response says which (`defaultInEffect`, and a `warning` naming the
+window). `mute` is live and takes effect at once either way. Per-output
+defaults and the windows themselves are managed through
+[`/api/ezp/volume`](#get-apiezpvolume).
+
+```json
+{
+    "success": true,
+    "message": "Command sent",
+    "defaultInEffect": false,
+    "warning": "A scheduled volume window is in effect (System default: 20:00-22:00 at 40%); the default applies when it ends",
+    "volume": { "mode": "default", "targets": [{ "id": "default", "label": "System default", "defaultVolume": 75, "level": 40, "activeWindow": { "startTime": "20:00", "endTime": "22:00", "volumeLevel": 40, "days": "all", "id": "w1" }, "schedule": [] }] }
+}
+```
+
 **Response:**
 
 - Status: 200 OK - Command sent successfully
-- Status: 400 Bad Request - Invalid command format
-- Status: 503 Service Unavailable - Playback worker not available
+- Status: 400 Bad Request - Invalid command format (or `setvolume` with a non-numeric `volume`)
+- Status: 503 Service Unavailable - Playback worker not available (or `setvolume` before settings have loaded)
 - Status: 500 Internal Server Error - Server error
 
 **Success Response:**
@@ -391,13 +419,18 @@ Note: The response includes only non-deleted schedules (`deleted !== true`).
 
 Remote file operations on the show folder. Paths and response shapes follow the
 [FPP](https://github.com/FalconChristmas/fpp) file API so FPP-ecosystem tools
-work unchanged. EZPlayer show folders are flat, so every logical directory maps
-to the show folder root with an extension filter:
+work unchanged. Every logical directory maps to the show folder root with an
+extension filter. Uploads and deletes act on the root. Reads by name
+(downloads, `/api/sequence/:name`, `/api/media/:name/…`) look in the root,
+then at the file a registered song plays (which may be in a show subfolder or
+the media folder), then in the media folder, then in show subfolders
+(skipping hidden folders and `Backup`). Listings show the root's files plus
+the files registered songs play elsewhere.
 
 | `:dirName`  | Contents                                              |
 | ----------- | ----------------------------------------------------- |
 | `sequences` | `*.fseq`                                              |
-| `music`     | `*.mp3 *.m4a *.aac *.wav *.ogg *.flac *.wma`          |
+| `music`     | `*.mp3 *.m4a *.aac *.wav *.ogg *.flac *.wma *.mp4`    |
 | `videos`    | `*.mp4 *.mkv *.avi *.mov *.mpg *.mpeg`                |
 | `images`    | `*.gif *.jpg *.jpeg *.png *.webp *.bmp`               |
 | `uploads`   | everything (minus protected/dot files)                |
@@ -406,14 +439,17 @@ to the show folder root with an extension filter:
 | -------- | --------------------------- | -------------------------------------------------------------------------------------------- |
 | `GET`    | `/api/files/:dirName`       | List: `{status:"ok", files:[{name,mtime,sizeBytes,sizeHuman,playtimeSeconds}]}`; `?nameOnly=1` returns a plain name array |
 | `GET`    | `/api/file/:dirName/:name`  | Download (attachment); `?play=1` streams inline with a media content type                     |
-| `POST`   | `/api/file/:dirName/:name`  | Single-shot upload, file bytes as the raw request body                                        |
+| `POST`   | `/api/file/:dirName/:name`  | Single-shot upload, file bytes as the raw request body. Answers `{status:"OK", file, dir, written, size, offset}`, with the byte counts as strings, as FPP does |
 | `POST`   | `/api/file/:dirName`        | Chunked-upload init; returns an id (plain text)                                               |
 | `PATCH`  | `/api/file/:dirName`        | Upload one chunk; headers `Upload-Name`, `Upload-Offset`, `Upload-Length` (raw body = chunk)  |
-| `DELETE` | `/api/file/:dirName/:name`  | Delete a file                                                                                 |
+| `DELETE` | `/api/file/:dirName/:name`  | Delete a file; answers `{status:"OK", file, dir}`                                             |
 | `GET`    | `/api/media`                | Music + video file names (array)                                                              |
 | `GET`    | `/api/sequence`             | Sequence base names, no `.fseq` extension (array)                                             |
 | `GET`    | `/api/sequence/:name`       | Download `<name>.fseq`                                                                        |
 | `POST`   | `/api/sequence/:name`       | Upload `<name>.fseq` (raw body) → `{"Status":"OK","Message":""}`                              |
+| `GET`    | `/api/sequence/:name/meta`  | FSEQ header summary, as FPP's `fsequtils -j` prints it (see [FPP-compat](./fpp-compat.md#files)) |
+| `GET`    | `/api/media/:name/meta`     | The part of FPP's ffprobe dump EZPlayer can answer truthfully: a `format` block with the file, its size, and its duration when a sequence record knows it |
+| `GET`    | `/api/media/:name/duration` | `{"<name>": {"duration": seconds}}` for audio belonging to a registered sequence; `404` otherwise |
 
 Uploads are **raw request bodies** (not multipart). Chunked uploads assemble in
 `.ezplayer/tmp-uploads/` and move into place atomically on completion, so a
@@ -553,6 +589,8 @@ to what the desktop/LAN/cloud UIs issue. One endpoint covers every verb:
 | `record`            | Create/update a persisted controller record: `{ "cmd": "record", "name": "…", "patch": { … } }`. |
 | `network`           | Update a per-network policy: `{ "cmd": "network", "cidr": "…", "patch": { "allow": false } }`. |
 | `refreshInterfaces` | Re-enumerate this host's networks.                                 |
+| `cancel`            | Stop a running operation: `{ "cmd": "cancel", "opId": "op_…" }`. Partial results are kept and the op ends as `cancelled`. |
+| `dismiss`           | Clear a finished operation (and its error) from the shared state: `{ "cmd": "dismiss", "opId": "op_…" }`. Dismissal is shared, so every UI stops showing it. |
 
 Verbs other than `scan` return `{"ok":true}` immediately; results and progress
 ride the shared `controllerops` state (WebSocket broadcast, or re-poll the GET).
@@ -788,6 +826,12 @@ output (see [FPP compatibility](./fpp-compat.md#multisync-master)); empty
 overrides. `advanced.ddpPort` overrides the DDP output port (default 4048)
 and takes effect when controllers reopen.
 
+The example is not the whole object: `PlaybackSettings` also carries
+`normalizeNewSongs`, `jukebox`, `testSequenceTags`, `mediaFolder` and the
+machine-local audio-output choice (`useDefaultAudioOutput`, `audioOutputs`).
+A POST **replaces** the stored object, so read the current one from the
+WebSocket snapshot (`playbackSettings`) and send it back with your changes.
+
 **Response:**
 
 - Status: 200 OK - Settings updated successfully
@@ -804,9 +848,142 @@ and takes effect when controllers reopen.
 
 ---
 
+### GET /api/ezp/playback-settings
+
+The current `PlaybackSettings` object, as the player holds it: the same value
+the WebSocket snapshot carries under `playbackSettings`. Read it before a
+whole-object POST so unrelated settings survive the round trip.
+
+**Response:**
+
+- Status: 200 OK - the `PlaybackSettings` object
+- Status: 503 Service Unavailable - the player has not loaded settings yet (still starting)
+
+---
+
+### GET /api/ezp/playback-settings/:path
+
+### POST /api/ezp/playback-settings/:path
+
+One part of the settings, addressed by its path in the object with `/`
+between levels: `sync`, `sync/multisync`, `sync/multisync/remotes`,
+`volumeControl/defaultVolume`, `sendIdleBlackFrames`. The first segment must
+be a `PlaybackSettings` key.
+
+GET returns the value at that path as JSON. POST replaces just that value
+and leaves every other setting as it is, so an integration can configure its
+own block without reading and resending the whole object. Missing parents are
+created, so `sync/multisync` works before `sync` exists. The body is any JSON
+value; `null` unsets an optional part. `viewerControl` and `volumeControl`
+cannot be unset.
+
+**Example — turn on MultiSync master, unicast to a connector on the same
+machine, leaving everything else alone:**
+
+```bash
+curl -X POST http://127.0.0.1:8080/api/ezp/playback-settings/sync/multisync \
+  -H 'Content-Type: application/json' \
+  -d '{ "enabled": true, "remotes": ["127.0.0.1:32320"], "mediaSync": true }'
+```
+
+```bash
+curl http://127.0.0.1:8080/api/ezp/playback-settings/sync/multisync
+# {"enabled":true,"remotes":["127.0.0.1:32320"],"mediaSync":true}
+```
+
+**Response:**
+
+- Status: 200 OK - GET: the value; POST: `{ "success": true }`
+- Status: 400 Bad Request - no JSON body, an intermediate segment is not an object, or unsetting a required part
+- Status: 404 Not Found - the first segment is not a settings key, or (GET) the part is not set
+- Status: 503 Service Unavailable - settings not loaded yet; POST the whole object first
+
+---
+
+### GET /api/ezp/volume
+
+Volume as the player automates it: for each output, the **default volume**,
+its **scheduled windows**, the window in effect right now (if any), and the
+live level the slew has reached. In `default` mode there is one target,
+`default` (the system default output, governed by `volumeControl`); in
+`outputs` mode there is one per named output in `audioOutputs`, keyed by that
+output's id. These ids are how the writes below address an output, which the
+`playback-settings/:path` route cannot do for the `audioOutputs` array.
+
+```json
+{
+    "mode": "outputs",
+    "targets": [
+        {
+            "id": "o1",
+            "label": "Yard speakers",
+            "deviceId": "7c1b…",
+            "defaultVolume": 80,
+            "schedule": [{ "id": "w1", "days": "all", "startTime": "20:00", "endTime": "22:00", "volumeLevel": 40 }],
+            "activeWindow": { "id": "w1", "days": "all", "startTime": "20:00", "endTime": "22:00", "volumeLevel": 40 },
+            "level": 40
+        },
+        { "id": "o2", "label": "Porch", "deviceId": "e9a0…", "defaultVolume": 60, "schedule": [], "activeWindow": null, "level": 60 }
+    ]
+}
+```
+
+- Status: 200 OK - the overview
+- Status: 503 Service Unavailable - settings not loaded yet
+
+### POST /api/ezp/volume
+
+Set the default volume: `{ "volume": 65 }` writes every output's default,
+`{ "volume": 65, "target": "o2" }` just that output's. The value is clamped to
+0–100 and persisted; the player ramps to it when its default is in effect.
+Windows are left alone, so an output inside one keeps that level until it
+ends. The `setvolume` player command is this call without a `target`.
+
+```json
+{
+    "success": true,
+    "defaultInEffect": false,
+    "warning": "A scheduled volume window is in effect (Yard speakers: 20:00-22:00 at 40%); the default applies when it ends",
+    "volume": { "mode": "outputs", "targets": ["… as GET …"] }
+}
+```
+
+- Status: 200 OK - written; `defaultInEffect` is false and `warning` present when any output is inside a window
+- Status: 400 Bad Request - `volume` is not a number
+- Status: 404 Not Found - unknown `target`
+- Status: 503 Service Unavailable - settings not loaded yet
+
+### GET /api/ezp/volume/:target/schedule
+
+That output's windows, the `schedule` array from the overview. `:target` is
+`default` or an output id.
+
+### POST /api/ezp/volume/:target/schedule
+
+Replace that output's windows with the posted array. Each entry needs `days`
+(`all`, `weekday-mon-fri`, `weekday-sun-thu`, `weekend-fri-sat`,
+`weekend-sat-sun`, or a day name), `startTime` and `endTime` as `HH:MM`
+(`endTime` may pass `24:00` for a window that crosses midnight) and
+`volumeLevel` 0–100; `id` is kept when given and generated otherwise. Later
+entries win where windows overlap. An empty array clears the schedule, after
+which the default applies at all times. Answers like `POST /api/ezp/volume`.
+
+```bash
+curl -X POST http://127.0.0.1:8080/api/ezp/volume/default/schedule \
+  -H 'Content-Type: application/json' \
+  -d '[{ "days": "all", "startTime": "21:00", "endTime": "23:00", "volumeLevel": 35 }]'
+```
+
+- Status: 200 OK - replaced
+- Status: 400 Bad Request - not an array, or an entry is malformed (the error names the field)
+- Status: 404 Not Found - unknown target
+- Status: 503 Service Unavailable - settings not loaded yet
+
+---
+
 ### GET /api/ezp/model-coordinates
 
-Get model coordinates for 3D preview. Returns coordinate data used to render the 3D light layout preview.
+Get model coordinates for the Show View. Returns coordinate data used to render the 3D light layout preview.
 
 **Request:**
 
@@ -931,9 +1108,13 @@ Server clock for client clock-offset estimation. Returns the server's current `D
 
 ```json
 {
-    "now": 1704067200000
+    "now": 1704067200000,
+    "timeZone": "America/New_York"
 }
 ```
+
+`timeZone` is the player's IANA zone, for clients that render show times in
+the player's local time rather than their own.
 
 **Response Headers:**
 
@@ -1021,7 +1202,7 @@ curl http://localhost:3000/api/ezp/audio?afterSeq=42 --output audio.bin
 
 ### GET /api/ezp/view-objects
 
-Get view objects for the 3D preview. Returns the list of view objects (meshes and image planes) parsed from the xLights XML layout. Each entry describes an OBJ mesh or background image with its position, rotation, scale, brightness, and channel mapping.
+Get view objects for the Show View. Returns the list of view objects (meshes and image planes) parsed from the xLights XML layout. Each entry describes an OBJ mesh or background image with its position, rotation, scale, brightness, and channel mapping.
 
 **Request:**
 
@@ -1240,6 +1421,29 @@ To render a live beam, slice `channelOffset … channelOffset + numChannels` byt
 
 ---
 
+### POST /api/ezp/shell/reload
+
+Re-read the remote-access configuration (remote shell / file manager enable
+flags and password) without restarting the player. The `EZPlayer shell` CLI
+calls this after changing the password so a running player picks it up.
+
+**Request:**
+
+- Method: POST
+- Body: none
+
+**Response:**
+
+- Status: 200 OK — the new `RemoteAccessAvailability` state
+- Status: 403 Forbidden — `{"error": "this endpoint is loopback-only"}`
+
+This endpoint is **loopback-only**: any client that is not on
+`127.0.0.1`/`::1` is refused. Disabling a tile takes
+effect on sessions already in flight — an open remote shell or file-manager
+session is closed rather than left running.
+
+---
+
 ### GET /api/ezp/debug-show-folder
 
 Diagnostic endpoint. Returns the current show folder path and a dump of all cached server state. Intended for development and troubleshooting only.
@@ -1369,6 +1573,19 @@ State update broadcast. Broadcasts player state updates. Contains version number
 }
 ```
 
+**When `pStatus` is pushed:** the playback engine publishes it about once a
+second while running, and immediately on every playback event — a song
+starting or ending on its own, a play/skip/stop command, pause and resume, and
+queue changes — so a song-to-song change reaches clients within a frame rather
+than on the next tick. While playing, `position` gives where the song is:
+`content_ms` into the sequence at `sampled_at` (player epoch ms, the engine
+clock — the time of the frame being output, within a frame of `reported_time`),
+and `audio_ms`, the audio file position as heard on the player, i.e. with the
+audio sync adjust applied. Clients that follow playback should extrapolate from
+the latest `position` using their measured clock offset to the player (the
+`serverNow` in REST responses helps measure it) rather than from
+`reported_time`.
+
 **State Keys (FullPlayerState):**
 
 | Key                  | Type                 | Description                  |
@@ -1377,14 +1594,19 @@ State update broadcast. Broadcasts player state updates. Contains version number
 | `sequences`          | SequenceRecord[]     | Array of sequences           |
 | `playlists`          | PlaylistRecord[]     | Array of playlists           |
 | `schedule`           | ScheduledPlaylist[]  | Array of scheduled playlists |
-| `user`               | EndUser              | User object                  |
-| `show`               | EndUserShowSettings  | Show settings object         |
 | `cStatus`            | PlayerCStatusContent | Controller status            |
 | `pStatus`            | PlayerPStatusContent | Playback status              |
 | `nStatus`            | PlayerNStatusContent | Network status               |
 | `playbackSettings`   | PlaybackSettings     | Playback settings            |
 | `playbackStatistics` | PlaybackStatistics   | Playback statistics          |
 | `versions`           | EZPlayerVersions     | Version info                 |
+| `cloudConfig`        | CloudConfig          | Cloud connection settings    |
+| `cloudStatus`        | CloudStatus          | Cloud link status            |
+| `controllerops`      | ControllerOpsState   | Controller discovery, operations, known controllers and network policies — one atomic snapshot |
+| `remoteAccess`       | RemoteAccessAvailability | Which password-gated remote-access tiles this player offers |
+| `autoUpdateOps`      | AutoUpdateOpsState   | Update settings, status and available releases |
+| `audioOutputDevices` | AudioDevice[]        | Physical audio outputs on the player machine |
+| `appSettings`        | AppSettingsState     | Machine-wide settings: diagnostics consent, start at sign-in |
 
 **Behavior:**
 
@@ -1427,6 +1649,23 @@ Server-initiated disconnection. Server sends this before disconnecting a client.
 
 - `"heartbeat timeout"` - Client didn't respond to pings within 15 seconds
 - `"backpressure: buffered={bytes}"` - Client buffer exceeded 8MB limit
+
+#### bridgeStatus
+
+Sent by the **cloud bridge only**, never by a player's own WebSocket: it tells
+cloud viewers whether the player↔cloud socket is currently up. Viewers get one
+on connect with the current state, and one whenever the player connects or
+disconnects at the bridge. A client talking straight to a player will never
+see it.
+
+**Message Format:**
+
+```json
+{
+    "type": "bridgeStatus",
+    "playerConnected": true
+}
+```
 - `"socket closed"` - Connection closed
 - `"socket error"` - Connection error
 - `"send failed"` - Failed to send message

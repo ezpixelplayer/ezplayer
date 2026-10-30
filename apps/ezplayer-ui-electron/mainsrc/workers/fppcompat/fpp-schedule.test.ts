@@ -1,6 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import type { PlaylistRecord } from '@ezplayer/ezplayer-core';
-import { fppDayToWeekdays, fppScheduleToRecords, recordsToFppSchedule, weekdaysToFppDay } from './fpp-schedule';
+import { readFileSync } from 'node:fs';
+import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import {
+    buildFppdSchedule,
+    fppDayToWeekdays,
+    fppScheduleToRecords,
+    recordsToFppSchedule,
+    weekdaysToFppDay,
+} from './fpp-schedule';
+import { gaps } from './shape-check';
+
+// Captured from a real FPP; see __fixtures__/fpp-10.1/README.md.
+const fixtureDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '__fixtures__', 'fpp-10.1');
 
 const playlists: PlaylistRecord[] = [{ id: 'pl1', title: 'Main Show', tags: [], createdAt: 0, items: [] }];
 
@@ -186,5 +199,67 @@ describe('recordsToFppSchedule', () => {
             endDate: '2026-07-20',
             startTime: '17:00:00',
         });
+    });
+});
+
+describe('buildFppdSchedule (the live scheduler view)', () => {
+    // One FPP entry, every day 18:00–22:00, as captured from FPP 10.1.
+    const { records } = fppScheduleToRecords(
+        [
+            {
+                enabled: 1,
+                playlist: 'RefShow',
+                day: 7,
+                startTime: '18:00:00',
+                endTime: '22:00:00',
+                repeat: 0,
+                startDate: '2026-01-01',
+                endDate: '2099-12-31',
+                stopType: 0,
+            },
+        ],
+        [{ id: 'pl1', title: 'RefShow', tags: [], createdAt: 0, items: [] } as PlaylistRecord],
+        NOW,
+    );
+
+    it('matches the structure FPP reports', () => {
+        const ours = buildFppdSchedule(records, NOW);
+        const theirs = JSON.parse(
+            readFileSync(path.join(fixtureDir, 'scheduled.fppd-schedule.json'), 'utf8'),
+        ) as Record<string, unknown>;
+        expect(gaps(ours, theirs)).toEqual([]);
+    });
+
+    it('lists the rule and the occurrences due in the look-ahead window', () => {
+        const out = buildFppdSchedule(records, NOW) as {
+            schedule: {
+                entries: Record<string, unknown>[];
+                items: Record<string, unknown>[];
+                scheduleDistance: number;
+            };
+        };
+        expect(out.schedule.entries).toHaveLength(1);
+        expect(out.schedule.entries[0]).toMatchObject({
+            playlist: 'RefShow',
+            day: 7,
+            dayStr: 'Everyday',
+            startTimeStr: '18:00:00',
+            startDateInt: 20260101,
+            stopTypeStr: 'Graceful',
+            type: 'playlist',
+        });
+        // Daily for 28 days, plus today's own occurrence.
+        expect(out.schedule.items.length).toBeGreaterThanOrEqual(28);
+        expect(out.schedule.items[0]).toMatchObject({
+            command: 'Start Playlist',
+            args: ['RefShow', 'false', 'false'],
+            startTimeStr: expect.stringMatching(/@ 06:00 PM$/) as unknown as string,
+        });
+        // Every listed item ends in the future and starts within the window.
+        const horizon = NOW + out.schedule.scheduleDistance * 86_400_000;
+        for (const i of out.schedule.items) {
+            expect((i.endTime as number) * 1000).toBeGreaterThanOrEqual(NOW);
+            expect((i.startTime as number) * 1000).toBeLessThanOrEqual(horizon);
+        }
     });
 });

@@ -2,6 +2,7 @@ import * as React from 'react';
 import { CircularProgress, Grid } from '@mui/material';
 import { Box } from '../box/Box';
 import { useSelector, useDispatch } from 'react-redux';
+import { isPlaybackActive } from '@ezplayer/ezplayer-core';
 
 import { QueueCard } from '../status/QueueCard';
 import { AppDispatch, RootState } from '../../store/Store';
@@ -25,19 +26,27 @@ export const QueueAndControlStack: React.FC<QueueAndControlStackProps> = ({ allo
         );
     }
 
+    const player = runtime.combined.player;
+    const active = isPlaybackActive(player?.status);
+    const queue = player?.queue ?? [];
+    // Nothing playing and nothing waiting: no controls, and no gap where they would be.
+    if (!active && queue.length === 0) return null;
+
     return (
         <Box sx={{ px: 2, pb: 2, flexShrink: 0 }}>
             {/* Playback control buttons */}
-            <Box sx={{ mb: 2 }}>
-                <PlaybackControls allowStopControls={allowStopControls} />
-            </Box>
+            {active && (
+                <Box sx={{ mb: 2 }}>
+                    <PlaybackControls allowStopControls={allowStopControls} />
+                </Box>
+            )}
 
             {/* Queue */}
             <Grid container spacing={2}>
                 <Grid item xs={12}>
-                    {runtime?.combined?.player?.queue && (
+                    {queue.length > 0 && (
                         <QueueCard
-                            queue={runtime.combined.player.queue}
+                            queue={queue}
                             onRemoveItem={async (i, _index) => {
                                 await dispatch(
                                     callImmediateCommand({

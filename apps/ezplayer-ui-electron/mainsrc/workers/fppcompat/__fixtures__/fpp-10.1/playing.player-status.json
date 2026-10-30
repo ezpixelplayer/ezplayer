@@ -1,0 +1,95 @@
+{
+    "playlists": [
+        {
+            "blankAtEnd": 1,
+            "currentEntry": {
+                "deprecated": 0,
+                "enabled": 1,
+                "isFinished": 0,
+                "isPlaying": 1,
+                "isStarted": 1,
+                "millisecondsElapsed": 5250,
+                "note": "",
+                "playCount": 1,
+                "playOnce": 0,
+                "secondsElapsed": 5,
+                "secondsRemaining": 54,
+                "sequenceName": "RefSong.fseq",
+                "type": "sequence"
+            },
+            "currentState": "playing",
+            "desc": "Reference show",
+            "details": {
+                "blankAtEnd": 1,
+                "configTime": 1789816799,
+                "currentEntry": {
+                    "deprecated": 0,
+                    "enabled": 1,
+                    "isFinished": 0,
+                    "isPlaying": 1,
+                    "isStarted": 1,
+                    "millisecondsElapsed": 5250,
+                    "note": "",
+                    "playCount": 1,
+                    "playOnce": 0,
+                    "secondsElapsed": 5,
+                    "secondsRemaining": 54,
+                    "sequenceName": "RefSong.fseq",
+                    "type": "sequence"
+                },
+                "currentState": "playing",
+                "desc": "Reference show",
+                "globalPauseBetweenSequencesMS": 0,
+                "loop": 0,
+                "loopCount": 0,
+                "mainPlaylist": [
+                    {
+                        "deprecated": 0,
+                        "enabled": 1,
+                        "isFinished": 0,
+                        "isPlaying": 1,
+                        "isStarted": 1,
+                        "millisecondsElapsed": 5250,
+                        "note": "",
+                        "playCount": 1,
+                        "playOnce": 0,
+                        "secondsElapsed": 5,
+                        "secondsRemaining": 54,
+                        "sequenceName": "RefSong.fseq",
+                        "type": "sequence"
+                    }
+                ],
+                "name": "RefShow",
+                "playlistInfo": {
+                    "leadIn_duration": 0,
+                    "leadIn_items": 0,
+                    "leadOut_duration": 0,
+                    "leadOut_items": 0,
+                    "mainPlaylist_duration": 0,
+                    "mainPlaylist_items": 1,
+                    "total_duration": 0,
+                    "total_items": 1
+                },
+                "random": 0,
+                "repeat": 0,
+                "size": 1
+            },
+            "lastModified": 1789816792,
+            "loop": 0,
+            "loopCount": 0,
+            "name": "RefShow",
+            "origStartTime": 0,
+            "origStopTime": 0,
+            "position": 1,
+            "priority": -1,
+            "random": 0,
+            "repeat": 0,
+            "scheduled": false,
+            "size": 1,
+            "startTime": 1789816793,
+            "status": 1,
+            "stopMethod": 0,
+            "stopTime": 0
+        }
+    ]
+}

@@ -6,6 +6,7 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 
 import { BrowserWindow, ipcMain } from 'electron';
+import { syncPowerBlock } from './powerblock.js';
 
 import { Worker } from 'node:worker_threads';
 
@@ -32,8 +33,17 @@ import {
     loadCloudConfigFromDisk,
     updateCloudConfig,
 } from './data/CloudConfigStorage.js';
+import { loadViewerStatsFromDisk, resetViewerStatsStore } from './data/ViewerStatsStorage.js';
+import {
+    configureViewerStatsSync,
+    getViewerStatsSummary,
+    publishViewerStats,
+    recordLocalViewerPick,
+    recordLocalViewerPickDropped,
+    setViewerStatsBroadcaster,
+} from './viewerStatsSync.js';
 import { atomicWriteFile } from './data/atomicWrite.js';
-import { ensureEzplayerSubdir, settingsPath } from './data/SettingsMigration.js';
+import { ensureEzplayerSubdir, settingsPath } from './data/SettingsDir.js';
 import {
     getCurrentCloudStatus,
     fetchLayoutNow,
@@ -48,6 +58,7 @@ import {
     onLayoutInstalled,
     onVcResync,
     pollCloudNow,
+    scanMediaRightsNow,
     setCloudRemoteControlEnabled,
     setCloudWorkerConfig,
     updateCloudWorkerSequences,
@@ -55,16 +66,23 @@ import {
 } from './workers/cloudpollparent.js';
 import { autoDetectSongFilesFromFseq, extractAudioTagMetadata } from './data/song-file-autodetect.js';
 import { batchImportSequences, batchImportSequencesFromFolder } from './data/batch-sequence-import.js';
-import { deriveAudioForRecord, pruneStaleDerivedAudio, reconcileDerivedAudio } from './data/derived-audio.js';
+import {
+    deriveAudioForRecord,
+    pruneStaleDerivedAudio,
+    reconcileDerivedAudio,
+    resolveFfmpegBinary,
+} from './data/derived-audio.js';
 
 import type {
     CloudCommand,
+    CloudAudioMode,
     CloudConfig,
     CloudPlayerSettings,
     CloudPollScheduleEntry,
     CombinedPlayerStatus,
     UIConnectSnapshot,
     FullPlayerState,
+    PlaybackItemOrder,
     PlaybackSettings,
     PlaylistRecord,
     ScheduledPlaylist,
@@ -73,14 +91,20 @@ import type {
 
 import { FSEQReaderAsync } from '@ezplayer/epp';
 
-import { CLOUD_API_ENDPOINTS, mergePlaylists, mergeSchedule, mergeSequences } from '@ezplayer/ezplayer-core';
+import {
+    CLOUD_API_ENDPOINTS,
+    mergePlaylists,
+    mergeSchedule,
+    mergeSequences,
+    viewerControlBackends,
+} from '@ezplayer/ezplayer-core';
 import type { AppSettingsCommand, AudioDevice } from '@ezplayer/ezplayer-core';
 import { reportDiagEvent } from './diagnostics.js';
 import { dispatchAppSettingsCommand, getAppSettingsState } from './appSettings.js';
 import { safeSend } from './safe-send.js';
 import { syncAudioOutputsFromSettings, broadcastAudioChunk } from './audioWindows.js';
 
-import type { EZPlayerCommand } from '@ezplayer/ezplayer-core';
+import type { EZPlayerCommand, ViewerControlResyncResult } from '@ezplayer/ezplayer-core';
 
 import { PlayerCommand, type MainRPCAPI, type PlayWorkerRPCAPI, WorkerToMainMessage } from './workers/playbacktypes.js';
 import { RPCClient, RPCServer } from './workers/rpc.js';
@@ -90,9 +114,12 @@ import {
     pickAnotherShowFolder,
     pickCloudShowFolder,
 } from '../showfolder.js';
-import { getServerStatus } from './server-worker-manager.js';
+import { getServerStatus, setCloudAudioMode, setRtcOffset } from './server-worker-manager.js';
 import {
     dispatchControllerCommand,
+    cancelQueuedAutomaticReads,
+    deviceIdForAddress,
+    setControllerDataHold,
     getControllerOpsState,
     loadControllerRecords,
     loadNetworkPolicies,
@@ -100,7 +127,7 @@ import {
     hasRunningControllerOps,
     setKnownControllers,
 } from './controller-ops.js';
-import type { ControllerCommand } from '@ezplayer/ezplayer-core';
+import type { ControllerCommand, PlayerNStatusContent } from '@ezplayer/ezplayer-core';
 import {
     updateFrameBuffer,
     updateAudioBuffer,
@@ -123,6 +150,120 @@ export let curStatus: CombinedPlayerStatus = {};
 let lastShowName: string | undefined;
 export let curErrors: string[] = [];
 
+/**
+ * How long one hold of a controller's data lasts without renewal.  Short, so a
+ * crash or a lost release frees the controller quickly; operations that outlive
+ * it renew while they work.
+ */
+const HOLD_LEASE_MS = 60_000;
+/** Renewal interval, comfortably inside the lease. */
+const HOLD_RENEW_MS = 20_000;
+
+/** True while the player is putting data on the wire. */
+function playbackActive(): boolean {
+    const status = curStatus.player?.status;
+    return status !== undefined && status !== 'Stopped';
+}
+
+/**
+ * Hold one controller's data for the length of an operation, returning the
+ * release.  Nothing is held when no data is flowing, so an idle player behaves
+ * as it always did.  Handed to controller-ops, so reads and uploads go through
+ * it whatever asked for them — the controller list, the LAN API, the cloud or
+ * the CLI.
+ */
+function holdControllerData(address: string): (() => void) | undefined {
+    if (!playbackActive() || !playWorker) return undefined;
+
+    const hold = () =>
+        playWorker?.postMessage({
+            type: 'frontendcmd',
+            cmd: { command: 'holdcontrollerdata', address, leaseMs: HOLD_LEASE_MS },
+        } as PlayerCommand);
+
+    hold();
+    // An upload outlasts any one lease, so keep renewing until released.
+    const renew = setInterval(hold, HOLD_RENEW_MS);
+    renew.unref?.();
+
+    return () => {
+        clearInterval(renew);
+        playWorker?.postMessage({
+            type: 'frontendcmd',
+            cmd: { command: 'releasecontrollerdata', address },
+        } as PlayerCommand);
+    };
+}
+setControllerDataHold(holdControllerData);
+
+/** Last connectivity seen per controller address, to spot when it turns Up. */
+const lastConnectivity = new Map<string, string>();
+const lastAliveRefresh = new Map<string, number>();
+/** One read per controller per minute, so a flapping controller cannot storm. */
+const ALIVE_REFRESH_GAP_MS = 60_000;
+
+/**
+ * Read a controller's details when we first learn it is alive, since what it
+ * reports is newer than anything held from before.
+ *
+ * A first sighting means every controller at once, each read pausing its data
+ * and taking up to tens of seconds, so those wait for a stopped player and a
+ * show starting drops whatever is still queued.  A controller that comes back
+ * is a single read, allowed mid-show when the recovery setting asks for it.
+ */
+function refreshControllersNowAlive(status: PlayerNStatusContent): void {
+    const refresh = getSettingsCache()?.controllerRefresh;
+    // Unset means on: reading controllers as they appear is the helpful default.
+    const whenIdle = refresh?.whenIdle !== false;
+    const onRecovery = refresh?.onRecovery === true;
+
+    // Only an explicit Stopped counts as idle: before the first player status
+    // arrives the schedule may be about to start a show.
+    const idle = curStatus.player?.status === 'Stopped';
+    const now = Date.now();
+
+    for (const c of status.controllers ?? []) {
+        const address = c.address;
+        if (!address || !c.connectivity) continue;
+
+        const was = lastConnectivity.get(address);
+        lastConnectivity.set(address, c.connectivity);
+        if (c.connectivity !== 'Up') continue;
+
+        const firstSighting = was === undefined || was === 'Pending';
+        const recovered = was === 'Down';
+
+        // A first sighting is every controller at once, so it waits for an idle
+        // player.  One that just came back is a single read, and holding its
+        // data makes it answerable even mid-show.
+        let why: string | undefined;
+        if (firstSighting && idle && whenIdle) why = 'first time seen alive, player idle';
+        else if (recovered && (idle ? whenIdle : onRecovery)) why = 'back after being unreachable';
+        if (!why) continue;
+
+        const last = lastAliveRefresh.get(address) ?? 0;
+        if (now - last < ALIVE_REFRESH_GAP_MS) continue;
+        lastAliveRefresh.set(address, now);
+
+        // A controller that was never scanned has no device entry; the status
+        // command materializes one from the address.
+        const id = deviceIdForAddress(address) ?? `${address}|direct`;
+        console.log(`Reading ${c.name ?? address} (${address}): ${why}`);
+        void dispatchControllerCommand({ cmd: 'status', id, address, depth: 'full' }, 'auto').catch(() => {
+            // The operation reports its own failure; nothing to add here.
+        });
+    }
+}
+
+/**
+ * Playback starting ends the automatic reads: the queued ones are dropped, and
+ * the controllers they would have covered stay marked unread.
+ */
+function stopAutomaticReadsForPlayback(): void {
+    const dropped = cancelQueuedAutomaticReads();
+    if (dropped > 0) console.log(`Playback started: dropped ${dropped} queued controller read(s)`);
+}
+
 /** Stamp show/content summary onto curStatus from current state.
  *  Called at every broadcast site so Show Status sees fresh values. */
 function applyStatusSummary() {
@@ -131,6 +272,7 @@ function applyStatusSummary() {
         show_name: lastShowName,
         viewer_control_enabled: s?.viewerControl?.enabled,
         viewer_control_mode: s?.viewerControl?.type,
+        viewer_control_backends: s ? viewerControlBackends(s.viewerControl) : undefined,
     };
     const files = curStatus.content?.files;
     const nNeeding = files ? Object.values(files).filter((f) => f.status !== 'installed').length : undefined;
@@ -308,9 +450,25 @@ export function getSequenceThumbnail(id: string) {
 
 export function isScheduleActive(): boolean {
     const player = curStatus.player;
-    if (!player || player.status !== 'Playing') return false;
+    // A graceful stop is still playing until its song and outro finish.
+    if (!player || (player.status !== 'Playing' && player.status !== 'Stopping')) return false;
     const nowPlaying = player.now_playing;
     return !!(nowPlaying && nowPlaying.type === 'Scheduled');
+}
+
+/** The baked song order of a playback item, from the worker that holds it. */
+export async function getPlaybackItemOrder(key: string): Promise<PlaybackItemOrder | undefined> {
+    return await rpcc?.call('getPlaybackItemOrder', { key });
+}
+
+/** Re-push the Remote Falcon song list; resolves with Remote Falcon's own
+ *  answer, so the caller can show a refusal rather than claim success. */
+export async function resyncViewerControl(): Promise<ViewerControlResyncResult> {
+    try {
+        return (await rpcc?.call('resyncViewerControl', {})) ?? { ok: false, message: 'The player is not running' };
+    } catch (err) {
+        return { ok: false, message: err instanceof Error ? err.message : String(err) };
+    }
 }
 
 /**
@@ -326,39 +484,52 @@ export async function stopPlayerPlayback(): Promise<boolean> {
     }
 }
 
-// Exported handler functions that can be called from both IPC and REST endpoints
-export async function updatePlaylistsHandler(recs: PlaylistRecord[]): Promise<PlaylistRecord[]> {
-    const uppl = recs.map((r) => {
-        return { ...r, updatedAt: Date.now() };
-    });
-    const updList = mergePlaylists(uppl, curPlaylists);
-    const showFolder = getCurrentShowFolder();
-    if (showFolder) {
-        await savePlaylistsAPI(showFolder, updList);
-    }
-    curPlaylists = updList;
-    const filtered = updList.filter((r) => r.deleted !== true);
-    safeSend(updateWindow, 'update:playlist', filtered);
-    broadcastToWebSocket('playlists', filtered);
-    scheduleUpdated();
-    return filtered;
+/** Show-data writes and show-folder loads run one at a time, so a load's disk
+ *  read can't overwrite a write that landed while it was in flight. */
+let showDataChain: Promise<unknown> = Promise.resolve();
+function withShowData<T>(fn: () => Promise<T>): Promise<T> {
+    const next = showDataChain.then(fn);
+    showDataChain = next.catch(() => {});
+    return next;
 }
 
-export async function updateScheduleHandler(recs: ScheduledPlaylist[]): Promise<ScheduledPlaylist[]> {
-    const uppl = recs.map((r) => {
-        return { ...r, updatedAt: Date.now() };
+// Exported handler functions that can be called from both IPC and REST endpoints
+export function updatePlaylistsHandler(recs: PlaylistRecord[]): Promise<PlaylistRecord[]> {
+    return withShowData(async () => {
+        const uppl = recs.map((r) => {
+            return { ...r, updatedAt: Date.now() };
+        });
+        const updList = mergePlaylists(uppl, curPlaylists);
+        const showFolder = getCurrentShowFolder();
+        if (showFolder) {
+            await savePlaylistsAPI(showFolder, updList);
+        }
+        curPlaylists = updList;
+        const filtered = updList.filter((r) => r.deleted !== true);
+        safeSend(updateWindow, 'update:playlist', filtered);
+        broadcastToWebSocket('playlists', filtered);
+        scheduleUpdated();
+        return filtered;
     });
-    const updList = mergeSchedule(uppl, curSchedule);
-    const showFolder = getCurrentShowFolder();
-    if (showFolder) {
-        await saveScheduleAPI(showFolder, updList);
-    }
-    curSchedule = updList;
-    const filtered = updList.filter((r) => r.deleted !== true);
-    safeSend(updateWindow, 'update:schedule', filtered);
-    broadcastToWebSocket('schedule', filtered);
-    scheduleUpdated();
-    return filtered;
+}
+
+export function updateScheduleHandler(recs: ScheduledPlaylist[]): Promise<ScheduledPlaylist[]> {
+    return withShowData(async () => {
+        const uppl = recs.map((r) => {
+            return { ...r, updatedAt: Date.now() };
+        });
+        const updList = mergeSchedule(uppl, curSchedule);
+        const showFolder = getCurrentShowFolder();
+        if (showFolder) {
+            await saveScheduleAPI(showFolder, updList);
+        }
+        curSchedule = updList;
+        const filtered = updList.filter((r) => r.deleted !== true);
+        safeSend(updateWindow, 'update:schedule', filtered);
+        broadcastToWebSocket('schedule', filtered);
+        scheduleUpdated();
+        return filtered;
+    });
 }
 
 /** Adopt cloud-managed player settings (one-way show-builder -> player). Each
@@ -435,11 +606,8 @@ let lastAppliedCloudCfg: CloudConfig | undefined;
 /** Common sequence-upsert path used by both the renderer-driven IPC and the cloud
  *  content sync. Runs `mergeSequences`, persists, broadcasts to renderer + WS, kicks
  *  the playback worker, and refreshes the cloud worker's local-sequences cache. */
-let commitChain: Promise<unknown> = Promise.resolve();
-async function commitSequenceUpdates(uppl: SequenceRecord[]): Promise<SequenceRecord[]> {
-    const next = commitChain.then(() => commitSequenceUpdatesInner(uppl));
-    commitChain = next.catch(() => {});
-    return next;
+function commitSequenceUpdates(uppl: SequenceRecord[]): Promise<SequenceRecord[]> {
+    return withShowData(() => commitSequenceUpdatesInner(uppl));
 }
 async function commitSequenceUpdatesInner(uppl: SequenceRecord[]): Promise<SequenceRecord[]> {
     const showFolder = getCurrentShowFolder();
@@ -538,6 +706,7 @@ export async function putSequencesWithDurations(recs: SequenceRecord[]): Promise
                 const title = ups.work?.title || path.basename(ups.files.audio);
                 throw new Error(
                     `Cannot derive playable audio for "${title}": ${err instanceof Error ? err.message : String(err)}`,
+                    { cause: err },
                 );
             }
         }
@@ -582,16 +751,21 @@ export async function loadShowFolder(forceRestart?: boolean) {
 
     // Reset combined player status.
     curStatus = {};
+    syncPowerBlock(undefined);
     curErrors = [];
     // Flush out any pending writes (e.g. downloads) to show data in previous folder.
+    // These commit through withShowData, so this must happen before taking it.
     await flushPendingInstalls();
 
-    // All our JSON lives under `.ezplayer/` in the show folder. Run this BEFORE any
-    // loader so that, on first run against an old folder, root-level files are moved
-    // into the subdir and the loaders read the migrated copies on this same tick.
+    await withShowData(() => loadShowData(showFolder, forceRestart));
+}
+
+async function loadShowData(showFolder: string, forceRestart?: boolean) {
+    // All our JSON lives under `.ezplayer/` in the show folder.
     await ensureEzplayerSubdir(showFolder);
     await loadInstalledFiles(showFolder);
     resetControllerOps();
+    resetViewerStatsStore();
     await loadControllerRecords(showFolder);
     await loadNetworkPolicies(showFolder);
 
@@ -603,8 +777,11 @@ export async function loadShowFolder(forceRestart?: boolean) {
     curSchedule = await loadScheduleAPI(showFolder);
     await loadSettingsFromDisk(settingsPath(showFolder, 'playbackSettings.json'));
     const cloudConfig = await loadCloudConfigFromDisk(settingsPath(showFolder, 'cloud-config.json'));
+    await loadViewerStatsFromDisk(settingsPath(showFolder, 'viewer-stats.json'));
+    publishViewerStats();
     const cloudActive = cloudConfig.cloudEnabled !== false;
     setCloudRemoteControlEnabled(cloudConfig.cloudRemoteControlEnabled !== false);
+    setCloudAudioMode(cloudConfig.cloudAudioMode ?? 'auto');
     setCloudWorkerConfig(
         cloudActive ? cloudConfig.cloudServiceUrl : '',
         cloudActive ? cloudConfig.playerIdToken : '',
@@ -684,6 +861,11 @@ export async function loadShowFolder(forceRestart?: boolean) {
         playerIdToken: cloudActive ? cloudConfig.playerIdToken : '',
         liveUrl: cloudActive ? currentHomeServerUrl : undefined,
     } as PlayerCommand);
+    configureViewerStatsSync({
+        cloudUrl: cloudActive ? cloudConfig.cloudServiceUrl : '',
+        liveUrl: cloudActive ? currentHomeServerUrl : undefined,
+        playerToken: cloudActive ? cloudConfig.playerIdToken : '',
+    });
     scheduleUpdated(forceRestart);
 }
 
@@ -697,6 +879,11 @@ function resendCloudIdentity(): void {
         playerIdToken: cloudActive ? cfg.playerIdToken : '',
         liveUrl: cloudActive ? currentHomeServerUrl : undefined,
     } as PlayerCommand);
+    configureViewerStatsSync({
+        cloudUrl: cloudActive ? cfg.cloudServiceUrl : '',
+        liveUrl: cloudActive ? currentHomeServerUrl : undefined,
+        playerToken: cloudActive ? cfg.playerIdToken : '',
+    });
 }
 
 const handlers: MainRPCAPI = {
@@ -705,6 +892,17 @@ const handlers: MainRPCAPI = {
         throw new Error(msg);
     },
 };
+
+/** Bundled ffmpeg for the cloud worker's rights scan; undefined when the
+ *  binary is missing (scan degrades to CRC + tag identifiers). */
+function ffmpegPathForRightsScan(): string | undefined {
+    try {
+        return resolveFfmpegBinary();
+    } catch (e) {
+        console.warn('[cloud-command] ffmpeg unavailable for rights scan:', (e as Error).message);
+        return undefined;
+    }
+}
 
 /** Single dispatcher for renderer-issued cloud commands. New verbs only need a
  *  variant on `CloudCommand` and a case here. The renderer hits this via either
@@ -743,6 +941,9 @@ export function dispatchCloudCommand(cmd: CloudCommand): void | Promise<void> {
         case 'setCloudRemoteControlEnabled':
             applyCloudRemoteControlEnabled(cmd.enabled);
             break;
+        case 'setCloudAudioMode':
+            applyCloudAudioMode(cmd.mode);
+            break;
         case 'setCloudPolling':
             applyCloudPolling({
                 mode: cmd.mode,
@@ -753,6 +954,9 @@ export function dispatchCloudCommand(cmd: CloudCommand): void | Promise<void> {
         case 'controllerCommand':
             // Fire-and-forget: results reach clients via the broadcast state.
             void dispatchControllerCommand(cmd.command, 'cloud');
+            break;
+        case 'scanMediaRights':
+            scanMediaRightsNow(getSettingsCache()?.mediaFolder, ffmpegPathForRightsScan());
             break;
         default: {
             const _exhaustive: never = cmd;
@@ -766,6 +970,7 @@ export function dispatchCloudCommand(cmd: CloudCommand): void | Promise<void> {
 function reconfigureCloudWorker(cfg: CloudConfig) {
     const cloudActive = cfg.cloudEnabled !== false;
     setCloudRemoteControlEnabled(cfg.cloudRemoteControlEnabled !== false);
+    setCloudAudioMode(cfg.cloudAudioMode ?? 'auto');
     setCloudWorkerConfig(
         cloudActive ? cfg.cloudServiceUrl : '',
         cloudActive ? cfg.playerIdToken : '',
@@ -779,6 +984,8 @@ function reconfigureCloudWorker(cfg: CloudConfig) {
         },
         cfg.cloudPollMode,
         cfg.cloudPollSchedule,
+        getSettingsCache()?.mediaFolder,
+        ffmpegPathForRightsScan(),
     );
     playWorker?.postMessage({
         type: 'cloudidentity',
@@ -786,12 +993,22 @@ function reconfigureCloudWorker(cfg: CloudConfig) {
         playerIdToken: cloudActive ? cfg.playerIdToken : '',
         liveUrl: cloudActive ? currentHomeServerUrl : undefined,
     } as PlayerCommand);
+    configureViewerStatsSync({
+        cloudUrl: cloudActive ? cfg.cloudServiceUrl : '',
+        liveUrl: cloudActive ? currentHomeServerUrl : undefined,
+        playerToken: cloudActive ? cfg.playerIdToken : '',
+    });
 }
 
 function broadcastCloudConfig(cfg: CloudConfig) {
     safeSend(updateWindow, 'update:cloudConfig', cfg);
     broadcastToWebSocket('cloudConfig', cfg);
 }
+
+setViewerStatsBroadcaster((summary) => {
+    safeSend(updateWindow, 'update:viewerStats', summary);
+    broadcastToWebSocket('viewerStats', summary);
+});
 
 /** Update the persisted layout-source mode (`xlights` or `cloud`). Reconfigures the
  *  worker so it knows whether to auto-fetch layout at the head of each manifest tick. */
@@ -835,6 +1052,14 @@ export function applyCloudRemoteControlEnabled(enabled: boolean) {
     broadcastCloudConfig(cfg);
 }
 
+/** Persist the cloud live-audio policy and push it to the server worker,
+ *  which owns the audio bridge and pump. */
+export function applyCloudAudioMode(mode: CloudAudioMode) {
+    const cfg = updateCloudConfig({ cloudAudioMode: mode });
+    reconfigureCloudWorker(cfg);
+    broadcastCloudConfig(cfg);
+}
+
 /** Update the persisted player ID token and reconfigure the cloud poller. Called from
  *  the renderer (electron IPC) and from the embedded UI (koa worker → RPC). */
 export function applyPlayerIdToken(token: string) {
@@ -866,6 +1091,7 @@ export async function applyRotatePlayerToken(): Promise<void> {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ new_token: newToken }),
+        signal: AbortSignal.timeout(15_000),
     });
     if (!res.ok) throw new Error(`Token rotation failed: HTTP ${res.status}`);
     applyPlayerIdToken(newToken);
@@ -891,6 +1117,7 @@ export async function registerContentHandlers(mainWindow: BrowserWindow | null, 
             controllerops: getControllerOpsState(),
             remoteAccess: await getRemoteAccessAvailability(),
             appSettings: getAppSettingsState(),
+            viewerStats: getViewerStatsSummary(),
         };
     });
     ipcMain.handle('ipcUIDisconnect', async (_event): Promise<void> => {
@@ -996,14 +1223,20 @@ export async function registerContentHandlers(mainWindow: BrowserWindow | null, 
         return await updateScheduleHandler(recs);
     });
 
+    ipcMain.handle('ipcResyncViewerControl', async (_event): Promise<ViewerControlResyncResult> => {
+        return await resyncViewerControl();
+    });
+
     ipcMain.handle('ipcGetCloudStatus', async (_event): Promise<CombinedPlayerStatus> => {
         return await loadStatusAPI();
     });
 
     ipcMain.handle('ipcImmediatePlayCommand', async (_event, cmd: EZPlayerCommand): Promise<boolean> => {
         if (cmd.command === 'resetplayback') {
+            // The user asked for this, so automatic reads give way to it.
+            cancelQueuedAutomaticReads();
             // Reloading clears controller state an operation is still writing to.
-            if (hasRunningControllerOps()) {
+            if (hasRunningControllerOps({ ignoreAutomatic: true })) {
                 console.warn('[resetplayback] refused: a controller operation is running');
                 return false;
             }
@@ -1163,7 +1396,8 @@ export async function registerContentHandlers(mainWindow: BrowserWindow | null, 
     playWorker.on('message', (msg: WorkerToMainMessage) => {
         switch (msg.type) {
             case 'audioChunk': {
-                broadcastAudioChunk(msg.chunk, msg.volumeSF);
+                if (msg.chunk.rtcOffsetMs !== undefined) setRtcOffset(msg.chunk.rtcOffsetMs);
+                broadcastAudioChunk(msg.chunk, msg.volumeSF, msg.outputGains);
                 break;
             }
             case 'pixelbuffer': {
@@ -1192,6 +1426,14 @@ export async function registerContentHandlers(mainWindow: BrowserWindow | null, 
                 broadcastToWebSocket('cStatus', merged);
                 break;
             }
+            case 'viewerPick': {
+                recordLocalViewerPick(msg);
+                break;
+            }
+            case 'viewerPickDropped': {
+                recordLocalViewerPickDropped(msg);
+                break;
+            }
             case 'nstatus': {
                 // Merge so any second writer's fields on curStatus.controller (e.g.
                 // cross-source controller info) survive playback's pushes.
@@ -1199,11 +1441,16 @@ export async function registerContentHandlers(mainWindow: BrowserWindow | null, 
                 curStatus = { ...curStatus, controller: merged, controller_updated: Date.now() };
                 safeSend(mainWindow, 'playback:nstatus', merged);
                 broadcastToWebSocket('nStatus', merged);
+                refreshControllersNowAlive(msg.status);
                 break;
             }
             case 'pstatus': {
                 // The worker's pstatus is a complete snapshot of playback state.
+                if (curStatus.player?.status === 'Stopped' && msg.status?.status !== 'Stopped') {
+                    stopAutomaticReadsForPlayback();
+                }
                 curStatus = { ...curStatus, player: msg.status, player_updated: Date.now() };
+                syncPowerBlock(msg.status);
                 safeSend(mainWindow, 'playback:pstatus', msg.status);
                 broadcastToWebSocket('pStatus', msg.status);
                 break;

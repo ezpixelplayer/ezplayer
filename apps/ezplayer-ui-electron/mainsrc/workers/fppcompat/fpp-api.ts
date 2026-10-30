@@ -27,15 +27,29 @@ import {
     buildFppStatus,
     buildFppdVersion,
     buildSystemInfo,
+    fppClockString,
+    fppDateTimeString,
     fppCompatVersion,
     FPP_COMPAT_MAJOR,
     FPP_COMPAT_MINOR,
     type FppIdentity,
     type FppStatusSources,
 } from './fpp-status.js';
-import { fppCommandDescriptors, runFppCommand, type FppCommandDeps } from './fpp-commands.js';
-import { fppPlaylistToRecord, recordToFppPlaylist, type FppPlaylist } from './fpp-playlists.js';
-import { fppScheduleToRecords, recordsToFppSchedule, type FppScheduleEntry } from './fpp-schedule.js';
+import {
+    fppCommandDescriptors,
+    runFppCommand,
+    writeVolume,
+    type FppCommandDeps,
+    type FppVolumeDeps,
+} from './fpp-commands.js';
+import { buildFppdPlaylistConfig, buildFppdPlaylists, buildPlayerCurrent, buildPlayerStatus } from './fpp-player.js';
+import { findSequenceByName, fppPlaylistToRecord, recordToFppPlaylist, type FppPlaylist } from './fpp-playlists.js';
+import {
+    buildFppdSchedule,
+    fppScheduleToRecords,
+    recordsToFppSchedule,
+    type FppScheduleEntry,
+} from './fpp-schedule.js';
 
 export interface FppApiDeps {
     getShowFolder: () => string | undefined;
@@ -49,6 +63,8 @@ export interface FppApiDeps {
     putSequences: (recs: unknown[]) => Promise<unknown[]>;
     /** Cached controller-discovery state; feeds /api/fppd/multiSyncSystems. */
     getControllerOps?: () => ControllerOpsState | undefined;
+    /** Default-volume read/write for the volume commands and POST /api/system/volume. */
+    volume?: FppVolumeDeps;
     appVersion: string;
 }
 
@@ -117,6 +133,8 @@ export function registerFppCompatRoutes(router: Router, deps: FppApiDeps): void 
         sendPlayerCommand: deps.sendPlayerCommand,
         getPlaylists: deps.getPlaylists,
         getSequences: deps.getSequences,
+        getPStatus: deps.getPStatus,
+        volume: deps.volume,
     };
 
     // ---- status / identity -------------------------------------------------
@@ -127,12 +145,55 @@ export function registerFppCompatRoutes(router: Router, deps: FppApiDeps): void 
     router.get('/api/system/status', serveStatus);
     router.get('/api/fppd/status', serveStatus);
 
+    /** Free/total bytes of the filesystem holding `dir`, when it can be read. */
+    const diskUsage = async (dir: string | undefined): Promise<{ Free: number; Total: number } | undefined> => {
+        if (!dir) return undefined;
+        try {
+            const st = await fsp.statfs(dir);
+            return { Free: st.bavail * st.bsize, Total: st.blocks * st.bsize };
+        } catch {
+            return undefined;
+        }
+    };
+
     router.get('/api/system/info', async (ctx) => {
-        ctx.body = buildSystemInfo(await identityOf(deps), { freemem: os.freemem(), totalmem: os.totalmem() });
+        const [media, root] = await Promise.all([
+            diskUsage(deps.getShowFolder()),
+            diskUsage(path.parse(process.execPath).root),
+        ]);
+        ctx.body = buildSystemInfo(await identityOf(deps), {
+            freemem: os.freemem(),
+            totalmem: os.totalmem(),
+            osVersion: os.version(),
+            osRelease: `${os.type()} ${os.release()}`,
+            media,
+            root,
+        });
     });
 
     router.get('/api/fppd/version', async (ctx) => {
         ctx.body = buildFppdVersion(await identityOf(deps));
+    });
+
+    // ---- player / running playlist ------------------------------------------
+
+    const servePlayerStatus = (ctx: RouterContext) => {
+        ctx.body = buildPlayerStatus(statusSources(deps), Date.now());
+    };
+    router.get('/api/player', servePlayerStatus);
+    router.get('/api/player/status', servePlayerStatus);
+    router.get('/api/player/current', (ctx) => {
+        ctx.body = buildPlayerCurrent(statusSources(deps), Date.now());
+    });
+    router.get('/api/fppd/playlists', (ctx) => {
+        ctx.body = buildFppdPlaylists(statusSources(deps), Date.now());
+    });
+    router.get('/api/fppd/playlist/config', (ctx) => {
+        ctx.body = buildFppdPlaylistConfig(statusSources(deps), Date.now());
+    });
+
+    router.get('/api/time', (ctx) => {
+        ctx.body = { time: fppClockString(Date.now()) };
     });
 
     // Some discovery flows probe the plugin list; an empty one is accurate.
@@ -145,8 +206,26 @@ export function registerFppCompatRoutes(router: Router, deps: FppApiDeps): void 
     // omitted — they don't speak the FPP systems protocol.
     router.get('/api/fppd/multiSyncSystems', async (ctx) => {
         const identity = await identityOf(deps);
+        const now = Date.now();
+        /** The fields FPP reports for every system. `channelRanges` is empty:
+         *  EZPlayer drives outputs from the show, not a published channel map. */
+        const common = (seenMs: number, isLocal: boolean) => ({
+            HostDescription: '',
+            capeInfo: { present: false },
+            channelInputsEnabled: false,
+            channelOutputsEnabled: isLocal,
+            channelRanges: '',
+            fppMode: 2,
+            fppModeString: 'player',
+            lastSeen: Math.floor(seenMs / 1000),
+            lastSeenStr: fppDateTimeString(seenMs),
+            local: isLocal ? 1 : 0,
+            multiSyncCapable: 1,
+            multisync: false,
+        });
         const systems: Record<string, unknown>[] = [
             {
+                ...common(now, true),
                 address: identity.ips[0] ?? '127.0.0.1',
                 hostname: identity.hostName,
                 type: 'EZPlayer',
@@ -155,9 +234,6 @@ export function registerFppCompatRoutes(router: Router, deps: FppApiDeps): void 
                 majorVersion: FPP_COMPAT_MAJOR,
                 minorVersion: FPP_COMPAT_MINOR,
                 typeId: 0xee,
-                fppModeString: 'player',
-                multisync: false,
-                local: true,
                 uuid: identity.uuid,
             },
         ];
@@ -169,14 +245,14 @@ export function registerFppCompatRoutes(router: Router, deps: FppApiDeps): void 
             seen.add(dev.ip);
             const fw = dev.firmwareVersion ?? '';
             const verMatch = /^(\d+)\.(\d+)/.exec(fw);
+            const seenMs = Date.parse(dev.seenAt);
             const entry: Record<string, unknown> = {
+                ...common(Number.isNaN(seenMs) ? now : seenMs, false),
                 address: dev.ip,
                 hostname: dev.hostname ?? '',
                 type: dev.driverType,
                 model: dev.model ?? '',
                 version: fw,
-                multisync: false,
-                local: false,
             };
             if (verMatch) {
                 entry.majorVersion = Number(verMatch[1]);
@@ -184,7 +260,7 @@ export function registerFppCompatRoutes(router: Router, deps: FppApiDeps): void 
             }
             systems.push(entry);
         }
-        ctx.body = { systems };
+        ctx.body = { Status: 'OK', Message: '', respCode: 200, systems };
     });
 
     // ---- command API -------------------------------------------------------
@@ -302,31 +378,79 @@ export function registerFppCompatRoutes(router: Router, deps: FppApiDeps): void 
     /** Register a SequenceRecord on the fly for unresolved sequenceName
      *  entries whose fseq file exists — FPP tools don't know about EZP's
      *  registration step. */
-    async function autoRegisterSequences(unresolved: string[]): Promise<boolean> {
+    /** Whether `name` (a basename) is a readable file in the show root. */
+    async function showFileExists(name: string): Promise<boolean> {
         const showFolder = deps.getShowFolder();
-        if (!showFolder || unresolved.length === 0) return false;
+        if (!showFolder || name !== path.basename(name)) return false;
+        try {
+            await fsp.access(path.join(showFolder, name), fs.constants.R_OK);
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
+    /** Each sequence+media entry's mediaName, by lowercased sequenceName. */
+    function entryMedia(body: FppPlaylist): Map<string, string> {
+        const out = new Map<string, string>();
+        for (const e of [...(body.leadIn ?? []), ...(body.mainPlaylist ?? []), ...(body.leadOut ?? [])]) {
+            if (e.type === 'both' && e.sequenceName && e.mediaName) out.set(e.sequenceName.toLowerCase(), e.mediaName);
+        }
+        return out;
+    }
+
+    async function autoRegisterSequences(unresolved: string[], media: Map<string, string>): Promise<boolean> {
         const toCreate: unknown[] = [];
         for (const raw of unresolved) {
             const name = /\.fseq$/i.test(raw) ? raw : `${raw}.fseq`;
-            if (name !== path.basename(name)) continue;
-            try {
-                await fsp.access(path.join(showFolder, name), fs.constants.R_OK);
-                toCreate.push({
-                    files: { fseq: name },
-                    work: { title: name.replace(/\.fseq$/i, ''), artist: '', length: 0 },
-                });
-            } catch {
-                /* unreadable file; skip */
-            }
+            if (!(await showFileExists(name))) continue;
+            const audio = media.get(raw.toLowerCase());
+            toCreate.push({
+                files: { fseq: name, ...(audio && (await showFileExists(audio)) ? { audio } : {}) },
+                work: { title: name.replace(/\.fseq$/i, ''), artist: '', length: 0 },
+            });
         }
         if (toCreate.length === 0) return false;
         await deps.putSequences(toCreate);
         return true;
     }
 
+    /** Give already-registered sequences the media their sequence+media
+     *  entries name, when they have none yet. Returns warnings. */
+    async function attachEntryMedia(media: Map<string, string>): Promise<string[]> {
+        const warnings: string[] = [];
+        const updates = new Map<string, SequenceRecord>();
+        for (const [seqName, mediaName] of media) {
+            const seq = findSequenceByName(deps.getSequences(), seqName);
+            if (!seq || updates.has(seq.id)) continue;
+            if (seq.files?.audio) {
+                if (fileBaseName(seq.files.audio).toLowerCase() !== mediaName.toLowerCase()) {
+                    warnings.push(
+                        `'${seqName}' already plays '${fileBaseName(seq.files.audio)}'; media '${mediaName}' ignored`,
+                    );
+                }
+                continue;
+            }
+            if (!(await showFileExists(mediaName))) {
+                warnings.push(`media '${mediaName}' not found in the show folder — '${seqName}' plays without audio`);
+                continue;
+            }
+            updates.set(seq.id, { ...seq, files: { ...seq.files, audio: mediaName } });
+        }
+        if (updates.size > 0) {
+            try {
+                await deps.putSequences([...updates.values()]);
+            } catch (err) {
+                warnings.push(`media not attached: ${err instanceof Error ? err.message : String(err)}`);
+            }
+        }
+        return warnings;
+    }
+
     const upsertFppPlaylist = async (ctx: RouterContext, name: string, body: FppPlaylist) => {
+        const media = entryMedia(body);
         let ingest = fppPlaylistToRecord(body, name, deps.getPlaylists(), deps.getSequences());
-        if (!ingest.error && ingest.unresolved.length > 0 && (await autoRegisterSequences(ingest.unresolved))) {
+        if (!ingest.error && ingest.unresolved.length > 0 && (await autoRegisterSequences(ingest.unresolved, media))) {
             ingest = fppPlaylistToRecord(body, name, deps.getPlaylists(), deps.getSequences());
         }
         if (ingest.error) {
@@ -337,9 +461,21 @@ export function registerFppCompatRoutes(router: Router, deps: FppApiDeps): void 
         const warnings = [
             ...ingest.warnings,
             ...ingest.unresolved.map((n) => `sequence '${n}' not found in the show folder — entry skipped`),
+            ...(await attachEntryMedia(media)),
         ];
-        await deps.updatePlaylists([ingest.record]);
-        ctx.body = { Status: 'OK', Message: warnings.join('; ') };
+        const record = ingest.record;
+        if (!record) {
+            ctx.status = 500;
+            ctx.body = { Status: 'Error', Message: 'Playlist could not be stored', Warnings: warnings };
+            return;
+        }
+        await deps.updatePlaylists([record]);
+        // FPP answers a write with the stored playlist; our status rides along.
+        ctx.body = {
+            ...recordToFppPlaylist(record, deps.getSequences()),
+            Status: 'OK',
+            Message: warnings.join('; '),
+        };
     };
 
     router.post('/api/playlist/:name', async (ctx) => {
@@ -381,7 +517,7 @@ export function registerFppCompatRoutes(router: Router, deps: FppApiDeps): void 
     });
 
     router.get('/api/fppd/schedule', (ctx) => {
-        ctx.body = { schedule: recordsToFppSchedule(deps.getSchedule()), Status: 'OK' };
+        ctx.body = buildFppdSchedule(deps.getSchedule(), Date.now());
     });
 
     // Full replace, FPP semantics: entries not in the new set are deleted.
@@ -409,12 +545,19 @@ export function registerFppCompatRoutes(router: Router, deps: FppApiDeps): void 
         ctx.body = { status: 'OK', method: 'EZPlayer', volume: Math.round(deps.getPStatus()?.volume?.level ?? 100) };
     });
 
-    // Volume writes are settings/schedule-driven in EZPlayer; see fpp-commands.ts.
-    router.post('/api/system/volume', (ctx) => {
-        ctx.status = 500;
-        ctx.body = {
-            status: 'error',
-            error: 'Volume is schedule/settings-driven in EZPlayer; set it via playback settings',
-        };
+    // Writes the default volume, as FPP's persistent volume setting does;
+    // declined while a scheduled window owns the level (see fpp-commands.ts).
+    router.post('/api/system/volume', async (ctx) => {
+        const body = ctx.request.body as { volume?: unknown } | undefined;
+        const result = await writeVolume(
+            cmdDeps,
+            body?.volume === undefined ? undefined : String(body.volume),
+            (_c, n) => n,
+        );
+        ctx.status = result.status;
+        ctx.body =
+            result.status === 200
+                ? { status: 'OK', method: 'EZPlayer', volume: cmdDeps.volume?.getVolume()?.defaultVolume }
+                : { status: 'error', error: result.message };
     });
 }

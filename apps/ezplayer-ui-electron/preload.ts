@@ -10,11 +10,13 @@ import type {
     EZPElectronAPI,
     FileSelectOptions,
     EZPlayerCommand,
+    ViewerControlResyncResult,
     PlaybackSettings,
     CloudCommand,
     ControllerCommand,
     ControllerOpsState,
     RemoteAccessAvailability,
+    ViewerStatsSummary,
 } from '@ezplayer/ezplayer-core';
 
 import type {
@@ -40,6 +42,9 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 const launchArgs: string[] = Array.isArray(process.argv) ? process.argv : [];
 const shouldShowWelcomeOnLaunch = launchArgs.includes('--show-welcome=true');
+
+// Main's hang check: a renderer whose main thread is stuck stops answering.
+ipcRenderer.on('ezp:ping', (_event: IpcRendererEvent, seq: number) => ipcRenderer.send('ezp:pong', seq));
 
 contextBridge.exposeInMainWorld('electronAPI', {
     shouldShowWelcomeOnLaunch: () => shouldShowWelcomeOnLaunch,
@@ -123,6 +128,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     immediatePlayerCommand(cmd: EZPlayerCommand): Promise<boolean> {
         return ipcRenderer.invoke('ipcImmediatePlayCommand', cmd);
     },
+    resyncViewerControl(): Promise<ViewerControlResyncResult> {
+        return ipcRenderer.invoke('ipcResyncViewerControl');
+    },
     setPlaybackSettings(s: PlaybackSettings): Promise<boolean> {
         return ipcRenderer.invoke('ipcSetPlaybackSettings', s);
     },
@@ -143,6 +151,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
     reportRendererError(message: string, stack?: string): Promise<void> {
         return ipcRenderer.invoke('ipcReportRendererError', message, stack);
+    },
+    rendererReady(): void {
+        ipcRenderer.send('ezp:renderer-ready');
     },
     setZoomFactor(factor: number): Promise<void> {
         return ipcRenderer.invoke('ipcSetZoomFactor', factor);
@@ -171,6 +182,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onRemoteAccessUpdated: (callback: (state: RemoteAccessAvailability) => void) => {
         ipcRenderer.on('update:remoteaccess', (_event: IpcRendererEvent, state: RemoteAccessAvailability) => {
             callback(state);
+        });
+    },
+    onViewerStatsUpdated: (callback: (summary: ViewerStatsSummary) => void) => {
+        ipcRenderer.on('update:viewerStats', (_event: IpcRendererEvent, summary: ViewerStatsSummary) => {
+            callback(summary);
         });
     },
     reportAudioOutputDevices: (devices: AudioDevice[]) => {

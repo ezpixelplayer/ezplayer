@@ -68,6 +68,10 @@ const nodeExternals = [
     'fs/promises',
     'express',
     'zstd-codec',
+    // opusscript (wasm opus for the live audio stream) is emscripten glue that
+    // resolves its .wasm via __dirname; bundled, that is undefined. Ship it
+    // unbundled like mpg123-decoder-ezp.
+    'opusscript',
     ...builtinModules,
     ...builtinModules.map((m) => `node:${m}`),
 ];

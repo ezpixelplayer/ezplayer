@@ -18,7 +18,9 @@
  *   24-31 u32 LE uuid x2
  *   then block index entries (u32 frame#, u32 bytes) — the reader iterates
  *   compblocklist, so even uncompressed data needs one block covering all
- *   frames — then channel data, each frame padded to ceil(channels/4)*4.
+ *   frames — then channel data, exactly `channels` bytes per frame. Real
+ *   writers (FPP, xLights) never pad the frame; sparse files in particular
+ *   have counts that are not multiples of 4, and the reader must cope.
  */
 
 import fsp from 'node:fs/promises';
@@ -35,7 +37,7 @@ export interface FseqSpec {
 
 export function buildFseq(spec: FseqSpec): Buffer {
     const msPerFrame = spec.msPerFrame ?? 50;
-    const stepSize = Math.floor((spec.channels + 3) / 4) * 4;
+    const stepSize = spec.channels;
     const headerLen = 32 + 8; // fixed header + one block-index entry
     const buf = Buffer.alloc(headerLen + spec.frames * stepSize);
 

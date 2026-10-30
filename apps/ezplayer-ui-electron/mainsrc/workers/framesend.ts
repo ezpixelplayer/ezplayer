@@ -203,6 +203,10 @@ export class FrameSender {
         frameInterval: number;
         skipFrameIfLateByMoreThan: number;
         dontSleepIfDurationLessThan: number;
+        /** Called at the frame's deadline, just before it goes out — the moment
+         *  anything describing "what is playing now" (MultiSync) should sample.
+         *  Not called when the frame is skipped or deferred. */
+        onFrameDue?: () => void;
     }): Promise<number> {
         try {
             if (!(args.frame?.frame && this.state && this.job)) {
@@ -251,6 +255,8 @@ export class FrameSender {
                     nowTime - args.targetFramePN,
                 );
             }
+
+            args.onFrameDue?.();
 
             // Actually send the frame
             if (args.frame?.frame && this.state && this.job) {

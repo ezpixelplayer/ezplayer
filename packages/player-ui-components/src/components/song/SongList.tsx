@@ -10,6 +10,7 @@ import { AppDispatch, RootState } from '../..';
 import { batchImportShowSequences, batchUploadImportShowSequences } from '../../store/slices/SequenceStore';
 import { savePlayerSettings, setMediaFolder } from '../../store/slices/PlaybackSettingsStore';
 import { callImmediateCommand } from '../../store/slices/RuntimeStore';
+import { PlayStopButton } from '../player/PlayStopButton';
 
 import {
     Autocomplete,
@@ -36,7 +37,6 @@ import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import LibraryAddIcon from '@mui/icons-material/LibraryAdd';
-import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 
 import { AddSongProps } from './AddSongDialogBrowser';
 import { BulkImportSummaryDialog } from './BulkImportSummaryDialog';
@@ -768,13 +768,9 @@ export function SongList({
                               }}
                           >
                               {canShowPlay && (
-                                  <Button
-                                      aria-label="play"
-                                      title="Play immediately"
-                                      startIcon={<PlayArrowIcon />}
-                                      size="small"
-                                      color="success"
-                                      onClick={() => handlePlayClick(params.row)}
+                                  <PlayStopButton
+                                      target={{ songId: params.row.id }}
+                                      onPlay={() => handlePlayClick(params.row)}
                                       sx={{ minWidth: 'auto', padding: '6px', '& .MuiButton-startIcon': { m: 0 } }}
                                   />
                               )}

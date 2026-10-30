@@ -103,11 +103,17 @@ export function convertXmlCoordinatesToModel3D(modelCoordinates: Record<string, 
             // Case 1: Structure with nodes array
             if (Array.isArray(modelData.nodes)) {
                 const runs = modelData.channelMapping?.nodeChannelMap;
-                const seenStrings = new Set<number>();
+                // The node array is in buffer order; the wire starts at the lowest
+                // physicalNum of each string.
+                const firstOnString = new Map<number, number>();
+                for (const node of modelData.nodes) {
+                    const si = stringIndexOf(node, runs);
+                    const cur = firstOnString.get(si);
+                    if (cur === undefined || node.physicalNum < cur) firstOnString.set(si, node.physicalNum);
+                }
                 modelData.nodes.forEach((node, nodeIndex: number) => {
                     const stringIndex = stringIndexOf(node, runs);
-                    const stringStart = !seenStrings.has(stringIndex);
-                    seenStrings.add(stringIndex);
+                    const stringStart = firstOnString.get(stringIndex) === node.physicalNum;
                     if (node.coords && Array.isArray(node.coords)) {
                         node.coords.forEach((coord, coordIndex: number) => {
                             allPoints.push({
@@ -124,6 +130,7 @@ export function convertXmlCoordinatesToModel3D(modelCoordinates: Record<string, 
                                     coordIndex,
                                     stringIndex,
                                     stringStart,
+                                    wireOrder: node.physicalNum,
                                     colorMix,
                                     colorMixMaxOffset,
                                     brightness,

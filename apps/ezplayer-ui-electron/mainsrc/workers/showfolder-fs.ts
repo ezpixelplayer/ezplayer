@@ -19,7 +19,7 @@
 
 import fsp from 'fs/promises';
 import path from 'path';
-import { SUBDIR_NAME } from '../data/SettingsMigration.js';
+import { SUBDIR_NAME } from '../data/SettingsDir.js';
 
 /** Files xLights owns; losing one breaks the show, so they may never be
  *  renamed, moved or deleted. */

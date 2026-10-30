@@ -44,7 +44,9 @@ import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import SyncProblemIcon from '@mui/icons-material/SyncProblem';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import HourglassEmptyIcon from '@mui/icons-material/HourglassEmpty';
+import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
+import FiberManualRecordOutlinedIcon from '@mui/icons-material/FiberManualRecordOutlined';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
@@ -73,6 +75,7 @@ import {
     overlayHealth,
     findOffNetworkControllers,
     effectiveMaxFps,
+    isPlaybackActive,
 } from '@ezplayer/ezplayer-core';
 import type {
     ControllerCommand,
@@ -268,7 +271,7 @@ const STATE_META: Record<ControllerRecordState, { label: string; color: 'success
     unregistered: { label: 'Unregistered', color: 'warning' },
 };
 
-/** Live ping connectivity → dot color (theme tokens). */
+/** Live connectivity → dot color (theme tokens). */
 const CONN_COLOR: Record<NonNullable<ControllerHealth['connectivity']>, string> = {
     Up: 'success.main',
     Down: 'error.main',
@@ -276,11 +279,36 @@ const CONN_COLOR: Record<NonNullable<ControllerHealth['connectivity']>, string> 
     'N/A': 'text.disabled',
 };
 
+/**
+ * Reachability dot.  Filled means it answered a ping, a ring means only its web
+ * service answered — which is all a controller behind an FPP proxy can do.
+ */
+function ConnectivityDot({ health }: { health?: ControllerHealth }) {
+    const Icon = health?.reachedVia === 'web' ? FiberManualRecordOutlinedIcon : FiberManualRecordIcon;
+    const how = health?.reachedVia === 'web' ? 'web' : 'ping';
+    return (
+        <Icon
+            titleAccess={
+                health?.connectivity
+                    ? `${how} ${health.connectivity}${health.pingSummary ? ` — ${health.pingSummary}` : ''}`
+                    : 'no ping data'
+            }
+            sx={{
+                mr: 0.5,
+                verticalAlign: 'middle',
+                fontSize: 12,
+                color: health?.connectivity ? CONN_COLOR[health.connectivity] : 'text.disabled',
+            }}
+        />
+    );
+}
+
 const PORT_DRIFT_LABEL: Record<PortDriftKind, string> = {
     ok: 'in sync',
     missing: 'not on controller',
     unexpected: 'not in xLights',
     count: 'count differs',
+    start: 'start channel differs',
 };
 
 /** One model name per line; names in `flagged` render amber. `labels` is the
@@ -344,6 +372,7 @@ const PortReconcileTable: React.FC<{ rows: PortReconcile[] }> = ({ rows }) => (
                                 />
                                 <Typography variant="caption" sx={{ color: 'text.secondary' }}>
                                     {r.intendedPixels ?? 0} px
+                                    {r.drift === 'start' && ` @ ch ${r.intendedStart}`}
                                 </Typography>
                             </>
                         ) : (
@@ -362,6 +391,7 @@ const PortReconcileTable: React.FC<{ rows: PortReconcile[] }> = ({ rows }) => (
                                 )}
                                 <Typography variant="caption" sx={{ color: 'text.secondary' }}>
                                     {r.actualPixels} px
+                                    {r.drift === 'start' && ` @ ch ${r.actualStart}`}
                                 </Typography>
                             </>
                         ) : (
@@ -651,7 +681,7 @@ const GridRow: React.FC<{
     // Drift is only meaningful once the device's port config has actually been
     // read (depth=full); before that every intended port would read "missing".
     const portsRead = d?.pixelPorts !== undefined;
-    const portRows = reconcilePorts(row.intent ?? [], d?.pixelPorts ?? []);
+    const portRows = reconcilePorts(row.intent ?? [], d?.pixelPorts ?? [], row.startChannel);
     // Serial (DMX/…) ports are compared in channels, apart from the pixels.
     const serialRead = d?.serialPorts !== undefined;
     const serialRows = reconcileSerialPorts(row.serialIntent, d?.serialPorts);
@@ -685,7 +715,7 @@ const GridRow: React.FC<{
     const health = row.health;
     const hasHealthDetail = !!(
         health &&
-        (health.pingSummary || health.errors?.length || health.notices?.length || health.status)
+        (health.pingSummary || health.errors?.length || health.notices?.length || health.status || health.senderStats)
     );
     const expandable = hasDetail || hasPortData || hasInputData || hasHealthDetail;
     // Fall back to the record's address so an unscanned row still gets Open.
@@ -806,20 +836,8 @@ const GridRow: React.FC<{
                     )}
                 </TableCell>
                 <TableCell sx={{ whiteSpace: 'nowrap' }}>
-                    {/* Dot always renders (alignment); gray = no ping data. */}
-                    <FiberManualRecordIcon
-                        titleAccess={
-                            health?.connectivity
-                                ? `ping ${health.connectivity}${health.pingSummary ? ` — ${health.pingSummary}` : ''}`
-                                : 'no ping data'
-                        }
-                        sx={{
-                            mr: 0.5,
-                            verticalAlign: 'middle',
-                            fontSize: 12,
-                            color: health?.connectivity ? CONN_COLOR[health.connectivity] : 'text.disabled',
-                        }}
-                    />
+                    {/* Always rendered, for column alignment; gray = no data. */}
+                    <ConnectivityDot health={health} />
                     <Chip
                         size="small"
                         color={meta.color}
@@ -831,7 +849,7 @@ const GridRow: React.FC<{
                                 : undefined
                         }
                     />
-                    {/* One status slot: work in progress, then a failure, then drift. */}
+                    {/* One status slot: work in progress, a failure, drift, then unread. */}
                     {runningOp?.status === 'queued' ? (
                         <MuiBox
                             component="span"
@@ -893,16 +911,25 @@ const GridRow: React.FC<{
                                 </Box>
                             </Popover>
                         </>
+                    ) : anyDrift ? (
+                        <IconButton
+                            size="small"
+                            onClick={() => setPortDialog('compare')}
+                            title={`${[portDrift && 'ports', inputDrift && 'input config'].filter(Boolean).join(' and ')} differ from xLights — reconfiguration needed (click to compare)`}
+                            sx={{ ml: 0.25, p: 0.25, verticalAlign: 'middle' }}
+                        >
+                            <SyncProblemIcon color="warning" fontSize="small" />
+                        </IconButton>
                     ) : (
-                        anyDrift && (
-                            <IconButton
-                                size="small"
-                                onClick={() => setPortDialog('compare')}
-                                title={`${[portDrift && 'ports', inputDrift && 'input config'].filter(Boolean).join(' and ')} differ from xLights — reconfiguration needed (click to compare)`}
-                                sx={{ ml: 0.25, p: 0.25, verticalAlign: 'middle' }}
+                        known &&
+                        !hasDetail && (
+                            <MuiBox
+                                component="span"
+                                title="Details not read yet — refresh to see ports, firmware and drift"
+                                sx={{ display: 'inline-flex', ml: 0.25, verticalAlign: 'middle' }}
                             >
-                                <SyncProblemIcon color="warning" fontSize="small" />
-                            </IconButton>
+                                <HelpOutlineIcon color="info" fontSize="small" />
+                            </MuiBox>
                         )
                     )}
                 </TableCell>
@@ -1023,12 +1050,35 @@ const GridRow: React.FC<{
                                         <Typography variant="body2" sx={{ color: 'text.secondary' }}>
                                             {[
                                                 health.status,
-                                                health.connectivity && `ping ${health.connectivity}`,
+                                                health.connectivity &&
+                                                    `${health.reachedVia === 'web' ? 'web' : 'ping'} ${health.connectivity}`,
                                                 health.pingSummary,
                                             ]
                                                 .filter(Boolean)
                                                 .join(' · ')}
                                         </Typography>
+                                        {health.senderStats && (
+                                            <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                                                {[
+                                                    `sender ${health.senderStats.connected ? 'connected' : 'closed'}`,
+                                                    `${health.senderStats.sent.toLocaleString()} frames sent`,
+                                                    health.senderStats.skipped > 0 &&
+                                                        `${health.senderStats.skipped.toLocaleString()} skipped`,
+                                                    health.senderStats.errors > 0 &&
+                                                        `${health.senderStats.errors.toLocaleString()} send errors`,
+                                                ]
+                                                    .filter(Boolean)
+                                                    .join(' · ')}
+                                            </Typography>
+                                        )}
+                                        {health.senderStats?.lastError && (
+                                            <Typography
+                                                variant="caption"
+                                                sx={{ display: 'block', color: 'warning.main' }}
+                                            >
+                                                last send error: {health.senderStats.lastError}
+                                            </Typography>
+                                        )}
                                         {health.errors?.map((e, i) => (
                                             <Typography key={`e${i}`} variant="body2" sx={{ color: 'error.main' }}>
                                                 {e}
@@ -1463,8 +1513,10 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
     const scanning = running.some((o) => o.kind === 'scan');
     // Failed ops stay until someone dismisses them, which removes them on the
     // player for every client.
+    // Automatic reads are left out: a controller that refused one stays marked
+    // unread, which says the same thing without looking like a fault.
     const failed = ops
-        .filter((o) => o.status === 'error')
+        .filter((o) => o.status === 'error' && o.origin !== 'auto')
         .sort((a, b) => (b.finishedAt ?? '').localeCompare(a.finishedAt ?? ''));
     const dismissError = (opId: string) => dispatch(issueControllerCommand({ cmd: 'dismiss', opId }));
     const deviceList = Object.values(devices).sort(
@@ -1488,7 +1540,7 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
     // clears what was learned from the network. Not while the show runs or a
     // controller operation is still going.
     const playerStatus = useSelector((s: RootState) => s.runtime?.combined?.player?.status);
-    const showActive = playerStatus === 'Playing' || playerStatus === 'Paused';
+    const showActive = isPlaybackActive(playerStatus);
     const reloadBlocked = showActive
         ? 'Stop the show to reload'
         : running.length > 0

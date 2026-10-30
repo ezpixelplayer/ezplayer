@@ -8,8 +8,12 @@ import {
     DialogContent,
     DialogContentText,
     DialogTitle,
+    FormControl,
     FormControlLabel,
     IconButton,
+    InputLabel,
+    MenuItem,
+    Select,
     LinearProgress,
     Link,
     Stack,
@@ -37,6 +41,9 @@ import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 import PauseCircleIcon from '@mui/icons-material/PauseCircle';
 import LinkOffIcon from '@mui/icons-material/LinkOff';
 import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
+import MusicNoteIcon from '@mui/icons-material/MusicNote';
+import WarningAmberIcon from '@mui/icons-material/WarningAmber';
+import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import Tooltip from '@mui/material/Tooltip';
 import { PlayerCloudRegistrationDialog } from '../player-cloud-registration/PlayerCloudRegistrationDialog';
 import { MaskedPlayerId } from '../player-cloud-registration/MaskedPlayerId';
@@ -48,7 +55,13 @@ import { Box } from '../box/Box';
 import type { AppDispatch, RootState } from '../../store/Store';
 import { issueCloudCommand } from '../../store/slices/CloudStatusStore';
 import { postSetPlayerIdToken } from '../../store/slices/AuthStore';
-import type { CloudFileEntry, CloudFileStatus, CloudSequenceProgress } from '@ezplayer/ezplayer-core';
+import type {
+    CloudFileEntry,
+    CloudFileStatus,
+    CloudSequenceProgress,
+    PlayerCStatusContent,
+    CloudAudioMode,
+} from '@ezplayer/ezplayer-core';
 
 interface CloudPageProps {
     title: string;
@@ -85,7 +98,7 @@ const Field: React.FC<{ label: string; value: string }> = ({ label, value }) => 
     </Box>
 );
 
-type RolledUpStatus = 'known' | 'downloading' | 'pending' | 'installed' | 'error' | 'disabled' | 'rendering';
+type RolledUpStatus = 'known' | 'downloading' | 'pending' | 'installed' | 'error' | 'disabled' | 'rendering' | 'rights';
 
 const STATUS_COLOR: Record<RolledUpStatus | CloudFileStatus, 'default' | 'info' | 'warning' | 'success' | 'error'> = {
     known: 'default',
@@ -96,6 +109,11 @@ const STATUS_COLOR: Record<RolledUpStatus | CloudFileStatus, 'default' | 'info' 
     error: 'error',
     disabled: 'warning',
     rendering: 'info',
+    rights: 'warning',
+};
+
+const STATUS_LABEL: Partial<Record<RolledUpStatus | CloudFileStatus, string>> = {
+    rights: 'needs music proof',
 };
 
 function rollUpStatus(seq: CloudSequenceProgress, files: CloudFileEntry[]): RolledUpStatus {
@@ -105,6 +123,7 @@ function rollUpStatus(seq: CloudSequenceProgress, files: CloudFileEntry[]): Roll
     // realize the cloud is still preparing it.
     if (seq.pending) return 'rendering';
     if (seq.disabled) return 'disabled';
+    if (seq.rightsUnmet?.length || files.some((f) => f.status === 'rights')) return 'rights';
     if (files.length === 0) return 'known';
     if (files.some((f) => f.status === 'error')) return 'error';
     if (files.some((f) => f.status === 'downloading')) return 'downloading';
@@ -180,7 +199,7 @@ const SequenceRow = React.memo(function SequenceRow({
                     {fmtFileTime(newestFileTime) || 'Never'}
                 </TableCell>
                 <TableCell>
-                    <Chip label={status} color={STATUS_COLOR[status]} size="small" />
+                    <Chip label={STATUS_LABEL[status] ?? status} color={STATUS_COLOR[status]} size="small" />
                 </TableCell>
                 <TableCell>{fmtBytes(totalBytes || doneBytes)}</TableCell>
             </TableRow>
@@ -217,7 +236,7 @@ const SequenceRow = React.memo(function SequenceRow({
                                                 </TableCell>
                                                 <TableCell>
                                                     <Chip
-                                                        label={f.status}
+                                                        label={STATUS_LABEL[f.status] ?? f.status}
                                                         color={STATUS_COLOR[f.status]}
                                                         size="small"
                                                     />
@@ -273,6 +292,116 @@ const SequenceRow = React.memo(function SequenceRow({
 
 const EMPTY_SEQUENCES: Record<string, CloudSequenceProgress> = {};
 const EMPTY_FILES: Record<string, CloudFileEntry> = {};
+
+function openExternal(url: string) {
+    if (isElectron() && window.electronAPI?.openExternal) {
+        window.electronAPI.openExternal(url);
+    } else {
+        window.open(url, '_blank', 'noopener,noreferrer');
+    }
+}
+
+/** Attention card: which sequences the cloud is withholding audio for, what
+ *  music each one needs, and the one-click local scan that proves ownership
+ *  without uploading anything. Rendered only while there is something to do
+ *  or a scan is in flight. */
+const MusicRightsCard: React.FC<{
+    sequences: Record<string, CloudSequenceProgress>;
+    scan?: PlayerCStatusContent['rightsScan'];
+    mediaFolder?: string;
+    onScan: () => void;
+}> = ({ sequences, scan, mediaFolder, onScan }) => {
+    const blocked = useMemo(
+        () =>
+            Object.values(sequences)
+                .filter((s) => s.rightsUnmet?.length)
+                .sort((a, b) => describeSequence(a).localeCompare(describeSequence(b))),
+        [sequences],
+    );
+    const scanning = scan?.status === 'scanning' || scan?.status === 'submitting';
+    if (blocked.length === 0 && !scanning) return null;
+
+    let scanLine: string | undefined;
+    if (scan?.status === 'scanning') {
+        scanLine = `Scanning local music… ${scan.scanned ?? 0} of ${scan.total ?? 0} files`;
+    } else if (scan?.status === 'submitting') {
+        scanLine = 'Sending proof to the cloud…';
+    } else if (scan?.status === 'done') {
+        scanLine = `Last scan ${scan.lastRunAt ? new Date(scan.lastRunAt).toLocaleTimeString() : ''}: ${scan.added ?? 0} new identifier${scan.added === 1 ? '' : 's'} accepted, ${scan.unmet ?? 0} sequence${scan.unmet === 1 ? '' : 's'} still waiting.`;
+    } else if (scan?.status === 'error') {
+        scanLine = `Scan failed: ${scan.error ?? 'unknown error'}`;
+    }
+
+    return (
+        <Card sx={{ maxWidth: '720px', p: 4, mb: 3, borderLeft: '4px solid', borderLeftColor: 'warning.main' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
+                <WarningAmberIcon color="warning" sx={{ fontSize: 32 }} />
+                <Typography variant="h6">
+                    {blocked.length === 0
+                        ? 'Checking your music'
+                        : `${blocked.length} sequence${blocked.length === 1 ? '' : 's'} need${blocked.length === 1 ? 's' : ''} music proof`}
+                </Typography>
+            </Box>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                The cloud only sends audio for music you own. Scanning looks through this player's show folder
+                {mediaFolder ? ' and media folder' : ''} for the songs below and sends the cloud a fingerprint of each
+                file — never the audio itself. Buy the song, drop the file in your media folder, then scan again.
+            </Typography>
+            <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap" sx={{ mb: 2 }}>
+                <Button
+                    startIcon={<MusicNoteIcon />}
+                    variant="contained"
+                    color="warning"
+                    size="small"
+                    onClick={onScan}
+                    disabled={scanning}
+                >
+                    {scanning ? 'Scanning…' : 'Scan my music'}
+                </Button>
+                {scanLine && (
+                    <Typography variant="body2" color={scan?.status === 'error' ? 'error' : 'text.secondary'}>
+                        {scanLine}
+                    </Typography>
+                )}
+            </Stack>
+            {scanning && <LinearProgress sx={{ mb: 2 }} />}
+            {blocked.length > 0 && (
+                <Table size="small">
+                    <TableHead>
+                        <TableRow>
+                            <TableCell>Sequence</TableCell>
+                            <TableCell>Music needed</TableCell>
+                        </TableRow>
+                    </TableHead>
+                    <TableBody>
+                        {blocked.map((seq) => (
+                            <TableRow key={seq.vseq_id}>
+                                <TableCell sx={{ verticalAlign: 'top', wordBreak: 'break-word' }}>
+                                    {describeSequence(seq)}
+                                </TableCell>
+                                <TableCell>
+                                    {(seq.rightsUnmet ?? []).map((r) => (
+                                        <Box key={r.key} sx={{ mb: 0.5 }}>
+                                            <strong>{r.title || '(untitled)'}</strong>
+                                            {r.artist ? ` — ${r.artist}` : ''}
+                                            {r.sourceURL && (
+                                                <Tooltip title={r.sourceURL}>
+                                                    <IconButton size="small" onClick={() => openExternal(r.sourceURL!)}>
+                                                        <OpenInNewIcon fontSize="inherit" />
+                                                    </IconButton>
+                                                </Tooltip>
+                                            )}
+                                        </Box>
+                                    ))}
+                                </TableCell>
+                            </TableRow>
+                        ))}
+                    </TableBody>
+                </Table>
+            )}
+        </Card>
+    );
+};
 
 /** The per-sequence table, memoized on the worker's `sequences` / `files`
  *  maps. Those references only change when cloud content status changes; the
@@ -331,6 +460,8 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea, allowRe
     const cloudStatus = useSelector((s: RootState) => s.cloudStatus);
     const cStatus = useSelector((s: RootState) => s.runtime.combined.content);
     const showFolder = useSelector((s: RootState) => s.auth.showDirectory);
+    const mediaFolder = useSelector((s: RootState) => s.playbackSettings.settings.mediaFolder);
+    const handleScanMusic = () => void dispatch(issueCloudCommand({ type: 'scanMediaRights' }));
 
     // Reachability is derived from the last poll: a clean reply means we reached the cloud,
     // an error means we didn't, no checks yet means we don't know.
@@ -431,6 +562,9 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea, allowRe
     const remoteControlEnabled = cloudConfig.cloudRemoteControlEnabled !== false;
     const handleRemoteControlToggle = (enabled: boolean) =>
         void dispatch(issueCloudCommand({ type: 'setCloudRemoteControlEnabled', enabled }));
+    const cloudAudioMode: CloudAudioMode = cloudConfig.cloudAudioMode ?? 'auto';
+    const handleCloudAudioModeChange = (mode: CloudAudioMode) =>
+        void dispatch(issueCloudCommand({ type: 'setCloudAudioMode', mode }));
 
     // Cloud remote-control URL — prefer the elected regional home server,
     // fall back to the configured cloud service URL (central).
@@ -718,6 +852,15 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea, allowRe
                     )}
                 </Card>
 
+                {cloudActive && isRegistered && (
+                    <MusicRightsCard
+                        sequences={seqMap ?? EMPTY_SEQUENCES}
+                        scan={cStatus?.rightsScan}
+                        mediaFolder={mediaFolder}
+                        onScan={handleScanMusic}
+                    />
+                )}
+
                 <Card sx={{ maxWidth: '720px', p: 4, mb: 3 }}>
                     <Typography variant="h6" sx={{ mb: 2, color: 'primary.main' }}>
                         Cloud Status
@@ -727,6 +870,17 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea, allowRe
                     <Field label="Cloud Version" value={cloudStatus.cloudVersion ?? '(unknown)'} />
                     <Field label="Last Checked" value={formatTimestamp(cloudStatus.lastCheckedAt)} />
                     <Field label="Last Error" value={cloudStatus.lastError ?? '(none)'} />
+                    {isRegistered && (
+                        <Field
+                            label="Regional Server"
+                            value={
+                                cloudStatus.homeServerUrl ??
+                                (cloudStatus.homeServerIssue
+                                    ? `None, using the central server. ${cloudStatus.homeServerIssue}`
+                                    : 'Choosing…')
+                            }
+                        />
+                    )}
                 </Card>
 
                 {/* Remote control link + enable switch. The switch is hidden where
@@ -754,6 +908,25 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea, allowRe
                                     }
                                     sx={{ mr: 0 }}
                                 />
+                            )}
+                            {remoteControlEnabled && (
+                                <Tooltip title="When the player sends live audio to the cloud for browser listeners (viewer page, jukebox, preview). Auto streams only while someone is listening.">
+                                    <FormControl size="small" sx={{ minWidth: 220 }}>
+                                        <InputLabel id="cloud-audio-mode-label">Cloud audio</InputLabel>
+                                        <Select
+                                            labelId="cloud-audio-mode-label"
+                                            label="Cloud audio"
+                                            value={cloudAudioMode}
+                                            onChange={(e) =>
+                                                handleCloudAudioModeChange(e.target.value as CloudAudioMode)
+                                            }
+                                        >
+                                            <MenuItem value="auto">Auto (while someone listens)</MenuItem>
+                                            <MenuItem value="always">Always stream</MenuItem>
+                                            <MenuItem value="never">Never stream</MenuItem>
+                                        </Select>
+                                    </FormControl>
+                                </Tooltip>
                             )}
                             {remoteControlEnabled && (
                                 <Tooltip title="Copy link">

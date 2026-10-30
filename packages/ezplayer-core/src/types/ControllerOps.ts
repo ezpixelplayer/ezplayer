@@ -75,7 +75,8 @@ export type ControllerOpKind = 'scan' | 'status' | 'action' | 'upload';
  *  run at once); `cancelled` = stopped on request before completion, partial
  *  results kept. */
 export type ControllerOpStatus = 'queued' | 'running' | 'done' | 'error' | 'cancelled';
-export type ControllerOpOrigin = 'lan' | 'cloud' | 'cli';
+/** `auto` marks a read the player started by itself, not a user action. */
+export type ControllerOpOrigin = 'lan' | 'cloud' | 'cli' | 'auto';
 
 export interface ControllerOpProgress {
     phase: string;
@@ -419,6 +420,8 @@ export interface ControllerOutputIntent {
     /** Absolute 1-based start channel of this output. */
     startChannel: number;
     channels: number;
+    /** DDP: xLights' Keep Channel Numbers option (data offsets are absolute). */
+    keepChannelNumbers?: boolean;
 }
 
 /**
@@ -491,11 +494,27 @@ export interface ControllerGridRow {
     serialPortCount?: number;
     /** xLights output/universe intent, reconciled against the device's `inputs`. */
     outputs?: ControllerOutputIntent[];
+    /** The controller's absolute 1-based start channel in xLights. */
+    startChannel?: number;
     /** Frame-rate cap: xLights declaration and our override (see KnownController). */
     maxFps?: number;
     fpsOverride?: number;
     /** Live health overlaid from the playback pipeline, joined by address/name. */
     health?: ControllerHealth;
+}
+
+/**
+ * A controller's data sender as it sees itself.  `skipped` counts frames the
+ * sender dropped (suspended, or not connected); `errors` counts sends the OS
+ * refused.  Cumulative since the show's output was opened.
+ */
+export interface ControllerSenderStats {
+    connected: boolean;
+    sent: number;
+    skipped: number;
+    errors: number;
+    bytes: number;
+    lastError?: string;
 }
 
 /** Live per-controller health from the playback/status pipeline — the runtime
@@ -505,8 +524,12 @@ export interface ControllerHealth {
     connectivity?: 'Up' | 'Down' | 'Pending' | 'N/A';
     /** e.g. "8 out of 10 pings". */
     pingSummary?: string;
+    /** How the controller last answered; absent when nothing answered. */
+    reachedVia?: 'ping' | 'web';
     /** Data-plane sender state: opened, config-skipped, connect-failed, or unusable. */
     status?: 'open' | 'skipped' | 'error' | 'unusable';
+    /** What the sender itself reports having sent; absent until it is opened. */
+    senderStats?: ControllerSenderStats;
     errors?: string[];
     notices?: string[];
 }
@@ -528,6 +551,8 @@ export interface ControllerPortIntent {
     pixels: number;
     /** Pixel protocol declared for the port, when present. */
     protocol?: string;
+    /** Absolute 1-based start channel of the port's first string. */
+    startChannel?: number;
 }
 
 /** One input universe as configured on the device (E1.31/ArtNet). */
@@ -566,6 +591,9 @@ export interface ControllerPort {
     colorOrder?: string;
     startChannel?: number;
     endChannel?: number;
+    /** Set when the port is addressed by universe (e.g. AlphaPix); its
+     *  `startChannel` is then within that universe, not a show channel. */
+    universe?: number;
 }
 
 /** Per-port outcome:
@@ -573,8 +601,10 @@ export interface ControllerPort {
  *  - `missing`    xLights expects pixels here but the controller has none → reconfig
  *  - `unexpected` the controller has pixels here but xLights assigns none → stale/extra
  *  - `count`      both present but the pixel counts differ; for a matrix, any
- *                 difference in its configuration (see the row's `notes`) */
-export type PortDriftKind = 'ok' | 'missing' | 'unexpected' | 'count';
+ *                 difference in its configuration (see the row's `notes`)
+ *  - `start`      counts agree but the port starts at the wrong channel, so it
+ *                 shows another part of the show */
+export type PortDriftKind = 'ok' | 'missing' | 'unexpected' | 'count' | 'start';
 
 /** One port's intent-vs-actual reconciliation. */
 export interface PortReconcile {
@@ -594,6 +624,9 @@ export interface PortReconcile {
     missingModels?: string[];
     /** Device-reported models xLights assigns elsewhere (or nowhere). */
     extraModels?: string[];
+    /** Start channels, set when they disagree (`drift: 'start'`). */
+    intendedStart?: number;
+    actualStart?: number;
     drift: PortDriftKind;
 }
 

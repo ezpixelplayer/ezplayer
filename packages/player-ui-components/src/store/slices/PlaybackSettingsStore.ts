@@ -1,3 +1,5 @@
+import type { ControllerRefreshMode, ViewerControlBackend, ViewerControlScheduleList } from '@ezplayer/ezplayer-core';
+import { controllerRefreshSettingsFor } from '@ezplayer/ezplayer-core';
 import { createAsyncThunk, createSlice, PayloadAction } from '@reduxjs/toolkit';
 import {
     AudioOutputConfig,
@@ -5,6 +7,7 @@ import {
     ViewerControlScheduleEntry,
     VolumeControlState,
     VolumeScheduleEntry,
+    withViewerControlBackends,
 } from '@ezplayer/ezplayer-core';
 import { DataStorageAPI } from '../api/DataStorageAPI';
 import { RootState } from '../Store';
@@ -13,8 +16,28 @@ function newAudioOutputId(): string {
     return `aout-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
+function newScheduleEntryId(): string {
+    return Math.random().toString(36).slice(2, 11);
+}
+
 function defaultVolumeControl(): VolumeControlState {
     return { defaultVolume: 100, schedule: [] };
+}
+
+/** Replace the entry with the same id, keeping its place (and so its priority). */
+function replaceEntry<T extends { id: string }>(list: T[] | undefined, entry: T): void {
+    const i = (list ?? []).findIndex((e) => e.id === entry.id);
+    if (list && i >= 0) list[i] = entry;
+}
+
+/** Move an entry by `delta` places; later entries take priority. */
+function moveEntry<T extends { id: string }>(list: T[] | undefined, entryId: string, delta: number): void {
+    if (!list) return;
+    const from = list.findIndex((e) => e.id === entryId);
+    const to = from + delta;
+    if (from < 0 || to < 0 || to >= list.length) return;
+    const [entry] = list.splice(from, 1);
+    list.splice(to, 0, entry);
 }
 
 function normalizeAudioOutputs(list: AudioOutputConfig[] | undefined): AudioOutputConfig[] | undefined {
@@ -68,7 +91,14 @@ function normalizePlaybackSettings(input: PlaybackSettings): PlaybackSettings {
             ...input.viewerControl,
             enabled: input.viewerControl?.enabled ?? false,
             type: input.viewerControl?.type ?? 'disabled',
+            // Older files have only `type`; derive the backend set from it.
+            backends:
+                input.viewerControl?.backends ??
+                (input.viewerControl?.type === 'remote-falcon' || input.viewerControl?.type === 'ezplayer'
+                    ? [input.viewerControl.type]
+                    : []),
             schedule: input.viewerControl?.schedule ?? [],
+            remoteFalconSchedule: input.viewerControl?.remoteFalconSchedule ?? [],
         },
         volumeControl: {
             ...input.volumeControl,
@@ -151,26 +181,69 @@ const playbackSettingsSlice = createSlice({
             state.settings.viewerControl.enabled = action.payload;
             if (!action.payload) {
                 state.settings.viewerControl.type = 'disabled';
+                state.settings.viewerControl.backends = [];
             }
         },
+        /** Single-backend setter for callers that choose one type; `backends` follows. */
         setViewerControlType(state, action: PayloadAction<'disabled' | 'remote-falcon' | 'ezplayer'>) {
-            state.settings.viewerControl.type = action.payload;
-            state.settings.viewerControl.enabled = action.payload !== 'disabled';
+            state.settings.viewerControl = withViewerControlBackends(
+                state.settings.viewerControl,
+                action.payload === 'disabled' ? [] : [action.payload],
+            );
+        },
+        /** The set of backends to run; `type` and `enabled` follow (built-in is primary). */
+        setViewerControlBackends(state, action: PayloadAction<ViewerControlBackend[]>) {
+            state.settings.viewerControl = withViewerControlBackends(state.settings.viewerControl, action.payload);
         },
         setRemoteFalconToken(state, action: PayloadAction<string>) {
             state.settings.viewerControl.remoteFalconToken = action.payload;
         },
-        addViewerControlScheduleEntry(state, action: PayloadAction<ViewerControlScheduleEntry>) {
-            (state.settings.viewerControl.schedule ??= []).push(action.payload);
+        setMinSongsBetweenRepeats(state, action: PayloadAction<number>) {
+            state.settings.viewerControl.minSongsBetweenRepeats = action.payload;
         },
-        removeViewerControlScheduleEntry(state, action: PayloadAction<string>) {
-            state.settings.viewerControl.schedule = (state.settings.viewerControl.schedule ?? []).filter(
-                (e) => e.id !== action.payload,
+        /** Turning it on with no Remote Falcon schedule yet starts from a copy of the main one. */
+        setSeparateRemoteFalconSchedule(state, action: PayloadAction<boolean>) {
+            const vc = state.settings.viewerControl;
+            vc.separateRemoteFalconSchedule = action.payload;
+            if (action.payload && !vc.remoteFalconSchedule?.length) {
+                vc.remoteFalconSchedule = (vc.schedule ?? []).map((e) => ({ ...e, id: newScheduleEntryId() }));
+            }
+        },
+        addViewerControlScheduleEntry(
+            state,
+            action: PayloadAction<{ list: ViewerControlScheduleList; entry: ViewerControlScheduleEntry }>,
+        ) {
+            (state.settings.viewerControl[action.payload.list] ??= []).push(action.payload.entry);
+        },
+        removeViewerControlScheduleEntry(
+            state,
+            action: PayloadAction<{ list: ViewerControlScheduleList; entryId: string }>,
+        ) {
+            const { list, entryId } = action.payload;
+            state.settings.viewerControl[list] = (state.settings.viewerControl[list] ?? []).filter(
+                (e) => e.id !== entryId,
             );
+        },
+        updateViewerControlScheduleEntry(
+            state,
+            action: PayloadAction<{ list: ViewerControlScheduleList; entry: ViewerControlScheduleEntry }>,
+        ) {
+            replaceEntry(state.settings.viewerControl[action.payload.list], action.payload.entry);
+        },
+        moveViewerControlScheduleEntry(
+            state,
+            action: PayloadAction<{ list: ViewerControlScheduleList; entryId: string; delta: number }>,
+        ) {
+            const { list, entryId, delta } = action.payload;
+            moveEntry(state.settings.viewerControl[list], entryId, delta);
         },
 
         setSendIdleBlackFrames(state, action: PayloadAction<boolean>) {
             state.settings.sendIdleBlackFrames = action.payload;
+        },
+
+        setControllerRefresh(state, action: PayloadAction<ControllerRefreshMode>) {
+            state.settings.controllerRefresh = controllerRefreshSettingsFor(action.payload);
         },
 
         setNormalizeNewSongs(state, action: PayloadAction<boolean>) {
@@ -194,6 +267,10 @@ const playbackSettingsSlice = createSlice({
             const sync = (state.settings.sync ??= {});
             (sync.multisync ??= { enabled: false, remotes: [] }).multicastAddress = action.payload || undefined;
         },
+        setMultisyncMediaSync(state, action: PayloadAction<boolean>) {
+            const sync = (state.settings.sync ??= {});
+            (sync.multisync ??= { enabled: false, remotes: [] }).mediaSync = action.payload;
+        },
 
         // Advanced diagnostic overrides
         setAdvancedDdpPort(state, action: PayloadAction<number | undefined>) {
@@ -216,6 +293,12 @@ const playbackSettingsSlice = createSlice({
             state.settings.volumeControl.schedule = (state.settings.volumeControl.schedule ?? []).filter(
                 (e) => e.id !== action.payload,
             );
+        },
+        updateVolumeScheduleEntry(state, action: PayloadAction<VolumeScheduleEntry>) {
+            replaceEntry(state.settings.volumeControl.schedule, action.payload);
+        },
+        moveVolumeScheduleEntry(state, action: PayloadAction<{ entryId: string; delta: number }>) {
+            moveEntry(state.settings.volumeControl.schedule, action.payload.entryId, action.payload.delta);
         },
 
         /** Desktop: true = system default output with `volumeControl`; false = `audioOutputs`. */
@@ -257,6 +340,14 @@ const playbackSettingsSlice = createSlice({
             if (!entry?.volumeControl.schedule) return;
             entry.volumeControl.schedule = entry.volumeControl.schedule.filter((e) => e.id !== action.payload.entryId);
         },
+        updateAudioOutputScheduleEntry(state, action: PayloadAction<{ id: string; entry: VolumeScheduleEntry }>) {
+            const output = (state.settings.audioOutputs ?? []).find((o) => o.id === action.payload.id);
+            replaceEntry(output?.volumeControl.schedule, action.payload.entry);
+        },
+        moveAudioOutputScheduleEntry(state, action: PayloadAction<{ id: string; entryId: string; delta: number }>) {
+            const output = (state.settings.audioOutputs ?? []).find((o) => o.id === action.payload.id);
+            moveEntry(output?.volumeControl.schedule, action.payload.entryId, action.payload.delta);
+        },
     },
     extraReducers: (builder) => {
         builder
@@ -283,19 +374,27 @@ export const {
     setViewerControlEnabled,
     setViewerControlType,
     setRemoteFalconToken,
+    setMinSongsBetweenRepeats,
+    setSeparateRemoteFalconSchedule,
     addViewerControlScheduleEntry,
     removeViewerControlScheduleEntry,
+    updateViewerControlScheduleEntry,
+    moveViewerControlScheduleEntry,
     setSendIdleBlackFrames,
+    setControllerRefresh,
     setNormalizeNewSongs,
     setMultisyncEnabled,
     setMultisyncRemotes,
     setMultisyncPort,
     setMultisyncMulticastAddress,
+    setMultisyncMediaSync,
     setAdvancedDdpPort,
     setMediaFolder,
     setDefaultVolume,
     addVolumeScheduleEntry,
     removeVolumeScheduleEntry,
+    updateVolumeScheduleEntry,
+    moveVolumeScheduleEntry,
     setUseDefaultAudioOutput,
     addAudioOutput,
     removeAudioOutput,
@@ -303,6 +402,8 @@ export const {
     setAudioOutputVolume,
     addAudioOutputScheduleEntry,
     removeAudioOutputScheduleEntry,
+    updateAudioOutputScheduleEntry,
+    moveAudioOutputScheduleEntry,
 } = playbackSettingsSlice.actions;
 
 export const playbackSettingsActions = playbackSettingsSlice.actions;

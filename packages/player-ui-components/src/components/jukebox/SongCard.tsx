@@ -3,6 +3,7 @@ import { Typography, Button, Card, useTheme, useMediaQuery } from '@mui/material
 import { Box } from '../box/Box';
 import { MusicNote } from '@mui/icons-material';
 import { useImageUrl } from '../../util/imageUtils';
+import { useActiveRequest } from '../../hooks/useActiveRequest';
 
 interface SongCardButton {
     label: string;
@@ -10,6 +11,13 @@ interface SongCardButton {
     variant?: 'text' | 'outlined' | 'contained';
     color?: 'inherit' | 'primary' | 'secondary' | 'success' | 'error' | 'info' | 'warning';
     isDisabled?: (id: string) => boolean;
+    /** What this button becomes while an on-demand request for the song is playing
+     *  (for example Play turning into Stop). */
+    whenPlaying?: {
+        label: string;
+        action: (requestId: string) => void;
+        color?: SongCardButton['color'];
+    };
 }
 
 interface SongCardProps {
@@ -30,6 +38,7 @@ export const SongCard: FC<SongCardProps> = ({ id, title, artist, vendor, artwork
     // Local image takes priority where available; on cloud the URL routes
     // through the HTTP-over-WS proxy (apiBase from context).
     const imageUrl = useImageUrl(id, artwork, localImagePath);
+    const playingRequestId = useActiveRequest({ songId: id });
 
     // Force re-render when image changes by using the imageUrl as a dependency
     const imageKey = useMemo(() => `${id}-${imageUrl}`, [id, imageUrl]);
@@ -143,19 +152,24 @@ export const SongCard: FC<SongCardProps> = ({ id, title, artist, vendor, artwork
                 >
                     {buttons.map((button, index) => {
                         const isDisabled = button.isDisabled ? button.isDisabled(id) : false;
+                        const playing = playingRequestId ? button.whenPlaying : undefined;
                         return (
                             <Button
                                 key={`${button.label}-${index}`}
                                 variant={button.variant || 'outlined'}
-                                color={button.color || 'primary'}
+                                color={playing?.color || button.color || 'primary'}
                                 disabled={isDisabled}
-                                onClick={() => !isDisabled && button.action(id)}
+                                onClick={() => {
+                                    if (isDisabled) return;
+                                    if (playing && playingRequestId) playing.action(playingRequestId);
+                                    else button.action(id);
+                                }}
                                 sx={{
                                     flex: '1 1 auto',
                                     minWidth: isMobile ? '100%' : 'auto',
                                 }}
                             >
-                                {button.label}
+                                {playing?.label ?? button.label}
                             </Button>
                         );
                     })}

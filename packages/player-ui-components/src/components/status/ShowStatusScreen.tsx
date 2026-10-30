@@ -2,6 +2,7 @@ import { PageHeader, ToastMsgs } from '@ezplayer/shared-ui-components';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import StopIcon from '@mui/icons-material/Stop';
+import QueueMusicIcon from '@mui/icons-material/QueueMusic';
 import {
     Accordion,
     AccordionDetails,
@@ -24,10 +25,13 @@ import { v4 as uuidv4 } from 'uuid';
 import type { SxProps, Theme } from '@mui/material';
 
 import { useDispatch, useSelector } from 'react-redux';
+import { useNavigate } from 'react-router-dom';
+import { CLOUD } from '../../constants/routes';
 
 // Types
 import { AppDispatch, RootState } from '../../store/Store';
 import { StatsDialog } from './StatsDialog';
+import { PlaybackDetailDialog } from '../player/PlaybackDetailDialog';
 import type { ControllerStatus } from '@ezplayer/ezplayer-core';
 import {
     type ControllerStatusSeverity,
@@ -38,6 +42,7 @@ import {
     severityToMainColor,
 } from './ControllerHelpers';
 import { QueueCard } from './QueueCard';
+import { ViewerControlCard } from './ViewerControlCard';
 import { callImmediateCommand } from '../../store/slices/RuntimeStore';
 import { normalizeTagList, songMatchesAnyTag } from '../../services/jukeboxFilter';
 import type { EZPElectronAPI } from '@ezplayer/ezplayer-core';
@@ -90,6 +95,7 @@ export interface ShowStatusScreenProps {
 export const ShowStatusScreen = ({ title, statusArea, allowTestControls = true }: ShowStatusScreenProps) => {
     const theme = useTheme();
     const [statsDialogOpen, setStatsDialogOpen] = useState(false);
+    const [detailOpen, setDetailOpen] = useState(false);
     /** Per-controller accordion: omitted index defaults to expanded (matches prior “always open” behavior). */
     const [controllerSectionExpanded, setControllerSectionExpanded] = useState<Record<number, boolean>>({});
     const [serverStatus, setServerStatus] = useState<{
@@ -101,6 +107,7 @@ export const ShowStatusScreen = ({ title, statusArea, allowTestControls = true }
     } | null>(null);
 
     const dispatch = useDispatch<AppDispatch>();
+    const navigate = useNavigate();
     const runtime = useSelector((s: RootState) => s.runtime);
     const testSequenceTags = useSelector((s: RootState) => s.playbackSettings.settings.testSequenceTags);
     const sequenceData = useSelector((s: RootState) => s.sequences.sequenceData);
@@ -156,7 +163,6 @@ export const ShowStatusScreen = ({ title, statusArea, allowTestControls = true }
             await dispatch(
                 callImmediateCommand({ command: 'deleterequest', requestId: testRequest.requestId }),
             ).unwrap();
-            await dispatch(callImmediateCommand({ command: 'endsong', songId: testRequest.songId })).unwrap();
             setTestRequest(null);
             ToastMsgs.showSuccessMessage('Test sequence stopped', {
                 theme: 'colored',
@@ -203,13 +209,6 @@ export const ShowStatusScreen = ({ title, statusArea, allowTestControls = true }
     const controller = runtime.combined.controller;
     const show = runtime.combined.show;
     const showName = show?.show_name || 'Unknown Show';
-    const vcLabel = show?.viewer_control_enabled
-        ? show.viewer_control_mode === 'ezplayer'
-            ? 'Enabled (EZPlayer)'
-            : show.viewer_control_mode === 'remote-falcon'
-              ? 'Enabled (Remote Falcon)'
-              : 'Enabled'
-        : 'Disabled';
 
     return (
         <Box>
@@ -229,9 +228,29 @@ export const ShowStatusScreen = ({ title, statusArea, allowTestControls = true }
                                 <Typography variant="body1">
                                     Last Checkin: {formatTime(player.reported_time)}
                                 </Typography>
+                                {player.ptype === 'EZP' && (
+                                    <Box sx={{ my: 1 }}>
+                                        <Button
+                                            variant="outlined"
+                                            size="small"
+                                            startIcon={<QueueMusicIcon />}
+                                            onClick={() => setDetailOpen(true)}
+                                        >
+                                            Playback details
+                                        </Button>
+                                        <PlaybackDetailDialog open={detailOpen} onClose={() => setDetailOpen(false)} />
+                                    </Box>
+                                )}
                                 {
                                     <Typography variant="body1">
-                                        Status: {player.status === 'Playing' ? '▶ Playing' : '⏸ Not Playing'}
+                                        Status:{' '}
+                                        {player.status === 'Playing'
+                                            ? '▶ Playing'
+                                            : player.status === 'Stopping'
+                                              ? '▶ Ending'
+                                              : player.status === 'Paused'
+                                                ? '⏸ Paused'
+                                                : '⏸ Not Playing'}
                                     </Typography>
                                 }
                                 {player.now_playing && (
@@ -282,10 +301,11 @@ export const ShowStatusScreen = ({ title, statusArea, allowTestControls = true }
                                 {player.upcoming && (
                                     <>
                                         <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 1 }}>
-                                            Upcoming Shows ({player.upcoming.filter((s) => s.schedule_id).length}):
+                                            Upcoming Shows (
+                                            {player.upcoming.filter((s) => s.schedule_id && !s.sequence_id).length}):
                                         </Typography>
                                         {player.upcoming
-                                            .filter((s) => s.schedule_id)
+                                            .filter((s) => s.schedule_id && !s.sequence_id)
                                             .map((show, index) => (
                                                 <Box
                                                     key={index}
@@ -463,15 +483,44 @@ export const ShowStatusScreen = ({ title, statusArea, allowTestControls = true }
                                 <Typography variant="body1">
                                     Need Download: {content.n_needing_download ?? '—'}
                                 </Typography>
+                                {(content.n_rights_unmet ?? 0) > 0 && (
+                                    <Box
+                                        sx={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: 1.5,
+                                            flexWrap: 'wrap',
+                                            my: 0.5,
+                                        }}
+                                    >
+                                        <Chip
+                                            color="warning"
+                                            size="small"
+                                            label={`Music proof needed: ${content.n_rights_unmet} sequence${content.n_rights_unmet === 1 ? '' : 's'}`}
+                                        />
+                                        <Button
+                                            size="small"
+                                            variant="outlined"
+                                            color="warning"
+                                            onClick={() => navigate(CLOUD)}
+                                        >
+                                            Fix on Cloud page
+                                        </Button>
+                                    </Box>
+                                )}
                                 <Typography variant="body1">
                                     Schedule Sync: {formatTime(content.schedule_sync_time)}
                                 </Typography>
                                 <Typography variant="body1">Schedules: {content.n_schedules ?? '—'}</Typography>
-                                <Typography variant="body1">Viewer Control: {vcLabel}</Typography>
                             </CardContent>
                         </Card>
                     </Grid>
                 )}
+
+                {/* Viewer Control */}
+                <Grid item xs={12}>
+                    <ViewerControlCard />
+                </Grid>
 
                 {/* Controller Status */}
                 {controller && (

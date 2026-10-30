@@ -114,6 +114,36 @@ describe('isPlaying', () => {
     });
 });
 
+describe('adoptPendingRequests', () => {
+    it('carries queued and immediate requests into a rebuilt state, dropping ones whose target is gone', () => {
+        const prev = new PlayerRunState(0);
+        prev.addInteractiveCommand({ immediate: true, startTime: 5, seqId: 'A', requestId: 'imm' });
+        prev.addInteractiveCommand({ immediate: false, startTime: 10, playlistId: 'plAB', requestId: 'pl' });
+        prev.addInteractiveCommand({ immediate: false, startTime: 20, seqId: 'C', requestId: 'gone' });
+
+        const next = new PlayerRunState(0);
+        next.setUpSequences([seqA, seqB], [plAB], [], []);
+        next.adoptPendingRequests(prev);
+
+        expect(next.immediateItem?.requestId).toBe('imm');
+        expect(next.interactiveQueue.map((q) => q.requestId)).toEqual(['pl']);
+    });
+
+    it('starts an adopted request once its time comes', () => {
+        const bt = baseTime();
+        const prev = new PlayerRunState(bt);
+        prev.addInteractiveCommand({ immediate: false, startTime: bt + 100, seqId: 'A', requestId: 'q' });
+
+        const next = new PlayerRunState(bt);
+        next.setUpSequences([seqA, seqB, seqC], [plAB], [], []);
+        next.adoptPendingRequests(prev);
+        next.runUntil(bt + 1000);
+
+        expect(next.depth).toBe(1);
+        expect(next.interactiveQueue).toEqual([]);
+    });
+});
+
 describe('applyDataUpdate', () => {
     it('leaves the active stack object untouched (no rebuild)', () => {
         const plr = runningState();
@@ -246,6 +276,18 @@ describe('applyDataUpdate', () => {
 
         expect(top.item.schedEnd).toBe(baseTime() + 20 * 3600_000);
         expect(plr.depth).toBeGreaterThan(0); // still playing
+    });
+
+    it('keeps a graceful stop in force across an unrelated update', () => {
+        const plr = runningState(); // 10s into seqA; seqB would follow
+        plr.stopGracefully(plr.currentTime);
+
+        apply(plr, [seqA, seqB, seqC], [plAB], [sched]); // nothing changed
+
+        // seqA finishes at 18:01:40 and the schedule ends there; seqB never starts.
+        const log = plr.readOutScheduleUntil(baseTime() + 18 * 3600_000 + 150_000, 100);
+        expect(log.filter((e) => e.eventType === 'Sequence Started').map((e) => e.sequenceId)).toEqual([]);
+        expect(plr.depth).toBe(0);
     });
 
     it('winds down an active schedule that was deleted', () => {

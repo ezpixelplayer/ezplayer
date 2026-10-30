@@ -1,4 +1,5 @@
-import type { ControllerOpsState, ControllerCommand } from './ControllerOps';
+import type { ControllerOpsState, ControllerCommand, ControllerSenderStats } from './ControllerOps';
+import type { ViewerStatsSummary } from '../util/viewerStats';
 import type { AudioDevice } from './EZPElectronAPI';
 
 export interface EZPlayerVersions {
@@ -142,6 +143,8 @@ export interface ScheduledPlaylist {
     priority?: 'high' | 'normal' | 'low';
     /** Suspend without delete; same semantics as `PlaylistRecord.enabled`. */
     enabled?: boolean;
+    /** Calendar/timeline chip color (CSS). Playback ignores this. Omitted → UI auto-color. */
+    color?: string;
 }
 
 interface RecurrenceRule {
@@ -166,6 +169,72 @@ export interface PlayingItem {
     schedule_id?: string;
 }
 
+/** One item on the playback stack: what is on, or what it interrupted and will
+ *  resume when it ends. Mirrors the engine's own structure, which is what the
+ *  detailed playback view shows. */
+export interface PlaybackStackEntry {
+    /** Identifies the item to commands (`stopitem`) and to the song-order fetch. */
+    key: string;
+    origin: 'Scheduled' | 'Immediate' | 'Queued';
+    /** Only the top entry plays, pauses or ends; everything under it is suspended. */
+    state: 'playing' | 'paused' | 'ending' | 'suspended';
+    /** Show, playlist or song name, whichever the item is. */
+    title: string;
+    schedule_id?: string;
+    playlist_id?: string;
+    request_id?: string;
+    /** Which part of the item the cursor is in; absent before it starts or after it ends. */
+    section?: 'intro' | 'main' | 'outro';
+    /** The cursor within the section: 0-based `index` of `count`. A looping main
+     *  section starts over at 0 when it wraps. */
+    position?: { index: number; count: number; loop: boolean };
+    /** The song at the cursor. For a suspended entry, where it resumes. */
+    song?: {
+        sequence_id: string;
+        title: string;
+        /** How far into the song the cursor is, and when it got there (player clock). */
+        offset_ms: number;
+        at: number;
+        duration_ms: number;
+    };
+    /** When the item is due to end, for scheduled items. */
+    ends_at?: number;
+    /** Changes whenever the item's song order is baked; the order is fetched by it. */
+    order_key: string;
+}
+
+/** Something that will play when its turn comes but is not on the stack. */
+export interface PlaybackPendingEntry extends PlayingItem {
+    /** `waiting`: a request in line. `deferred`: a show whose time has come but
+     *  which something of higher standing is keeping off the stage. */
+    why: 'waiting' | 'deferred';
+}
+
+/** The engine's structure, for the detailed playback view. */
+export interface PlaybackView {
+    /** Top first; `[0]` is what is on. */
+    stack: PlaybackStackEntry[];
+    pending: PlaybackPendingEntry[];
+    /** Songs to come, as the engine will choose them, then shows due to start. */
+    upcoming: PlayingItem[];
+}
+
+export interface PlaybackOrderEntry {
+    sequence_id: string;
+    title: string;
+    duration_ms: number;
+}
+
+/** The baked song order of one playback item, fetched on demand by its `order_key`
+ *  (a shuffled show's order exists only here). */
+export interface PlaybackItemOrder {
+    key: string;
+    order_key: string;
+    intro: PlaybackOrderEntry[];
+    main: PlaybackOrderEntry[];
+    outro: PlaybackOrderEntry[];
+}
+
 export interface PlayerPStatusContent {
     // P - Player
     ptype: 'EZP' | 'FPP'; // FPP or EZP
@@ -181,16 +250,33 @@ export interface PlayerPStatusContent {
     reported_time: number;
     engine_time?: number;
     now_playing?: PlayingItem;
+    /** Where `now_playing` is. `content_ms` is the position within the sequence that
+     *  the lights show at `sampled_at` (player epoch ms on the engine clock: the time
+     *  of the frame being output). `audio_ms` is the position within the audio file as
+     *  heard on the player, with the audio sync adjust applied; absent when the song
+     *  has no audio. Frozen while paused. Pushed on every playback event as well as
+     *  the periodic tick. */
+    position?: { content_ms: number; audio_ms?: number; sampled_at: number };
     background_now_playing?: PlayingItem;
     upcoming?: PlayingItem[];
     immediate?: PlayingItem;
     queue?: PlayingItem[];
     suspendedItems?: PlayingItem[];
     preemptedItems?: PlayingItem[];
+    /** The engine's structure for the detailed playback view; the lists above are
+     *  flattened views of the same state and remain for older readers. */
+    view?: PlaybackView;
 
     volume?: {
-        level: number; // 0-100
+        /** 0-100. The default output's level, or in `outputs` mode the loudest
+         *  named output (0 when none are selected). */
+        level: number;
         muted?: boolean;
+        /** `default`: the system default output follows `volumeControl`.
+         *  `outputs`: each named output follows its own `AudioOutputConfig`. */
+        mode?: 'default' | 'outputs';
+        /** Live per-output levels in `outputs` mode; empty when none selected. */
+        outputs?: Array<{ id: string; label: string; level: number; deviceId?: string; groupId?: string }>;
     };
 
     /** Files pinned by currently-loaded playback (foreground + background), as stored
@@ -202,6 +288,24 @@ export interface PlayerPStatusContent {
 
     // Statistics currently sent separately - PlaybackStatistics
     //   TODO figure out how to make sure that gets reflected...
+}
+
+/** One music-ownership requirement of a cloud sequence, redacted: what to
+ *  go get (title/artist/buy link) and whether the user has proven it. The
+ *  cloud never sends the identifiers it matches against. */
+export interface CloudRightsRequirement {
+    /** Stable handle the cloud keys claims and overrides by. */
+    key: string;
+    title?: string;
+    artist?: string;
+    sourceURL?: string;
+    satisfied: boolean;
+}
+
+/** Redacted music-rights projection for one sequence. */
+export interface CloudRightsStatus {
+    free?: boolean;
+    requirements?: CloudRightsRequirement[];
 }
 
 /** Manifest entry returned by the cloud's per-player sequence list endpoint
@@ -239,6 +343,9 @@ export interface CloudSeqManifestEntry {
      *    the jukebox never offers a song that can't play.
      *  Absent value treated as `active` for back-compat. */
     status?: 'active' | 'disabled' | 'pending';
+    /** Present only when the cloud would refuse the audio download: the
+     *  user still has to prove ownership of some of the music. */
+    rights?: CloudRightsStatus;
 }
 
 /** Per-sequence projection of the in-flight cloud sync. The UI rolls up status
@@ -256,6 +363,9 @@ export interface CloudSequenceProgress {
      *  surfaces this as "rendering" so the operator can see why a granted
      *  sequence isn't in the jukebox yet. */
     pending?: boolean;
+    /** Music requirements the user has not proven yet; the cloud withholds
+     *  the audio (and the player skips the sequence) until they are. */
+    rightsUnmet?: CloudRightsRequirement[];
 }
 
 /** Per-file status used by the cloud content sync. */
@@ -265,6 +375,7 @@ export type CloudFileStatus =
     | 'downloading' // fetch in progress
     | 'staged' // bytes on disk under .ezplayer/cloud, not yet promoted
     | 'installed' // active in show folder root, sequence record updated
+    | 'rights' // cloud withholds the file until music ownership is proven
     | 'error'; // last attempt failed
 
 export interface CloudFileEntry {
@@ -296,6 +407,23 @@ export interface PlayerCStatusContent {
     lastError?: string;
     /** True when the circuit breaker has tripped after consecutive download failures. */
     halted?: boolean;
+    /** Sequences whose audio the cloud withholds pending music proof. */
+    n_rights_unmet?: number;
+    /** Progress of the local media scan that submits proof of ownership. */
+    rightsScan?: CloudRightsScanInfo;
+}
+
+export interface CloudRightsScanInfo {
+    status: 'idle' | 'scanning' | 'submitting' | 'done' | 'error';
+    /** Audio files examined so far / total found. */
+    scanned?: number;
+    total?: number;
+    /** New identifiers the cloud accepted on the last run. */
+    added?: number;
+    /** Granted sequences still missing music proof after the last run. */
+    unmet?: number;
+    lastRunAt?: number;
+    error?: string;
 }
 
 export type CloudLayoutStatus =
@@ -337,6 +465,10 @@ export interface ControllerStatus {
     errors?: string[];
     connectivity?: 'Up' | 'Down' | 'Pending' | 'N/A';
     pingSummary?: string;
+    /** How the controller last answered; absent when nothing answered. */
+    reachedVia?: 'ping' | 'web';
+    /** What the controller's data sender reports having sent. */
+    senderStats?: ControllerSenderStats;
     reported_time?: number;
     startCh?: number; // 1-based start channel within the fseq channel array
     nCh?: number; // Channel count owned by this controller
@@ -348,6 +480,8 @@ export interface PlayerNStatusContent {
     n_models?: number;
     n_channels?: number;
 }
+
+export type PlaySongSource = 'ui' | 'jukebox' | 'remote-falcon' | 'viewer';
 
 export interface CombinedPlayerStatus {
     player_token?: string;
@@ -362,6 +496,8 @@ export interface CombinedPlayerStatus {
         show_name?: string;
         viewer_control_enabled?: boolean;
         viewer_control_mode?: 'disabled' | 'remote-falcon' | 'ezplayer';
+        /** All backends on (newer players); `viewer_control_mode` is the primary one. */
+        viewer_control_backends?: ViewerControlBackend[];
     };
 }
 
@@ -471,6 +607,9 @@ export type EZPlayerCommand =
           command: 'resetstats'; // Reset cumulative stats counters
       }
     | {
+          command: 'resyncviewercontrol'; // Re-send the song list and state to Remote Falcon
+      }
+    | {
           command: 'stopnow'; // Stop all playing
       }
     | {
@@ -486,6 +625,21 @@ export type EZPlayerCommand =
           command: 'suppressoutput'; // Playback continues, but not audio / video not sent out
       }
     | {
+          /**
+           * Stop sending to one controller so it can answer a read or accept an
+           * upload.  The hold releases itself after `leaseMs` even if the
+           * release never arrives, so a controller cannot be left dark; a
+           * longer operation renews it.
+           */
+          command: 'holdcontrollerdata';
+          address: string;
+          leaseMs: number;
+      }
+    | {
+          command: 'releasecontrollerdata'; // Resume sending to one controller
+          address: string;
+      }
+    | {
           command: 'activateoutput'; // Playback continues, but not audio / video not sent out
       }
     | {
@@ -494,6 +648,9 @@ export type EZPlayerCommand =
           immediate: boolean; // If false, enqueue
           priority: number; // Allows precedence over RF, lower is higher priority
           requestId: string; // To identify, for canceling
+          /** Who asked for it; Remote Falcon and jukebox picks are tallied on the owner's
+           *  Viewer Activity view (viewer-page picks are counted by the cloud). */
+          source?: PlaySongSource;
       }
     | {
           command: 'endsong'; // End song (skip to next)
@@ -512,11 +669,19 @@ export type EZPlayerCommand =
           requestId: string; // Identity, for canceling, of a song or a
       }
     | {
+          command: 'stopitem'; // Stop one playback item by its stack/pending key, leaving the rest alone
+          key: string;
+          graceful?: boolean; // Only meaningful for the item that is on; others are simply removed
+      }
+    | {
           command: 'clearrequests'; // Clear all requests
       }
     | {
           command: 'setvolume';
+          /** Sets the default volume (persisted; the player ramps to it). Not a
+           *  live override: a scheduled window in effect keeps its own level. */
           volume?: number;
+          /** Live mute. */
           mute?: boolean;
       };
 
@@ -536,6 +701,7 @@ export interface UIConnectSnapshot {
     /** Which remote-access tiles to offer. */
     remoteAccess?: RemoteAccessAvailability;
     appSettings?: AppSettingsState;
+    viewerStats?: ViewerStatsSummary;
 }
 
 export type ScheduleDays =
@@ -578,18 +744,48 @@ export interface CloudPollScheduleEntry {
     endTime: string; // HH:MM
 }
 
+export type ViewerControlBackend = 'remote-falcon' | 'ezplayer';
+
+/** Outcome of an operator-requested Remote Falcon song-list push.  `message`
+ *  carries Remote Falcon's own words when it refuses the list — it answers
+ *  HTTP 200 either way, so that text is the only sign of a refusal. */
+export interface ViewerControlResyncResult {
+    ok: boolean;
+    message?: string;
+}
+
 export interface ViewerControlState {
     enabled: boolean;
     /** `'ezplayer'` = the built-in EZPlayer viewer control. Unlike
      *  `'remote-falcon'` it needs no token here — it uses the player's
      *  existing cloud identity — and reuses `schedule` for the live window. */
     type: 'disabled' | 'remote-falcon' | 'ezplayer';
+    /** Backends running at once — both may be on; built-in requests take precedence
+     *  over Remote Falcon. Newer players write this and keep `type` as the primary
+     *  backend for older readers. Absent → derived from `type`
+     *  (`viewerControlBackends()`). */
+    backends?: ViewerControlBackend[];
     remoteFalconToken?: string;
+    /** Other songs that must start before the same song plays again. The player
+     *  drops viewer picks (Remote Falcon or the viewer page) of a song playing,
+     *  next up, already queued, or among this many recent starts, whatever the
+     *  backend allowed; scheduled playlists pass over such a song too, with the
+     *  spacing capped per playlist (`RepeatGuard`). 0 / absent = off. */
+    minSongsBetweenRepeats?: number;
     /** Optional in the type because legacy persisted shapes can lack it.
      *  Always treat absence as empty. `normalizePlaybackSettings` and helpers
      *  in `SettingsScheduleUtils.ts` default to `[]`. */
     schedule?: ViewerControlScheduleEntry[];
+    /** When set, Remote Falcon runs on `remoteFalconSchedule` instead of
+     *  `schedule`, so its windows and playlists can differ from the viewer
+     *  page's. Older readers ignore this and use `schedule` for both. */
+    separateRemoteFalconSchedule?: boolean;
+    /** Remote Falcon's own schedule; used only while `separateRemoteFalconSchedule` is set. */
+    remoteFalconSchedule?: ViewerControlScheduleEntry[];
 }
+
+/** The two viewer-control schedule lists in `ViewerControlState`. */
+export type ViewerControlScheduleList = 'schedule' | 'remoteFalconSchedule';
 
 export interface VolumeControlState {
     defaultVolume: number;
@@ -623,6 +819,40 @@ export interface JukeboxSettings {
     includedTags?: string[];
 }
 
+/**
+ * When the player may read a controller's configuration on its own.  A read
+ * pauses data to that controller while it runs — several models will not answer
+ * while they are streamed to — and can take tens of seconds on a HinksPix.
+ */
+/**
+ * The automatic-read choices offered as one setting.  `whenIdle: false` with
+ * `onRecovery: true` is not among them: a controller is only read on recovery
+ * if automatic reads are on at all.
+ */
+export type ControllerRefreshMode = 'off' | 'idle' | 'recovery';
+
+/** The stored flags for a choice. */
+export function controllerRefreshSettingsFor(mode: ControllerRefreshMode): ControllerRefreshSettings {
+    return { whenIdle: mode !== 'off', onRecovery: mode === 'recovery' };
+}
+
+/** The choice the stored flags amount to; unset means reads when idle. */
+export function controllerRefreshMode(s?: ControllerRefreshSettings): ControllerRefreshMode {
+    if (s?.whenIdle === false) return 'off';
+    return s?.onRecovery ? 'recovery' : 'idle';
+}
+
+export interface ControllerRefreshSettings {
+    /** Read controllers as they are first seen alive, while playback is stopped. */
+    whenIdle?: boolean;
+    /**
+     * Read a controller that comes back during a show before sending to it.
+     * Off by default: lighting it immediately beats fresh details, since it
+     * only joins the show once the read finishes.
+     */
+    onRecovery?: boolean;
+}
+
 export interface PlaybackSettings {
     audioSyncAdjust?: number;
     /** Default for `settings.normalize` on songs added locally; cloud songs arrive normalized. */
@@ -640,6 +870,8 @@ export interface PlaybackSettings {
     sendIdleBlackFrames?: boolean;
     /** Outbound sync strategies for followers of this player. */
     sync?: SyncOutputSettings;
+    /** When the player may read controller configuration by itself. */
+    controllerRefresh?: ControllerRefreshSettings;
     /** Diagnostic/testing overrides; leave unset for normal operation. */
     advanced?: AdvancedPlaybackSettings;
     /**
@@ -671,6 +903,10 @@ export interface MultisyncSettings {
     port?: number;
     /** Multicast group override (default 239.70.80.80). */
     multicastAddress?: string;
+    /** Also send media (audio) sync packets carrying the audio file and its playback
+     *  position, as FPP and xSchedule masters do. Default on; turn off when remotes
+     *  hold copies of the audio and must stay silent. */
+    mediaSync?: boolean;
 }
 
 export interface AdvancedPlaybackSettings {
@@ -707,6 +943,12 @@ export interface LayoutFileMeta {
     file_time: number;
 }
 
+/** When the player streams live audio up to the cloud for browser listeners.
+ *  `'auto'` streams only while the relay reports someone listening, `'always'`
+ *  streams whenever the bridge is up (a diagnostic / experiment setting),
+ *  `'never'` leaves the audio bridge closed. */
+export type CloudAudioMode = 'auto' | 'always' | 'never';
+
 /** Persisted-in-show-folder cloud configuration. Empty strings mean "not configured / cleared". */
 export interface CloudConfig {
     cloudServiceUrl: string;
@@ -725,6 +967,8 @@ export interface CloudConfig {
     /** Whether the player accepts remote control from the cloud. Default true.
      *  Sync, registration, and status reporting are unaffected. */
     cloudRemoteControlEnabled?: boolean;
+    /** Live-audio streaming policy for the cloud bridge. Absent defaults to `'auto'`. */
+    cloudAudioMode?: CloudAudioMode;
     /** When the worker is enabled, how aggressively it polls content. `'always'`
      *  polls on the configured cadence. `'scheduled'` polls only when current
      *  local time is inside any window in `cloudPollSchedule`. Registration
@@ -764,6 +1008,8 @@ export interface CloudStatus {
      *  session. UIs building the cloud control URL should prefer this and
      *  fall back to the configured cloud service URL. */
     homeServerUrl?: string;
+    /** Why no home server is bound while registered, worded for the user. */
+    homeServerIssue?: string;
 }
 
 /// Auto-update (software update) types — shared by Electron IPC, LAN WS, and cloud.
@@ -858,6 +1104,9 @@ export type FullPlayerState = {
     audioOutputDevices?: AudioDevice[];
     /** App-global (machine-wide) settings: diagnostics consent, start at sign-in. */
     appSettings?: AppSettingsState;
+    /** Owner viewer-activity summary (requests / votes / audience), computed by
+     *  the player from events pulled off its player_server. */
+    viewerStats?: ViewerStatsSummary;
 };
 
 /**
@@ -868,6 +1117,14 @@ export interface RemoteAccessAvailability {
     shell: boolean;
     /** Show-folder files. */
     files: boolean;
+}
+
+/** What a support bundle holds; each level adds to the one before. */
+export const SUPPORT_BUNDLE_LEVELS = ['logs', 'setup', 'layout'] as const;
+export type SupportBundleLevel = (typeof SUPPORT_BUNDLE_LEVELS)[number];
+
+export function isSupportBundleLevel(v: unknown): v is SupportBundleLevel {
+    return (SUPPORT_BUNDLE_LEVELS as readonly unknown[]).includes(v);
 }
 
 /** Machine-wide diagnostics/crash-report consent. `uploadEnabled` defaults
@@ -885,16 +1142,24 @@ export interface LoginItemState {
     openAtLogin: boolean;
 }
 
+/** When the desktop player keeps the machine from sleeping. 'always' (the
+ *  default) holds it the whole time the app runs, so later shows and remote
+ *  requests still find it awake; 'playing' only during playback. Display sleep
+ *  is never blocked. */
+export type PreventSleepMode = 'always' | 'playing' | 'never';
+
 /** App-global settings that live outside the show folder (electron-store / OS).
  *  Pushed to every UI as one snapshot; changed via `AppSettingsCommand`. */
 export interface AppSettingsState {
     diagnostics: DiagnosticsConsent;
     loginItem: LoginItemState;
+    preventSleep: PreventSleepMode;
 }
 
 export type AppSettingsCommand =
     | { type: 'setDiagnosticsConsent'; patch: Partial<DiagnosticsConsent> }
-    | { type: 'setOpenAtLogin'; openAtLogin: boolean };
+    | { type: 'setOpenAtLogin'; openAtLogin: boolean }
+    | { type: 'setPreventSleep'; mode: PreventSleepMode };
 
 export type PlayerWebSocketSnapshot = {
     type: 'snapshot';
@@ -987,6 +1252,8 @@ export type CloudCommand =
     | { type: 'setLayoutSource'; mode: 'xlights' | 'cloud' } // persist mode flip
     | { type: 'setCloudEnabled'; enabled: boolean } // pause/resume cloud activity
     | { type: 'setCloudRemoteControlEnabled'; enabled: boolean } // allow/refuse cloud remote control
+    | { type: 'setCloudAudioMode'; mode: CloudAudioMode } // when to stream live audio to the cloud
+    | { type: 'scanMediaRights' } // fingerprint local media (media folder + show folder) and submit proof of ownership
     | {
           /** Update polling configuration. Any field that's omitted is preserved (so
            *  callers can change one knob without re-sending the others). To clear the

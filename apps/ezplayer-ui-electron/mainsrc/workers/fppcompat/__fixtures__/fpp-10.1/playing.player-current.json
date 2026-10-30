@@ -1,0 +1,28 @@
+{
+    "playlist": {
+        "blankAtEnd": 1,
+        "currentEntry": {
+            "deprecated": 0,
+            "enabled": 1,
+            "isFinished": 0,
+            "isPlaying": 1,
+            "isStarted": 1,
+            "millisecondsElapsed": 5400,
+            "note": "",
+            "playCount": 1,
+            "playOnce": 0,
+            "secondsElapsed": 5,
+            "secondsRemaining": 54,
+            "sequenceName": "RefSong.fseq",
+            "type": "sequence"
+        },
+        "currentState": "playing",
+        "desc": "Reference show",
+        "loop": 0,
+        "loopCount": 0,
+        "name": "RefShow",
+        "random": 0,
+        "repeat": 0,
+        "size": 1
+    }
+}

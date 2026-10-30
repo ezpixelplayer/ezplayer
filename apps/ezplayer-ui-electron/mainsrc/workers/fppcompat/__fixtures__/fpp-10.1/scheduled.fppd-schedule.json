@@ -1,0 +1,738 @@
+{
+    "Message": "",
+    "Status": "OK",
+    "respCode": 200,
+    "schedule": {
+        "enabled": 1,
+        "entries": [
+            {
+                "day": 7,
+                "dayStr": "Everyday",
+                "enabled": 1,
+                "endDate": "2099-12-31",
+                "endDateInt": 20991231,
+                "endDateOffset": 0,
+                "endTime": "22:00:00",
+                "endTimeOffset": 0,
+                "endTimeStr": "22:00:00",
+                "id": 0,
+                "playlist": "RefShow",
+                "repeat": 0,
+                "repeatInterval": 0,
+                "startDate": "2026-01-01",
+                "startDateInt": 20260101,
+                "startDateOffset": 0,
+                "startTime": "18:00:00",
+                "startTimeOffset": 0,
+                "startTimeStr": "18:00:00",
+                "stopType": 0,
+                "stopTypeStr": "Graceful",
+                "type": "playlist"
+            }
+        ],
+        "items": [
+            {
+                "args": [
+                    "RefShow",
+                    "false",
+                    "false"
+                ],
+                "command": "Start Playlist",
+                "endDateInt": 20260920,
+                "endDateStr": "20260920",
+                "endTime": 1789941600,
+                "endTimeStr": "Sun Sep 20 @ 10:00 PM",
+                "id": 0,
+                "multisyncCommand": false,
+                "multisyncHosts": "",
+                "priority": 0,
+                "startDateInt": 20260920,
+                "startDateStr": "20260920",
+                "startTime": 1789927200,
+                "startTimeStr": "Sun Sep 20 @ 06:00 PM"
+            },
+            {
+                "args": [
+                    "RefShow",
+                    "false",
+                    "false"
+                ],
+                "command": "Start Playlist",
+                "endDateInt": 20260921,
+                "endDateStr": "20260921",
+                "endTime": 1790028000,
+                "endTimeStr": "Mon Sep 21 @ 10:00 PM",
+                "id": 0,
+                "multisyncCommand": false,
+                "multisyncHosts": "",
+                "priority": 0,
+                "startDateInt": 20260921,
+                "startDateStr": "20260921",
+                "startTime": 1790013600,
+                "startTimeStr": "Mon Sep 21 @ 06:00 PM"
+            },
+            {
+                "args": [
+                    "RefShow",
+                    "false",
+                    "false"
+                ],
+                "command": "Start Playlist",
+                "endDateInt": 20260922,
+                "endDateStr": "20260922",
+                "endTime": 1790114400,
+                "endTimeStr": "Tue Sep 22 @ 10:00 PM",
+                "id": 0,
+                "multisyncCommand": false,
+                "multisyncHosts": "",
+                "priority": 0,
+                "startDateInt": 20260922,
+                "startDateStr": "20260922",
+                "startTime": 1790100000,
+                "startTimeStr": "Tue Sep 22 @ 06:00 PM"
+            },
+            {
+                "args": [
+                    "RefShow",
+                    "false",
+                    "false"
+                ],
+                "command": "Start Playlist",
+                "endDateInt": 20260923,
+                "endDateStr": "20260923",
+                "endTime": 1790200800,
+                "endTimeStr": "Wed Sep 23 @ 10:00 PM",
+                "id": 0,
+                "multisyncCommand": false,
+                "multisyncHosts": "",
+                "priority": 0,
+                "startDateInt": 20260923,
+                "startDateStr": "20260923",
+                "startTime": 1790186400,
+                "startTimeStr": "Wed Sep 23 @ 06:00 PM"
+            },
+            {
+                "args": [
+                    "RefShow",
+                    "false",
+                    "false"
+                ],
+                "command": "Start Playlist",
+                "endDateInt": 20260924,
+                "endDateStr": "20260924",
+                "endTime": 1790287200,
+                "endTimeStr": "Thu Sep 24 @ 10:00 PM",
+                "id": 0,
+                "multisyncCommand": false,
+                "multisyncHosts": "",
+                "priority": 0,
+                "startDateInt": 20260924,
+                "startDateStr": "20260924",
+                "startTime": 1790272800,
+                "startTimeStr": "Thu Sep 24 @ 06:00 PM"
+            },
+            {
+                "args": [
+                    "RefShow",
+                    "false",
+                    "false"
+                ],
+                "command": "Start Playlist",
+                "endDateInt": 20260925,
+                "endDateStr": "20260925",
+                "endTime": 1790373600,
+                "endTimeStr": "Fri Sep 25 @ 10:00 PM",
+                "id": 0,
+                "multisyncCommand": false,
+                "multisyncHosts": "",
+                "priority": 0,
+                "startDateInt": 20260925,
+                "startDateStr": "20260925",
+                "startTime": 1790359200,
+                "startTimeStr": "Fri Sep 25 @ 06:00 PM"
+            },
+            {
+                "args": [
+                    "RefShow",
+                    "false",
+                    "false"
+                ],
+                "command": "Start Playlist",
+                "endDateInt": 20260926,
+                "endDateStr": "20260926",
+                "endTime": 1790460000,
+                "endTimeStr": "Sat Sep 26 @ 10:00 PM",
+                "id": 0,
+                "multisyncCommand": false,
+                "multisyncHosts": "",
+                "priority": 0,
+                "startDateInt": 20260926,
+                "startDateStr": "20260926",
+                "startTime": 1790445600,
+                "startTimeStr": "Sat Sep 26 @ 06:00 PM"
+            },
+            {
+                "args": [
+                    "RefShow",
+                    "false",
+                    "false"
+                ],
+                "command": "Start Playlist",
+                "endDateInt": 20260927,
+                "endDateStr": "20260927",
+                "endTime": 1790546400,
+                "endTimeStr": "Sun Sep 27 @ 10:00 PM",
+                "id": 0,
+                "multisyncCommand": false,
+                "multisyncHosts": "",
+                "priority": 0,
+                "startDateInt": 20260927,
+                "startDateStr": "20260927",
+                "startTime": 1790532000,
+                "startTimeStr": "Sun Sep 27 @ 06:00 PM"
+            },
+            {
+                "args": [
+                    "RefShow",
+                    "false",
+                    "false"
+                ],
+                "command": "Start Playlist",
+                "endDateInt": 20260928,
+                "endDateStr": "20260928",
+                "endTime": 1790632800,
+                "endTimeStr": "Mon Sep 28 @ 10:00 PM",
+                "id": 0,
+                "multisyncCommand": false,
+                "multisyncHosts": "",
+                "priority": 0,
+                "startDateInt": 20260928,
+                "startDateStr": "20260928",
+                "startTime": 1790618400,
+                "startTimeStr": "Mon Sep 28 @ 06:00 PM"
+            },
+            {
+                "args": [
+                    "RefShow",
+                    "false",
+                    "false"
+                ],
+                "command": "Start Playlist",
+                "endDateInt": 20260929,
+                "endDateStr": "20260929",
+                "endTime": 1790719200,
+                "endTimeStr": "Tue Sep 29 @ 10:00 PM",
+                "id": 0,
+                "multisyncCommand": false,
+                "multisyncHosts": "",
+                "priority": 0,
+                "startDateInt": 20260929,
+                "startDateStr": "20260929",
+                "startTime": 1790704800,
+                "startTimeStr": "Tue Sep 29 @ 06:00 PM"
+            },
+            {
+                "args": [
+                    "RefShow",
+                    "false",
+                    "false"
+                ],
+                "command": "Start Playlist",
+                "endDateInt": 20260930,
+                "endDateStr": "20260930",
+                "endTime": 1790805600,
+                "endTimeStr": "Wed Sep 30 @ 10:00 PM",
+                "id": 0,
+                "multisyncCommand": false,
+                "multisyncHosts": "",
+                "priority": 0,
+                "startDateInt": 20260930,
+                "startDateStr": "20260930",
+                "startTime": 1790791200,
+                "startTimeStr": "Wed Sep 30 @ 06:00 PM"
+            },
+            {
+                "args": [
+                    "RefShow",
+                    "false",
+                    "false"
+                ],
+                "command": "Start Playlist",
+                "endDateInt": 20261001,
+                "endDateStr": "20261001",
+                "endTime": 1790892000,
+                "endTimeStr": "Thu Oct  1 @ 10:00 PM",
+                "id": 0,
+                "multisyncCommand": false,
+                "multisyncHosts": "",
+                "priority": 0,
+                "startDateInt": 20261001,
+                "startDateStr": "20261001",
+                "startTime": 1790877600,
+                "startTimeStr": "Thu Oct  1 @ 06:00 PM"
+            },
+            {
+                "args": [
+                    "RefShow",
+                    "false",
+                    "false"
+                ],
+                "command": "Start Playlist",
+                "endDateInt": 20261002,
+                "endDateStr": "20261002",
+                "endTime": 1790978400,
+                "endTimeStr": "Fri Oct  2 @ 10:00 PM",
+                "id": 0,
+                "multisyncCommand": false,
+                "multisyncHosts": "",
+                "priority": 0,
+                "startDateInt": 20261002,
+                "startDateStr": "20261002",
+                "startTime": 1790964000,
+                "startTimeStr": "Fri Oct  2 @ 06:00 PM"
+            },
+            {
+                "args": [
+                    "RefShow",
+                    "false",
+                    "false"
+                ],
+                "command": "Start Playlist",
+                "endDateInt": 20261003,
+                "endDateStr": "20261003",
+                "endTime": 1791064800,
+                "endTimeStr": "Sat Oct  3 @ 10:00 PM",
+                "id": 0,
+                "multisyncCommand": false,
+                "multisyncHosts": "",
+                "priority": 0,
+                "startDateInt": 20261003,
+                "startDateStr": "20261003",
+                "startTime": 1791050400,
+                "startTimeStr": "Sat Oct  3 @ 06:00 PM"
+            },
+            {
+                "args": [
+                    "RefShow",
+                    "false",
+                    "false"
+                ],
+                "command": "Start Playlist",
+                "endDateInt": 20261004,
+                "endDateStr": "20261004",
+                "endTime": 1791151200,
+                "endTimeStr": "Sun Oct  4 @ 10:00 PM",
+                "id": 0,
+                "multisyncCommand": false,
+                "multisyncHosts": "",
+                "priority": 0,
+                "startDateInt": 20261004,
+                "startDateStr": "20261004",
+                "startTime": 1791136800,
+                "startTimeStr": "Sun Oct  4 @ 06:00 PM"
+            },
+            {
+                "args": [
+                    "RefShow",
+                    "false",
+                    "false"
+                ],
+                "command": "Start Playlist",
+                "endDateInt": 20261005,
+                "endDateStr": "20261005",
+                "endTime": 1791237600,
+                "endTimeStr": "Mon Oct  5 @ 10:00 PM",
+                "id": 0,
+                "multisyncCommand": false,
+                "multisyncHosts": "",
+                "priority": 0,
+                "startDateInt": 20261005,
+                "startDateStr": "20261005",
+                "startTime": 1791223200,
+                "startTimeStr": "Mon Oct  5 @ 06:00 PM"
+            },
+            {
+                "args": [
+                    "RefShow",
+                    "false",
+                    "false"
+                ],
+                "command": "Start Playlist",
+                "endDateInt": 20261006,
+                "endDateStr": "20261006",
+                "endTime": 1791324000,
+                "endTimeStr": "Tue Oct  6 @ 10:00 PM",
+                "id": 0,
+                "multisyncCommand": false,
+                "multisyncHosts": "",
+                "priority": 0,
+                "startDateInt": 20261006,
+                "startDateStr": "20261006",
+                "startTime": 1791309600,
+                "startTimeStr": "Tue Oct  6 @ 06:00 PM"
+            },
+            {
+                "args": [
+                    "RefShow",
+                    "false",
+                    "false"
+                ],
+                "command": "Start Playlist",
+                "endDateInt": 20261007,
+                "endDateStr": "20261007",
+                "endTime": 1791410400,
+                "endTimeStr": "Wed Oct  7 @ 10:00 PM",
+                "id": 0,
+                "multisyncCommand": false,
+                "multisyncHosts": "",
+                "priority": 0,
+                "startDateInt": 20261007,
+                "startDateStr": "20261007",
+                "startTime": 1791396000,
+                "startTimeStr": "Wed Oct  7 @ 06:00 PM"
+            },
+            {
+                "args": [
+                    "RefShow",
+                    "false",
+                    "false"
+                ],
+                "command": "Start Playlist",
+                "endDateInt": 20261008,
+                "endDateStr": "20261008",
+                "endTime": 1791496800,
+                "endTimeStr": "Thu Oct  8 @ 10:00 PM",
+                "id": 0,
+                "multisyncCommand": false,
+                "multisyncHosts": "",
+                "priority": 0,
+                "startDateInt": 20261008,
+                "startDateStr": "20261008",
+                "startTime": 1791482400,
+                "startTimeStr": "Thu Oct  8 @ 06:00 PM"
+            },
+            {
+                "args": [
+                    "RefShow",
+                    "false",
+                    "false"
+                ],
+                "command": "Start Playlist",
+                "endDateInt": 20261009,
+                "endDateStr": "20261009",
+                "endTime": 1791583200,
+                "endTimeStr": "Fri Oct  9 @ 10:00 PM",
+                "id": 0,
+                "multisyncCommand": false,
+                "multisyncHosts": "",
+                "priority": 0,
+                "startDateInt": 20261009,
+                "startDateStr": "20261009",
+                "startTime": 1791568800,
+                "startTimeStr": "Fri Oct  9 @ 06:00 PM"
+            },
+            {
+                "args": [
+                    "RefShow",
+                    "false",
+                    "false"
+                ],
+                "command": "Start Playlist",
+                "endDateInt": 20261010,
+                "endDateStr": "20261010",
+                "endTime": 1791669600,
+                "endTimeStr": "Sat Oct 10 @ 10:00 PM",
+                "id": 0,
+                "multisyncCommand": false,
+                "multisyncHosts": "",
+                "priority": 0,
+                "startDateInt": 20261010,
+                "startDateStr": "20261010",
+                "startTime": 1791655200,
+                "startTimeStr": "Sat Oct 10 @ 06:00 PM"
+            },
+            {
+                "args": [
+                    "RefShow",
+                    "false",
+                    "false"
+                ],
+                "command": "Start Playlist",
+                "endDateInt": 20261011,
+                "endDateStr": "20261011",
+                "endTime": 1791756000,
+                "endTimeStr": "Sun Oct 11 @ 10:00 PM",
+                "id": 0,
+                "multisyncCommand": false,
+                "multisyncHosts": "",
+                "priority": 0,
+                "startDateInt": 20261011,
+                "startDateStr": "20261011",
+                "startTime": 1791741600,
+                "startTimeStr": "Sun Oct 11 @ 06:00 PM"
+            },
+            {
+                "args": [
+                    "RefShow",
+                    "false",
+                    "false"
+                ],
+                "command": "Start Playlist",
+                "endDateInt": 20261012,
+                "endDateStr": "20261012",
+                "endTime": 1791842400,
+                "endTimeStr": "Mon Oct 12 @ 10:00 PM",
+                "id": 0,
+                "multisyncCommand": false,
+                "multisyncHosts": "",
+                "priority": 0,
+                "startDateInt": 20261012,
+                "startDateStr": "20261012",
+                "startTime": 1791828000,
+                "startTimeStr": "Mon Oct 12 @ 06:00 PM"
+            },
+            {
+                "args": [
+                    "RefShow",
+                    "false",
+                    "false"
+                ],
+                "command": "Start Playlist",
+                "endDateInt": 20261013,
+                "endDateStr": "20261013",
+                "endTime": 1791928800,
+                "endTimeStr": "Tue Oct 13 @ 10:00 PM",
+                "id": 0,
+                "multisyncCommand": false,
+                "multisyncHosts": "",
+                "priority": 0,
+                "startDateInt": 20261013,
+                "startDateStr": "20261013",
+                "startTime": 1791914400,
+                "startTimeStr": "Tue Oct 13 @ 06:00 PM"
+            },
+            {
+                "args": [
+                    "RefShow",
+                    "false",
+                    "false"
+                ],
+                "command": "Start Playlist",
+                "endDateInt": 20261014,
+                "endDateStr": "20261014",
+                "endTime": 1792015200,
+                "endTimeStr": "Wed Oct 14 @ 10:00 PM",
+                "id": 0,
+                "multisyncCommand": false,
+                "multisyncHosts": "",
+                "priority": 0,
+                "startDateInt": 20261014,
+                "startDateStr": "20261014",
+                "startTime": 1792000800,
+                "startTimeStr": "Wed Oct 14 @ 06:00 PM"
+            },
+            {
+                "args": [
+                    "RefShow",
+                    "false",
+                    "false"
+                ],
+                "command": "Start Playlist",
+                "endDateInt": 20261015,
+                "endDateStr": "20261015",
+                "endTime": 1792101600,
+                "endTimeStr": "Thu Oct 15 @ 10:00 PM",
+                "id": 0,
+                "multisyncCommand": false,
+                "multisyncHosts": "",
+                "priority": 0,
+                "startDateInt": 20261015,
+                "startDateStr": "20261015",
+                "startTime": 1792087200,
+                "startTimeStr": "Thu Oct 15 @ 06:00 PM"
+            },
+            {
+                "args": [
+                    "RefShow",
+                    "false",
+                    "false"
+                ],
+                "command": "Start Playlist",
+                "endDateInt": 20261016,
+                "endDateStr": "20261016",
+                "endTime": 1792188000,
+                "endTimeStr": "Fri Oct 16 @ 10:00 PM",
+                "id": 0,
+                "multisyncCommand": false,
+                "multisyncHosts": "",
+                "priority": 0,
+                "startDateInt": 20261016,
+                "startDateStr": "20261016",
+                "startTime": 1792173600,
+                "startTimeStr": "Fri Oct 16 @ 06:00 PM"
+            },
+            {
+                "args": [
+                    "RefShow",
+                    "false",
+                    "false"
+                ],
+                "command": "Start Playlist",
+                "endDateInt": 20261017,
+                "endDateStr": "20261017",
+                "endTime": 1792274400,
+                "endTimeStr": "Sat Oct 17 @ 10:00 PM",
+                "id": 0,
+                "multisyncCommand": false,
+                "multisyncHosts": "",
+                "priority": 0,
+                "startDateInt": 20261017,
+                "startDateStr": "20261017",
+                "startTime": 1792260000,
+                "startTimeStr": "Sat Oct 17 @ 06:00 PM"
+            },
+            {
+                "args": [
+                    "RefShow",
+                    "false",
+                    "false"
+                ],
+                "command": "Start Playlist",
+                "endDateInt": 20261018,
+                "endDateStr": "20261018",
+                "endTime": 1792360800,
+                "endTimeStr": "Sun Oct 18 @ 10:00 PM",
+                "id": 0,
+                "multisyncCommand": false,
+                "multisyncHosts": "",
+                "priority": 0,
+                "startDateInt": 20261018,
+                "startDateStr": "20261018",
+                "startTime": 1792346400,
+                "startTimeStr": "Sun Oct 18 @ 06:00 PM"
+            },
+            {
+                "args": [
+                    "RefShow",
+                    "false",
+                    "false"
+                ],
+                "command": "Start Playlist",
+                "endDateInt": 20261019,
+                "endDateStr": "20261019",
+                "endTime": 1792447200,
+                "endTimeStr": "Mon Oct 19 @ 10:00 PM",
+                "id": 0,
+                "multisyncCommand": false,
+                "multisyncHosts": "",
+                "priority": 0,
+                "startDateInt": 20261019,
+                "startDateStr": "20261019",
+                "startTime": 1792432800,
+                "startTimeStr": "Mon Oct 19 @ 06:00 PM"
+            },
+            {
+                "args": [
+                    "RefShow",
+                    "false",
+                    "false"
+                ],
+                "command": "Start Playlist",
+                "endDateInt": 20261020,
+                "endDateStr": "20261020",
+                "endTime": 1792533600,
+                "endTimeStr": "Tue Oct 20 @ 10:00 PM",
+                "id": 0,
+                "multisyncCommand": false,
+                "multisyncHosts": "",
+                "priority": 0,
+                "startDateInt": 20261020,
+                "startDateStr": "20261020",
+                "startTime": 1792519200,
+                "startTimeStr": "Tue Oct 20 @ 06:00 PM"
+            },
+            {
+                "args": [
+                    "RefShow",
+                    "false",
+                    "false"
+                ],
+                "command": "Start Playlist",
+                "endDateInt": 20261021,
+                "endDateStr": "20261021",
+                "endTime": 1792620000,
+                "endTimeStr": "Wed Oct 21 @ 10:00 PM",
+                "id": 0,
+                "multisyncCommand": false,
+                "multisyncHosts": "",
+                "priority": 0,
+                "startDateInt": 20261021,
+                "startDateStr": "20261021",
+                "startTime": 1792605600,
+                "startTimeStr": "Wed Oct 21 @ 06:00 PM"
+            },
+            {
+                "args": [
+                    "RefShow",
+                    "false",
+                    "false"
+                ],
+                "command": "Start Playlist",
+                "endDateInt": 20261022,
+                "endDateStr": "20261022",
+                "endTime": 1792706400,
+                "endTimeStr": "Thu Oct 22 @ 10:00 PM",
+                "id": 0,
+                "multisyncCommand": false,
+                "multisyncHosts": "",
+                "priority": 0,
+                "startDateInt": 20261022,
+                "startDateStr": "20261022",
+                "startTime": 1792692000,
+                "startTimeStr": "Thu Oct 22 @ 06:00 PM"
+            },
+            {
+                "args": [
+                    "RefShow",
+                    "false",
+                    "false"
+                ],
+                "command": "Start Playlist",
+                "endDateInt": 20261023,
+                "endDateStr": "20261023",
+                "endTime": 1792792800,
+                "endTimeStr": "Fri Oct 23 @ 10:00 PM",
+                "id": 0,
+                "multisyncCommand": false,
+                "multisyncHosts": "",
+                "priority": 0,
+                "startDateInt": 20261023,
+                "startDateStr": "20261023",
+                "startTime": 1792778400,
+                "startTimeStr": "Fri Oct 23 @ 06:00 PM"
+            },
+            {
+                "args": [
+                    "RefShow",
+                    "false",
+                    "false"
+                ],
+                "command": "Start Playlist",
+                "endDateInt": 20261024,
+                "endDateStr": "20261024",
+                "endTime": 1792879200,
+                "endTimeStr": "Sat Oct 24 @ 10:00 PM",
+                "id": 0,
+                "multisyncCommand": false,
+                "multisyncHosts": "",
+                "priority": 0,
+                "startDateInt": 20261024,
+                "startDateStr": "20261024",
+                "startTime": 1792864800,
+                "startTimeStr": "Sat Oct 24 @ 06:00 PM"
+            }
+        ],
+        "scheduleDistance": 28,
+        "schedulesExtendBeyondDistance": true
+    }
+}

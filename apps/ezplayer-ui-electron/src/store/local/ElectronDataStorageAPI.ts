@@ -9,6 +9,7 @@ import type {
     CloudStatus,
     CombinedPlayerStatus,
     EZPlayerCommand,
+    ViewerControlResyncResult,
     PlaylistRecord,
     ScheduledPlaylist,
     SequenceRecord,
@@ -40,6 +41,7 @@ import {
     cloudStatusActions,
     controllerOpsActions,
     remoteAccessActions,
+    viewerStatsActions,
     autoUpdateActions,
     audioDevicesActions,
 } from '@ezplayer/player-ui-components';
@@ -103,6 +105,10 @@ export class ElectronDataStorageAPI implements DataStorageAPI {
             if (!this.dispatch) return;
             this.dispatch(remoteAccessActions.setRemoteAccess(state));
         });
+        window.electronAPI!.onViewerStatsUpdated((summary) => {
+            if (!this.dispatch) return;
+            this.dispatch(viewerStatsActions.setViewerStats(summary));
+        });
         window.electronAPI!.onAppSettingsUpdated((state: AppSettingsState) => {
             if (!this.dispatch) return;
             this.dispatch(appSettingsActions.setAppSettings(state));
@@ -118,7 +124,7 @@ export class ElectronDataStorageAPI implements DataStorageAPI {
             const dn = Math.round(Date.now());
             const act = Math.round(this.audioCtx.currentTime * 1000);
 
-            let startTime: number | undefined = undefined;
+            let startTime: number;
             // See if this is a fresh song or otherwise no history
             if (incarnation !== this.audioCleanBreakInterval || playAtRealTime !== this.audioPlayAtNextRealTime) {
                 //console.log(`Starting new song/audio segment`);
@@ -131,7 +137,7 @@ export class ElectronDataStorageAPI implements DataStorageAPI {
             }
 
             // See if this is wildly off ... who knows why, maybe we ought to tally it
-            if (Math.abs(startTime! - (act + (playAtRealTime - dn))) > 50) {
+            if (Math.abs(startTime - (act + (playAtRealTime - dn))) > 50) {
                 console.log(`Start time way off: ${startTime} vs ${act + (playAtRealTime - dn)}`);
                 startTime = act + (playAtRealTime - dn);
                 this.audioPlayAtNextRealTime = playAtRealTime;
@@ -139,7 +145,7 @@ export class ElectronDataStorageAPI implements DataStorageAPI {
             }
 
             this.audioPlayAtNextRealTime += audioLenMs;
-            this.audioPlayAtNextACT = startTime! + audioLenMs;
+            this.audioPlayAtNextACT = startTime + audioLenMs;
 
             if (playAtRealTime < dn) return; // Too late TODO STAT
 
@@ -228,6 +234,12 @@ export class ElectronDataStorageAPI implements DataStorageAPI {
         return await window.electronAPI!.immediatePlayerCommand(req);
     }
 
+    async resyncViewerControl(): Promise<ViewerControlResyncResult> {
+        const call = window.electronAPI?.resyncViewerControl;
+        if (!call) return { ok: false, message: 'This player build cannot report the result' };
+        return await call();
+    }
+
     async setPlayerSettings(s: PlaybackSettings) {
         return await window.electronAPI!.setPlaybackSettings(s);
     }
@@ -286,6 +298,7 @@ export class ElectronDataStorageAPI implements DataStorageAPI {
             if (snapshot.controllerops) dispatch(controllerOpsActions.setControllerOps(snapshot.controllerops));
             dispatch(remoteAccessActions.setRemoteAccess(snapshot.remoteAccess ?? { shell: false, files: false }));
             if (snapshot.appSettings) dispatch(appSettingsActions.setAppSettings(snapshot.appSettings));
+            if (snapshot.viewerStats) dispatch(viewerStatsActions.setViewerStats(snapshot.viewerStats));
         }
         void this.publishAudioOutputDevices();
         // Initial update state comes from an invoke.

@@ -27,7 +27,16 @@ import type {
     ScheduledPlaylist,
     SequenceRecord,
 } from '@ezplayer/ezplayer-core';
-import { LatestFrameRingBuffer, AudioChunkRingBuffer } from '@ezplayer/ezplayer-core';
+import { LatestFrameRingBuffer, AudioChunkRingBuffer, isSupportBundleLevel } from '@ezplayer/ezplayer-core';
+import type { AudioBridgeControlMessage, CloudAudioMode } from '@ezplayer/ezplayer-core';
+import {
+    activeWindowDescriptions,
+    describeVolume,
+    headlineDefaultVolume,
+    replaceVolumeSchedule,
+    setDefaultVolume,
+} from './volume-settings.js';
+import { AudioStreamEncoder } from './audio-stream-encoder.js';
 import { BufferPool } from '@ezplayer/epp';
 import { ZstdCodec, ZstdSimple } from 'zstd-codec';
 import type {
@@ -63,6 +72,7 @@ import { registerScanApiRoutes } from './scan-api.js';
 import { registerControllersApiRoutes } from './controllers-api.js';
 import { ViewObject, LayoutSettings, type MhFixtureInfo } from './playbacktypes.js';
 import { trustSystemCAs } from '../trustSystemCAs.js';
+import { throwLater } from '../faultinject.js';
 
 // Trust the OS cert store before this worker's TLS (cloud WS bridge).
 trustSystemCAs();
@@ -147,6 +157,7 @@ class MainThreadRPC {
     // own cap (~120s), so it gets a longer leash.
     private static readonly TIMEOUT_MS: Partial<Record<keyof ServerWorkerRPCAPI, number>> = {
         controllerCommand: 130_000,
+        buildSupportBundle: 120_000,
     };
 
     call<K extends keyof ServerWorkerRPCAPI>(
@@ -196,6 +207,7 @@ class MainThreadRPC {
 }
 
 const rpc = new MainThreadRPC();
+throwLater('server-worker-throw', 3000);
 
 const wsBroadcaster = new WebSocketBroadcaster();
 
@@ -269,6 +281,57 @@ function attachRemoteAccessUpgrade(
     });
 }
 
+const currentPlaybackSettings = () => wsBroadcaster.get('playbackSettings') as PlaybackSettings | undefined;
+const currentPStatus = () => wsBroadcaster.get('pStatus') as PlayerPStatusContent | undefined;
+
+/** Persist, push to the live player and re-broadcast — the one path every
+ *  settings write takes, so the UI, the disk and the player agree. */
+async function applyPlaybackSettings(settings: PlaybackSettings): Promise<void> {
+    const showFolder = currentShowFolder();
+    if (showFolder) {
+        const settingsPath = path.join(showFolder, '.ezplayer', 'playbackSettings.json');
+        await rpc.call('applySettingsFromRenderer', settingsPath, settings);
+    }
+    await rpc.call('sendPlaybackSettings', settings);
+    wsBroadcaster.set('playbackSettings', settings);
+}
+
+/** Reply body for a volume write: the state after it, and whether the default
+ *  is what the listener hears right now or a schedule window is in effect. */
+function volumeReply(settings: PlaybackSettings): Record<string, unknown> {
+    const volume = describeVolume(settings, currentPStatus());
+    const active = activeWindowDescriptions(volume);
+    return {
+        success: true,
+        defaultInEffect: active.length === 0,
+        ...(active.length > 0
+            ? {
+                  warning: `A scheduled volume window is in effect (${active.join('; ')}); the default applies when it ends`,
+              }
+            : {}),
+        volume,
+    };
+}
+
+/** `setvolume`: a level writes the default volume (the player's slew then ramps
+ *  the live level to it); only `mute` goes to the player as a live change. */
+async function handleSetVolume(cmd: {
+    volume?: unknown;
+    mute?: boolean;
+}): Promise<{ status: number; body: Record<string, unknown> }> {
+    let reply: Record<string, unknown> = { success: true };
+    if (cmd.volume !== undefined) {
+        const settings = currentPlaybackSettings();
+        if (!settings) return { status: 503, body: { error: 'Playback settings not loaded yet' } };
+        const r = setDefaultVolume(settings, cmd.volume);
+        if (!r.ok) return { status: r.status, body: { error: r.error } };
+        await applyPlaybackSettings(r.settings);
+        reply = volumeReply(r.settings);
+    }
+    if (cmd.mute !== undefined) await rpc.call('sendPlayerCommand', { command: 'setvolume', mute: cmd.mute });
+    return { status: 200, body: { ...reply, message: 'Command sent' } };
+}
+
 // Forward client → server WebSocket commands to main via RPC. Main pushes
 // resulting state back to all clients via the broadcast channel. These three
 // branches let the cloud bridge drive everything the LAN HTTP endpoints can
@@ -280,26 +343,15 @@ wsBroadcaster.setClientMessageHandler((msg) => {
             console.error('[server-worker] cloudCommand failed:', err);
         });
     } else if (msg.type === 'playerCommand') {
-        void rpc.call('sendPlayerCommand', msg.cmd).catch((err) => {
+        const cmd = msg.cmd as EZPlayerCommand | undefined;
+        const run = cmd?.command === 'setvolume' ? handleSetVolume(cmd) : rpc.call('sendPlayerCommand', msg.cmd);
+        void run.catch((err) => {
             console.error('[server-worker] playerCommand failed:', err);
         });
     } else if (msg.type === 'settings') {
-        // Mirror the POST /api/ezp/playback-settings flow: persist to disk first
-        // (so changes survive restart), then push to the live player, then
-        // re-broadcast so other clients update.
-        void (async () => {
-            try {
-                const showFolder = wsBroadcaster.get('showFolder') as string | undefined;
-                if (showFolder) {
-                    const settingsPath = path.join(showFolder, '.ezplayer', 'playbackSettings.json');
-                    await rpc.call('applySettingsFromRenderer', settingsPath, msg.settings);
-                }
-                await rpc.call('sendPlaybackSettings', msg.settings);
-                wsBroadcaster.set('playbackSettings', msg.settings);
-            } catch (err) {
-                console.error('[server-worker] settings failed:', err);
-            }
-        })();
+        void applyPlaybackSettings(msg.settings as PlaybackSettings).catch((err) => {
+            console.error('[server-worker] settings failed:', err);
+        });
     } else if (msg.type === 'updatePlaylists') {
         void rpc.call('updatePlaylistsHandler', msg.data).catch((err) => {
             console.error('[server-worker] updatePlaylists failed:', err);
@@ -356,6 +408,11 @@ parentPort.on('message', async (msg: MainToServerWorkerMessage) => {
         curFrameBuffer = msg.buffer;
     } else if (msg.type === 'updateAudioBuffer') {
         curAudioRing = new AudioChunkRingBuffer(msg.buffer, false);
+        audioPumpAfterSeq = curAudioRing.latestSeq;
+    } else if (msg.type === 'cloudAudioMode') {
+        setCloudAudioMode(msg.mode);
+    } else if (msg.type === 'rtcOffset') {
+        rtcOffsetMs = msg.offsetMs;
     } else if (msg.type === 'broadcast') {
         // A remote-access session belongs to the show it was opened against —
         // its password lives in that show's folder. Switching shows revokes it
@@ -424,6 +481,41 @@ interface CloudBridge {
 }
 let cloudBridge: CloudBridge | undefined;
 
+/** Bounds a dial; an unbounded CONNECTING socket counts as alive and blocks redial forever. */
+const BRIDGE_HANDSHAKE_TIMEOUT_MS = 15_000;
+const BRIDGE_PING_INTERVAL_MS = 30_000;
+
+/** A link that dies silently leaves the socket OPEN forever, which also blocks redial;
+ *  ping it and terminate (close → next checkin redials) when a full interval hears nothing. */
+function watchBridgeLiveness(ws: WebSocket, label: string): void {
+    let heard = true;
+    const mark = () => {
+        heard = true;
+    };
+    ws.on('pong', mark);
+    ws.on('ping', mark);
+    ws.on('message', mark);
+    const timer = setInterval(() => {
+        if (!heard) {
+            console.warn(`[server-worker] ${label} silent for ${BRIDGE_PING_INTERVAL_MS / 1000}s; terminating`);
+            ws.terminate();
+            return;
+        }
+        heard = false;
+        try {
+            ws.ping();
+        } catch {
+            /* closing; close handler cleans up */
+        }
+    }, BRIDGE_PING_INTERVAL_MS);
+    ws.once('close', () => clearInterval(timer));
+}
+
+/** Open, or still dialing (CONNECTING). Anything else is dead and gets redialed. */
+function bridgeAlive(b: { ws: WebSocket; open: boolean }): boolean {
+    return b.open || b.ws.readyState === WebSocket.CONNECTING;
+}
+
 function openCloudBridge(
     wsUrl: string,
     proxyWsUrl: string | undefined,
@@ -434,7 +526,10 @@ function openCloudBridge(
     if (proxyWsUrl) openCloudProxyBridge(proxyWsUrl, sessionId, ttlSeconds);
     if (audioWsUrl) openCloudAudioBridge(audioWsUrl, sessionId, ttlSeconds);
 
-    if (cloudBridge && cloudBridge.sessionId === sessionId && cloudBridge.url === wsUrl && cloudBridge.open) {
+    // Same session + same URL + a socket that is open OR still dialing: keep it and
+    // refresh the TTL. Redialing over a CONNECTING socket would tear down a dial
+    // still completing a slow handshake, so the bridge would never come up.
+    if (cloudBridge && cloudBridge.sessionId === sessionId && cloudBridge.url === wsUrl && bridgeAlive(cloudBridge)) {
         clearTimeout(cloudBridge.ttlTimer);
         cloudBridge.ttlTimer = setTimeout(() => closeCloudBridge(sessionId), ttlSeconds * 1000);
         return;
@@ -452,7 +547,7 @@ function openCloudBridge(
     }
     let ws: WebSocket;
     try {
-        ws = new WebSocket(wsUrl);
+        ws = new WebSocket(wsUrl, { handshakeTimeout: BRIDGE_HANDSHAKE_TIMEOUT_MS });
     } catch (err) {
         console.error('[server-worker] cloud bridge dial failed:', err);
         return;
@@ -463,6 +558,7 @@ function openCloudBridge(
     ws.on('open', () => {
         if (cloudBridge?.ws === ws) cloudBridge.open = true;
         console.log(`[server-worker] cloud bridge open sessionId=${sessionId.slice(0, 8)}... ttl=${ttlSeconds}s`);
+        watchBridgeLiveness(ws, 'cloud bridge');
         // Hand the live socket to the broadcaster. From here it's just another
         // Conn — first round dumps a snapshot of every cached key, subsequent
         // updates fan out via the existing set() path. The cloud relay
@@ -470,6 +566,7 @@ function openCloudBridge(
         wsBroadcaster.attachClient(ws);
     });
     ws.on('error', (err) => {
+        if (cloudBridge?.ws !== ws) return; // superseded / closed by us
         console.error('[server-worker] cloud bridge error:', err);
     });
     ws.on('close', () => {
@@ -511,7 +608,7 @@ function openCloudProxyBridge(wsUrl: string, sessionId: string, ttlSeconds: numb
         cloudProxyBridge &&
         cloudProxyBridge.sessionId === sessionId &&
         cloudProxyBridge.url === wsUrl &&
-        cloudProxyBridge.open
+        bridgeAlive(cloudProxyBridge)
     ) {
         clearTimeout(cloudProxyBridge.ttlTimer);
         cloudProxyBridge.ttlTimer = setTimeout(() => closeCloudProxyBridge(sessionId), ttlSeconds * 1000);
@@ -528,7 +625,7 @@ function openCloudProxyBridge(wsUrl: string, sessionId: string, ttlSeconds: numb
     }
     let ws: WebSocket;
     try {
-        ws = new WebSocket(wsUrl);
+        ws = new WebSocket(wsUrl, { handshakeTimeout: BRIDGE_HANDSHAKE_TIMEOUT_MS });
     } catch (err) {
         console.error('[server-worker] cloud proxy bridge dial failed:', err);
         return;
@@ -621,6 +718,7 @@ function openCloudProxyBridge(wsUrl: string, sessionId: string, ttlSeconds: numb
     ws.on('open', () => {
         if (cloudProxyBridge?.ws === ws) cloudProxyBridge.open = true;
         console.log(`[server-worker] cloud proxy bridge open sessionId=${sessionId.slice(0, 8)}...`);
+        watchBridgeLiveness(ws, 'cloud proxy bridge');
     });
     ws.on('message', (raw) => {
         // Errors at any layer become a 500 with the same reqId so the cloud's
@@ -677,6 +775,7 @@ function openCloudProxyBridge(wsUrl: string, sessionId: string, ttlSeconds: numb
         }
     });
     ws.on('error', (err) => {
+        if (cloudProxyBridge?.ws !== ws) return; // superseded / closed by us
         console.error('[server-worker] cloud proxy bridge error:', err);
     });
     ws.on('close', () => {
@@ -701,9 +800,157 @@ function closeCloudProxyBridge(sessionId?: string) {
     cloudProxyBridge = undefined;
 }
 
-// -- cloud audio bridge (push) ------------------------------------------------
-// Push each new audio chunk as a binary WS frame: per-chunk wire format from
-// /api/ezp/audio, prefixed with `serverNow` for browser-side clockOffset refinement.
+// -- live audio fan-out ---------------------------------------------------------
+// One pump reads new ring chunks, encodes each once (opus — see
+// audio-stream-encoder.ts) and pushes the wire frame to every LAN listener on
+// `/api/ezp/audiostream` and, when wanted, up the cloud audio bridge. The pump
+// only runs while someone is listening: LAN sockets are counted here; cloud
+// listeners are reported by the relay as `{ type: 'listeners', count }` text
+// messages on the bridge socket.
+
+/** How often the pump checks for new chunks. Chunks are ~100 ms; 20 ms keeps
+ *  the added latency to one tick. */
+const AUDIO_PUSH_INTERVAL_MS = 20;
+/** Keep streaming this long after the last cloud listener leaves, so a page
+ *  refresh doesn't cost a fresh spin-up. */
+const CLOUD_AUDIO_LINGER_MS = 30_000;
+/** A socket further behind than this is skipped rather than buffered. */
+const AUDIO_MAX_BUFFERED_BYTES = 256 * 1024;
+
+const lanAudioClients = new Set<WebSocket>();
+const audioStreamWss = new WebSocketServer({ noServer: true });
+audioStreamWss.on('connection', (ws) => {
+    lanAudioClients.add(ws);
+    ws.on('close', () => {
+        lanAudioClients.delete(ws);
+    });
+    ws.on('error', () => {
+        lanAudioClients.delete(ws);
+    });
+    ensureAudioPump();
+});
+
+/** LAN / kiosk listeners: `ws://<player>/api/ezp/audiostream`. Same trust
+ *  level as the rest of the LAN API (none). */
+function attachAudioStreamUpgrade(server: ReturnType<typeof createServer>): void {
+    server.on('upgrade', (req, socket, head) => {
+        const pathname = (req.url ?? '').split('?')[0];
+        if (pathname !== '/api/ezp/audiostream') return; // leave for the other upgrade handlers
+        audioStreamWss.handleUpgrade(req, socket, head, (ws) => audioStreamWss.emit('connection', ws, req));
+    });
+}
+
+let audioEncoder: AudioStreamEncoder | undefined;
+let audioPumpTimer: NodeJS.Timeout | undefined;
+/** Last ring seq forwarded. */
+let audioPumpAfterSeq = 0;
+/**
+ * The player's RTC minus its Date.now(), pushed from the playback worker with every
+ * audio chunk. Audio chunks are stamped in RTC (the smoothed clock the lights run on), so
+ * the listener stream's serverNow and the /api/ezp/time answer are given in RTC too:
+ * listeners then sync to the one clock the stamps are on, and a wall-clock step on this
+ * machine cannot open a gap between the two.
+ */
+let rtcOffsetMs = 0;
+function rtcNow(): number {
+    return Date.now() + rtcOffsetMs;
+}
+
+let cloudAudioMode: CloudAudioMode = 'auto';
+/** Listener count last reported by the relay. Undefined until it says — an
+ *  older relay never does, and then we stream whenever the bridge is up. */
+let cloudListenerCount: number | undefined;
+let cloudAudioLingerUntil = 0;
+
+function setCloudAudioMode(mode: CloudAudioMode): void {
+    if (cloudAudioMode === mode) return;
+    cloudAudioMode = mode;
+    console.log(`[server-worker] cloud audio mode: ${mode}`);
+    if (mode === 'never') closeCloudAudioBridge();
+    ensureAudioPump();
+}
+
+function cloudAudioWanted(): boolean {
+    if (!cloudAudioBridge?.open || cloudAudioMode === 'never') return false;
+    if (cloudAudioMode === 'always' || cloudListenerCount === undefined) return true;
+    return cloudListenerCount > 0 || Date.now() < cloudAudioLingerUntil;
+}
+
+function ensureAudioPump(): void {
+    if (lanAudioClients.size === 0 && !cloudAudioWanted()) {
+        stopAudioPump();
+        return;
+    }
+    if (audioPumpTimer) return;
+    // Start clean: nobody can use history, and the first chunks a new
+    // listener hears should be the ones playing now.
+    audioPumpAfterSeq = curAudioRing?.latestSeq ?? 0;
+    audioEncoder ??= new AudioStreamEncoder();
+    console.log('[server-worker] audio pump started');
+    audioPumpTimer = setInterval(audioPumpTick, AUDIO_PUSH_INTERVAL_MS);
+}
+
+function stopAudioPump(): void {
+    if (!audioPumpTimer) return;
+    clearInterval(audioPumpTimer);
+    audioPumpTimer = undefined;
+    // Let listeners hear the queued tail, and start a fresh stream next time.
+    if (audioEncoder) {
+        const toCloud = cloudAudioWanted();
+        for (const frame of audioEncoder.flush(Date.now())) sendAudioFrame(frame, toCloud);
+    }
+    console.log('[server-worker] audio pump stopped');
+}
+
+function audioPumpTick(): void {
+    const toCloud = cloudAudioWanted();
+    if (lanAudioClients.size === 0 && !toCloud) {
+        stopAudioPump();
+        return;
+    }
+    if (!curAudioRing || !audioEncoder) return;
+    const chunks = curAudioRing.readAfter(audioPumpAfterSeq);
+    if (chunks.length === 0) return;
+    const serverNow = rtcNow();
+    for (const chunk of chunks) {
+        audioPumpAfterSeq = chunk.seq;
+        let frames: Uint8Array[];
+        try {
+            frames = audioEncoder.push(chunk, serverNow);
+        } catch (err) {
+            console.error('[server-worker] audio encode failed:', err);
+            continue;
+        }
+        for (const frame of frames) sendAudioFrame(frame, toCloud);
+    }
+}
+
+function sendAudioFrame(frame: Uint8Array, toCloud: boolean): void {
+    {
+        for (const client of lanAudioClients) {
+            if (client.readyState !== WebSocket.OPEN || client.bufferedAmount > AUDIO_MAX_BUFFERED_BYTES) continue;
+            try {
+                client.send(frame, { binary: true });
+            } catch {
+                /* per-client */
+            }
+        }
+        const cloud = cloudAudioBridge;
+        if (toCloud && cloud?.open && cloud.ws.readyState === WebSocket.OPEN) {
+            if (cloud.ws.bufferedAmount > AUDIO_MAX_BUFFERED_BYTES) return;
+            try {
+                cloud.ws.send(frame, { binary: true });
+            } catch (err) {
+                console.error('[server-worker] audio bridge send failed:', err);
+            }
+        }
+    }
+}
+
+// -- cloud audio bridge ---------------------------------------------------------
+// Outbound socket to the relay. Binary frames go up; the relay sends text
+// control messages (listener counts) down. Dialed whenever the cloud asks
+// (unless the audio mode is `never`); audio only flows while wanted.
 
 interface CloudAudioBridge {
     sessionId: string;
@@ -711,22 +958,19 @@ interface CloudAudioBridge {
     ws: WebSocket;
     open: boolean;
     ttlTimer: NodeJS.Timeout;
-    /** Interval handle for the chunk-polling pump. Cleared on close. */
-    pumpTimer?: NodeJS.Timeout;
-    /** Last audio chunk seq we forwarded. Drives `readAfter` on each pump tick. */
-    afterSeq: number;
 }
 let cloudAudioBridge: CloudAudioBridge | undefined;
-/** How often the push loop checks for new audio chunks. Chunks are typically
- *  produced every 20–50ms; 20ms gives us at most ~one tick of latency. */
-const AUDIO_PUSH_INTERVAL_MS = 20;
 
 function openCloudAudioBridge(wsUrl: string, sessionId: string, ttlSeconds: number) {
+    if (cloudAudioMode === 'never') {
+        closeCloudAudioBridge();
+        return;
+    }
     if (
         cloudAudioBridge &&
         cloudAudioBridge.sessionId === sessionId &&
         cloudAudioBridge.url === wsUrl &&
-        cloudAudioBridge.open
+        bridgeAlive(cloudAudioBridge)
     ) {
         clearTimeout(cloudAudioBridge.ttlTimer);
         cloudAudioBridge.ttlTimer = setTimeout(() => closeCloudAudioBridge(sessionId), ttlSeconds * 1000);
@@ -734,7 +978,6 @@ function openCloudAudioBridge(wsUrl: string, sessionId: string, ttlSeconds: numb
     }
     if (cloudAudioBridge) {
         clearTimeout(cloudAudioBridge.ttlTimer);
-        if (cloudAudioBridge.pumpTimer) clearInterval(cloudAudioBridge.pumpTimer);
         try {
             cloudAudioBridge.ws.close();
         } catch {
@@ -744,69 +987,48 @@ function openCloudAudioBridge(wsUrl: string, sessionId: string, ttlSeconds: numb
     }
     let ws: WebSocket;
     try {
-        ws = new WebSocket(wsUrl);
+        ws = new WebSocket(wsUrl, { handshakeTimeout: BRIDGE_HANDSHAKE_TIMEOUT_MS });
     } catch (err) {
         console.error('[server-worker] cloud audio bridge dial failed:', err);
         return;
     }
     const ttlTimer = setTimeout(() => closeCloudAudioBridge(sessionId), ttlSeconds * 1000);
-    cloudAudioBridge = { sessionId, url: wsUrl, ws, open: false, ttlTimer, afterSeq: 0 };
+    cloudAudioBridge = { sessionId, url: wsUrl, ws, open: false, ttlTimer };
+    cloudListenerCount = undefined;
+    cloudAudioLingerUntil = 0;
 
     ws.on('open', () => {
         if (cloudAudioBridge?.ws !== ws) return;
         cloudAudioBridge.open = true;
-        // Start clean — the listener can't replay history anyway; the next
-        // chunks we read are what they'll hear first.
-        cloudAudioBridge.afterSeq = curAudioRing?.latestSeq ?? 0;
         console.log(`[server-worker] cloud audio bridge open sessionId=${sessionId.slice(0, 8)}...`);
-
-        cloudAudioBridge.pumpTimer = setInterval(() => {
-            const slot = cloudAudioBridge;
-            if (!slot || !slot.open || !curAudioRing) return;
-            const chunks = curAudioRing.readAfter(slot.afterSeq);
-            if (chunks.length === 0) return;
-            const serverNow = Date.now();
-            for (const chunk of chunks) {
-                slot.afterSeq = chunk.seq;
-                // 8 (serverNow) + 8 (playAt) + 4*5 (incarnation/sampleRate/channels/sampleCount/
-                // advanceSamples) + sampleCount*4 (Float32 payload).
-                const totalSize = 8 + 8 + 4 + 4 + 4 + 4 + 4 + chunk.samples.length * 4;
-                const buf = Buffer.allocUnsafe(totalSize);
-                let off = 0;
-                buf.writeDoubleLE(serverNow, off);
-                off += 8;
-                buf.writeDoubleLE(chunk.playAtRealTime, off);
-                off += 8;
-                buf.writeUInt32LE(chunk.incarnation, off);
-                off += 4;
-                buf.writeUInt32LE(chunk.sampleRate, off);
-                off += 4;
-                buf.writeUInt32LE(chunk.channels, off);
-                off += 4;
-                buf.writeUInt32LE(chunk.samples.length, off);
-                off += 4;
-                buf.writeUInt32LE(chunk.advanceSamples, off);
-                off += 4;
-                const src = Buffer.from(chunk.samples.buffer, chunk.samples.byteOffset, chunk.samples.byteLength);
-                src.copy(buf, off);
-                try {
-                    slot.ws.send(buf, { binary: true });
-                } catch (err) {
-                    console.error('[server-worker] audio bridge send failed:', err);
-                    return;
-                }
-            }
-        }, AUDIO_PUSH_INTERVAL_MS);
+        watchBridgeLiveness(ws, 'cloud audio bridge');
+        ensureAudioPump();
+    });
+    ws.on('message', (data, isBinary) => {
+        if (isBinary || cloudAudioBridge?.ws !== ws) return;
+        let msg: AudioBridgeControlMessage | undefined;
+        try {
+            msg = JSON.parse(data.toString()) as AudioBridgeControlMessage;
+        } catch {
+            return;
+        }
+        if (msg?.type !== 'listeners' || typeof msg.count !== 'number') return;
+        const prev = cloudListenerCount;
+        cloudListenerCount = msg.count;
+        if (msg.count === 0 && (prev ?? 0) > 0) cloudAudioLingerUntil = Date.now() + CLOUD_AUDIO_LINGER_MS;
+        if (prev !== msg.count) console.log(`[server-worker] cloud audio listeners: ${msg.count}`);
+        ensureAudioPump();
     });
     ws.on('error', (err) => {
+        if (cloudAudioBridge?.ws !== ws) return; // superseded / closed by us
         console.error('[server-worker] cloud audio bridge error:', err);
     });
     ws.on('close', () => {
         if (cloudAudioBridge?.ws === ws) {
             console.log('[server-worker] cloud audio bridge socket closed');
             clearTimeout(cloudAudioBridge.ttlTimer);
-            if (cloudAudioBridge.pumpTimer) clearInterval(cloudAudioBridge.pumpTimer);
             cloudAudioBridge = undefined;
+            ensureAudioPump();
         }
     });
 }
@@ -815,13 +1037,13 @@ function closeCloudAudioBridge(sessionId?: string) {
     if (!cloudAudioBridge) return;
     if (sessionId !== undefined && cloudAudioBridge.sessionId !== sessionId) return;
     clearTimeout(cloudAudioBridge.ttlTimer);
-    if (cloudAudioBridge.pumpTimer) clearInterval(cloudAudioBridge.pumpTimer);
     try {
         cloudAudioBridge.ws.close();
     } catch {
         /* ignore */
     }
     cloudAudioBridge = undefined;
+    ensureAudioPump();
 }
 
 /** Single-shot under PROXY_CHUNK_SIZE; larger bodies stream via httpProxyChunk
@@ -1169,62 +1391,12 @@ async function dispatchHttpProxy(
         return dispatchFramesZstd();
     }
 
-    // /api/ezp/audio?afterSeq=N — incremental audio chunks for the WAN-side
-    // browser. Mirrors the Koa route's binary chunk-pack wire format; the
-    // browser uses `useAudioStream` to schedule via Web Audio with drift
-    // correction against the player's clock (sync'd via /api/ezp/time).
-    if (pathStr === '/api/ezp/audio') {
-        const afterSeq = parseInt(query?.afterSeq ?? '0', 10) || 0;
-        return dispatchAudio(afterSeq);
-    }
-
     // /api/ezp/time — server-clock sample for client RTT/offset estimation.
     if (pathStr === '/api/ezp/time') {
-        return jsonResult({ now: Date.now(), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone });
+        return jsonResult({ now: rtcNow(), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone });
     }
 
     return { status: 404 };
-}
-
-function dispatchAudio(afterSeq: number): { status: number; headers?: Record<string, string>; body?: Buffer } {
-    if (!curAudioRing) return { status: 204 };
-    const chunks = curAudioRing.readAfter(afterSeq);
-    if (chunks.length === 0) return { status: 204 };
-
-    // Wire format mirrors the LAN Koa route: 8-byte header (chunkCount,
-    // latestSeq) then per-chunk metadata + Float32 samples.
-    let totalSize = 8;
-    for (const chunk of chunks) {
-        totalSize += 8 + 4 + 4 + 4 + 4 + 4 + chunk.samples.length * 4;
-    }
-    const buf = Buffer.allocUnsafe(totalSize);
-    let off = 0;
-    buf.writeUInt32LE(chunks.length, off);
-    off += 4;
-    buf.writeUInt32LE(chunks[chunks.length - 1].seq, off);
-    off += 4;
-    for (const chunk of chunks) {
-        buf.writeDoubleLE(chunk.playAtRealTime, off);
-        off += 8;
-        buf.writeUInt32LE(chunk.incarnation, off);
-        off += 4;
-        buf.writeUInt32LE(chunk.sampleRate, off);
-        off += 4;
-        buf.writeUInt32LE(chunk.channels, off);
-        off += 4;
-        buf.writeUInt32LE(chunk.samples.length, off);
-        off += 4;
-        buf.writeUInt32LE(chunk.advanceSamples, off);
-        off += 4;
-        const src = Buffer.from(chunk.samples.buffer, chunk.samples.byteOffset, chunk.samples.byteLength);
-        src.copy(buf, off);
-        off += chunk.samples.byteLength;
-    }
-    return {
-        status: 200,
-        headers: { 'content-type': 'application/octet-stream' },
-        body: buf,
-    };
 }
 
 function dispatchFramesZstd(): { status: number; headers?: Record<string, string>; body?: Buffer } {
@@ -1388,6 +1560,24 @@ async function startServer(config: ServerWorkerData) {
         updateSchedule: async (recs) => await rpc.call('updateScheduleHandler', recs),
         putSequences: async (recs) => await rpc.call('putSequences', recs),
         getControllerOps: () => wsBroadcaster.get('controllerops') as ControllerOpsState | undefined,
+        volume: {
+            getVolume: () => {
+                const settings = currentPlaybackSettings();
+                if (!settings) return undefined;
+                const overview = describeVolume(settings);
+                return {
+                    defaultVolume: headlineDefaultVolume(overview),
+                    activeWindows: activeWindowDescriptions(overview),
+                };
+            },
+            setDefaultVolume: async (level) => {
+                const settings = currentPlaybackSettings();
+                if (!settings) throw new Error('Playback settings not loaded yet');
+                const r = setDefaultVolume(settings, level);
+                if (!r.ok) throw new Error(r.error);
+                await applyPlaybackSettings(r.settings);
+            },
+        },
         appVersion: config.appVersion ?? '0.0.0',
     });
 
@@ -1445,7 +1635,8 @@ async function startServer(config: ServerWorkerData) {
     // API: GET /api/ezp/hello
     // ----------------------------------------------
     router.get('/api/ezp/hello', async (ctx) => {
-        ctx.body = { message: 'Hello from Koa + Electron!' };
+        // File and FPP routes need the show folder; until it loads they answer errors.
+        ctx.body = { message: 'Hello from Koa + Electron!', showLoaded: wsBroadcaster.get('showFolder') !== undefined };
     });
 
     // ----------------------------------------------
@@ -1467,6 +1658,27 @@ async function startServer(config: ServerWorkerData) {
         if (!state.shell) closeActiveTerminal('the remote shell was disabled');
         if (!state.files) closeFileManagerSessions('the file manager was disabled');
         ctx.body = state;
+    });
+
+    // ----------------------------------------------
+    // API: GET /api/ezp/playback-item/:key — the baked song order of a loaded
+    // playback item (a shuffled show's order exists only in the engine). Asked
+    // for on demand by the detailed playback view; too big to ride the status.
+    // ----------------------------------------------
+    router.get('/api/ezp/playback-item/:key', async (ctx) => {
+        try {
+            const order = await rpc.call('getPlaybackItemOrder', ctx.params.key as string);
+            if (!order) {
+                ctx.status = 404;
+                ctx.body = { error: 'No such playback item' };
+                return;
+            }
+            ctx.body = order;
+        } catch (error) {
+            console.error('[server-worker] Error reading playback item:', error);
+            ctx.status = 500;
+            ctx.body = { error: 'Internal server error' };
+        }
     });
 
     // ----------------------------------------------
@@ -1500,7 +1712,7 @@ async function startServer(config: ServerWorkerData) {
         ctx.body = {
             stats,
             pStatus: wsBroadcaster.get('pStatus'),
-            serverNow: Date.now(),
+            serverNow: rtcNow(),
         };
     });
 
@@ -1527,6 +1739,12 @@ async function startServer(config: ServerWorkerData) {
             if (!command || !command.command) {
                 ctx.status = 400;
                 ctx.body = { error: 'Invalid command format' };
+                return;
+            }
+            if (command.command === 'setvolume') {
+                const reply = await handleSetVolume(command);
+                ctx.status = reply.status;
+                ctx.body = reply.body;
                 return;
             }
             await rpc.call('sendPlayerCommand', command);
@@ -1579,27 +1797,220 @@ async function startServer(config: ServerWorkerData) {
     });
 
     // ----------------------------------------------
-    // API: POST /api/ezp/playback-settings
+    // API: GET/POST /api/ezp/playback-settings — the whole object
+    //      GET/POST /api/ezp/playback-settings/<key>[/<sub>...] — one part of it
     // ----------------------------------------------
+
+    /** Keys a part path may start with. Anything else is rejected, not written. */
+    const SETTINGS_KEYS = new Set<keyof PlaybackSettings>([
+        'audioSyncAdjust',
+        'normalizeNewSongs',
+        'backgroundSequence',
+        'viewerControl',
+        'volumeControl',
+        'jukebox',
+        'testSequenceTags',
+        'sendIdleBlackFrames',
+        'sync',
+        'controllerRefresh',
+        'advanced',
+        'mediaFolder',
+        'useDefaultAudioOutput',
+        'audioOutputs',
+    ]);
+    /** The player reads these unconditionally; a part write may not remove them. */
+    const REQUIRED_KEYS = new Set<string>(['viewerControl', 'volumeControl']);
+    const PART_ROUTE = /^\/api\/ezp\/playback-settings\/(.+)$/;
+
+    /** Split and vet a part path; answers the request itself when it is bad. */
+    const partPath = (ctx: Koa.Context): string[] | undefined => {
+        const captured = (ctx.captures as string[] | undefined)?.[0] ?? '';
+        const segs = captured
+            .split('/')
+            .filter((s: string) => s.length > 0)
+            .map((s: string) => decodeURIComponent(s));
+        if (segs.length === 0 || !SETTINGS_KEYS.has(segs[0] as keyof PlaybackSettings)) {
+            ctx.status = 404;
+            ctx.body = { error: `Unknown playback setting '${segs[0] ?? ''}'` };
+            return undefined;
+        }
+        if (segs.some((s) => s === '__proto__' || s === 'constructor' || s === 'prototype')) {
+            ctx.status = 400;
+            ctx.body = { error: 'Invalid settings path' };
+            return undefined;
+        }
+        return segs;
+    };
+    const isPlainObject = (v: unknown): v is Record<string, unknown> =>
+        !!v && typeof v === 'object' && !Array.isArray(v);
+
+    router.get('/api/ezp/playback-settings', async (ctx) => {
+        const settings = currentPlaybackSettings();
+        if (!settings) {
+            ctx.status = 503;
+            ctx.body = { error: 'Playback settings not loaded yet' };
+            return;
+        }
+        ctx.body = settings;
+    });
+
     router.post('/api/ezp/playback-settings', async (ctx) => {
         try {
             const settings = ctx.request.body;
-            if (!settings || typeof settings !== 'object') {
+            if (!isPlainObject(settings)) {
                 ctx.status = 400;
                 ctx.body = { error: 'Invalid playback settings format. Expected object.' };
                 return;
             }
-            const showFolder = wsBroadcaster.get('showFolder');
-            if (showFolder) {
-                const settingsPath = path.join(showFolder, '.ezplayer', 'playbackSettings.json');
-                await rpc.call('applySettingsFromRenderer', settingsPath, settings);
-            }
-            await rpc.call('sendPlaybackSettings', settings);
-            wsBroadcaster.set('playbackSettings', settings as PlaybackSettings);
-
+            await applyPlaybackSettings(settings as unknown as PlaybackSettings);
             ctx.body = { success: true };
         } catch (error) {
             console.error('[server-worker] Error processing playback settings update:', error);
+            ctx.status = 500;
+            ctx.body = { error: 'Internal server error' };
+        }
+    });
+
+    // One part, addressed by its path in the object (`sync/multisync`,
+    // `volumeControl/defaultVolume`). GET answers 404 while it is unset.
+    router.get(PART_ROUTE, async (ctx) => {
+        const settings = currentPlaybackSettings();
+        if (!settings) {
+            ctx.status = 503;
+            ctx.body = { error: 'Playback settings not loaded yet' };
+            return;
+        }
+        const segs = partPath(ctx);
+        if (!segs) return;
+        let cur: unknown = settings;
+        for (const s of segs) {
+            if (!isPlainObject(cur) || !(s in cur)) {
+                ctx.status = 404;
+                ctx.body = { error: `Playback setting '${segs.join('/')}' is not set` };
+                return;
+            }
+            cur = cur[s];
+        }
+        ctx.body = cur === undefined ? null : cur;
+    });
+
+    // POST replaces just that part — any JSON value, `null` to unset an optional
+    // one — and leaves the rest of the settings as they are. Missing parents
+    // are created, so `sync/multisync` works before `sync` exists.
+    router.post(PART_ROUTE, async (ctx) => {
+        try {
+            const settings = currentPlaybackSettings();
+            if (!settings) {
+                ctx.status = 503;
+                ctx.body = { error: 'Playback settings not loaded yet; POST the whole object first' };
+                return;
+            }
+            const segs = partPath(ctx);
+            if (!segs) return;
+            const value = ctx.request.body;
+            if (value === undefined) {
+                ctx.status = 400;
+                ctx.body = { error: 'Expected a JSON body' };
+                return;
+            }
+            if (value === null && segs.length === 1 && REQUIRED_KEYS.has(segs[0])) {
+                ctx.status = 400;
+                ctx.body = { error: `'${segs[0]}' is required and cannot be unset` };
+                return;
+            }
+            // Copy the spine so the cached object is never mutated in place.
+            const next = { ...settings } as Record<string, unknown>;
+            let cur = next;
+            for (const s of segs.slice(0, -1)) {
+                const child = cur[s];
+                if (child !== undefined && !isPlainObject(child)) {
+                    ctx.status = 400;
+                    ctx.body = { error: `'${s}' is not an object; set it whole instead` };
+                    return;
+                }
+                cur[s] = { ...(child ?? {}) };
+                cur = cur[s] as Record<string, unknown>;
+            }
+            const leaf = segs[segs.length - 1];
+            if (value === null) delete cur[leaf];
+            else cur[leaf] = value;
+            await applyPlaybackSettings(next as unknown as PlaybackSettings);
+            ctx.body = { success: true };
+        } catch (error) {
+            console.error('[server-worker] Error processing playback settings part update:', error);
+            ctx.status = 500;
+            ctx.body = { error: 'Internal server error' };
+        }
+    });
+
+    // ----------------------------------------------
+    // API: GET  /api/ezp/volume — default, windows and live level per output
+    //      POST /api/ezp/volume { volume, target? } — set the default(s)
+    //      GET/POST /api/ezp/volume/:target/schedule — one output's windows
+    // Outputs are addressed by id (`default`, or an AudioOutputConfig id),
+    // which the part-path route cannot do for the audioOutputs array.
+    // ----------------------------------------------
+    const settingsOr503 = (ctx: Koa.Context): PlaybackSettings | undefined => {
+        const settings = currentPlaybackSettings();
+        if (!settings) {
+            ctx.status = 503;
+            ctx.body = { error: 'Playback settings not loaded yet' };
+        }
+        return settings;
+    };
+
+    router.get('/api/ezp/volume', (ctx) => {
+        const settings = settingsOr503(ctx);
+        if (settings) ctx.body = describeVolume(settings, currentPStatus());
+    });
+
+    router.post('/api/ezp/volume', async (ctx) => {
+        const settings = settingsOr503(ctx);
+        if (!settings) return;
+        try {
+            const body = ctx.request.body as { volume?: unknown; target?: unknown } | undefined;
+            const target = typeof body?.target === 'string' ? body.target : undefined;
+            const r = setDefaultVolume(settings, body?.volume, target);
+            if (!r.ok) {
+                ctx.status = r.status;
+                ctx.body = { error: r.error };
+                return;
+            }
+            await applyPlaybackSettings(r.settings);
+            ctx.body = volumeReply(r.settings);
+        } catch (error) {
+            console.error('[server-worker] Error setting default volume:', error);
+            ctx.status = 500;
+            ctx.body = { error: 'Internal server error' };
+        }
+    });
+
+    router.get('/api/ezp/volume/:target/schedule', (ctx) => {
+        const settings = settingsOr503(ctx);
+        if (!settings) return;
+        const target = describeVolume(settings).targets.find((t) => t.id === ctx.params.target);
+        if (!target) {
+            ctx.status = 404;
+            ctx.body = { error: `Unknown volume target '${ctx.params.target}'` };
+            return;
+        }
+        ctx.body = target.schedule;
+    });
+
+    router.post('/api/ezp/volume/:target/schedule', async (ctx) => {
+        const settings = settingsOr503(ctx);
+        if (!settings) return;
+        try {
+            const r = replaceVolumeSchedule(settings, String(ctx.params.target), ctx.request.body);
+            if (!r.ok) {
+                ctx.status = r.status;
+                ctx.body = { error: r.error };
+                return;
+            }
+            await applyPlaybackSettings(r.settings);
+            ctx.body = volumeReply(r.settings);
+        } catch (error) {
+            console.error('[server-worker] Error replacing volume schedule:', error);
             ctx.status = 500;
             ctx.body = { error: 'Internal server error' };
         }
@@ -1841,74 +2252,7 @@ async function startServer(config: ServerWorkerData) {
         ctx.set('Access-Control-Allow-Origin', '*');
         ctx.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
         ctx.set('Cache-Control', 'no-store');
-        ctx.body = { now: Date.now(), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone };
-    });
-
-    // ----------------------------------------------
-    // API: GET /api/ezp/audio?afterSeq=N - binary audio chunk data for web client
-    // Wire format: [u32 chunkCount][u32 latestSeq]
-    //   per chunk: [f64 playAtRealTime][u32 incarnation][u32 sampleRate]
-    //              [u32 channels][u32 sampleCount][u32 advanceSamples][Float32 × sampleCount]
-    // ----------------------------------------------
-    router.get('/api/ezp/audio', async (ctx) => {
-        ctx.set('Access-Control-Allow-Origin', '*');
-        ctx.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
-
-        if (!curAudioRing) {
-            ctx.status = 204;
-            return;
-        }
-
-        const afterSeq = parseInt(ctx.query.afterSeq as string) || 0;
-        const chunks = curAudioRing.readAfter(afterSeq);
-
-        if (chunks.length === 0) {
-            ctx.status = 204;
-            return;
-        }
-
-        // Calculate total response size
-        // Header: 4 (chunkCount) + 4 (latestSeq) = 8 bytes
-        // Per chunk: 8 (playAtRealTime f64) + 4 (incarnation) + 4 (sampleRate)
-        //          + 4 (channels) + 4 (sampleCount) + 4 (advanceSamples) + sampleCount*4 (Float32 data)
-        let totalSize = 8;
-        for (const chunk of chunks) {
-            totalSize += 8 + 4 + 4 + 4 + 4 + 4 + chunk.samples.length * 4;
-        }
-
-        const buf = Buffer.allocUnsafe(totalSize);
-        let offset = 0;
-
-        // Write header
-        buf.writeUInt32LE(chunks.length, offset);
-        offset += 4;
-        buf.writeUInt32LE(chunks[chunks.length - 1].seq, offset);
-        offset += 4;
-
-        // Write each chunk
-        for (const chunk of chunks) {
-            buf.writeDoubleLE(chunk.playAtRealTime, offset);
-            offset += 8;
-            buf.writeUInt32LE(chunk.incarnation, offset);
-            offset += 4;
-            buf.writeUInt32LE(chunk.sampleRate, offset);
-            offset += 4;
-            buf.writeUInt32LE(chunk.channels, offset);
-            offset += 4;
-            buf.writeUInt32LE(chunk.samples.length, offset);
-            offset += 4;
-            buf.writeUInt32LE(chunk.advanceSamples, offset);
-            offset += 4;
-
-            // Copy Float32 audio data from SAB view into response buffer
-            const src = Buffer.from(chunk.samples.buffer, chunk.samples.byteOffset, chunk.samples.byteLength);
-            src.copy(buf, offset);
-            offset += chunk.samples.byteLength;
-        }
-
-        ctx.set('Cache-Control', 'no-store');
-        ctx.type = 'application/octet-stream';
-        ctx.body = buf;
+        ctx.body = { now: rtcNow(), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone };
     });
 
     webApp.use(router.routes());
@@ -1938,6 +2282,19 @@ async function startServer(config: ServerWorkerData) {
                 networkPolicies: [],
             },
         isIpAllowed: proxyTargetAllowed,
+    });
+    // Support zip; web app only, like the routes above. ?level= picks what it holds.
+    scanRouter.get('/api/ezp/support/logs.zip', async (ctx) => {
+        const level = ctx.query.level ?? 'logs';
+        if (!isSupportBundleLevel(level)) {
+            ctx.status = 400;
+            ctx.body = 'level must be logs, setup, or layout';
+            return;
+        }
+        const { name, data } = await rpc.call('buildSupportBundle', level);
+        ctx.set('Content-Disposition', `attachment; filename="${name}"`);
+        ctx.type = 'application/zip';
+        ctx.body = Buffer.from(data.buffer, data.byteOffset, data.byteLength);
     });
     webApp.use(scanRouter.routes());
     webApp.use(scanRouter.allowedMethods());
@@ -2093,6 +2450,7 @@ async function startServer(config: ServerWorkerData) {
     // `/ws`, because the broadcaster there is lossy by design.
     attachRemoteAccessUpgrade(httpServer, '/terminal', terminalWss, terminalEndpointEnabled);
     attachRemoteAccessUpgrade(httpServer, '/filemanager', fileManagerWss, fileManagerEndpointEnabled);
+    attachAudioStreamUpgrade(httpServer);
 
     // ----------------------------
     // Kiosk server — second port, same API, limited sidebar
@@ -2189,6 +2547,7 @@ async function startServer(config: ServerWorkerData) {
         const kioskWss = new WebSocketServer({ noServer: true });
         attachWsPath(kioskHttpServer, kioskWss);
         wsBroadcaster.attach(kioskWss);
+        attachAudioStreamUpgrade(kioskHttpServer);
     }
 }
 

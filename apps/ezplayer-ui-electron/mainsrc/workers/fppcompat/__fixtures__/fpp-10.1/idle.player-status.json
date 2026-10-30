@@ -1,0 +1,41 @@
+{
+    "playlists": [
+        {
+            "blankAtEnd": 0,
+            "currentEntry": null,
+            "currentState": "idle",
+            "desc": "",
+            "details": {
+                "blankAtEnd": 0,
+                "configTime": 1789816792,
+                "currentEntry": null,
+                "currentState": "idle",
+                "desc": "",
+                "globalPauseBetweenSequencesMS": 0,
+                "loop": 0,
+                "loopCount": 0,
+                "name": "",
+                "playlistInfo": null,
+                "random": 0,
+                "repeat": 0,
+                "size": 0
+            },
+            "lastModified": 0,
+            "loop": 0,
+            "loopCount": 0,
+            "name": "",
+            "origStartTime": 0,
+            "origStopTime": 0,
+            "position": 0,
+            "priority": 1000,
+            "random": 0,
+            "repeat": 0,
+            "scheduled": true,
+            "size": 0,
+            "startTime": 0,
+            "status": 0,
+            "stopMethod": 0,
+            "stopTime": 0
+        }
+    ]
+}

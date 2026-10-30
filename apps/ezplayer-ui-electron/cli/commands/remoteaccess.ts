@@ -10,7 +10,7 @@
 
 import fs from 'fs';
 import path from 'path';
-import { SUBDIR_NAME } from '../../mainsrc/data/SettingsMigration.js';
+import { SUBDIR_NAME } from '../../mainsrc/data/SettingsDir.js';
 import {
     clearFeaturePassword,
     FEATURE_LABEL,

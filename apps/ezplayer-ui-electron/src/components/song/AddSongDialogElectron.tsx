@@ -442,6 +442,28 @@ export function AddSongDialogElectron({ onClose, open, title }: AddSongProps) {
                         </Grid>
                         <Grid item xs={6}>
                             <TextField
+                                label="Lead Time"
+                                name="lead_time"
+                                type="number"
+                                value={newSongData.lead_time}
+                                onChange={handleNewSongDataChange}
+                                inputProps={{ min: -5, max: 5 }}
+                                fullWidth
+                            />
+                        </Grid>
+                        <Grid item xs={6}>
+                            <TextField
+                                label="Trail Time"
+                                name="trail_time"
+                                type="number"
+                                value={newSongData.trail_time}
+                                onChange={handleNewSongDataChange}
+                                inputProps={{ min: -5, max: 5 }}
+                                fullWidth
+                            />
+                        </Grid>
+                        <Grid item xs={6}>
+                            <TextField
                                 label="Volume Adjustment"
                                 name="volume_adj"
                                 type="number"
@@ -466,28 +488,6 @@ export function AddSongDialogElectron({ onClose, open, title }: AddSongProps) {
                                     />
                                 }
                                 label="Normalize volume"
-                            />
-                        </Grid>
-                        <Grid item xs={6}>
-                            <TextField
-                                label="Lead Time"
-                                name="lead_time"
-                                type="number"
-                                value={newSongData.lead_time}
-                                onChange={handleNewSongDataChange}
-                                inputProps={{ min: -5, max: 5 }}
-                                fullWidth
-                            />
-                        </Grid>
-                        <Grid item xs={6}>
-                            <TextField
-                                label="Trail Time"
-                                name="trail_time"
-                                type="number"
-                                value={newSongData.trail_time}
-                                onChange={handleNewSongDataChange}
-                                inputProps={{ min: -5, max: 5 }}
-                                fullWidth
                             />
                         </Grid>
                     </Grid>

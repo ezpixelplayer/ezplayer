@@ -1,4 +1,8 @@
 import type {
+    PlaybackItemOrder,
+    PlaybackPendingEntry,
+    PlaybackStackEntry,
+    PlaybackView,
     PlayingItem,
     PlaylistRecord,
     ScheduledPlaylist,
@@ -440,21 +444,17 @@ export function getPlaylistDurationMS(
     smap?: Map<string, SequenceRecord>,
 ) {
     if (!smap) smap = seqsToMap(seqs, errs);
-    let totalMS = 0,
-        longestMS = 0;
+    let totalMS = 0;
     for (const sid of pl.items) {
         const seq = smap.get(sid.id);
         if (!seq) {
             errs.push(`In playlist ${pl.title}: Sequence library does not contain id ${sid.id}`);
             continue;
         }
-        const stime = getTotalSeqTimeMS(seq);
-        totalMS += stime;
-        longestMS = Math.max(longestMS, stime);
+        totalMS += getTotalSeqTimeMS(seq);
     }
     return {
         totalMS,
-        longestMS,
     };
 }
 
@@ -488,76 +488,6 @@ export function getScheduleTimes(sched: ScheduledPlaylist) {
     };
 }
 
-/**
- * Get time of a playlist as scheduled
- * NOTE: Currently a testing-only function not used in production
- */
-export function getScheduleDurationMS(
-    seqs: SequenceRecord[],
-    plists: PlaylistRecord[],
-    schedule: ScheduledPlaylist,
-    errs: string[],
-    smap?: Map<string, SequenceRecord>,
-    pmap?: Map<string, PlaylistRecord>,
-) {
-    if (!smap) smap = seqsToMap(seqs, errs);
-    if (!pmap) pmap = playlistsToMap(plists, errs, smap);
-
-    const pl = pmap.get(schedule.playlistId);
-    if (!pl) {
-        errs.push(`Playlist ${schedule.playlistId} does not exist.`);
-    }
-    const ipl = schedule.prePlaylistId ? pmap.get(schedule.prePlaylistId) : undefined;
-    const opl = schedule.postPlaylistId ? pmap.get(schedule.postPlaylistId) : undefined;
-
-    // schedule id should match pl id...
-    if (schedule.playlistId !== pl?.id) {
-        errs.push(`Calculating time for playlist ${pl?.id}, but schedule says ${schedule.playlistId}`);
-    }
-    const ptime = pl ? getPlaylistDurationMS(seqs, pl, errs, smap) : { longestMS: 0, totalMS: 0 };
-    const introTime = ipl ? getPlaylistDurationMS(seqs, ipl, errs, smap).totalMS : 0;
-    const outtroTime = opl ? getPlaylistDurationMS(seqs, opl, errs, smap).totalMS : 0;
-
-    const stime = getScheduleTimes(schedule);
-
-    // schedule id should match pl id...
-    if (schedule.playlistId !== pl?.id) {
-        errs.push(`Calculating time for playlist ${pl?.id}, but schedule says ${schedule.playlistId}`);
-    }
-
-    const nominalEndTimeMS = stime.endTimeMS; // When schedule says to end
-    let expectedEndMS = stime.endTimeMS; // For non-looping / nonshuffle, this is when it would naturally end unless abridged
-    let earlyEndMS = stime.endTimeMS; // When we'd end if stopping on song boundary early
-    let lateEndMS = stime.endTimeMS; // When we'd end if stopping on song boundary late
-
-    const sp = schedule.endPolicy ?? 'seqboundnearest';
-
-    if (!schedule.loop && !schedule.shuffle) {
-        expectedEndMS = Math.max(nominalEndTimeMS, stime.startTimeMS + ptime.totalMS + introTime + outtroTime);
-    }
-    if (sp === 'seqboundearly') {
-        earlyEndMS = expectedEndMS - ptime.longestMS;
-    } else if (sp === 'seqboundlate') {
-        lateEndMS = nominalEndTimeMS + ptime.longestMS;
-    } else if (sp === 'seqboundnearest') {
-        earlyEndMS = expectedEndMS - ptime.longestMS / 2;
-        lateEndMS = nominalEndTimeMS + ptime.longestMS / 2;
-    }
-
-    return {
-        startTimeMS: stime.startTimeMS,
-        hardStart: schedule.hardCutIn ?? false,
-        hardEnd: schedule.endPolicy === 'hardcut',
-        nominalEndTimeMS,
-        expectedEndMS,
-        earlyEndMS, // With preemption or looping or whatever, this could happen
-        lateEndMS, // With preemption or looping or whatever this could happen
-
-        totalPLMS: ptime.totalMS + introTime + outtroTime,
-        longestPLItemMS: ptime.longestMS,
-    };
-}
-
 export type PlaybackLogDetailType =
     | 'Schedule Started'
     | 'Schedule Ended'
@@ -571,7 +501,9 @@ export type PlaybackLogDetailType =
     | 'Sequence Started'
     | 'Sequence Ended'
     | 'Sequence Paused'
-    | 'Sequence Resumed';
+    | 'Sequence Resumed'
+    /** A scheduled playlist passed over a song that started too recently ({@link RepeatGuard}). */
+    | 'Sequence Skipped';
 
 export interface PlaybackLogDetail {
     /** What happened */
@@ -584,6 +516,8 @@ export interface PlaybackLogDetail {
 
     /** Request ID if override command */
     requestId?: string;
+    /** How the item came to play: by schedule, or by request (immediate or queued) */
+    itemType?: 'Scheduled' | 'Immediate' | 'Queued';
 
     /**
      * If this is part of a scheduled item, this will be set
@@ -640,6 +574,49 @@ interface PlaybackCursor {
     item: PlaybackItem;
 }
 
+/**
+ * Recently started songs, so a scheduled playlist can pass over one that just
+ * played (typically because a viewer requested it). A repeat the schedule made
+ * itself is left alone. Owned by the run state and cloned with its snapshots, so
+ * predictions skip the same songs playback will.
+ */
+export class RepeatGuard {
+    static readonly HISTORY_CAP = 100;
+    /** Other songs that must start before a repeat; 0 = off. */
+    spacing = 0;
+    /** Most recent first. `scheduled`: started by a scheduled item rather than a request. */
+    recent: { seqId: string; scheduled: boolean }[] = [];
+
+    clone(): RepeatGuard {
+        const g = new RepeatGuard();
+        g.spacing = this.spacing;
+        g.recent = [...this.recent];
+        return g;
+    }
+
+    noteStart(seqId: string, scheduled: boolean) {
+        this.recent.unshift({ seqId, scheduled });
+        if (this.recent.length > RepeatGuard.HISTORY_CAP) this.recent.length = RepeatGuard.HISTORY_CAP;
+    }
+
+    /** How many other songs have started since `seqId` last did; undefined if not in the history. */
+    songsSince(seqId: string): number | undefined {
+        const i = this.recent.findIndex((r) => r.seqId === seqId);
+        return i < 0 ? undefined : i;
+    }
+
+    /** Whether a playlist of `distinctSongs` should pass over `seqId`. The spacing is held to
+     *  40% of the playlist's distinct songs (a shuffle already keeps a song half the playlist
+     *  apart), so a short playlist is never starved by a long spacing. A song whose last start
+     *  was scheduled too is never skipped: the schedule chose that repeat. */
+    playlistShouldSkip(seqId: string, distinctSongs: number): boolean {
+        const n = Math.min(this.spacing, Math.floor(distinctSongs * 0.4));
+        if (n <= 0) return false;
+        const since = this.songsSince(seqId);
+        return since !== undefined && since < n && !this.recent[since].scheduled;
+    }
+}
+
 function forkState<T extends object>(state: T): T {
     return Object.assign(Object.create(Object.getPrototypeOf(state)), state);
 }
@@ -672,6 +649,8 @@ class PlaybackStateEntry {
 
     item: PlaybackItem; // The expanded item, full instructions
     itemId: string = '';
+    /** The owning run state's guard; set when pushed on its stack. */
+    repeatGuard?: RepeatGuard = undefined;
 
     seqSections: [SequenceRecord[], SequenceRecord[], SequenceRecord[]];
     seqDurs: [number[], number[], number[]];
@@ -691,6 +670,7 @@ class PlaybackStateEntry {
     //  'hardcut' - exactly when
     //  'seqboundearly' - if there is not time for one sequence
     //  'seqboundlate' - if there is
+    //  'seqboundnearest' - at whichever sequence boundary is closer
     // Return undefined if this should play
     // Return 0 if outro should start now
     // Return >0 if outro should start part way into seq
@@ -709,7 +689,11 @@ class PlaybackStateEntry {
             return undefined;
         }
         if (this.item.endPolicy === 'seqboundnearest') {
-            if (currentTime + this.item.mainSectionLongest / 2 > this.item.schedEnd - this.item.postSectionTotal) {
+            // Decided between songs only: one that has started plays out.
+            if (offsetInto >= 1) return undefined;
+            // Start the next song if its midpoint falls before the outro; ending after it
+            // is then closer to the target than ending now.
+            if (currentTime + seqLen / 2 > this.item.schedEnd - this.item.postSectionTotal) {
                 return 0;
             }
             return undefined;
@@ -734,17 +718,35 @@ class PlaybackStateEntry {
     }
 
     addLog(depth: number, et: PlaybackLogDetailType, ctime: number, c: PlaybackCursor, log?: PlaybackLogDetail[]) {
+        // Only this entry's own cursor, while it runs, is playback; other cursors are readahead.
+        if (et === 'Sequence Started' && c === this && this.suspendTime === undefined) {
+            const id = this.seqIdAt(c);
+            if (id) this.repeatGuard?.noteStart(id, c.item.itemType === 'Scheduled');
+        }
         log?.push({
             eventType: et,
             eventTime: ctime,
             requestId: c.item.requestId,
+            itemType: c.item.itemType,
             scheduleId: c.item.scheduleId,
             playlistId: c.item.playlistIds?.[c.itemPart],
             stackDepth: depth,
-            sequenceId: this.seqSections[c.itemPart]?.[c.itemCursor % (this.seqSections[c.itemPart].length || 1)]?.id,
+            sequenceId: this.seqIdAt(c),
             entryIntoPlaylist: [c.itemPart, c.itemCursor],
             timeIntoSeqMS: c.offsetInto,
         });
+    }
+
+    private seqIdAt(c: PlaybackCursor): string | undefined {
+        return this.seqSections[c.itemPart]?.[c.itemCursor % (this.seqSections[c.itemPart].length || 1)]?.id;
+    }
+
+    /** Whether a scheduled playlist should pass over the main-section song under the cursor. */
+    private shouldSkipRepeat(c: PlaybackCursor): boolean {
+        const g = this.repeatGuard;
+        if (!g || g.spacing <= 0 || c.item.itemType !== 'Scheduled' || this.suspendTime !== undefined) return false;
+        const id = this.seqIdAt(c);
+        return !!id && g.playlistShouldSkip(id, c.item.distinctMainCount());
     }
 
     nextItem(depth: number, c: PlaybackCursor, ctime: number, loop: boolean, log?: PlaybackLogDetail[]) {
@@ -803,6 +805,9 @@ class PlaybackStateEntry {
         if (dbg && runToTime < c.baseTime + c.offsetInto) {
             console.log(`PSE running backwards by ${c.baseTime + c.offsetInto - runToTime}; ${Date.now() - runToTime}`);
         }
+        // Bounds repeat skips to one pass of the main section.
+        let repeatSkips = 0;
+
         if (runToTime > c.baseTime + c.offsetInto && this.suspendTime) {
             //This is bad but the prefetcher does it and we have taken steps to make that unimportant
             //console.log(`PSE running forwards while suspended ${c.baseTime + c.offsetInto-runToTime}; ${Date.now()-runToTime}`);
@@ -863,7 +868,8 @@ class PlaybackStateEntry {
 
             // A missing/NaN/zero duration can't advance the clock; end the part rather than spin.
             if (!(this.getCurDurFor(c) > 0)) {
-                if (dbg) console.log(`PSE no usable duration at part ${c.itemPart} cursor ${c.itemCursor}; ending part`);
+                if (dbg)
+                    console.log(`PSE no usable duration at part ${c.itemPart} cursor ${c.itemCursor}; ending part`);
                 this.endCurrentPart(depth, c, curTime, log);
                 continue;
             }
@@ -907,6 +913,13 @@ class PlaybackStateEntry {
                 continue;
             } else if (c.itemPart === 1) {
                 // Main (loop?)
+                if (c.offsetInto === 0 && repeatSkips < this.seqSections[1].length && this.shouldSkipRepeat(c)) {
+                    ++repeatSkips;
+                    if (c === this) this.addLog(depth, 'Sequence Skipped', curTime, c, log);
+                    ++c.itemCursor;
+                    if (c.item.mainSectionLoop && c.itemCursor >= this.seqSections[1].length) c.itemCursor = 0;
+                    continue;
+                }
                 const itime = c.item.mainSectionDurs[c.itemCursor % c.item.mainSectionDurs.length];
 
                 // Advanced outro calculation
@@ -1032,6 +1045,7 @@ class PlaybackStateEntry {
             scheduleId: st.item.scheduleId,
             playlistId: st.item.playlistIds?.[st.itemPart],
             requestId: st.item.requestId,
+            itemType: st.item.itemType,
             eventTime: currentTime,
             stackDepth: depth,
             entryIntoPlaylist: [st.itemPart, st.itemCursor],
@@ -1176,8 +1190,12 @@ class PlaybackStateEntry {
 }
 
 // Track items that we may start
+let bakeCounter = 0;
+
 class PlaybackItem implements SchedulerHeapItem {
     itemType?: 'Scheduled' | 'Immediate' | 'Queued';
+    /** Distinguishes one baking of this item's song order from a later one. */
+    readonly bake: number = ++bakeCounter;
     priorityTier: number = 10;
     timeBasedPri: number = 0;
     cutOffPrevious: boolean = false; // Tie breaker, which wins, existing (false) or new (true)?
@@ -1204,15 +1222,17 @@ class PlaybackItem implements SchedulerHeapItem {
     // shuffle, intentionally differs from the section length.
     preSection: SequenceRecord[] = [];
     preSectionDurs: number[] = [];
-    preSectionTotal: number = 0;
     postSection: SequenceRecord[] = [];
     postSectionDurs: number[] = [];
     postSectionTotal: number = 0;
     mainSection: SequenceRecord[] = [];
     mainSectionDurs: number[] = [];
-    mainSectionTotal: number = 0;
-    mainSectionLongest: number = 0;
     mainSectionLoop: boolean = false;
+
+    /** Distinct songs in the main section. */
+    distinctMainCount(): number {
+        return new Set(this.mainSection.map((s) => s.id)).size;
+    }
 }
 
 // Loop a schedule for time
@@ -1351,6 +1371,9 @@ export class PlayerRunState {
      *  Entries are pruned once currentTime passes the end time. */
     stoppedIds: Map<string, number> = new Map();
 
+    /** Recent starts; carry it over when replacing the run state. */
+    repeatGuard: RepeatGuard = new RepeatGuard();
+
     constructor(currentTime: number) {
         this.currentTime = currentTime;
     }
@@ -1364,7 +1387,11 @@ export class PlayerRunState {
         // Clone stack entries (each tracks cursor position into read-only PlaybackItems)
         copy.stack = this.stack.map((e) => e.clone());
         copy.stackById = new Map();
-        for (const e of copy.stack) copy.stackById.set(e.itemId, e);
+        copy.repeatGuard = this.repeatGuard.clone();
+        for (const e of copy.stack) {
+            copy.stackById.set(e.itemId, e);
+            e.repeatGuard = copy.repeatGuard;
+        }
 
         // Clone heap (items get popped/inserted during runUntil)
         copy.heap = this.heap.clone();
@@ -1469,9 +1496,10 @@ export class PlayerRunState {
 
     /** Reconcile active stack entries against the new schedule data. A scheduled entry
      *  whose schedule was deleted is wound down by bringing its end to now (the entry's
-     *  endPolicy then governs how it stops); one whose end time moved has it accepted.
-     *  Start-time, playlist, priority and other edits are left frozen — reload applies
-     *  those. Safe on suspended entries too: a lowered end just takes effect on resume. */
+     *  endPolicy then governs how it stops); one whose end time moved has it accepted,
+     *  unless it was stopped by hand and is winding down. Start-time, playlist, priority
+     *  and other edits are left frozen — reload applies those. Safe on suspended entries
+     *  too: a lowered end just takes effect on resume. */
     #reconcileActiveSchedules() {
         for (const entry of this.stack) {
             if (entry.item.itemType !== 'Scheduled' || !entry.item.scheduleId) continue;
@@ -1483,6 +1511,8 @@ export class PlayerRunState {
             }
             const times = getScheduleTimes(sched);
             if (times.startTimeMS !== entry.item.schedStart) continue; // start moved → reload
+            // A graceful stop works by bringing the end in; the schedule's own end must not undo it.
+            if (this.stoppedIds.has(entry.item.itemId)) continue;
             if (times.endTimeMS !== entry.item.schedEnd) {
                 entry.item.schedEnd = times.endTimeMS;
                 entry.schedEndTime = times.endTimeMS;
@@ -1538,6 +1568,7 @@ export class PlayerRunState {
         return;
     }
     #stackPush(e: PlaybackStateEntry) {
+        e.repeatGuard = this.repeatGuard;
         this.stackById.set(e.itemId, e);
         this.stack.push(e);
     }
@@ -1559,7 +1590,6 @@ export class PlayerRunState {
         sc.keepToScheduleWhenPreempted = s.keepToScheduleWhenPreempted;
 
         sc.preSection = [];
-        sc.preSectionTotal = 0;
         sc.postSection = [];
         sc.postSectionTotal = 0;
 
@@ -1571,7 +1601,6 @@ export class PlayerRunState {
                 sc.preSection.push(seq);
                 const it = getSeqTimesMS(seq).totalSeqTimeMS || 1000;
                 sc.preSectionDurs.push(it);
-                sc.preSectionTotal += it;
             }
         }
         const postl = s.postPlaylistId ? this.playlistsById.get(s.postPlaylistId) : undefined;
@@ -1588,15 +1617,9 @@ export class PlayerRunState {
 
         sc.mainSection = [];
         sc.mainSectionLoop = !!(s.loop || s.shuffle);
-        sc.mainSectionTotal = 0;
-        sc.mainSectionLongest = 0;
 
         const mainpl = this.playlistsById.get(s.playlistId);
         if (mainpl) {
-            const mainTimes = getPlaylistDurationMS(this.sequences, mainpl, [], this.sequencesById);
-            sc.mainSectionTotal = mainTimes.totalMS;
-            sc.mainSectionLongest = mainTimes.longestMS;
-
             if (s.shuffle) {
                 sc.mainSection = createShuffleList(
                     mainpl,
@@ -1637,15 +1660,9 @@ export class PlayerRunState {
             sc.playlistIds = [undefined, ipc.playlistId, undefined];
             sc.mainSection = [];
             sc.mainSectionLoop = !!ipc.loop;
-            sc.mainSectionTotal = 0;
-            sc.mainSectionLongest = 0;
 
             const mainpl = this.playlistsById.get(ipc.playlistId);
             if (mainpl) {
-                const mainTimes = getPlaylistDurationMS(this.sequences, mainpl, [], this.sequencesById);
-                sc.mainSectionTotal = mainTimes.totalMS;
-                sc.mainSectionLongest = mainTimes.longestMS;
-
                 for (let i = 0; i < mainpl.items.length; ++i) {
                     const seq = this.sequencesById.get(mainpl.items[i].id);
                     if (!seq) continue;
@@ -1658,16 +1675,12 @@ export class PlayerRunState {
             sc.playlistIds = [undefined, undefined, undefined];
             sc.mainSection = [];
             sc.mainSectionLoop = false;
-            sc.mainSectionTotal = 0;
-            sc.mainSectionLongest = 0;
 
             const seq = this.sequencesById.get(ipc.seqId);
             if (seq) {
                 sc.mainSection.push(seq);
                 const it = getSeqTimesMS(seq).totalSeqTimeMS || 1000;
                 sc.mainSectionDurs.push(it);
-                sc.mainSectionTotal = it;
-                sc.mainSectionLongest = it;
             }
         }
         sc.cutOffPrevious = ipc.immediate ? true : false;
@@ -1852,7 +1865,6 @@ export class PlayerRunState {
             }
 
             // At this point, there either is no stack top, or we have one until a time we just grabbed
-            let nextDecisionTime = et;
 
             // Check for heap / interruptions / queue candidates
             let heapCutIn: number | undefined = undefined;
@@ -1986,7 +1998,7 @@ export class PlayerRunState {
             }
 
             // What will be next decision time - recalculate from heap push
-            nextDecisionTime = et;
+            let nextDecisionTime = et;
 
             //  Something ends off the stack? / Stack says to do that?  Check that.
             const se = this.#stackTop;
@@ -2179,6 +2191,14 @@ export class PlayerRunState {
         return upcoming;
     }
 
+    /** Take over the requests `from` has not started yet, for a rebuild that replaces
+     *  it. Call after setUpSequences; requests whose target is gone are dropped. */
+    adoptPendingRequests(from: PlayerRunState) {
+        for (const cmd of [...(from.immediateItem ? [from.immediateItem] : []), ...from.interactiveQueue]) {
+            if (this.#requestResolves(cmd)) this.addInteractiveCommand(cmd);
+        }
+    }
+
     // Interactive cmd to consider?
     addInteractiveCommand(cmd: InteractivePlayCommand) {
         if (cmd.immediate) {
@@ -2189,8 +2209,10 @@ export class PlayerRunState {
         }
     }
 
+    /** Cancel a request wherever it is: waiting, queued, preempted, or playing.
+     *  Returns true if it was the item playing, which the caller has to cut over from. */
     // TODO This should really be at a time
-    removeInteractiveCommand(id: string) {
+    removeInteractiveCommand(id: string, log?: PlaybackLogDetail[]): boolean {
         this.interactiveQueue = this.interactiveQueue.filter((q) => q.requestId !== id);
         if (this.immediateItem?.requestId === id) this.immediateItem = undefined;
 
@@ -2202,7 +2224,17 @@ export class PlayerRunState {
         }
         this.upcomingById = nmap;
 
-        // Search the stack
+        // Playing right now: stop it and hand back to what it interrupted, the way
+        // stopImmediately does. Dropping the entry alone leaves the one below suspended.
+        const top = this.#stackTop;
+        const wasPlaying = top?.itemId === id;
+        if (top && wasPlaying) {
+            top.stopAtTime(this.depth, this.currentTime, log);
+            this.#stackPop();
+            this.#stackTop?.advancePausedTime(this.depth, this.currentTime, log);
+        }
+
+        // Search the rest of the stack
         for (let i = 0; i < this.stack.length;) {
             if (this.stack[i].itemId === id) {
                 this.stack = [...this.stack.slice(0, i), ...this.stack.slice(i + 1)];
@@ -2222,6 +2254,8 @@ export class PlayerRunState {
                 this.heap.deleteAt(idx);
             }
         }
+
+        return wasPlaying;
     }
 
     removeInteractiveCommands() {
@@ -2235,7 +2269,68 @@ export class PlayerRunState {
     stopImmediately(currentTime: number, log?: PlaybackLogDetail[]) {
         this.interactiveQueue = [];
         this.immediateItem = undefined;
+        this.#stopTopNow(currentTime, log);
+    }
 
+    /** Graceful stop: finish the current sequence, play the outro (post-section)
+     *  of the current schedule if it has one, then let it end naturally.
+     *  Schedules and heap remain intact. */
+    stopGracefully(currentTime: number, _log?: PlaybackLogDetail[]) {
+        this.interactiveQueue = [];
+        this.immediateItem = undefined;
+        this.#stopTopGracefully(currentTime);
+    }
+
+    /**
+     * Stop one item and nothing else. The item that is on ends now or gracefully;
+     * an item under it, or one waiting its turn, is simply dropped so it never
+     * plays, and a schedule stays stopped until its end time. Returns what was found.
+     */
+    stopItem(
+        key: string,
+        graceful: boolean,
+        currentTime: number,
+        log?: PlaybackLogDetail[],
+    ): 'playing' | 'removed' | 'none' {
+        const top = this.#stackTop;
+        if (top && top.itemId === key) {
+            if (graceful) this.#stopTopGracefully(currentTime);
+            else this.#stopTopNow(currentTime, log);
+            return 'playing';
+        }
+
+        const idx = this.stack.findIndex((e) => e.itemId === key);
+        if (idx >= 0) {
+            const e = this.stack[idx];
+            e.stopAtTime(idx + 1, currentTime, log);
+            this.stack = [...this.stack.slice(0, idx), ...this.stack.slice(idx + 1)];
+            this.stackById.delete(key);
+            this.#keepStopped(e.item);
+            return 'removed';
+        }
+
+        const due = this.heapById.get(key);
+        if (due) {
+            this.heapById.delete(key);
+            const at = this.heap.findIndex((h) => h.itemId === key);
+            if (at !== undefined && at >= 0) this.heap.deleteAt(at);
+            this.#keepStopped(due);
+            return 'removed';
+        }
+
+        if (this.immediateItem?.requestId === key || this.interactiveQueue.some((q) => q.requestId === key)) {
+            this.removeInteractiveCommand(key, log);
+            return 'removed';
+        }
+        return 'none';
+    }
+
+    /** A stopped schedule must not be loaded again while its window is still open. */
+    #keepStopped(item: PlaybackItem) {
+        if (item.itemType === 'Scheduled') this.stoppedIds.set(item.itemId, item.schedEnd);
+    }
+
+    #stopTopNow(currentTime: number, log?: PlaybackLogDetail[]) {
         const st = this.#stackTop;
         if (!st) return;
 
@@ -2252,13 +2347,7 @@ export class PlayerRunState {
         }
     }
 
-    /** Graceful stop: finish the current sequence, play the outro (post-section)
-     *  of the current schedule if it has one, then let it end naturally.
-     *  Schedules and heap remain intact. */
-    stopGracefully(currentTime: number, _log?: PlaybackLogDetail[]) {
-        this.interactiveQueue = [];
-        this.immediateItem = undefined;
-
+    #stopTopGracefully(currentTime: number) {
         const st = this.#stackTop;
         if (!st) return;
 
@@ -2316,7 +2405,8 @@ export class PlayerRunState {
     titleForIds(seqId?: string, plId?: string, schedId?: string) {
         if (seqId) {
             const nps = this.sequencesById.get(seqId);
-            return `${nps?.work?.title} - ${nps?.work?.artist}${nps?.sequence?.vendor ? ' - ' + nps?.sequence?.vendor : ''}`;
+            const parts = [nps?.work?.title, nps?.work?.artist, nps?.sequence?.vendor].filter((p) => !!p);
+            return parts.length ? parts.join(' - ') : '<Unknown>';
         } else if (plId) {
             const npl = this.playlistsById.get(plId);
             return `${npl?.title ?? 'unknown playlist'}`;
@@ -2375,6 +2465,145 @@ export class PlayerRunState {
             }
         }
         return items.sort((a, b) => (b.at ?? 0) - (a.at ?? 0));
+    }
+
+    /**
+     * What plays after what is on now, in order, decided the way the engine itself
+     * will decide it: the rest of the current item, a request waiting its turn, a
+     * show that was interrupted and resumes, the next show to start.  Up to
+     * `maxItems` song starts within `horizonMs`.  Runs a snapshot forward, so the
+     * live state is untouched.
+     */
+    predictUpcoming(horizonMs: number, maxItems: number = 10): PlayingItem[] {
+        const snap = this.snapshot();
+        const log = snap.readOutScheduleUntil(this.currentTime + horizonMs, maxItems * 8);
+        const items: PlayingItem[] = [];
+        const seen = new Set<string>();
+        for (let i = 0; i < log.length && items.length < maxItems; ++i) {
+            const e = log[i];
+            if (e.eventType !== 'Sequence Started' && e.eventType !== 'Sequence Resumed') continue;
+            if (!e.sequenceId || e.eventTime <= this.currentTime) continue; // on now, not next
+            const key = `${e.sequenceId}@${e.eventTime}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+
+            // It runs until the engine ends or pauses it at this depth; failing a cut, its
+            // whole remaining length.
+            const stop = log
+                .slice(i + 1)
+                .find(
+                    (x) =>
+                        x.stackDepth === e.stackDepth &&
+                        x.sequenceId === e.sequenceId &&
+                        (x.eventType === 'Sequence Ended' || x.eventType === 'Sequence Paused'),
+                );
+            const seq = this.sequencesById.get(e.sequenceId);
+            const remaining = (seq ? getSeqTimesMS(seq).totalSeqTimeMS : 0) - (e.timeIntoSeqMS ?? 0);
+            const byRequest = !!e.requestId && !e.scheduleId;
+            items.push({
+                type: e.itemType ?? (byRequest ? 'Queued' : 'Scheduled'),
+                item: 'Song',
+                title: this.titleForIds(e.sequenceId),
+                sequence_id: e.sequenceId,
+                playlist_id: byRequest ? e.playlistId : undefined,
+                schedule_id: e.scheduleId || undefined,
+                request_id: e.requestId,
+                at: e.eventTime,
+                until: stop ? stop.eventTime : e.eventTime + Math.max(remaining, 0),
+            });
+        }
+        return items;
+    }
+
+    /**
+     * The engine's structure, for the detailed playback view: the stack top first,
+     * then what waits, then what comes. Whether the top is paused or ending is the
+     * caller's to say; the engine only knows that it is on.
+     */
+    getStatusView(flags: { paused?: boolean; ending?: boolean } = {}): PlaybackView {
+        const stack: PlaybackStackEntry[] = [];
+        for (let i = this.stack.length - 1; i >= 0; --i) {
+            const top = i === this.stack.length - 1;
+            const state = !top ? 'suspended' : flags.paused ? 'paused' : flags.ending ? 'ending' : 'playing';
+            stack.push(this.#stackEntryView(this.stack[i], state));
+        }
+
+        const pending: PlaybackPendingEntry[] = this.getQueueItems().map((q) => ({ ...q, why: 'waiting' }));
+        for (const it of this.heapById.values()) {
+            if (it.itemType !== 'Scheduled') continue;
+            pending.push({
+                type: 'Scheduled',
+                item: 'Schedule',
+                title: this.titleForIds(undefined, undefined, it.scheduleId),
+                schedule_id: it.scheduleId,
+                at: it.schedStart,
+                until: it.schedEnd,
+                why: 'deferred',
+            });
+        }
+
+        return {
+            stack,
+            pending,
+            upcoming: [...this.predictUpcoming(600_000, 10), ...this.getUpcomingSchedules()],
+        };
+    }
+
+    #stackEntryView(e: PlaybackStateEntry, state: PlaybackStackEntry['state']): PlaybackStackEntry {
+        const it = e.item;
+        const byRequest = !!it.requestId && !it.scheduleId;
+        const view: PlaybackStackEntry = {
+            key: e.itemId,
+            origin: it.itemType ?? 'Scheduled',
+            state,
+            title: this.titleForIds(
+                byRequest && !it.playlistIds?.[1] ? it.mainSection[0]?.id : undefined,
+                byRequest ? it.playlistIds?.[1] : undefined,
+                it.scheduleId || undefined,
+            ),
+            schedule_id: it.scheduleId || undefined,
+            playlist_id: it.playlistIds?.[1],
+            request_id: it.requestId,
+            ends_at: it.scheduleId ? it.schedEnd : undefined,
+            order_key: `${e.itemId}#${it.bake}`,
+        };
+
+        if (e.itemPart >= 0 && e.itemPart <= 2 && e.itemCursor >= 0) {
+            const songs = e.seqSections[e.itemPart];
+            const durs = e.seqDurs[e.itemPart];
+            const count = songs.length;
+            const loop = e.itemPart === 1 && it.mainSectionLoop;
+            const index = loop && count ? e.itemCursor % count : e.itemCursor;
+            if (index < count) {
+                view.section = (['intro', 'main', 'outro'] as const)[e.itemPart];
+                view.position = { index, count, loop };
+                const seq = songs[index];
+                view.song = {
+                    sequence_id: seq.id,
+                    title: this.titleForIds(seq.id),
+                    offset_ms: e.offsetInto,
+                    // The top entry is advanced to now; a suspended one stopped where it was.
+                    at: state === 'suspended' ? (e.suspendTime ?? this.currentTime) : this.currentTime,
+                    duration_ms: durs[index] ?? 0,
+                };
+            }
+        }
+        return view;
+    }
+
+    /** The baked song order of a loaded item: on the stack, due, or still to come. */
+    getItemOrder(key: string): PlaybackItemOrder | undefined {
+        const it = this.stackById.get(key)?.item ?? this.heapById.get(key) ?? this.upcomingById.get(key);
+        if (!it) return undefined;
+        const list = (seqs: SequenceRecord[], durs: number[]) =>
+            seqs.map((seq, i) => ({ sequence_id: seq.id, title: this.titleForIds(seq.id), duration_ms: durs[i] ?? 0 }));
+        return {
+            key,
+            order_key: `${key}#${it.bake}`,
+            intro: list(it.preSection, it.preSectionDurs),
+            main: list(it.mainSection, it.mainSectionDurs),
+            outro: list(it.postSection, it.postSectionDurs),
+        };
     }
 
     getUpcomingSchedules(): PlayingItem[] {

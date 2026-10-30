@@ -24,6 +24,25 @@ function makeDeps(): { deps: FppCommandDeps; sent: EZPlayerCommand[] } {
 }
 
 describe('runFppCommand', () => {
+    it('Insert Playlist Immediate reads FPP’s arguments: name, start item, end item, if-not-running', async () => {
+        const { deps, sent } = makeDeps();
+        const res = await runFppCommand('Insert Playlist Immediate', ['Main Show', '3', '0', '0'], deps);
+        expect(res.status).toBe(200);
+        expect(res.message).toMatch(/start item not supported/);
+        // The second argument is a start item, never a repeat flag.
+        expect(sent[0]).toMatchObject({ command: 'playplaylist', loop: false });
+    });
+
+    it('honors "if not running" on Start Playlist and Insert Playlist Immediate', async () => {
+        const { deps, sent } = makeDeps();
+        deps.getPStatus = () => ({ ptype: 'EZP', status: 'Playing', reported_time: 0 });
+        expect((await runFppCommand('Start Playlist', ['Main Show', '0', '1'], deps)).status).toBe(200);
+        expect((await runFppCommand('Insert Playlist Immediate', ['Main Show', '0', '0', '1'], deps)).status).toBe(200);
+        expect(sent).toEqual([]);
+        await runFppCommand('Start Playlist', ['Main Show', '0', '0'], deps);
+        expect(sent).toHaveLength(1);
+    });
+
     it('Start Playlist resolves by title (case-insensitive) and maps repeat', async () => {
         const { deps, sent } = makeDeps();
         const res = await runFppCommand('Start Playlist', ['main show', '1', '0', '0'], deps);
@@ -62,11 +81,49 @@ describe('runFppCommand', () => {
         expect(sent.map((c) => c.command)).toEqual(['stopnow', 'stopgraceful', 'pause', 'resume', 'endsong']);
     });
 
-    it('volume commands are not honored (settings/schedule own volume)', async () => {
-        const { deps, sent } = makeDeps();
-        expect((await runFppCommand('Volume Set', ['50'], deps)).status).toBe(404);
-        expect((await runFppCommand('Volume Increase', ['10'], deps)).status).toBe(404);
-        expect(sent.length).toBe(0);
+    describe('volume commands write the default volume', () => {
+        function withVolume(defaultVolume: number, activeWindows: string[] = []) {
+            const { deps, sent } = makeDeps();
+            const written: number[] = [];
+            deps.volume = {
+                getVolume: () => ({ defaultVolume, activeWindows }),
+                setDefaultVolume: async (level) => void written.push(level),
+            };
+            return { deps, sent, written };
+        }
+
+        it('Volume Set writes the default and never sends a player command', async () => {
+            const { deps, sent, written } = withVolume(70);
+            const res = await runFppCommand('Volume Set', ['50'], deps);
+            expect(res.status).toBe(200);
+            expect(written).toEqual([50]);
+            expect(sent).toEqual([]);
+        });
+
+        it('Increase/Decrease/Adjust are relative to the default and clamp to 0-100', async () => {
+            const { deps, written } = withVolume(95);
+            await runFppCommand('Volume Increase', ['10'], deps);
+            await runFppCommand('Volume Decrease', ['20'], deps);
+            await runFppCommand('Volume Adjust', ['-100'], deps);
+            await runFppCommand('Volume Adjust', ['+3'], deps);
+            expect(written).toEqual([100, 75, 0, 98]);
+        });
+
+        it('is declined with the reason while a scheduled window is in effect', async () => {
+            const { deps, written } = withVolume(70, ['System default: 20:00-22:00 at 40%']);
+            const res = await runFppCommand('Volume Set', ['50'], deps);
+            expect(res.status).toBe(500);
+            expect(res.message).toMatch(/20:00-22:00 at 40%/);
+            expect(written).toEqual([]);
+        });
+
+        it('rejects a non-numeric level and reports unloaded settings', async () => {
+            const { deps } = withVolume(70);
+            expect((await runFppCommand('Volume Set', ['loud'], deps)).status).toBe(400);
+            expect((await runFppCommand('Volume Set', [], deps)).status).toBe(400);
+            const { deps: bare } = makeDeps();
+            expect((await runFppCommand('Volume Set', ['50'], bare)).status).toBe(500);
+        });
     });
 
     it('unknown command 404s, Prev is a 500 not-supported', async () => {

@@ -29,6 +29,7 @@ import type {
     PlayerNStatusContent,
     PlaybackSettings,
     EZPlayerCommand,
+    VcDropReason,
     VcSong,
     VcPlayingItem,
     VcScheduleEntry,
@@ -43,19 +44,25 @@ import type {
 import {
     AudioChunkRingBuffer,
     getActiveViewerControlSchedule,
-    getActiveVolumeSchedule,
     getScheduleTimes,
     getSeqTimesMS,
     LatestFrameRingBuffer,
     PlayerRunState,
     portIntentFromModelIntents,
     songVolumeScale,
+    resolveVolumeTargets,
+    type VolumeTarget,
+    viewerControlBackends,
+    viewerControlSchedule,
+    type ViewerControlResyncResult,
 } from '@ezplayer/ezplayer-core';
 
 if (!parentPort) throw new Error('No parentPort in worker');
 
 import {
     openControllersForDataSend,
+    openControllerForDataSend,
+    SenderJob,
     FSeqPrefetchCache,
     ModelRec,
     controllersFromParsedXlights,
@@ -99,13 +106,23 @@ import { begin as hirezTimerBegin } from '../win-hirez-timer/winhirestimer';
 import process from 'node:process';
 import { totalmem } from 'node:os';
 import { avgFrameSendTime, FrameSender, OverallFrameSendStats, resetFrameSendStats } from './framesend';
-import { MultiSyncSender } from './multisync';
+import { MultiSyncSender, type SyncFrameInfo } from './multisync';
 import { fileBaseName } from './pathnames';
 
 import { decompressZStdWithWorker, getZstdStats, resetZstdStats } from './zstdparent';
 import { setPingConfig, getLatestPingStats, stopPing } from './pingparent';
+import type { PingTarget } from './pingworker';
 
-import { sendRFInitiateCheck, setRFConfig, setRFControlEnabled, setRFNowPlaying, setRFPlaylist } from './rfparent';
+import {
+    resyncRF,
+    resyncRFPlaylist,
+    sendRFInitiateCheck,
+    setRFConfig,
+    setRFControlEnabled,
+    setRFNowPlaying,
+    setRFPlaylist,
+    setRFWarningCallback,
+} from './rfparent';
 import { PlaylistSyncItem } from './rfsync';
 import {
     sendEzvcInitiateCheck,
@@ -119,6 +136,7 @@ import {
 } from './ezvcparent';
 import { randomUUID } from 'node:crypto';
 import { playableAudioPath } from '../data/derived-audio.js';
+import { throwLater } from '../faultinject.js';
 
 //import { setThreadAffinity } from '../affinity/affinity.js';
 //setThreadAffinity([3]);
@@ -142,13 +160,30 @@ process.on('uncaughtException', (err) => {
     });
     // Ensure non-zero exit so main 'exit' handler knows it wasn't clean.
     process.exitCode = 1;
+    forwardUncaught('uncaughtException', err);
 });
 
 // Promote unhandled rejections to real failures (or at least log them)
 process.on('unhandledRejection', (reason, _promise) => {
     console.error(tag('unhandledRejection'), { reason });
     process.exitCode = 1;
+    forwardUncaught('unhandledRejection', reason);
 });
+
+/** Forward to main for reporting; must not throw. */
+function forwardUncaught(what: 'uncaughtException' | 'unhandledRejection', reason: unknown) {
+    try {
+        const r = reason as { message?: unknown; stack?: unknown } | undefined;
+        send({
+            type: 'uncaught',
+            what,
+            message: String(r?.message ?? reason),
+            stack: typeof r?.stack === 'string' ? r.stack : undefined,
+        });
+    } catch {
+        /* parent port gone */
+    }
+}
 
 // When the event loop is about to go idle; good for final flushes
 process.on('beforeExit', (code) => {
@@ -175,6 +210,10 @@ function emitError(msg: string) {
     playLogger.log(msg);
     console.log(msg);
 }
+
+/** Per-file throttle for the "audio still decoding" notice (see the audio loop). */
+const audioPendingLoggedAt = new Map<string, number>();
+const AUDIO_PENDING_LOG_INTERVAL_MS = 5_000;
 
 function emitWarning(msg: string) {
     playLogger.log(msg);
@@ -249,6 +288,7 @@ const handlers: PlayWorkerRPCAPI = {
     fail: ({ msg }) => {
         throw new Error(msg);
     },
+    resyncViewerControl: async (_args: Record<string, never>) => resyncRemoteFalcon(),
     stopPlayback: async (_args: Record<string, never>) => {
         // Send black frame once as part of shutdown behavior
         isStopped = true;
@@ -276,12 +316,16 @@ const handlers: PlayWorkerRPCAPI = {
     getFrameExportBuffer: async () => {
         return frameExportBuffer;
     },
+    getPlaybackItemOrder: async ({ key }) => {
+        return foregroundPlayerRunState.getItemOrder(key) ?? backgroundPlayerRunState.getItemOrder(key);
+    },
 };
 
 function playingItemDesc(item?: PlayAction, runState?: PlayerRunState) {
     if (!item?.seqId) return '<Unknown>';
     const nps = (runState ?? foregroundPlayerRunState).sequencesById.get(item.seqId);
-    return `${nps?.work?.title} - ${nps?.work?.artist}${nps?.sequence?.vendor ? ' - ' + nps?.sequence?.vendor : ''}`;
+    const parts = [nps?.work?.title, nps?.work?.artist, nps?.sequence?.vendor].filter((p): p is string => !!p);
+    return parts.length ? parts.join(' - ') : '<Unknown>';
 }
 
 // TODO: Should this move to the run state?
@@ -303,7 +347,7 @@ function groupIdsForActions(group: PlaybackActions) {
 }
 
 /** Current/next background item for the existing Background slot. Same sources as
- *  foreground now-playing + Next Show (stack, due heap, then upcoming schedules). */
+ *  foreground now-playing + Up Next (stack, due heap, then upcoming schedules). */
 function backgroundPlayingItemFromRunState(runState: PlayerRunState): PlayingItem | undefined {
     const ps = runState.getUpcomingItems(600_000, 24 * 3600 * 1000);
     const firstAction = (group?: PlaybackActions, requireStarted?: boolean): PlayingItem | undefined => {
@@ -327,6 +371,13 @@ function backgroundPlayingItemFromRunState(runState: PlayerRunState): PlayingIte
     );
 }
 
+/** The foreground song that has actually started, if any. */
+function currentForegroundPlayingItem(): PlayingItem | undefined {
+    const ps = foregroundPlayerRunState.getUpcomingItems(600_000, 24 * 3600 * 1000);
+    const pla = ps.curPLActions?.actions?.find((a) => !a.end && a.atTime <= foregroundPlayerRunState.currentTime);
+    return pla ? actionToPlayingItem(false, pla) : undefined;
+}
+
 function sendPlayerStateUpdate() {
     const ps = foregroundPlayerRunState.getUpcomingItems(600_000, 24 * 3600 * 1000);
     const playStatus: PlayerPStatusContent = {
@@ -339,27 +390,54 @@ function sendPlayerStateUpdate() {
         volume: {
             level: volume,
             muted,
+            mode: volumeMode,
+            outputs:
+                volumeMode === 'outputs'
+                    ? volumeTargetsNow.map((t) => ({
+                          id: t.id,
+                          label: t.label,
+                          deviceId: t.deviceId,
+                          groupId: t.groupId,
+                          level: outputLevels.get(t.id) ?? t.level,
+                      }))
+                    : undefined,
         },
     };
     playStatus.engine_time = foregroundPlayerRunState.currentTime;
     if (ps.curPLActions?.actions?.length) {
         const group = ps.curPLActions;
         const groupIds = groupIdsForActions(group);
-        for (const pla of group.actions) {
-            if (pla.end) continue;
-            // Only "now playing" if it has actually started; a not-yet-started action
-            // (within the readahead window) is upcoming, not playing.
-            if (!playStatus.now_playing && pla.atTime <= foregroundPlayerRunState.currentTime) {
-                playStatus.now_playing = { ...actionToPlayingItem(false, pla), ...groupIds };
-                playStatus.status = isPaused ? 'Paused' : 'Playing';
-            } else {
-                playStatus.upcoming!.push({ ...actionToPlayingItem(false, pla), ...groupIds });
-            }
+        // Only "now playing" if it has actually started; a not-yet-started action
+        // (within the readahead window) is upcoming, not playing.
+        const pla = group.actions.find((a) => !a.end && a.atTime <= foregroundPlayerRunState.currentTime);
+        if (pla) {
+            playStatus.now_playing = { ...actionToPlayingItem(false, pla), ...groupIds };
+            playStatus.status = isPaused ? 'Paused' : stoppingGracefully ? 'Stopping' : 'Playing';
+            // Where the song is at the engine clock. `offsetMS` is the offset at
+            // `atTime`; add the time since then.
+            const sampledAt = foregroundPlayerRunState.currentTime;
+            const contentMS = contentTimeMS(pla.seq, (pla.offsetMS ?? 0) + (sampledAt - pla.atTime));
+            playStatus.position = {
+                content_ms: contentMS,
+                audio_ms: pla.seq?.files?.audio ? audioPositionMS(contentMS) : undefined,
+                sampled_at: sampledAt,
+            };
         }
     }
+    // Over once nothing is playing: a later schedule must not inherit it.
+    if (!playStatus.now_playing) stoppingGracefully = false;
     playStatus.background_now_playing = backgroundPlayingItemFromRunState(backgroundPlayerRunState);
     playStatus.queue = foregroundPlayerRunState.getQueueItems();
-    playStatus.upcoming!.push(...foregroundPlayerRunState.getUpcomingSchedules());
+    // The songs to come, as the engine will choose them — through requests, a
+    // resumed show and the next show alike — then the shows due to start.
+    playStatus.upcoming = [
+        ...foregroundPlayerRunState.predictUpcoming(600_000, 10),
+        ...foregroundPlayerRunState.getUpcomingSchedules(),
+    ];
+    playStatus.view = foregroundPlayerRunState.getStatusView({
+        paused: isPaused,
+        ending: stoppingGracefully && !!playStatus.now_playing,
+    });
     playStatus.suspendedItems = foregroundPlayerRunState.getHeapItems();
     playStatus.preemptedItems = foregroundPlayerRunState.getStackItems();
 
@@ -370,6 +448,127 @@ function sendPlayerStateUpdate() {
 
     send({ type: 'pstatus', status: playStatus });
 }
+
+/**
+ * How to check one controller is reachable.  A controller behind an FPP proxy
+ * cannot answer ICMP, because the proxy forwards HTTP only, so it is confirmed
+ * through the proxy's own path; others are pinged, with their web service as a
+ * fallback for controllers that drop ICMP.
+ */
+function pingTargetFor(c: ControllerState): PingTarget {
+    const address = c.setup.address;
+    const proxy = c.xlRecord?.fppProxy;
+    const host = (h: string) => (h.includes(':') ? `[${h}]` : h);
+    if (proxy) return { address, icmp: false, webUrl: `http://${host(proxy)}/proxy/${address}/` };
+    return { address, icmp: true, webUrl: `http://${host(address)}/` };
+}
+
+/** The options the show's data senders were opened with, for a later retry. */
+let openForDataSendOpts: { ddpPort?: number; fpsOverrides?: Record<string, number> } | undefined;
+/** The job the playback loop is sending, so a late sender can join it. */
+let activeSendJob: { senders: SenderJob[] } | undefined;
+const lastSenderOpen = new Map<string, number>();
+/** How often one controller's sender is opened or reopened. */
+const SENDER_OPEN_GAP_MS = 30_000;
+/** Addresses that turned reachable since the last pass. */
+const recoveredAddresses = new Set<string>();
+
+/**
+ * Give a controller a working data sender, in either of two cases where it
+ * would otherwise receive nothing for the rest of the show:
+ *  - it never opened — an address that would not resolve, or a ForceLocalIP
+ *    interface that was absent — so there is no sender at all;
+ *  - it has been away and is reachable again, where a fresh socket and a fresh
+ *    DDP stream are what reloading the schedule would give the whole show.
+ *
+ * The scheduler sizes its per-sender state from the job each frame, so a sender
+ * that appears or is replaced is picked up on the next one.
+ */
+async function openOrReopenSenders(): Promise<void> {
+    const job = activeSendJob;
+    if (!job || !controllerStates) return;
+
+    const now = Date.now();
+    for (const c of controllerStates) {
+        if (!c.setup.usable) continue;
+
+        const key = c.setup.address;
+        const failed = c.report?.status === 'error';
+        const recovered = recoveredAddresses.has(key);
+        if (!failed && !recovered) continue;
+        recoveredAddresses.delete(key);
+
+        if (now - (lastSenderOpen.get(key) ?? 0) < SENDER_OPEN_GAP_MS) continue;
+        lastSenderOpen.set(key, now);
+
+        const previous = c.sender;
+        try {
+            const jobSender = await openControllerForDataSend(c, openForDataSendOpts);
+            if (!jobSender) continue;
+
+            const at = previous ? job.senders.findIndex((js) => js.sender === previous) : -1;
+            if (at >= 0) job.senders[at] = jobSender;
+            else job.senders.push(jobSender);
+
+            emitInfo(
+                `Controller ${c.setup.name} (${key}) ${failed ? 'opened on retry' : 'reopened after coming back'}; ` +
+                    'it is now getting data',
+            );
+
+            // Drop the old socket once nothing is sending on it any more.
+            if (previous && previous !== c.sender) {
+                void previous.disconnect?.().catch(() => undefined);
+            }
+        } catch (e) {
+            // c.report carries the reason; the next window tries again.
+            emitWarning(`Controller ${c.setup.name} (${key}) could not be opened: ${String(e)}`);
+        }
+    }
+}
+
+/** Controllers whose data is held for a read, with the lease that frees them. */
+const dataHolds = new Map<string, NodeJS.Timeout>();
+
+/** The sender for one controller, by the address the show records use. */
+function senderFor(address: string) {
+    return controllerStates?.find((c) => c.setup.address === address)?.sender;
+}
+
+/**
+ * Stop sending to one controller so it can answer a read or accept an upload.
+ * Its lights hold their last frame meanwhile.
+ */
+function holdControllerData(address: string, leaseMs: number): void {
+    const sender = senderFor(address);
+    if (!sender) return;
+
+    const existing = dataHolds.get(address);
+    if (existing) clearTimeout(existing);
+    else {
+        sender.suspend();
+        emitInfo(`Holding data to ${address} while it is read`);
+    }
+
+    const lease = setTimeout(() => {
+        dataHolds.delete(address);
+        sender.resume();
+        emitWarning(`Hold on ${address} expired after ${Math.round(leaseMs / 1000)}s; sending again`);
+    }, leaseMs);
+    lease.unref?.();
+    dataHolds.set(address, lease);
+}
+
+function releaseControllerData(address: string): void {
+    const lease = dataHolds.get(address);
+    if (!lease) return;
+    clearTimeout(lease);
+    dataHolds.delete(address);
+    senderFor(address)?.resume();
+    emitInfo(`Sending to ${address} again`);
+}
+
+/** Connectivity per controller on the previous pass, to spot a recovery. */
+const lastSeenConnectivity = new Map<string, string>();
 
 function sendControllerStateUpdate() {
     const stats = getLatestPingStats();
@@ -382,8 +581,15 @@ function sendControllerStateUpdate() {
     );
     for (const c of controllerStates ?? []) {
         const pstat = stats.stats?.[c.setup.address];
-        const pss = pstat ? `${pstat.nReplies} out of ${pstat.outOf} pings` : '';
+        const checks = pstat?.via === 'web' ? 'web checks' : 'pings';
+        const pss = pstat ? `${pstat.nReplies} out of ${pstat.outOf} ${checks}` : '';
         const connectivity = !c.setup.usable ? 'N/A' : !pstat?.outOf ? 'Pending' : pstat.nReplies > 0 ? 'Up' : 'Down';
+        // Coming back from Down is the moment to give this controller a fresh
+        // sender; Pending is just the state before the first ping round.
+        if (connectivity === 'Up' && lastSeenConnectivity.get(c.setup.address) === 'Down') {
+            recoveredAddresses.add(c.setup.address);
+        }
+        lastSeenConnectivity.set(c.setup.address, connectivity);
         cstatus.controllers?.push({
             name: c.setup.name,
             description: c.xlRecord?.description,
@@ -397,6 +603,8 @@ function sendControllerStateUpdate() {
             notices: c.setup.summary ? [c.setup.summary] : [],
             errors: c.report?.error ? [c.report!.error!] : [],
             connectivity,
+            reachedVia: pstat?.via,
+            senderStats: c.sender?.stats?.(),
             pingSummary: pss,
             reported_time: stats.latestUpdate,
             startCh: c.setup.startCh,
@@ -407,13 +615,98 @@ function sendControllerStateUpdate() {
 }
 
 let lastRFCheck: number = Date.now();
+
+// With both backends on, each round asks the built-in request line first and polls
+// Remote Falcon only when that had nothing (see the ezvc suggestion callback). The
+// two checks fire in the same tick because they share the timing. Remote Falcon is
+// held only while the built-in window is open: the two schedules may differ, and a
+// closed built-in window sends no check, so nothing would release the hold.
+let rfCheckDeferred = false;
+let rfCheckDeferredAt = 0;
+/** If the built-in check never answers (cloud unreachable), stop holding Remote Falcon. */
+const RF_DEFER_MAX_MS = 3000;
+function initiateRFCheck() {
+    const vc = latestSettings?.viewerControl;
+    const bothOn = !!vc && !!getActiveViewerControlSchedule(vc, 'ezplayer') && !!ezvcCloudUrl && !!ezvcPlayerToken;
+    if (!bothOn) {
+        sendRFInitiateCheck();
+        return;
+    }
+    const now = Date.now();
+    if (rfCheckDeferred && now - rfCheckDeferredAt > RF_DEFER_MAX_MS) {
+        rfCheckDeferred = false;
+        sendRFInitiateCheck();
+        return;
+    }
+    rfCheckDeferred = true;
+    rfCheckDeferredAt = now;
+}
+function releaseDeferredRFCheck() {
+    if (!rfCheckDeferred) return;
+    rfCheckDeferred = false;
+    sendRFInitiateCheck();
+}
+
+/** The RF song list for a playlist, or undefined when there is no such
+ *  playlist (renamed since the schedule entry was written).  Undefined rather
+ *  than empty: an empty list would clear the list on the site. */
+function remotePlaylistItems(playlistName: string | undefined): PlaylistSyncItem[] | undefined {
+    const pl = curPlaylists?.find((p) => p.title.toLowerCase() === playlistName?.toLowerCase());
+    if (!pl) return undefined;
+    const items: PlaylistSyncItem[] = [];
+    for (const i of pl.items) {
+        const s = foregroundPlayerRunState.sequencesById.get(i.id);
+        if (!s) continue;
+        items.push({
+            playlistType: 'SEQUENCE',
+            playlistDuration: s.work.length,
+            playlistIndex: i.sequence,
+            playlistName: `${s.work.title} - ${s.work.artist}${s.sequence?.vendor ? ' - ' + s.sequence.vendor : ''}`,
+        });
+    }
+    return items;
+}
+
+/** The playlist Remote Falcon should be showing: the active window's, or
+ *  outside show hours the last configured entry's (last wins overlaps). */
+function remoteFalconPlaylistName(): string | undefined {
+    const vc = latestSettings?.viewerControl;
+    if (!vc) return undefined;
+    const active = getActiveViewerControlSchedule(vc, 'remote-falcon');
+    if (active) return active.playlist;
+    const entries = viewerControlSchedule(vc, 'remote-falcon');
+    return entries.length ? entries[entries.length - 1].playlist : undefined;
+}
+
+/** Re-push the song list whatever the worker believes RF already has, and
+ *  report what RF said.  Works outside show hours, when there is no active
+ *  entry to take the playlist name from. */
+async function resyncRemoteFalcon(): Promise<ViewerControlResyncResult> {
+    const vc = latestSettings?.viewerControl;
+    if (!vc?.remoteFalconToken) return { ok: false, message: 'No Remote Falcon token is set' };
+    resyncRF();
+    const name = remoteFalconPlaylistName();
+    const items = remotePlaylistItems(name);
+    if (!items) {
+        return {
+            ok: false,
+            message: name ? `There is no playlist named "${name}"` : 'No Remote Falcon schedule entry is configured',
+        };
+    }
+    const res = await resyncRFPlaylist(items);
+    if (res.ok) emitInfo(`Sent ${items.length} songs to Remote Falcon`);
+    // A failure is already reported through setRFWarningCallback.
+    sendRemoteUpdate(); // now-playing and enabled were forgotten too
+    return res;
+}
+
 function sendRemoteUpdate() {
     const settings = latestSettings;
     if (!settings || !settings.viewerControl?.remoteFalconToken) {
         //emitInfo("No RF token");
         return;
     }
-    const rfStat = getActiveViewerControlSchedule(settings.viewerControl);
+    const rfStat = getActiveViewerControlSchedule(settings.viewerControl, 'remote-falcon');
     if (!rfStat) {
         //emitInfo('Disable RF');
         setRFControlEnabled(false);
@@ -422,65 +715,85 @@ function sendRemoteUpdate() {
         //emitInfo('Enable RF');
         setRFControlEnabled(true);
     }
-    const ps = foregroundPlayerRunState.getUpcomingItems(600_000, 24 * 3600 * 1000);
-    let now_playing: PlayingItem | undefined = undefined;
-    let upcoming: PlayingItem | undefined = undefined;
-    if (ps.curPLActions?.actions?.length) {
-        for (const pla of ps.curPLActions.actions) {
-            if (pla.end) continue;
-            // Only "now playing" if it has actually started; otherwise it's upcoming.
-            if (!now_playing && pla.atTime <= foregroundPlayerRunState.currentTime) {
-                now_playing = actionToPlayingItem(false, pla);
-            } else {
-                upcoming = actionToPlayingItem(false, pla);
-                break;
-            }
-        }
-    }
+    const now_playing = currentForegroundPlayingItem();
+    const upcoming = foregroundPlayerRunState.predictUpcoming(600_000, 1)[0];
     //emitInfo("Set RF Now Playing");
     setRFNowPlaying(now_playing?.title, upcoming?.title);
-    const pl = curPlaylists?.find((p) => p.title.toLowerCase() === rfStat?.playlist.toLowerCase());
-    const items: PlaylistSyncItem[] = [];
-    if (pl) {
-        for (const i of pl.items) {
-            const s = foregroundPlayerRunState.sequencesById.get(i.id);
-            if (!s) continue;
-            items.push({
-                playlistType: 'SEQUENCE',
-                playlistDuration: s.work.length,
-                playlistIndex: i.sequence,
-                playlistName: `${s.work.title} - ${s.work.artist}${s.sequence?.vendor ? ' - ' + s.sequence.vendor : ''}`,
-            });
-        }
-        //emitInfo(`Set RF Now Playlists ${JSON.stringify(items)}`);
-        setRFPlaylist(items);
-    }
+    const items = remotePlaylistItems(rfStat.playlist);
+    //emitInfo(`Set RF Now Playlists ${JSON.stringify(items)}`);
+    if (items) setRFPlaylist(items);
     if (now_playing) {
         const diff = (now_playing.until ?? 0) - foregroundPlayerRunState.currentTime;
         if (diff >= 3000 && diff < 4000) {
             //emitInfo("Initiate while-playing RF check");
-            sendRFInitiateCheck();
+            initiateRFCheck();
         }
     } else {
         const dn = Date.now();
         if (dn - lastRFCheck > 5000) {
             lastRFCheck = dn;
             //emitInfo("Initiate idle RF check");
-            sendRFInitiateCheck();
+            initiateRFCheck();
         }
     }
 }
 
+// ---- Viewer-pick repeat guard ---------------------------------------------
+// Remote Falcon and the viewer page each apply their own cooldown, but neither
+// sees the other's picks or the playlist's own plays. The player has the whole
+// picture, so it drops a pick that would repeat a song too soon. The history is
+// the run state's RepeatGuard, which also lets a scheduled playlist pass over a
+// song that just played.
+
+/** Why a viewer pick of `songId` should be dropped, or undefined to play it. */
+function viewerPickDropReason(songId: string): { reason: VcDropReason; songsAgo?: number } | undefined {
+    const fs = foregroundPlayerRunState;
+    const n = fs.repeatGuard.spacing;
+    if (!(n > 0)) return undefined;
+    if (currentForegroundPlayingItem()?.sequence_id === songId) return { reason: 'playing' };
+    if (fs.immediateItem?.seqId === songId || fs.interactiveQueue.some((q) => q.seqId === songId)) {
+        return { reason: 'queued' };
+    }
+    if (fs.predictUpcoming(600_000, 1)[0]?.sequence_id === songId) return { reason: 'next' };
+    const since = fs.repeatGuard.songsSince(songId);
+    if (since !== undefined && since < n) return { reason: 'recent', songsAgo: since };
+    return undefined;
+}
+
+const DROP_REASON_TEXT: Record<VcDropReason, string> = {
+    playing: 'playing now',
+    next: 'up next',
+    queued: 'already requested',
+    recent: 'played recently',
+};
+
+/** True if the pick may play; logs and records it when it is dropped. */
+function admitViewerPick(songId: string, source: 'remote-falcon' | 'viewer'): boolean {
+    const drop = viewerPickDropReason(songId);
+    if (!drop) return true;
+    const title = curSequences?.find((s) => s.id === songId)?.work?.title;
+    const ago = drop.songsAgo !== undefined ? ` (${drop.songsAgo} song${drop.songsAgo === 1 ? '' : 's'} ago)` : '';
+    emitWarning(`Dropped ${source} pick of "${title ?? songId}": ${DROP_REASON_TEXT[drop.reason]}${ago}`);
+    // Viewer-page picks are counted by the cloud; Remote Falcon's only here.
+    if (source === 'remote-falcon') send({ type: 'viewerPick', source, songId, title });
+    send({ type: 'viewerPickDropped', source, songId, title, reason: drop.reason, songsAgo: drop.songsAgo });
+    return false;
+}
+
 // ---- EZPlayer viewer control (ViewerControlState.type === 'ezplayer') ------
-// The schedule gating is shared (`getActiveViewerControlSchedule`); only the
-// backend differs. The cloud owns the mode/policy, so the suggestion is a
-// sequence id we can play directly — no index mapping needed.
+// Gated by the main schedule (`getActiveViewerControlSchedule`), which Remote
+// Falcon shares unless it has its own. The cloud owns the mode/policy, so the
+// suggestion is a sequence id we can play directly; no index mapping needed.
 let ezvcCloudUrl: string | undefined = undefined;
 let ezvcPlayerToken: string | undefined = undefined;
 let ezvcConfigInitialized = false;
 let lastEzvcKey: string | undefined = undefined;
 let lastEzvcCheck: number = Date.now();
 let lastEzvcPlayingKey: string | undefined = undefined;
+/** When now-playing was last offered to the worker; re-offered on a timer because the
+ *  worker may drop or fail a push. */
+let lastEzvcPlayingOfferedAt = 0;
+const EZVC_PLAYING_REOFFER_MS = 5_000;
 
 /** ScheduleDays → JS day numbers (0=Sun .. 6=Sat) for the request-window
  *  feed. Best-effort; the calendar UI interprets. */
@@ -505,15 +818,28 @@ function configureEzvc() {
     if (ezvcConfigInitialized && key === lastEzvcKey) return;
     ezvcConfigInitialized = true;
     lastEzvcKey = key;
+    // New target: reset our now-playing dedup along with the worker's.
+    lastEzvcPlayingKey = undefined;
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
     setEzvcConfig({ cloudUrl: ezvcCloudUrl, playerToken: ezvcPlayerToken, tz }, (next) => {
-        if (!next.songId) return;
+        if (!next.songId) {
+            // Nothing requested on the viewer page: Remote Falcon's turn.
+            releaseDeferredRFCheck();
+            return;
+        }
+        if (!admitViewerPick(next.songId, 'viewer')) {
+            // Dropped, so nothing from the built-in line this round: Remote Falcon's turn.
+            releaseDeferredRFCheck();
+            return;
+        }
+        rfCheckDeferred = false; // the built-in line had something; Remote Falcon sits this round out
         processCommand({
             command: 'playsong',
             immediate: false,
             songId: next.songId,
             requestId: randomUUID(),
             priority: 3,
+            source: 'viewer',
         });
     });
     setEzvcResyncCallback(() => {
@@ -556,23 +882,13 @@ function sendEzvcUpdate() {
     // Display feeds report for any cloud-connected player; interactive control
     // runs only when type === 'ezplayer' and its schedule window is open.
     const vc = settings.viewerControl;
-    const ezWindow = vc?.type === 'ezplayer' ? getActiveViewerControlSchedule(vc) : null;
+    const ezOn = viewerControlBackends(vc).includes('ezplayer');
+    const ezWindow = getActiveViewerControlSchedule(vc, 'ezplayer');
     setEzvcControlEnabled(!!ezWindow);
 
     // ---- now-playing + the upcoming song lineup ("what's coming") ---------
-    const ps = foregroundPlayerRunState.getUpcomingItems(600_000, 24 * 3600 * 1000);
-    let now_playing: PlayingItem | undefined = undefined;
-    const upcomingItems: PlayingItem[] = [];
-    if (ps.curPLActions?.actions?.length) {
-        for (const pla of ps.curPLActions.actions) {
-            if (pla.end) continue;
-            const pi = actionToPlayingItem(false, pla);
-            // Only "now playing" if it has actually started; otherwise it's upcoming.
-            if (!now_playing && pla.atTime <= foregroundPlayerRunState.currentTime) now_playing = pi;
-            else if (upcomingItems.length < 12) upcomingItems.push(pi);
-            else break;
-        }
-    }
+    const now_playing = currentForegroundPlayingItem();
+    const upcomingItems = foregroundPlayerRunState.predictUpcoming(600_000, 12);
     const toVc = (pi: PlayingItem | undefined): VcPlayingItem | undefined =>
         pi ? { songId: pi.sequence_id, title: pi.title, at: pi.at, until: pi.until } : undefined;
     const upcomingVc = upcomingItems.map((p) => toVc(p)).filter((x): x is VcPlayingItem => x !== undefined);
@@ -580,8 +896,10 @@ function sendEzvcUpdate() {
     // Push on lineup-identity change, not per-tick timestamp drift; the page
     // interpolates between pushes.
     const lineupKey = `${now_playing?.sequence_id ?? ''}|` + upcomingVc.map((u) => u.songId ?? '').join(',');
-    if (lineupKey !== lastEzvcPlayingKey) {
+    const offerAtMs = Date.now();
+    if (lineupKey !== lastEzvcPlayingKey || offerAtMs - lastEzvcPlayingOfferedAt >= EZVC_PLAYING_REOFFER_MS) {
         lastEzvcPlayingKey = lineupKey;
+        lastEzvcPlayingOfferedAt = offerAtMs;
         setEzvcPlaying({
             nowPlaying: now_playing?.sequence_id ?? undefined,
             nextScheduled: upcomingItems[0]?.sequence_id ?? undefined,
@@ -608,8 +926,8 @@ function sendEzvcUpdate() {
             start: new Date(x.startTimeMS).toISOString(),
             end: new Date(x.endTimeMS).toISOString(),
         }));
-    // Request windows: exactly the viewer-control schedule entries.
-    const reqWindows: VcScheduleEntry[] = (vc?.type === 'ezplayer' ? (vc.schedule ?? []) : []).map((e) => ({
+    // Request windows: the viewer page's schedule entries (never Remote Falcon's own).
+    const reqWindows: VcScheduleEntry[] = (ezOn ? (vc?.schedule ?? []) : []).map((e) => ({
         title: e.playlist,
         start: e.startTime,
         end: e.endTime,
@@ -680,15 +998,26 @@ function doVolumeAdjust(dn: number) {
         lastVolCheck = dn; // unconfigured: keep the slew clock fresh, don't bank credit
         return;
     }
-    const volsched = getActiveVolumeSchedule(settings.volumeControl);
-    let tgtvol = settings.volumeControl.defaultVolume ?? 100;
-    if (volsched) {
-        tgtvol = volsched.volumeLevel;
+    // One resolver for every output (default sink, or each named device with its
+    // own schedule). The worker owns the slew and mute; main just applies gains.
+    const resolved = resolveVolumeTargets(settings);
+    volumeMode = resolved.mode;
+    volumeTargetsNow = resolved.targets;
+    for (const id of [...outputLevels.keys()]) {
+        if (!resolved.targets.some((t) => t.id === id)) outputLevels.delete(id);
     }
-
-    const diff = tgtvol - volume;
-    if (diff === 0) {
+    let maxDiff = 0;
+    for (const t of resolved.targets) {
+        const cur = outputLevels.get(t.id);
+        if (cur === undefined) {
+            outputLevels.set(t.id, t.level); // a new output starts at its target
+            continue;
+        }
+        maxDiff = Math.max(maxDiff, Math.abs(t.level - cur));
+    }
+    if (maxDiff === 0) {
         lastVolCheck = dn; // at target: reset so a future change starts from now
+        recomputeVolumeGains();
         return;
     }
 
@@ -697,11 +1026,119 @@ function doVolumeAdjust(dn: number) {
 
     // One 1% step per whole interval elapsed, capped by the remaining distance.
     const maxSteps = Math.floor(elapsed / VOLUME_SLEW_INTERVAL_MS);
-    const step = Math.min(Math.abs(diff), maxSteps);
-    volume += Math.sign(diff) * step;
+    let used = 0;
+    for (const t of resolved.targets) {
+        const cur = outputLevels.get(t.id)!;
+        const diff = t.level - cur;
+        if (diff === 0) continue;
+        const step = Math.min(Math.abs(diff), maxSteps);
+        outputLevels.set(t.id, cur + Math.sign(diff) * step);
+        used = Math.max(used, step);
+    }
     // Consume only the time we used so a sub-interval remainder carries forward.
-    lastVolCheck += step * VOLUME_SLEW_INTERVAL_MS;
-    volumeSF = muted ? 0 : volume / 100;
+    lastVolCheck += used * VOLUME_SLEW_INTERVAL_MS;
+    recomputeVolumeGains();
+}
+
+/** Derive the per-output gains, the headline `volume`, and the listener-ring
+ *  gain from the current levels and mute. */
+function recomputeVolumeGains() {
+    const gains: Record<string, number> = {};
+    let headline = 0;
+    for (const t of volumeTargetsNow) {
+        const lvl = outputLevels.get(t.id) ?? t.level;
+        gains[t.id] = muted ? 0 : lvl / 100;
+        headline = Math.max(headline, lvl);
+    }
+    if (volumeTargetsNow.length === 0) headline = volumeMode === 'default' ? 100 : 0;
+    volume = headline;
+    outputGains = gains;
+    // Legacy single gain, consumed by main for the default-sink window when a
+    // chunk carries no per-output gains. Listeners never see it (see sendAudioChunk).
+    volumeSF = muted ? 0 : volumeMode === 'default' ? volume / 100 : 1;
+}
+
+/////////
+// Commanded songs wait for their audio
+//
+// A jukebox / viewer / Remote Falcon pick names a song whose mp3 may not be decoded
+// yet, and a fixed start delay cannot be long enough for a cold decode without making
+// every pick sluggish. So the decode is requested the moment the command arrives, and
+// the start is held — lights and audio together — until the audio is there, up to a cap.
+
+/** Longest a commanded song is held for its audio before playing lights-only after all. */
+const INTERACTIVE_AUDIO_WAIT_MAX_MS = 5_000;
+/** requestId -> when the hold began. */
+const interactiveAudioWaitSince = new Map<string, number>();
+
+function audioFileFor(seq: SequenceRecord | undefined): string | undefined {
+    let saf = seq?.files?.audio;
+    if (saf && !path.isAbsolute(saf)) saf = path.join(showFolder!, saf);
+    return saf || undefined;
+}
+
+/** Ask the decoder for a commanded song's audio right now, at top priority. */
+function requestAudioDecodeNow(seq: SequenceRecord, startTime: number): void {
+    const saf = audioFileFor(seq);
+    if (!saf || !mp3Cache) return;
+    const durationMs = seq.work?.length ? seq.work.length * 1000 : 600_000;
+    mp3Cache.prefetchMP3({
+        mp3file: saf,
+        needByTime: startTime,
+        neededThroughTime: startTime + durationMs,
+        estDurationSec: durationMs / 1000,
+        tier: 0,
+        expiry: startTime + 7 * 24 * 3600_000,
+        normalize: !!seq.settings?.normalize,
+    });
+    mp3Cache.dispatch();
+}
+
+/** True when the song's audio is decoded, has no audio, or failed (nothing to wait for). */
+function interactiveAudioReady(seqId: string): boolean {
+    const seq = foregroundPlayerRunState.sequencesById.get(seqId) ?? curSequences?.find((x) => x.id === seqId);
+    const saf = audioFileFor(seq);
+    if (!saf || !mp3Cache) return true;
+    // A settled decode, success or failure, is nothing to wait for. Polled every tick while a
+    // song is held, so this must not count as a cache miss or touch the entry.
+    return mp3Cache.isSettled(saf, !!seq?.settings?.normalize);
+}
+
+/**
+ * Push back any interactive start, immediate or queued, that would begin within the audio
+ * lead while its audio is still decoding, so the audio generator never reaches an
+ * undecoded song. Runs every tick after the prefetch pass.
+ */
+function holdInteractiveStartsForAudio(now: number): void {
+    const horizon = now + playbackParams.sendAudioInAdvanceMs + playbackParams.sendAudioChunkMs;
+    const hold = (cmd: { seqId?: string; startTime: number; requestId: string }): boolean => {
+        if (!cmd.seqId || cmd.startTime > horizon) return false;
+        if (interactiveAudioReady(cmd.seqId)) {
+            interactiveAudioWaitSince.delete(cmd.requestId);
+            return false;
+        }
+        const stored = interactiveAudioWaitSince.get(cmd.requestId);
+        if (stored !== undefined && stored < 0) return false; // gave up on this one already
+        const since = stored ?? now;
+        interactiveAudioWaitSince.set(cmd.requestId, since);
+        if (now - since > INTERACTIVE_AUDIO_WAIT_MAX_MS) {
+            // Once per song: a negative `since` marks the warning as already given.
+            if (since > 0) {
+                interactiveAudioWaitSince.set(cmd.requestId, -since);
+                emitWarning(
+                    `Audio for ${cmd.seqId} still not decoded after ${INTERACTIVE_AUDIO_WAIT_MAX_MS} ms; starting without it.`,
+                );
+            }
+            return false;
+        }
+        cmd.startTime = horizon;
+        return true;
+    };
+    const fs = foregroundPlayerRunState;
+    if (fs.immediateItem) hold(fs.immediateItem);
+    let moved = false;
+    for (const cmd of fs.interactiveQueue) moved = hold(cmd) || moved;
+    if (moved) fs.interactiveQueue.sort((a, b) => a.startTime - b.startTime);
 }
 
 /////////
@@ -711,14 +1148,16 @@ function processCommand(cmd: EZPlayerCommand) {
         case 'playsong':
             {
                 emitInfo(`PLAY CMD: ${cmd?.command}: ${cmd?.songId}`);
-                // pendingSchedule (not yet installed by the loop) is newer than curSequences
-                const liveSequences = (pendingSchedule?.type === 'schedupdate' && pendingSchedule.seqs) || curSequences;
+                stoppingGracefully = false;
+                // latestSchedule (maybe not yet installed by the loop) is newer than curSequences
+                const liveSequences = latestSchedule?.seqs || curSequences;
                 const seq = liveSequences?.find((s) => s.id === cmd.songId);
                 if (!seq) {
                     emitError(`Unable to identify sequence ${cmd.songId}`);
                     return false;
                 }
                 const startTime = foregroundPlayerRunState.currentTime + playbackParams.interactiveCommandPrefetchDelay;
+                requestAudioDecodeNow(seq, startTime);
                 foregroundPlayerRunState.addInteractiveCommand({
                     immediate: cmd.immediate,
                     requestId: cmd.requestId,
@@ -731,6 +1170,10 @@ function processCommand(cmd: EZPlayerCommand) {
                 }
 
                 emitInfo(`Enqueue: Current length ${foregroundPlayerRunState.interactiveQueue.length}`);
+                if (cmd.source === 'jukebox' || cmd.source === 'remote-falcon') {
+                    // Viewer-page picks are counted by the cloud; these two only the player sees.
+                    send({ type: 'viewerPick', source: cmd.source, songId: cmd.songId, title: seq.work?.title });
+                }
                 sendPlayerStateUpdate();
                 if (!running) {
                     running = processQueue(); // kick off first song
@@ -746,22 +1189,28 @@ function processCommand(cmd: EZPlayerCommand) {
         }
         case 'deleterequest': {
             emitInfo(`Delete ${cmd.requestId}`);
-            foregroundPlayerRunState.removeInteractiveCommand(cmd.requestId);
+            if (foregroundPlayerRunState.removeInteractiveCommand(cmd.requestId)) {
+                // It was playing: cut its audio over, as stopnow does.
+                audioPlayerRunTime = foregroundPlayerRunState.currentTime;
+                ++curAudioSyncNum;
+            }
+            sendPlayerStateUpdate();
             break;
         }
         case 'clearrequests': {
             foregroundPlayerRunState.removeInteractiveCommands();
+            sendPlayerStateUpdate();
             break;
         }
         case 'setvolume': {
-            if (cmd?.volume !== undefined) {
-                volume = cmd.volume;
-            }
+            // Only mute is live here. A level is a default-volume settings write
+            // (server worker); applied as an override it would be slewed straight
+            // back toward the schedule.
             if (cmd.mute !== undefined) {
                 muted = cmd.mute;
+                recomputeVolumeGains();
+                sendPlayerStateUpdate(); // keep pStatus.volume fresh for status polls
             }
-            volumeSF = muted ? 0 : volume / 100;
-            sendPlayerStateUpdate(); // keep pStatus.volume fresh for status polls
             break;
         }
         case 'pause': {
@@ -789,6 +1238,19 @@ function processCommand(cmd: EZPlayerCommand) {
             resetCumulativeCounters();
             break;
         }
+        case 'resyncviewercontrol': {
+            // Fire and forget; the RPC form below is the one that reports back.
+            void resyncRemoteFalcon();
+            break;
+        }
+        case 'holdcontrollerdata': {
+            holdControllerData(cmd.address, cmd.leaseMs);
+            break;
+        }
+        case 'releasecontrollerdata': {
+            releaseControllerData(cmd.address);
+            break;
+        }
         case 'activateoutput':
         case 'suppressoutput': {
             // Frames are still produced (and published to the preview ring buffer);
@@ -802,7 +1264,8 @@ function processCommand(cmd: EZPlayerCommand) {
         case 'playplaylist':
             {
                 emitInfo(`PLAY CMD: ${cmd?.command}: ${cmd?.playlistId}`);
-                const livePlaylists = (pendingSchedule?.type === 'schedupdate' && pendingSchedule.pls) || curPlaylists;
+                stoppingGracefully = false;
+                const livePlaylists = latestSchedule?.pls || curPlaylists;
                 const pl = livePlaylists?.find((p) => p.id === cmd.playlistId);
                 if (!pl) {
                     emitError(`Unable to identify playlist ${cmd.playlistId}`);
@@ -834,12 +1297,34 @@ function processCommand(cmd: EZPlayerCommand) {
             break;
         case 'stopgraceful': {
             emitInfo('Stop graceful command received');
+            stoppingGracefully = true;
             foregroundPlayerRunState.stopGracefully(foregroundPlayerRunState.currentTime);
+            sendPlayerStateUpdate();
+            break;
+        }
+        case 'stopitem': {
+            emitInfo(`Stop item ${cmd.key}${cmd.graceful ? ' gracefully' : ''}`);
+            const was = foregroundPlayerRunState.stopItem(
+                cmd.key,
+                !!cmd.graceful,
+                foregroundPlayerRunState.currentTime,
+            );
+            if (was === 'playing') {
+                if (cmd.graceful) {
+                    stoppingGracefully = true;
+                } else {
+                    // Cut its audio over, as stopnow does.
+                    stoppingGracefully = false;
+                    audioPlayerRunTime = foregroundPlayerRunState.currentTime;
+                    ++curAudioSyncNum;
+                }
+            }
             sendPlayerStateUpdate();
             break;
         }
         case 'stopnow': {
             emitInfo('Stop now command received');
+            stoppingGracefully = false;
             foregroundPlayerRunState.stopImmediately(foregroundPlayerRunState.currentTime);
             audioPlayerRunTime = foregroundPlayerRunState.currentTime;
             ++curAudioSyncNum;
@@ -852,6 +1337,7 @@ function processCommand(cmd: EZPlayerCommand) {
 parentPort.on('message', async (command: PlayerCommand) => {
     switch (command.type) {
         case 'schedupdate': {
+            latestSchedule = command;
             const folderChanged =
                 command.showFolder &&
                 command.showFolder !== '<no show folder yet>' &&
@@ -883,8 +1369,9 @@ parentPort.on('message', async (command: PlayerCommand) => {
                 }
             }
 
-            // Set pendingSchedule after old loop has exited
-            pendingSchedule = command;
+            // Set pendingSchedule after old loop has exited. Updates that arrived
+            // while this one waited are newer, and the old loop may have taken one.
+            pendingSchedule = latestSchedule;
 
             if (!running) {
                 shouldRestart = false;
@@ -936,17 +1423,24 @@ send({ type: 'ready' });
 const rpcs = new RPCServer<PlayWorkerRPCAPI>(parentPort, handlers);
 const rpcc = new RPCClient<MainRPCAPI>(parentPort);
 
+throwLater('playback-worker-throw', 3000);
+
 ///////
 // Playback params
 const playbackParams = {
     audioTimeAdjMs: 0, // If > 0, push music into future; if < 0, pull it in
-    sendAudioInAdvanceMs: 300, // audio generation lead (all consumers); modest margin for cloud/network jitter
+    // Audio generation lead (all consumers). A browser listener must receive a chunk
+    // earlier than its own output latency plus transit, or it cannot be played at the
+    // stamp: phone outputs report ~300 ms, cloud transit ~100 ms.
+    sendAudioInAdvanceMs: 700,
     sendAudioChunkMs: 100, // The "hop": how far each chunk advances. Multiple of 10 for 44100kHz.
     audioCrossfadeMs: 10, // Trailing overlap appended to each music chunk; ramped to crossfade seams.
     mp3CacheSeconds: 3600, // We reuse the memory in ~5s chunks
     audioPrefetchTime: 30_000, // forward-run horizon for audio; decode is fast, beyond this is margins
     fseqSpace: 1_000_000_000,
     idleSleepInterval: 200,
+    // Earliest a commanded song starts. Its audio may not have decoded by then; the start
+    // is then held by holdInteractiveStartsForAudio() rather than played without sound.
     interactiveCommandPrefetchDelay: 500,
     timePollInterval: 200,
     scheduleLoadTime: 25 * 3600 * 1000,
@@ -971,6 +1465,42 @@ function contentTimeMS(seq: SequenceRecord | undefined, slotOffsetMS: number): n
     if (!seq?.settings) return slotOffsetMS;
     const t = getSeqTimesMS(seq);
     return slotOffsetMS - t.startLeadToSeqMS + t.startTrimOffSeqMS;
+}
+
+/** The audio file's playback position as heard on this player's speakers when the
+ *  lights show `contentMS` into the sequence: the sync adjust pushes the music
+ *  later (positive) or earlier (negative) than the lights. */
+function audioPositionMS(contentMS: number): number {
+    return contentMS - playbackParams.audioTimeAdjMs;
+}
+
+/** What the MultiSync master describes for the output at `contentMS` into a
+ *  sequence: the fseq frame while inside the file, and the audio position
+ *  while that is inside the file's span too. Pads report neither. */
+function syncFrameInfo(
+    fsf: string,
+    seq: SequenceRecord | undefined,
+    contentMS: number,
+    header: { frames: number; msperframe: number },
+): SyncFrameInfo {
+    const info: SyncFrameInfo = {};
+    const durationMS = header.frames * header.msperframe;
+    if (contentMS >= 0 && contentMS < durationMS) {
+        const frameNumber = Math.floor(contentMS / header.msperframe);
+        info.seq = {
+            file: fileBaseName(fsf),
+            frameNumber,
+            secondsElapsed: (frameNumber * header.msperframe) / 1000,
+        };
+    }
+    const audio = seq?.files?.audio;
+    if (audio) {
+        const audioMS = audioPositionMS(contentMS);
+        if (audioMS >= 0 && audioMS < durationMS) {
+            info.media = { file: fileBaseName(audio), secondsElapsed: audioMS / 1000 };
+        }
+    }
+    return info;
 }
 
 /** Prefetch confidence tiers (lower = higher priority). */
@@ -1048,6 +1578,10 @@ function dispatchSettings(settings: PlaybackSettings) {
     multiSync.configure(settings.sync?.multisync);
     sendIdleBlackFrames = settings.sendIdleBlackFrames !== false;
     if (curSender) curSender.blackFramesEnabled = sendIdleBlackFrames;
+    foregroundPlayerRunState.repeatGuard.spacing = Math.max(
+        0,
+        Math.floor(settings.viewerControl?.minSongsBetweenRepeats ?? 0),
+    );
     const nasa = settings.audioSyncAdjust ?? 0;
     if (nasa != playbackParams.audioTimeAdjMs) {
         playbackParams.audioTimeAdjMs = nasa;
@@ -1060,6 +1594,7 @@ function dispatchSettings(settings: PlaybackSettings) {
     if (!rfConfigInitialized || nextToken !== lastRfRemoteToken) {
         rfConfigInitialized = true;
         lastRfRemoteToken = nextToken;
+        setRFWarningCallback((msg) => emitWarning(`Remote Falcon: ${msg}`));
         setRFConfig(
             {
                 remoteToken: nextToken,
@@ -1067,18 +1602,20 @@ function dispatchSettings(settings: PlaybackSettings) {
             (next) => {
                 const settings = latestSettings;
                 if (!settings) return;
-                const rfc = getActiveViewerControlSchedule(settings.viewerControl);
+                const rfc = getActiveViewerControlSchedule(settings.viewerControl, 'remote-falcon');
                 if (!rfc) return;
                 const pl = curPlaylists?.find((pl) => pl.title.toLowerCase() === rfc?.playlist.toLowerCase());
                 if (!pl) return;
                 const s = pl.items.find((seq) => seq.sequence === next.playlistIndex);
                 if (!s) return;
+                if (!admitViewerPick(s.id, 'remote-falcon')) return;
                 processCommand({
                     command: 'playsong',
                     immediate: false,
                     songId: s.id,
                     requestId: randomUUID(),
                     priority: 3,
+                    source: 'remote-falcon',
                 });
             },
         );
@@ -1215,10 +1752,22 @@ const _pollTimes = setInterval(async () => {
 // The actual variables here
 let showFolder: string | undefined = undefined;
 let isPaused = false;
+/** A graceful stop is in progress: still playing, but ending at the next
+ *  convenient point. Reported as "Stopping". */
+let stoppingGracefully = false;
+/** Headline level for status / legacy consumers (see recomputeVolumeGains). */
 let volume = 100;
 let muted = false;
+/** Current (slewed) level per output target id. */
+const outputLevels = new Map<string, number>();
+let volumeMode: 'default' | 'outputs' = 'default';
+let volumeTargetsNow: VolumeTarget[] = [];
+/** Linear gain per output key, mute applied; shipped with every audio chunk. */
+let outputGains: Record<string, number> = {};
 let curAudioSyncNum = 1;
 let pendingSchedule: PlayerCommand | undefined = undefined;
+/** The newest schedupdate received. A handler still awaiting may hold an older one. */
+let latestSchedule: Extract<PlayerCommand, { type: 'schedupdate' }> | undefined = undefined;
 let curSequences: SequenceRecord[] | undefined = undefined;
 let curPlaylists: PlaylistRecord[] | undefined = undefined;
 let curSchedule: ScheduledPlaylist[] | undefined = undefined;
@@ -1549,13 +2098,16 @@ async function loadXmlCoordinates() {
                 if (parsedSettings.previewHeight !== undefined) {
                     layoutSettings.previewHeight = parsedSettings.previewHeight;
                 }
+                if (parsedSettings.scaleImage !== undefined) {
+                    layoutSettings.scaleImage = parsedSettings.scaleImage;
+                }
                 if (parsedSettings.layoutMode3D !== undefined) {
                     layoutSettings.layoutMode3D = parsedSettings.layoutMode3D;
                 }
 
                 if (layoutSettings.backgroundImage) {
                     emitInfo(
-                        `[loadXmlCoordinates] Layout settings: bg="${layoutSettings.backgroundImage}" brightness=${layoutSettings.backgroundBrightness} preview=${layoutSettings.previewWidth}x${layoutSettings.previewHeight}`,
+                        `[loadXmlCoordinates] Layout settings: bg="${layoutSettings.backgroundImage}" brightness=${layoutSettings.backgroundBrightness} preview=${layoutSettings.previewWidth}x${layoutSettings.previewHeight} fill=${layoutSettings.scaleImage}`,
                     );
                 }
             } catch (parseErr) {
@@ -1577,6 +2129,7 @@ async function loadXmlCoordinates() {
                         paneHeight: g.paneHeight,
                         backgroundBrightness: g.backgroundBrightness,
                         backgroundAlpha: g.backgroundAlpha,
+                        scaleImage: g.scaleImage,
                     }));
 
                     const names = parsedGroups
@@ -1789,7 +2342,15 @@ function xlControllerOutputs(c: XlControllerInfo): ControllerOutputIntent[] | un
         return outs;
     }
     if (!c.maxChannels) return undefined;
-    return [{ type: proto || 'ddp', startChannel: c.startChannel, channels: c.maxChannels }];
+    const type = proto || 'ddp';
+    return [
+        {
+            type,
+            startChannel: c.startChannel,
+            channels: c.maxChannels,
+            ...(type === 'ddp' ? { keepChannelNumbers: c.keepChannelNumbers } : {}),
+        },
+    ];
 }
 
 /** One model's rich upload intent. Absent fields stay absent — set-vs-unset
@@ -1987,8 +2548,9 @@ function applyCrossfadeRamp(interleaved: Float32Array, channels: number, overlap
 }
 
 /**
- * Publish volume-scaled samples to the ring buffer (web clients), then send
- * unity-gain PCM to main for Electron audio windows (per-sink GainNode).
+ * Publish unity-gain samples to the ring buffer (web/cloud listeners, who set
+ * their own volume), then send the same PCM to main for the Electron audio
+ * windows, which apply the per-output gains.
  */
 function sendAudioChunk(
     samplesUnity: Float32Array,
@@ -1998,12 +2560,28 @@ function sendAudioChunk(
     channels: number,
     advanceSamples: number,
 ) {
-    audioExportRing?.publish(samplesUnity, playAtRealTime, incarnation, sampleRate, channels, advanceSamples, volumeSF);
+    // Web/cloud listeners are an independent path: they get the song at unity, never
+    // modulated by the local output schedules or mute (they have their own volume).
+    // Nor by the local speaker sync adjustment: `playAtRealTime` arrives with
+    // `audioTimeAdjMs` folded in for the Electron audio windows (which play at the
+    // stamp on the raw context clock, so the user trims their own output latency
+    // with that setting). The stream carries the lights' time — browser listeners
+    // compensate their own output latency themselves.
+    audioExportRing?.publish(
+        samplesUnity,
+        playAtRealTime - playbackParams.audioTimeAdjMs,
+        incarnation,
+        sampleRate,
+        channels,
+        advanceSamples,
+        1,
+    );
     const buf = samplesUnity.buffer as ArrayBuffer;
     send(
         {
             type: 'audioChunk',
             volumeSF,
+            outputGains,
             chunk: {
                 sampleRate,
                 channels,
@@ -2011,6 +2589,7 @@ function sendAudioChunk(
                 playAtRealTime,
                 incarnation,
                 advanceSamples,
+                rtcOffsetMs: rtcConverter.computeTime(performance.now()) - Date.now(),
             },
         },
         [buf],
@@ -2093,18 +2672,22 @@ async function processQueue() {
 
         // Per-controller max-FPS overrides from our records in the show folder
         const fpsOverrides = await readControllerFpsOverrides(showFolder!);
-        const sendJob = await openControllersForDataSend(controllers, {
+        // Kept so a controller that failed to open can be retried on the same
+        // terms as the rest of the show.
+        openForDataSendOpts = {
             ddpPort: latestSettings?.advanced?.ddpPort,
             fpsOverrides,
-        });
+        };
+        const sendJob = await openControllersForDataSend(controllers, openForDataSendOpts);
         setPingConfig({
-            hosts: controllers.filter((c) => c.setup.usable).map((c) => c.setup.address),
+            targets: controllers.filter((c) => c.setup.usable).map(pingTargetFor),
             // Pings are cheap; a whole show's controllers go out in one burst.
             concurrency: 64,
             maxSamples: 10,
             intervalS: 5,
         });
         sender.job = sendJob;
+        activeSendJob = sendJob;
         modelRecs = models;
         controllerStates = controllers;
         for (const c of controllers) {
@@ -2149,13 +2732,19 @@ async function processQueue() {
         sender.nChannels = nChannels;
         sender.blackFrame = new Uint8Array(nChannels);
         sender.mixFrame = new Uint8Array(nChannels);
-        frameExportBuffer = LatestFrameRingBuffer.allocate(nChannels, 4, true) as SharedArrayBuffer;
-        frameExportRing = new LatestFrameRingBuffer({
-            buffer: frameExportBuffer,
-            frameSize: nChannels,
-            slotCount: 4,
-            isWriter: true,
-        });
+        if (nChannels > 0) {
+            frameExportBuffer = LatestFrameRingBuffer.allocate(nChannels, 4, true) as SharedArrayBuffer;
+            frameExportRing = new LatestFrameRingBuffer({
+                buffer: frameExportBuffer,
+                frameSize: nChannels,
+                slotCount: 4,
+                isWriter: true,
+            });
+        } else {
+            // No models or controllers: there is no frame to export.
+            frameExportBuffer = undefined;
+            frameExportRing = undefined;
+        }
         sender.exportBuffer = frameExportRing;
         send({ type: 'pixelbuffer', buffer: frameExportBuffer });
 
@@ -2288,6 +2877,7 @@ async function processQueue() {
             }
             if (curPN - lastNStatusUpdatePN >= 1000 && iteration % 4 === 2) {
                 sendControllerStateUpdate();
+                void openOrReopenSenders();
                 lastNStatusUpdatePN += 1000 * Math.floor((curPN - lastNStatusUpdatePN) / 1000);
             }
             if (iteration % 4 === 3) {
@@ -2322,7 +2912,10 @@ async function processQueue() {
                     const preserveBGFseqTime = backgroundPlayerRunState?.currentTime || initializeTime;
                     const preserveFGStops = foregroundPlayerRunState.stoppedIds;
                     const preserveBGStops = backgroundPlayerRunState.stoppedIds;
+                    const preserveRepeatGuard = foregroundPlayerRunState.repeatGuard;
+                    const prevForeground = foregroundPlayerRunState;
                     foregroundPlayerRunState = new PlayerRunState(initializeTime);
+                    foregroundPlayerRunState.repeatGuard = preserveRepeatGuard;
                     backgroundPlayerRunState = new PlayerRunState(initializeTime);
                     if (preserveStops) {
                         foregroundPlayerRunState.stoppedIds = new Map(preserveFGStops);
@@ -2330,6 +2923,8 @@ async function processQueue() {
                     }
                     foregroundPlayerRunState.setUpSequences(curSequences ?? [], curPlaylists ?? [], mainSched, errs);
                     backgroundPlayerRunState.setUpSequences(curSequences ?? [], curPlaylists ?? [], bgSched, errs);
+                    // Includes a play sent while the player was still starting.
+                    foregroundPlayerRunState.adoptPendingRequests(prevForeground);
                     foregroundPlayerRunState.addTimeRangeToSchedule(
                         initializeTime,
                         initializeTime + playbackParams.scheduleLoadTime,
@@ -2429,6 +3024,7 @@ async function processQueue() {
                     PREFETCH_TIER.SPECULATIVE,
                 );
                 mp3Cache.dispatch();
+                holdInteractiveStartsForAudio(targetFrameRTC);
             }
 
             if (doFseqPrefetch) {
@@ -2485,16 +3081,21 @@ async function processQueue() {
 
             //emitFrameDebug(`${iteration} - Fseq prefetched`);
 
-            function sendSilence(startTime: number, ms: number) {
-                if (ms <= 0) return;
+            /** Send up to one chunk of silence starting at `startTime`; returns the ms it
+             *  covers so the caller advances the audio clock by exactly that and loops for
+             *  the rest. Silence must be as contiguous as music: the listener stream is one
+             *  continuous opus encoding and restarts on any hole. */
+            function sendSilence(startTime: number, ms: number): number {
+                if (ms <= 0) return 0;
                 if (ms > playbackParams.sendAudioChunkMs) {
                     ms = playbackParams.sendAudioChunkMs;
                 }
                 ms = Math.ceil(ms);
-                const quiet = new Float32Array(ms * 48).fill(0, ms * 48);
+                const quiet = new Float32Array(ms * 48);
                 // Silence carries no overlap: advance by its full length. Transitions to/from
                 // music fade naturally against the music chunk's ramped edge.
                 sendAudioChunk(quiet, startTime, curAudioSyncNum, 48000, 1, quiet.length);
+                return ms;
             }
 
             // Send out audio in advance (at least sendAudioInAdvanceMs at all times)
@@ -2526,15 +3127,23 @@ async function processQueue() {
                 );
                 const audioAction: PlayAction | undefined = upcomingAudio?.curPLActions?.actions[0];
                 if (audioAction?.end) {
-                    sendSilence(startTime, audioAction.atTime - audioPlayerRunTime);
-                    audioPlayerRunTime = audioAction.atTime;
+                    const want = audioAction.atTime - audioPlayerRunTime;
+                    const sent = sendSilence(startTime, want);
+                    audioPlayerRunTime = sent >= want ? audioAction.atTime : audioPlayerRunTime + sent;
                     continue;
                 }
                 if (!audioAction?.seqId) {
-                    const etime = Math.max(audioPlayerRunTime, targetFrameRTC);
-                    sendSilence(startTime, etime - audioPlayerRunTime); // TODO AUDIO - This is not a front-run; look at remaining action time and front-run
-                    audioPlayerRunTime = etime;
-                    break;
+                    // Idle: fill silence contiguously out to the same lead as music; a hole
+                    // here restarts the listener stream.
+                    if (audioPlayerRunTime < targetFrameRTC - 1000) {
+                        audioPlayerRunTime = targetFrameRTC; // far behind (e.g. unpause): don't flood
+                    }
+                    const lead = targetFrameRTC + playbackParams.sendAudioInAdvanceMs;
+                    const want = lead - audioPlayerRunTime;
+                    if (want <= 0) break;
+                    const sent = sendSilence(startTime, want);
+                    audioPlayerRunTime = sent >= want ? lead : audioPlayerRunTime + sent;
+                    continue;
                 }
                 if (Math.floor(audioAction.offsetMS ?? 0) === 0) {
                     curAudioSyncNum++;
@@ -2564,7 +3173,16 @@ async function processQueue() {
                                 emitError(`Audio error for ${saf}: ${audioref.err.message}.`);
                                 break;
                             } else if (!audioref.ref) {
-                                emitError(`Audio unknown condition ${saf}.`);
+                                // Still decoding (or the decode is stuck — the decoder client
+                                // times out and reports that as an audio error). Log at most
+                                // once per file every few seconds; this branch runs every tick.
+                                const lastAt = audioPendingLoggedAt.get(saf) ?? 0;
+                                if (performance.now() - lastAt > AUDIO_PENDING_LOG_INTERVAL_MS) {
+                                    audioPendingLoggedAt.set(saf, performance.now());
+                                    emitWarning(
+                                        `Audio still decoding ${saf}; playing lights without sound until it is ready.`,
+                                    );
+                                }
                                 break;
                             }
                         }
@@ -2631,6 +3249,9 @@ async function processQueue() {
 
             // Don't advance foreground schedule while paused — it will slip behind real time
             if (!isPaused) {
+                // A song starting or ending on its own is a status event like a command
+                // is: push it now rather than on the next one-second tick.
+                let statusEvent = false;
                 while (true) {
                     const plog: PlaybackLogDetail[] = [];
                     // Really want to run until time or something interesting
@@ -2638,16 +3259,24 @@ async function processQueue() {
                     let foundTime = plog.length === 0;
                     for (const l of plog) {
                         if (l.eventType === 'Sequence Ended') {
-                            // TODO - Could reset clock base here.
+                            statusEvent = true;
+                        } else if (l.eventType === 'Sequence Skipped') {
+                            const t = l.sequenceId ? curSequences?.find((s) => s.id === l.sequenceId)?.work?.title : '';
+                            emitInfo(`Playlist skipped "${t || l.sequenceId}": played recently`);
                         } else if (l.eventType === 'Sequence Started' || l.eventType === 'Sequence Resumed') {
                             targetFrameRTC = foregroundPlayerRunState.currentTime;
-                            emitInfo(`Sequence start in ${targetFrameRTC - Date.now()}`);
+                            const verb = l.eventType === 'Sequence Started' ? 'start' : 'resume';
+                            emitInfo(
+                                `Sequence ${verb} ${l.sequenceId ?? '?'} in ${Math.round(targetFrameRTC - Date.now())} ms`,
+                            );
+                            statusEvent = true;
                             foundTime = true;
                             break;
                         }
                     }
                     if (foundTime) break;
                 }
+                if (statusEvent) sendPlayerStateUpdate();
             }
 
             //emitFrameDebug(`${iteration} - runUntil done`);
@@ -2749,7 +3378,9 @@ async function processQueue() {
             }
 
             if (targetFrameNum < 0 || targetFrameNum >= header.ref.header.frames) {
-                // Lead/trail pad: the background still shows
+                // Lead/trail pad: the background still shows. No sequence frame to
+                // sync, but the audio may still be inside the file (sync adjust).
+                const padSync = syncFrameInfo(fsf, curForegroundSeq, frameTimeOffset, header.ref.header);
                 if (bframeRef?.frame) {
                     targetFrameRTC += await sender.sendNextFrameAt({
                         frame: bframeRef,
@@ -2761,8 +3392,10 @@ async function processQueue() {
                         frameInterval,
                         skipFrameIfLateByMoreThan: playbackParams.skipFrameIfLateByMoreThan,
                         dontSleepIfDurationLessThan: playbackParams.dontSleepIfDurationLessThan,
+                        onFrameDue: () => multiSync.onFrame(padSync),
                     });
                 } else {
+                    multiSync.onFrame(padSync);
                     await sender.sendBlackFrame({
                         targetFramePN: rtcConverter.computePerfNow(targetFrameRTC),
                         playbackStats,
@@ -2777,8 +3410,10 @@ async function processQueue() {
             // At this point, all housekeeping is done.
             // Let's see if we're in time to spit out a frame, or if we have to skip
             //emitFrameDebug(`${iteration} - play the frame?`);
-            multiSync.onFrame(fileBaseName(fsf), targetFrameNum, (targetFrameNum * frameInterval) / 1000);
             const frameRef = fseqCache.getFrame(fsf, { num: targetFrameNum });
+            // Sync packets describe the frame as it goes out, not as it is prepared:
+            // the sender sleeps until the frame's deadline before calling back.
+            const syncInfo = syncFrameInfo(fsf, curForegroundSeq, frameTimeOffset, header.ref.header);
             targetFrameRTC += await sender.sendNextFrameAt({
                 frame: frameRef?.ref,
                 bframe: bframeRef,
@@ -2789,6 +3424,7 @@ async function processQueue() {
                 frameInterval,
                 skipFrameIfLateByMoreThan: playbackParams.skipFrameIfLateByMoreThan,
                 dontSleepIfDurationLessThan: playbackParams.dontSleepIfDurationLessThan,
+                onFrameDue: () => multiSync.onFrame(syncInfo),
             });
         }
     } finally {

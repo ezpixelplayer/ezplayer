@@ -5,8 +5,10 @@
 import { type ViewObject, type LayoutSettings, type MhFixtureInfo } from './playbacktypes';
 import type {
     AppSettingsCommand,
+    CloudAudioMode,
     CloudCommand,
     RemoteAccessAvailability,
+    SupportBundleLevel,
     UpdateCommand,
 } from '@ezplayer/ezplayer-core';
 
@@ -75,6 +77,16 @@ export type MainToServerWorkerMessage =
           ttlSeconds: number;
       }
     | {
+          /** Live-audio streaming policy for the cloud audio bridge. */
+          type: 'cloudAudioMode';
+          mode: CloudAudioMode;
+      }
+    | {
+          /** Player RTC minus Date.now(): the clock audio stamps and the time endpoint use. */
+          type: 'rtcOffset';
+          offsetMs: number;
+      }
+    | {
           /** Close the cloud bridge. `sessionId` is optional — when omitted
            *  (e.g. a config change), close anything currently open. When
            *  provided, only close if it matches the active session. */
@@ -106,6 +118,8 @@ export interface ServerWorkerRPCAPI {
     putSequences(recs: unknown[]): Promise<unknown[]>;
     applySettingsFromRenderer(settingsPath: string, settings: unknown): void;
     sendPlayerCommand(command: unknown): void;
+    /** The baked song order of a playback item, for the detailed playback view. */
+    getPlaybackItemOrder(key: string): Promise<unknown>;
     sendPlaybackSettings(settings: unknown): void;
     sendToMainWindow(channel: string, ...args: unknown[]): void;
     cloudCommand(cmd: CloudCommand): Promise<void>;
@@ -132,4 +146,6 @@ export interface ServerWorkerRPCAPI {
     /** Re-read the remote-access config after the CLI changed it, and
      *  re-broadcast availability. Resolves to the new per-feature state. */
     remoteAccessReloadConfig(): Promise<RemoteAccessAvailability>;
+    /** Zip of logs, recent crash dumps and an environment summary. */
+    buildSupportBundle(level: SupportBundleLevel): Promise<{ name: string; data: Uint8Array }>;
 }

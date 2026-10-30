@@ -12,6 +12,9 @@ export interface ModelPointMetadata {
     stringIndex?: number;
     /** True on the first node of each physical string (where its wire attaches). */
     stringStart?: boolean;
+    /** Position in wiring order (xLights `physicalNum`); differs from nodeIndex when
+     *  the model is wired right-to-left / top-down etc. */
+    wireOrder?: number;
     key?: string;
     itemIndex?: number;
     /** Baked channel-to-RGB mixer derived from xllayoutcalcs `channelRoles`.
@@ -134,6 +137,8 @@ export interface LayoutSettings {
     backgroundBrightness?: number; // 0-100 brightness for the background image
     previewWidth?: number; // Layout preview canvas width in pixels
     previewHeight?: number; // Layout preview canvas height in pixels
+    /** xLights "Fill": stretch the background to the preview. Off keeps the image aspect. */
+    scaleImage?: boolean;
     /** xLights LayoutMode3D: true = 3D layout, false = 2D, absent = unspecified. */
     layoutMode3D?: boolean;
     layoutGroups?: LayoutGroupInfo[];

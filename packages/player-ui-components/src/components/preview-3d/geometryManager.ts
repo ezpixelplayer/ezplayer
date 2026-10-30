@@ -514,10 +514,12 @@ export class GeometryManager {
             if (!arr) map.set(name, (arr = []));
             arr.push(p);
         }
+        // Wiring order, so the polyline follows the wire (buffer order can run the other way).
         map.forEach((arr) =>
             arr.sort(
                 (a, b) =>
-                    (a.metadata?.nodeIndex ?? 0) - (b.metadata?.nodeIndex ?? 0) ||
+                    (a.metadata?.wireOrder ?? a.metadata?.nodeIndex ?? 0) -
+                        (b.metadata?.wireOrder ?? b.metadata?.nodeIndex ?? 0) ||
                     (a.metadata?.coordIndex ?? 0) - (b.metadata?.coordIndex ?? 0),
             ),
         );

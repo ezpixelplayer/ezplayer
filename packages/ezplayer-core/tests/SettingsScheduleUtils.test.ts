@@ -187,7 +187,7 @@ describe('getActiveViewerControlSchedule', () => {
 
         const now = makeLocalDate(1, 10, 0);
 
-        expect(getActiveViewerControlSchedule(baseState, now)).toBeNull();
+        expect(getActiveViewerControlSchedule(baseState, 'remote-falcon', now)).toBeNull();
 
         const wrongType: ViewerControlState = {
             ...baseState,
@@ -195,7 +195,7 @@ describe('getActiveViewerControlSchedule', () => {
             type: 'disabled',
         };
 
-        expect(getActiveViewerControlSchedule(wrongType, now)).toBeNull();
+        expect(getActiveViewerControlSchedule(wrongType, 'remote-falcon', now)).toBeNull();
     });
 
     it('returns active schedule when enabled and remote-falcon', () => {
@@ -217,11 +217,42 @@ describe('getActiveViewerControlSchedule', () => {
         const nowInside = makeLocalDate(3, 10, 0); // Wednesday 10:00
         const nowOutside = makeLocalDate(3, 18, 0); // Wednesday 18:00
 
-        const matchInside = getActiveViewerControlSchedule(state, nowInside);
-        const matchOutside = getActiveViewerControlSchedule(state, nowOutside);
+        const matchInside = getActiveViewerControlSchedule(state, 'remote-falcon', nowInside);
+        const matchOutside = getActiveViewerControlSchedule(state, 'remote-falcon', nowOutside);
 
         expect(matchInside?.id).toBe('rf-rule');
         expect(matchOutside).toBeNull();
+    });
+
+    it('returns null for a backend that is not on', () => {
+        const state: ViewerControlState = {
+            enabled: true,
+            type: 'remote-falcon',
+            schedule: [{ id: 'a', days: 'all', startTime: '00:00', endTime: '24:00', playlist: 'X' }],
+        };
+        expect(getActiveViewerControlSchedule(state, 'ezplayer', makeLocalDate(1, 10, 0))).toBeNull();
+    });
+
+    it('gives Remote Falcon its own schedule only when separated', () => {
+        const state: ViewerControlState = {
+            enabled: true,
+            type: 'ezplayer',
+            backends: ['remote-falcon', 'ezplayer'],
+            schedule: [{ id: 'page', days: 'all', startTime: '17:00', endTime: '23:00', playlist: 'Everything' }],
+            remoteFalconSchedule: [
+                { id: 'rf', days: 'all', startTime: '18:00', endTime: '22:00', playlist: 'RF Short' },
+            ],
+        };
+        const at1730 = makeLocalDate(5, 17, 30);
+        const at1900 = makeLocalDate(5, 19, 0);
+
+        expect(getActiveViewerControlSchedule(state, 'remote-falcon', at1730)?.id).toBe('page');
+
+        const separate = { ...state, separateRemoteFalconSchedule: true };
+        expect(getActiveViewerControlSchedule(separate, 'remote-falcon', at1730)).toBeNull();
+        expect(getActiveViewerControlSchedule(separate, 'remote-falcon', at1900)?.playlist).toBe('RF Short');
+        expect(getActiveViewerControlSchedule(separate, 'ezplayer', at1730)?.id).toBe('page');
+        expect(getActiveViewerControlSchedule(separate, 'ezplayer', at1900)?.playlist).toBe('Everything');
     });
 });
 

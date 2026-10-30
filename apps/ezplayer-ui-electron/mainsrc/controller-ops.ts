@@ -75,6 +75,16 @@ const state: ControllerOpsState = { interfaces: [], devices: {}, operations: {},
 
 // Injected by server-worker-manager, so this module needs no dependency on it.
 let broadcast: ((state: ControllerOpsState) => void) | null = null;
+
+/**
+ * Asks whoever is sending show data to hold off on one controller, returning
+ * the release.  Several models will not answer a read or accept an upload while
+ * they are being streamed to.  Undefined when nothing is being sent.
+ */
+let holdData: ((address: string) => (() => void) | undefined) | null = null;
+export function setControllerDataHold(fn: (address: string) => (() => void) | undefined): void {
+    holdData = fn;
+}
 export function setControllerOpsBroadcaster(fn: (s: ControllerOpsState) => void): void {
     broadcast = fn;
 }
@@ -308,6 +318,7 @@ function toControllerPort(p: PixelPortInfo): ControllerPort {
         colorOrder: p.colorOrder,
         startChannel: p.startChannel,
         endChannel: p.endChannel,
+        universe: p.universe,
     };
 }
 
@@ -546,8 +557,45 @@ export async function dispatchControllerCommand(
 }
 
 /** True while any controller operation (scan, read, action, upload) runs or waits to. */
-export function hasRunningControllerOps(): boolean {
-    return Object.values(state.operations).some((o) => o.status === 'running' || o.status === 'queued');
+/**
+ * The id of the known device at this address, if any.  Device ids are not
+ * addresses, and a status command addresses a device by id.
+ */
+export function deviceIdForAddress(address: string): string | undefined {
+    const want = address.toLowerCase();
+    for (const [id, dev] of Object.entries(state.devices)) {
+        if (dev.ip?.toLowerCase() === want) return id;
+    }
+    return undefined;
+}
+
+/**
+ * Drop automatic reads that have not started yet, and report how many.  A read
+ * already in flight cannot be recalled — the controller is answering it — so
+ * playback starting only stops the queue behind it.
+ */
+export function cancelQueuedAutomaticReads(): number {
+    let dropped = 0;
+    for (const op of Object.values(state.operations)) {
+        if (op.origin !== 'auto' || op.kind !== 'status' || op.status !== 'queued') continue;
+        op.status = 'cancelled';
+        op.finishedAt = nowIso();
+        dropped += 1;
+    }
+    if (dropped) publish();
+    return dropped;
+}
+
+/**
+ * Whether any controller operation is under way.  `ignoreAutomatic` leaves out
+ * the reads the player starts itself, which must not block what the user asked for.
+ */
+export function hasRunningControllerOps(opts?: { ignoreAutomatic?: boolean }): boolean {
+    return Object.values(state.operations).some((o) => {
+        if (o.status !== 'running' && o.status !== 'queued') return false;
+        if (opts?.ignoreAutomatic && o.origin === 'auto' && o.kind === 'status') return false;
+        return true;
+    });
 }
 
 /**
@@ -654,9 +702,11 @@ async function runStatus(
     publish();
 
     let slot = false;
+    let release: (() => void) | undefined;
     try {
         slot = await started;
         if (!slot) return;
+        release = holdData?.(dev.ip);
         const probe = await probeController(dev.ip, proxyFor(dev), {
             detail: true,
             preferDriver: dev.driverType,
@@ -712,6 +762,7 @@ async function runStatus(
         op.finishedAt = nowIso();
         throw err;
     } finally {
+        release?.();
         if (slot) releaseSlot('status');
         publish();
         retireOlderOps(op);
@@ -844,9 +895,14 @@ async function runUpload(
     publish();
 
     let slot = false;
+    let release: (() => void) | undefined;
     try {
         slot = await started;
         if (!slot) return;
+        // A controller needing an upload is not outputting correctly anyway,
+        // and an interrupted upload leaves it worse off, so its data stays held
+        // for the whole operation.
+        release = holdData?.(dev.ip);
         // Upload needs xLights intent, so a controller is expected here.
         const probe = await probeController(dev.ip, proxyFor(dev), {
             preferDriver: dev.driverType,
@@ -873,9 +929,10 @@ async function runUpload(
                 startChannel: o.startChannel,
                 channels: o.channels,
                 protocol: o.type,
+                keepChannelNumbers: o.keepChannelNumbers,
             }));
             capCheck({ inputUniverses: cfg });
-            const r = await probe.driver.setInputUniverses(cfg);
+            const r = await probe.driver.setInputUniverses(cfg, { boardMode: caps?.v4BoardMode });
             if (!r.success)
                 throw new Error(`input upload failed: ${r.message ?? r.errors?.join('; ') ?? 'unknown error'}`);
             if (r.warnings) warnings.push(...r.warnings);
@@ -951,6 +1008,11 @@ async function runUpload(
             capCheck({ pixelPorts: derived.ports, serialPorts, panelMatrices, virtualMatrices });
             const setOpts: SetOutputsOptions = {
                 inputMode: rec.protocol?.toUpperCase(),
+                // Falcon V4/V5: the layout's variant fixes the board mode.
+                boardMode: caps?.v4BoardMode,
+                // Whether the stream keeps absolute channel numbers, which some
+                // drivers need to put port start channels in the same frame.
+                keepChannelNumbers: (rec.outputs ?? [])[0]?.keepChannelNumbers,
                 outputs: outputs.length
                     ? outputs.map((o) => ({
                           universe: o.universe ?? 0,
@@ -1025,6 +1087,7 @@ async function runUpload(
         op.finishedAt = nowIso();
         throw err;
     } finally {
+        release?.();
         if (slot) releaseSlot('upload');
         publish();
         retireOlderOps(op);

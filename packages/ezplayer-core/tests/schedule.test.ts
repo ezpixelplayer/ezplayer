@@ -18,11 +18,10 @@ So, what I need to be doing is checking all these fields, and overlapping schedu
     external events
 */
 
-import { PlaylistRecord, ScheduledPlaylist, SequenceRecord } from '../src/types/DataTypes';
+import { PlayingItem, PlaylistRecord, ScheduledPlaylist, SequenceRecord } from '../src/types/DataTypes';
 import {
     createShuffleList,
     getPlaylistDurationMS,
-    getScheduleDurationMS,
     getScheduleTimes,
     getSeqTimesMS,
     getTotalSeqTimeMS,
@@ -550,7 +549,6 @@ describe('calcschedule', () => {
         expect(errs.length).toBe(0);
         expect(result).toStrictEqual({
             totalMS: 199900,
-            longestMS: 199900,
         });
     });
 
@@ -569,27 +567,6 @@ describe('calcschedule', () => {
         expect(res2a).toStrictEqual(['3', '2', '4', '1', '2', '4']);
         const res3a = createShuffleList(plof9, 2, 150000, seqsToMap(all9, []));
         expect(res3a).toStrictEqual(['5', '3', '6', '8', '1', '2', '4', '9', '7', '6', '2', '3', '5', '4', '1']);
-    });
-
-    it('should calculate in a few ways depending on scheduling', () => {
-        const errs: string[] = [];
-        const result = getScheduleDurationMS([rec1], [pl1], ps1NoLoop, errs);
-        const bdate = new Date(ps1NoLoop.date);
-        bdate.setHours(0, 0, 0);
-        const bt = bdate.getTime();
-        expect(errs.length).toBe(0);
-        expect(result).toStrictEqual({
-            startTimeMS: bt + 18 * 60 * 60 * 1000,
-            hardStart: false,
-            hardEnd: false,
-            nominalEndTimeMS: bt + 19 * 60 * 60 * 1000,
-            expectedEndMS: bt + 19 * 60 * 60 * 1000,
-            earlyEndMS: bt + 19 * 60 * 60 * 1000 - 199900 / 2,
-            lateEndMS: bt + 19 * 60 * 60 * 1000 + 199900 / 2,
-
-            totalPLMS: 199900,
-            longestPLItemMS: 199900,
-        });
     });
 
     it('should run one thing', () => {
@@ -849,6 +826,100 @@ describe('calcschedule', () => {
         //console.log(toTextLog(logs5));
         expect(logs5.length).toBe(1 * 2 + 3 * 2 + 13 * 2);
         expect(logs5[logs5.length - 1].eventTime).toBe(bt + 18 * 60 * 60 * 1000 + 60 * 2 * 1000 + 10 * 1000);
+    });
+
+    // The player advances a frame at a time, not from one decision to the next, so the
+    // end policy is consulted in the middle of songs too.
+    it('nearest end policy ends between songs when advanced in small steps', () => {
+        const bdate = new Date(parts3straight.date);
+        bdate.setHours(0, 0, 0);
+        const bt = bdate.getTime();
+        const h = bt + 18 * 60 * 60 * 1000;
+
+        // Same schedules and end times as the fractional-increment cases above.
+        const cases: [ScheduledPlaylist, number][] = [
+            [parts3loopFracNearest1, 120_000], // 2:03 -> 2:00
+            [parts3loopFracNearest2, 130_000], // 2:07 -> 2:10
+        ];
+        for (const [sched, endsAt] of cases) {
+            const errs: string[] = [];
+            const plr = new PlayerRunState(bt);
+            plr.setUpSequences(all9, playlists_3_9, [sched], errs);
+            expect(errs.length).toBe(0);
+            plr.addTimeRangeToSchedule(bt, bt + 24 * 60 * 60 * 1000);
+
+            const logs: PlaybackLogDetail[] = [];
+            for (let t = h - 1_000; t <= h + 140_000; t += 50) plr.runUntil(t, undefined, logs);
+
+            // Every song is 10s and they run back to back, so each ends on a 10s mark.
+            const ends = logs.filter((e) => e.eventType === 'Sequence Ended');
+            for (const e of ends) expect((e.eventTime - h) % 10_000).toBe(0);
+            expect(logs[logs.length - 1].eventType).toBe('Schedule Ended');
+            expect(logs[logs.length - 1].eventTime).toBe(h + endsAt);
+        }
+    });
+
+    it('nearest end policy weighs the song about to start, not the longest one', () => {
+        const short: SequenceRecord = {
+            id: 'short',
+            instanceId: 'short',
+            work: { length: 10, artist: 's', title: 'short' },
+            files: { fseq: 'fshort' },
+        };
+        const long: SequenceRecord = {
+            id: 'long',
+            instanceId: 'long',
+            work: { length: 60, artist: 'l', title: 'long' },
+            files: { fseq: 'flong' },
+        };
+        const mixed: PlaylistRecord = {
+            title: 'mixed',
+            createdAt: Date.now(),
+            tags: [],
+            id: 'mixed',
+            items: [
+                { id: 'short', sequence: 1 },
+                { id: 'long', sequence: 2 },
+            ],
+        };
+        // Songs run 0-10 (short), 10-70 (long), 70-80 (short), 80-140 (long), ...
+        const endingAt = (toTime: string): number => {
+            const sched: ScheduledPlaylist = {
+                id: 'mixedNearest',
+                title: 'mixedNearest',
+                playlistTitle: 'mixed',
+                playlistId: 'mixed',
+                date: 0,
+                fromTime: '18:00',
+                toTime,
+                loop: true,
+                endPolicy: 'seqboundnearest',
+                duration: 0,
+            };
+            const bdate = new Date(sched.date);
+            bdate.setHours(0, 0, 0);
+            const bt = bdate.getTime();
+            const h = bt + 18 * 60 * 60 * 1000;
+            const errs: string[] = [];
+            const plr = new PlayerRunState(bt);
+            plr.setUpSequences([short, long], [mixed], [sched], errs);
+            expect(errs.length).toBe(0);
+            plr.addTimeRangeToSchedule(bt, bt + 24 * 60 * 60 * 1000);
+            const logs: PlaybackLogDetail[] = [];
+            for (let t = h - 1_000; t <= h + 200_000; t += 50) plr.runUntil(t, undefined, logs);
+            expect(plr.depth).toBe(0); // the schedule is over
+            const ends = logs.filter((e) => e.eventType === 'Sequence Ended');
+            return ends[ends.length - 1].eventTime - h;
+        };
+
+        // End 1:18, at the 1:10 boundary with the 10s song next: playing it lands 2s
+        // late, stopping lands 8s early, so it plays.
+        expect(endingAt('18:01:18')).toBe(80_000);
+        // End 1:40, at the 1:20 boundary with the 60s song next: playing it lands 40s
+        // late, stopping lands 20s early, so it stops.
+        expect(endingAt('18:01:40')).toBe(80_000);
+        // End 1:55: now the 60s song lands 25s late against 35s early, so it plays.
+        expect(endingAt('18:01:55')).toBe(140_000);
     });
 
     // Check slot way too short
@@ -1654,6 +1725,124 @@ describe('calcschedule', () => {
         expect(seqStarts.length).toBeGreaterThan(0);
     });
 
+    describe('predictUpcoming', () => {
+        const setUp = () => {
+            const errs: string[] = [];
+            const bdate = new Date(ps1NoLoop.date);
+            bdate.setHours(0, 0, 0);
+            const bt = bdate.getTime();
+            const h = bt + 18 * 3600 * 1000;
+            const plr = new PlayerRunState(bt);
+            plr.setUpSequences([rec1, ...all9], [plof2], [scheduleOf2], errs);
+            expect(errs.length).toBe(0);
+            return { plr, h };
+        };
+        const brief = (items: PlayingItem[], h: number) =>
+            items.map((i) => ({
+                seq: i.sequence_id,
+                at: (i.at! - h) / 1000,
+                until: (i.until! - h) / 1000,
+                type: i.type,
+                schedule: i.schedule_id,
+                request: i.request_id,
+            }));
+
+        it('lists the rest of the show that is on', () => {
+            const { plr, h } = setUp();
+            plr.readOutScheduleUntil(h + 3_000, 100);
+            expect(brief(plr.predictUpcoming(600_000), h)).toEqual([
+                { seq: s2.id, at: 10, until: 20, type: 'Scheduled', schedule: scheduleOf2.id, request: undefined },
+            ]);
+            // Looking ahead changes nothing.
+            expect(plr.currentTime).toBe(h + 3_000);
+            expect(plr.depth).toBe(1);
+        });
+
+        it('puts a waiting request before the show carries on', () => {
+            const { plr, h } = setUp();
+            plr.readOutScheduleUntil(h + 3_000, 100);
+            plr.addInteractiveCommand({ immediate: false, startTime: h + 4_000, seqId: s4.id, requestId: 'q1' });
+            expect(brief(plr.predictUpcoming(600_000), h)).toEqual([
+                { seq: s4.id, at: 10, until: 20, type: 'Queued', schedule: undefined, request: 'q1' },
+                { seq: s2.id, at: 20, until: 30, type: 'Scheduled', schedule: scheduleOf2.id, request: undefined },
+            ]);
+        });
+
+        it('names the interrupted show resuming after the request that is on', () => {
+            const { plr, h } = setUp();
+            plr.readOutScheduleUntil(h + 3_000, 100);
+            plr.addInteractiveCommand({ immediate: true, startTime: h + 3_500, seqId: s4.id, requestId: 'r1' });
+            plr.readOutScheduleUntil(h + 5_000, 100);
+            expect(plr.depth).toBe(2);
+            // s4 ends at 13.5s; s1 resumes with its remaining 6.5s, then s2.
+            expect(brief(plr.predictUpcoming(600_000), h)).toEqual([
+                { seq: s1.id, at: 13.5, until: 20, type: 'Scheduled', schedule: scheduleOf2.id, request: undefined },
+                { seq: s2.id, at: 20, until: 30, type: 'Scheduled', schedule: scheduleOf2.id, request: undefined },
+            ]);
+        });
+
+        it('names the first song of the next show when nothing is on', () => {
+            const { plr, h } = setUp();
+            expect(plr.depth).toBe(0);
+            expect(brief(plr.predictUpcoming(24 * 3600 * 1000, 1), h)).toEqual([
+                { seq: s1.id, at: 0, until: 10, type: 'Scheduled', schedule: scheduleOf2.id, request: undefined },
+            ]);
+        });
+    });
+
+    it('removing the playing request stops it and resumes what it interrupted', () => {
+        const errs: string[] = [];
+        const bdate = new Date(ps1NoLoop.date);
+        bdate.setHours(0, 0, 0);
+        const bt = bdate.getTime();
+        const h = bt + 18 * 3600 * 1000;
+        const plr = new PlayerRunState(bt);
+        plr.setUpSequences([rec1, ...all9], [plof2], [scheduleOf2], errs);
+        expect(errs.length).toBe(0);
+
+        // s1 is interrupted 3.5s in by an immediate request for s4.
+        plr.readOutScheduleUntil(h + 3_000, 100);
+        plr.addInteractiveCommand({ immediate: true, startTime: h + 3_500, seqId: s4.id, requestId: 'r1' });
+        plr.readOutScheduleUntil(h + 8_000, 100);
+        expect(plr.depth).toBe(2);
+
+        // Cancel the request while it plays.
+        const stopLogs: PlaybackLogDetail[] = [];
+        expect(plr.removeInteractiveCommand('r1', stopLogs)).toBe(true);
+        expect(stopLogs.some((e) => e.eventType === 'Schedule Stopped' && e.requestId === 'r1')).toBe(true);
+        expect(plr.depth).toBe(1);
+
+        // s1 picks up where it left off (6.5s to go), then s2 plays and the schedule ends.
+        const logs = plr.readOutScheduleUntil(bt + 19 * 3600 * 1000, 100);
+        const seqEnds = logs.filter((e) => e.eventType === 'Sequence Ended');
+        expect(seqEnds.map((e) => e.sequenceId)).toEqual([s1.id, s2.id]);
+        expect(seqEnds[0].eventTime).toBe(h + 14_500);
+        expect(seqEnds[1].eventTime).toBe(h + 24_500);
+        expect(plr.depth).toBe(0);
+    });
+
+    it('removing a request that has not started reports that nothing was playing', () => {
+        const errs: string[] = [];
+        const bdate = new Date(ps1NoLoop.date);
+        bdate.setHours(0, 0, 0);
+        const bt = bdate.getTime();
+        const h = bt + 18 * 3600 * 1000;
+        const plr = new PlayerRunState(bt);
+        plr.setUpSequences([rec1, ...all9], [plof2], [scheduleOf2], errs);
+        expect(errs.length).toBe(0);
+
+        plr.readOutScheduleUntil(h + 3_000, 100);
+        plr.addInteractiveCommand({ immediate: false, startTime: h + 4_000, seqId: s4.id, requestId: 'q1' });
+
+        expect(plr.removeInteractiveCommand('q1')).toBe(false);
+        expect(plr.removeInteractiveCommand('no-such-request')).toBe(false);
+
+        // The schedule carries on untouched: s1 then s2, with no s4.
+        const logs = plr.readOutScheduleUntil(bt + 19 * 3600 * 1000, 100);
+        const started = logs.filter((e) => e.eventType === 'Sequence Started').map((e) => e.sequenceId);
+        expect(started).toEqual([s2.id]);
+    });
+
     it('stopGracefully should finish current song and play outro', () => {
         const errs: string[] = [];
         const bdate = new Date(parts3straight.date);
@@ -1735,6 +1924,36 @@ describe('calcschedule', () => {
         // Nothing after
         const logsAfter = plr.readOutScheduleUntil(bt + 20 * 3600 * 1000, 100);
         expect(logsAfter.length).toBe(0);
+    });
+
+    it('stopGracefully with nearest end policy should still finish the current song', () => {
+        const errs: string[] = [];
+        const bdate = new Date(parts3straight.date);
+        bdate.setHours(0, 0, 0);
+        const bt = bdate.getTime();
+        const h = bt + 18 * 3600 * 1000;
+        const nearest: ScheduledPlaylist = { ...parts3straight, id: 'parts3nearest', endPolicy: 'seqboundnearest' };
+        const plr = new PlayerRunState(bt);
+        plr.setUpSequences(all9, playlists_3_9, [nearest], errs);
+        expect(errs.length).toBe(0);
+        plr.addTimeRangeToSchedule(bt, bt + 24 * 3600 * 1000);
+
+        // Pre is s1+s2 (20s); stop 8s into the second main song, which runs 30s-40s.
+        const logs: PlaybackLogDetail[] = [];
+        for (let t = h - 1_000; t <= h + 38_000; t += 50) plr.runUntil(t, undefined, logs);
+        plr.stopGracefully(plr.currentTime);
+        const after: PlaybackLogDetail[] = [];
+        for (let t = h + 38_050; t <= h + 90_000; t += 50) plr.runUntil(t, undefined, after);
+
+        // The song plays out to 40s, then the outro (plof4, 40s) runs to 80s.
+        expect(after[0].eventType).toBe('Sequence Ended');
+        expect(after[0].eventTime).toBe(h + 40_000);
+        expect(after[0].sequenceId).toBe(s2.id);
+        const outroStart = after.find((e) => e.eventType === 'Playlist Started');
+        expect(outroStart?.playlistId).toBe(plof4.id);
+        expect(outroStart?.eventTime).toBe(h + 40_000);
+        expect(after[after.length - 1].eventType).toBe('Schedule Ended');
+        expect(after[after.length - 1].eventTime).toBe(h + 80_000);
     });
 
     it('skipCurrentSequence should advance to next song', () => {

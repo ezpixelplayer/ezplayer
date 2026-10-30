@@ -10,9 +10,30 @@ import { trustSystemCAs } from './mainsrc/trustSystemCAs.js';
 
 // Trust the OS cert store for Node-side TLS; must run before any outbound HTTPS.
 trustSystemCAs();
-import { reportDiagEvent } from './mainsrc/diagnostics.js';
+import {
+    flushDiagReports,
+    isExpectedProcessExit,
+    noteSessionEnding,
+    reportDiagEvent,
+    startOutboxRetry,
+} from './mainsrc/diagnostics.js';
+import { applyGpuStartupPolicy, maybeFallbackToSoftwareGpu, noteChildProcessGone } from './mainsrc/gpuFallback.js';
+import { describeExitCode } from './mainsrc/rendererCrashPolicy.js';
 import { installDiagLogRing, primeDiagEnv } from './mainsrc/diagEnv.js';
 installDiagLogRing();
+import {
+    beginSession,
+    captureRendererConsole,
+    guardStdio,
+    installAppLog,
+    markSessionEnding,
+} from './mainsrc/applog.js';
+import { crashDumpsSince, pruneCrashDumps } from './mainsrc/diagbundle.js';
+import { faultPageUrl, faultPreloadPath, injectMainFaults } from './mainsrc/faultinject-main.js';
+import { watchRenderer } from './mainsrc/rendererwatch.js';
+// Text-only verbs are short-lived and may run beside a player; keep them out of its log.
+if (isToolVerb()) guardStdio();
+else installAppLog();
 import { registerFileListHandlers } from './mainsrc/ipcmain.js';
 import {
     isScheduleActive,
@@ -21,6 +42,7 @@ import {
     stopPlayerPlayback,
 } from './mainsrc/ipcezplayer.js';
 import { registerAutoUpdateHandlers, cleanupAutoUpdate } from './mainsrc/ipcautoupdate.js';
+import { syncPowerBlock } from './mainsrc/powerblock.js';
 import {
     closeShowFolder,
     ensureExclusiveFolder,
@@ -31,7 +53,7 @@ import {
 import { runReset } from './mainsrc/reset.js';
 import { ipcMain } from 'electron';
 import { getWebPort, getKioskPort } from './webport.js';
-import { PlaybackWorkerData } from './mainsrc/workers/playbacktypes.js';
+import type { PlaybackWorkerData, WorkerToMainMessage } from './mainsrc/workers/playbacktypes.js';
 import { ezpVersions } from './versions.js';
 import { setUpServerWorker, shutdownServerWorker } from './mainsrc/server-worker-manager.js';
 import { runCli } from './cli/dispatch.js';
@@ -41,6 +63,7 @@ import {
     audioWindowHtmlPath,
     configureAudioWindowPaths,
     destroyAllAudioWindows,
+    loadsFromDevServer,
     setAudioWindowsEnabled,
     syncAudioOutputsFromSettings,
 } from './mainsrc/audioWindows.js';
@@ -56,6 +79,8 @@ if (process.platform === 'linux') {
         app.commandLine.appendSwitch('disable-gpu');
     }
 }
+// EZP_GPU override, or a software-rendering fallback saved by an earlier run.
+applyGpuStartupPolicy();
 
 const dumpDir = path.join(os.homedir(), 'ezplay-dumps');
 
@@ -104,14 +129,34 @@ process.on('unhandledRejection', (reason) => {
 // optional: also force console logging
 app.commandLine.appendSwitch('enable-logging', 'js-flags');
 
+// Still logged locally either way; only real faults are uploaded — Windows
+// killing our processes at logoff/shutdown is not a crash.
 app.on('render-process-gone', (_event, _webContents, details) => {
     console.error('app render-process-gone', details);
-    reportDiagEvent('render-process-gone', details.reason, undefined, details);
+    if (isExpectedProcessExit(details)) return;
+    // A renderer fault with no GPU process alive: relaunch once without the GPU.
+    void maybeFallbackToSoftwareGpu(details).then((fallback) => {
+        reportDiagEvent('render-process-gone', details.reason, undefined, {
+            ...details,
+            exit: describeExitCode(details.exitCode),
+            ...(fallback ? { gpuFallback: 'relaunch-without-gpu' } : {}),
+        });
+        if (fallback) {
+            isQuitting = true;
+            // Let the report leave before the process goes away.
+            void flushDiagReports(2000).then(() => app.quit());
+        }
+    });
 });
 
 app.on('child-process-gone', (_event, details) => {
     console.error('app child-process-gone', details);
-    reportDiagEvent('child-process-gone', details.reason, undefined, details);
+    noteChildProcessGone(details);
+    if (isExpectedProcessExit(details)) return;
+    reportDiagEvent('child-process-gone', details.reason, undefined, {
+        ...details,
+        exit: describeExitCode(details.exitCode),
+    });
 });
 
 let mainWindow: BrowserWindow | null = null;
@@ -155,7 +200,7 @@ const createWindow = (showFolder?: string, showWelcomeOnLaunch?: boolean) => {
         show: true,
     });
 
-    if (!app.isPackaged) {
+    if (loadsFromDevServer()) {
         splash.loadURL('http://localhost:5173/splash.html');
     } else {
         splash.loadURL(`file://${path.join(__dirname, '../dist/splash.html')}`);
@@ -177,7 +222,7 @@ const createWindow = (showFolder?: string, showWelcomeOnLaunch?: boolean) => {
         show: false, // don't show until ready
 
         webPreferences: {
-            preload: path.join(__dirname, 'preload.js'),
+            preload: faultPreloadPath(path.join(__dirname, 'preload.js')),
             contextIsolation: true,
             webSecurity: false,
             additionalArguments: [
@@ -189,8 +234,16 @@ const createWindow = (showFolder?: string, showWelcomeOnLaunch?: boolean) => {
         },
     });
 
+    watchRenderer(mainWindow, captureRendererConsole(mainWindow.webContents, 'main'));
     mainWindow.webContents.on('render-process-gone', (_event, details) => {
         console.error('wc render-process-gone', details);
+    });
+    mainWindow.webContents.on('did-finish-load', () => {
+        console.log('main window did-finish-load');
+    });
+    mainWindow.webContents.on('preload-error', (_event, preloadPath, error) => {
+        console.error('main window preload-error', preloadPath, error);
+        reportDiagEvent('renderer-error', `preload-error: ${error.message}`, error.stack);
     });
     mainWindow.webContents.on('did-fail-load', (_event, code, desc, url) => {
         console.error('did-fail-load', { code, desc, url });
@@ -205,15 +258,22 @@ const createWindow = (showFolder?: string, showWelcomeOnLaunch?: boolean) => {
     mainWindow.webContents.on('responsive', () => {
         console.error('main window responsive again');
     });
+    // Windows only: logoff / shutdown / restart is now unstoppable, so the
+    // process deaths that follow are not crashes.
+    mainWindow.on('session-end', () => {
+        console.log('session-end: suppressing process-gone diagnostics');
+        noteSessionEnding();
+        markSessionEnding();
+    });
 
-    const url = !app.isPackaged
+    const url = loadsFromDevServer()
         ? 'http://localhost:5173' // Vite dev server
-        : `file://${path.join(__dirname, '../dist/index.html')}`;
+        : faultPageUrl(`file://${path.join(__dirname, '../dist/index.html')}`);
 
     console.log('Loading URL:', url);
     mainWindow.loadURL(url);
 
-    if (/*true ||*/ !app.isPackaged || process.env.EZP_OPEN_DEVTOOLS) {
+    if (/*true ||*/ loadsFromDevServer() || process.env.EZP_OPEN_DEVTOOLS) {
         mainWindow.webContents.openDevTools(); // Open dev tools in development (or prod, be smart)
     }
 
@@ -301,6 +361,17 @@ async function startPlaybackWorker(): Promise<Worker> {
             name: 'main',
             logFile: path.join(app.getPath('logs'), 'playbackmain.log'),
         } satisfies PlaybackWorkerData,
+    });
+    // The worker forwards errors it survives; 'error' is for those that end it.
+    worker.on('message', (msg: WorkerToMainMessage) => {
+        if (msg.type === 'uncaught') reportDiagEvent('worker-error', `playback: ${msg.message}`, msg.stack, msg.what);
+    });
+    worker.on('error', (err) => {
+        console.error('[playback-worker] error:', err);
+        reportDiagEvent('worker-error', `playback: ${err.message}`, err.stack);
+    });
+    worker.on('exit', (code) => {
+        if (!isQuitting) console.error(`[playback-worker] exited with code ${code}`);
     });
     await new Promise<void>((resolve) => {
         const onMessage = (msg: { type?: string }) => {
@@ -411,6 +482,27 @@ if (isToolVerb()) {
             app.exit(64);
             return;
         }
+
+        console.log('GPU feature status:', JSON.stringify(app.getGPUFeatureStatus()));
+        // Takes effect from here on when the setting is "always"; playback status refines it.
+        syncPowerBlock(undefined);
+        pruneCrashDumps();
+        for (const prev of beginSession(ezpVersions.version)) {
+            if (prev.sessionEnding) {
+                console.log(`Previous run (pid ${prev.pid}, ${prev.version}) ended with the OS session`);
+                continue;
+            }
+            console.warn(
+                `Previous run (pid ${prev.pid}, ${prev.version}, started ${prev.startedAt}) did not exit normally`,
+            );
+            // No dump since it started suggests power loss or a kill rather than a crash.
+            reportDiagEvent('unclean-exit', 'previous run did not exit normally', undefined, {
+                ...prev,
+                ...crashDumpsSince(Date.parse(prev.startedAt)),
+            });
+        }
+        startOutboxRetry();
+        injectMainFaults();
 
         if (isHeadless()) {
             await startHeadless();

@@ -10,6 +10,16 @@ export const DEFAULT_CLOUD_SERVICE_URL = 'https://api.ezplayer.dev/';
 const FRESH: CloudConfig = { cloudServiceUrl: DEFAULT_CLOUD_SERVICE_URL, playerIdToken: '' };
 const EMPTY: CloudConfig = { cloudServiceUrl: '', playerIdToken: '' };
 
+/** A fresh config plus what loading fills in for absent fields. */
+export const CLOUD_CONFIG_DEFAULTS: CloudConfig = {
+    ...FRESH,
+    layoutSource: 'xlights',
+    cloudEnabled: true,
+    cloudRemoteControlEnabled: true,
+    cloudAudioMode: 'auto',
+    cloudPollMode: 'always',
+};
+
 let currentConfig: CloudConfig = { ...EMPTY };
 let currentPath: string | null = null;
 let writeInProgress = false;
@@ -40,6 +50,8 @@ export async function loadCloudConfigFromDisk(configPath: string): Promise<Cloud
             // Default true on absent. Only an explicit `false` parks the worker.
             cloudEnabled: parsed.cloudEnabled === false ? false : true,
             cloudRemoteControlEnabled: parsed.cloudRemoteControlEnabled === false ? false : true,
+            cloudAudioMode:
+                parsed.cloudAudioMode === 'always' || parsed.cloudAudioMode === 'never' ? parsed.cloudAudioMode : 'auto',
             cloudPollMode: parsed.cloudPollMode === 'scheduled' ? 'scheduled' : 'always',
             cloudPollSchedule: parsed.cloudPollSchedule,
             cloudPollIntervals: parsed.cloudPollIntervals,

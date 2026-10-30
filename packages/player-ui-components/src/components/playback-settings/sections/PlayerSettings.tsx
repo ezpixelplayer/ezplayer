@@ -2,7 +2,8 @@ import { Checkbox, Divider, FormControl, FormControlLabel, Switch, TextField, Ty
 import React from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { Select } from '@ezplayer/shared-ui-components';
-import type { AppSettingsCommand, DiagnosticsConsent } from '@ezplayer/ezplayer-core';
+import type { AppSettingsCommand, ControllerRefreshMode, PreventSleepMode } from '@ezplayer/ezplayer-core';
+import { controllerRefreshMode } from '@ezplayer/ezplayer-core';
 import { Box } from '../../box/Box';
 import { TagListInput } from '../../tag-list-input/TagListInput';
 import { playbackSettingsActions } from '../../../store/slices/PlaybackSettingsStore';
@@ -44,8 +45,8 @@ export const PlayerSettings: React.FC = () => {
     const settings = useSelector((s: RootState) => s.playbackSettings.settings);
     const multisync = settings.sync?.multisync;
 
-    // App-global settings (diagnostics consent, start at sign-in) are pushed by
-    // the player like any other state; null until the first snapshot arrives.
+    // App-global settings (start at sign-in) are pushed by the player like any
+    // other state; null until the first snapshot arrives.
     const appSettings = useSelector((s: RootState) => s.appSettings.state);
     const sendAppSettings = (cmd: AppSettingsCommand) => void dispatch(sendAppSettingsCommand(cmd));
 
@@ -58,9 +59,6 @@ export const PlayerSettings: React.FC = () => {
           : loginItem.availability === 'unsupported-platform'
             ? 'Start at sign-in is available on Windows and macOS.'
             : 'Launch EZPlayer automatically at sign-in on the player computer.';
-
-    const diag: DiagnosticsConsent = appSettings?.diagnostics ?? { uploadEnabled: true, includePlayerId: false };
-    const diagInteractive = appSettings !== null;
 
     return (
         <Box>
@@ -84,6 +82,31 @@ export const PlayerSettings: React.FC = () => {
                     {startupHelp}
                 </Typography>
             </Box>
+            <FormControl fullWidth size="small" sx={{ mb: 2 }}>
+                <Select
+                    options={[
+                        { id: 'always', name: 'Always, while EZPlayer is running (recommended)' },
+                        { id: 'playing', name: 'Only while playing' },
+                        { id: 'never', name: 'Never' },
+                    ]}
+                    itemText="name"
+                    itemValue="id"
+                    disabled={!appSettings}
+                    onChange={(e) =>
+                        sendAppSettings({
+                            type: 'setPreventSleep',
+                            mode: (e.target as HTMLSelectElement).value as PreventSleepMode,
+                        })
+                    }
+                    label="Prevent the computer from sleeping"
+                    value={appSettings?.preventSleep ?? 'always'}
+                />
+            </FormControl>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                {appSettings
+                    ? 'A sleeping computer cannot start a show or answer a remote request, and EZPlayer cannot wake it. The display may still turn off.'
+                    : 'Prevent sleeping is set in the EZPlayer desktop app.'}
+            </Typography>
             <Divider sx={{ my: 3 }} />
 
             <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
@@ -126,46 +149,37 @@ export const PlayerSettings: React.FC = () => {
 
             <Divider sx={{ my: 3 }} />
             <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
-                Diagnostics
+                Controllers
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                Help improve EZPlayer by sending anonymous crash and error reports. No show data, files, or personal
-                information is included.
+                The player can read each controller’s configuration on its own — ports, firmware, and anything that has
+                drifted from xLights. A read takes up to tens of seconds and pauses that controller’s data, so reads
+                normally wait for an idle player.
             </Typography>
-            <Box>
-                <FormControlLabel
-                    control={
-                        <Checkbox
-                            checked={diag.uploadEnabled}
-                            disabled={!diagInteractive}
-                            onChange={(_e, checked) =>
-                                sendAppSettings({ type: 'setDiagnosticsConsent', patch: { uploadEnabled: checked } })
-                            }
-                        />
+            <FormControl fullWidth size="small">
+                <Select
+                    options={[
+                        { id: 'idle', name: 'When nothing is playing (recommended)' },
+                        { id: 'recovery', name: 'Also when a controller comes back mid-show' },
+                        { id: 'off', name: 'Never' },
+                    ]}
+                    itemText="name"
+                    itemValue="id"
+                    onChange={(e) =>
+                        dispatch(
+                            playbackSettingsActions.setControllerRefresh(
+                                (e.target as HTMLSelectElement).value as ControllerRefreshMode,
+                            ),
+                        )
                     }
-                    label="Send anonymous crash reports"
+                    label="Read controller details automatically"
+                    value={controllerRefreshMode(settings.controllerRefresh)}
                 />
-            </Box>
-            <Box>
-                <FormControlLabel
-                    control={
-                        <Checkbox
-                            checked={diag.includePlayerId}
-                            disabled={!diagInteractive || !diag.uploadEnabled}
-                            onChange={(_e, checked) =>
-                                sendAppSettings({
-                                    type: 'setDiagnosticsConsent',
-                                    patch: { includePlayerId: checked },
-                                })
-                            }
-                        />
-                    }
-                    label="Include my Player ID with reports"
-                />
-                <Typography variant="body2" color="text.secondary">
-                    Lets support connect reports to your player when you ask for help. Off by default.
-                </Typography>
-            </Box>
+            </FormControl>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                Allowing a read mid-show keeps a controller that just came back up to date; it joins the show once the
+                read finishes.
+            </Typography>
 
             <Divider sx={{ my: 3 }} />
             <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
@@ -183,6 +197,20 @@ export const PlayerSettings: React.FC = () => {
                 }
                 label="FPP MultiSync master"
             />
+            <FormControlLabel
+                control={
+                    <Switch
+                        checked={multisync?.mediaSync !== false}
+                        disabled={!multisync?.enabled}
+                        onChange={(e) => dispatch(playbackSettingsActions.setMultisyncMediaSync(e.target.checked))}
+                    />
+                }
+                label="Send audio sync too"
+            />
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+                Media packets name the song's audio file and its playback position (with the audio sync adjust applied).
+                Remotes holding the same audio file will play it; turn off to keep them silent.
+            </Typography>
             <TextField
                 size="small"
                 fullWidth

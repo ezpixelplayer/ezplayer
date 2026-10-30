@@ -669,6 +669,20 @@ troubleshooting startup, rendering, or networking:
 | `--disable-gpu`            | Force software rendering to work around GPU/driver glitches (blank window, flicker, artifacts).                                                   |
 | `--proxy-server=host:port` | Route EZPlayer's traffic through an explicit HTTP/HTTPS proxy. Pair with a trusted CA (above) if the proxy intercepts TLS.                        |
 
+**Software WebGL.** When Chromium blocklists the GPU (old drivers, virtual
+displays, remote desktops), EZPlayer lets WebGL fall back to the bundled
+SwiftShader software renderer instead of refusing to draw. The preview then
+runs at a few frames per second; the rest of the app is unaffected.
+
+**Automatic software-rendering fallback.** If a window's renderer crashes
+within the first two minutes while Chromium has no GPU process running (the
+graphics driver failed to initialize), EZPlayer relaunches itself once with
+hardware acceleration off and WebGL on SwiftShader, and remembers that choice
+for later starts. The main-process log says so at startup. To retry the GPU
+after fixing the driver, launch once with the environment variable
+`EZP_GPU=hardware`; `EZP_GPU=software` forces the fallback on. See
+[Environment Variables](./env-variables.md).
+
 ## Platform notes
 
 **Linux**

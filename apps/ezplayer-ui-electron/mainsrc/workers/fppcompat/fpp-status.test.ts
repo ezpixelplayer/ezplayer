@@ -88,17 +88,57 @@ describe('buildFppStatus', () => {
             seconds_remaining: '115', // STRING
             time_elapsed: '01:05',
             time_remaining: '01:55',
-            repeat_mode: '1',
+            repeat_mode: 1, // NUMBER while playing
         });
         expect(typeof s.status).toBe('number');
         expect(typeof s.volume).toBe('number');
         expect(typeof s.milliseconds_elapsed).toBe('number');
+        expect(typeof s.repeat_mode).toBe('number');
         expect((s.next_playlist as { playlist?: unknown }).playlist).toBe('Late Show');
         expect((s.scheduler as { status?: unknown }).status).toBe('playing');
         expect((s.scheduler as { nextPlaylist: { playlistName?: unknown } }).nextPlaylist.playlistName).toBe(
             'Late Show',
         );
         expect(s.version).toBe('8.0-EZPlayer-0.5.3');
+    });
+
+    it('carries FPP’s clock, uptime and global-pause fields', () => {
+        const s = buildFppStatus({ pStatus: { ptype: 'EZP', status: 'Stopped', reported_time: NOW } }, identity, NOW);
+        // strftime "%a %b %d %H:%M:%S %Z %Y" in local time.
+        expect(s.time).toMatch(/^[A-Z][a-z]{2} [A-Z][a-z]{2} \d{2} \d{2}:\d{2}:\d{2} \S+ \d{4}$/);
+        expect(s.timeStr).toMatch(/^\d{2}:\d{2} [AP]M$/);
+        expect(s.timeStrFull).toMatch(/^\d{2}:\d{2}:\d{2} [AP]M$/);
+        expect(s.dateStr).toMatch(/^[A-Z][a-z]{2} [A-Z][a-z]{2} [ \d]\d$/);
+        expect(s.uptimeStr).toMatch(/^\d+ days, \d+ hours, \d+ minutes, \d+ seconds$/);
+        for (const k of ['uptimeSeconds', 'uptimeMinutes', 'uptimeHours', 'uptimeDays']) {
+            expect(typeof s[k]).toBe('number');
+        }
+        expect(s.global_pause).toEqual({ active: false, configured: false, duration_ms: 0 });
+        expect(s.random).toBe(0);
+        expect(s.powerBad).toBe(false);
+    });
+
+    it('uses FPP’s wording when nothing is queued, and reports media playback', () => {
+        const idle = buildFppStatus(
+            { pStatus: { ptype: 'EZP', status: 'Stopped', reported_time: NOW } },
+            identity,
+            NOW,
+        );
+        expect((idle.next_playlist as { playlist: string }).playlist).toBe('No playlist scheduled.');
+        expect((idle.scheduler as { nextPlaylist: { playlistName: string } }).nextPlaylist.playlistName).toBe(
+            'No playlist scheduled.',
+        );
+        expect(idle.media_playing).toBe(false);
+        expect(idle.warningInfo).toEqual([]);
+        expect(typeof idle.systemUptimeTotalSeconds).toBe('number');
+
+        // The fixture song has audio, so playing it counts as media playback.
+        const playing = buildFppStatus(
+            { pStatus: playingPStatus(), sequences: [seq], playlists: [pl], schedule: [sched] },
+            identity,
+            NOW,
+        );
+        expect(playing.media_playing).toBe(true);
     });
 
     it('produces the exact FPP idle shape', () => {
@@ -169,13 +209,16 @@ describe('identity endpoints', () => {
     });
 
     it('fppd/version matches FPP shape', () => {
+        // FPP sends these numbers as strings on this endpoint.
         expect(buildFppdVersion(identity)).toEqual({
             version: '8.0-EZPlayer-0.5.3',
-            majorVersion: 8,
-            minorVersion: 0,
+            majorVersion: '8',
+            minorVersion: '0',
             branch: 'EZPlayer',
-            fppdAPI: 4,
+            fppdAPI: 'v1',
             Status: 'OK',
+            Message: '',
+            respCode: 200,
         });
     });
 });

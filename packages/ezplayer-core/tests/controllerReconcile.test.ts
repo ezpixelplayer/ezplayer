@@ -572,3 +572,80 @@ describe('reconcileSerialPorts', () => {
         expect(rows.map((r) => [r.port, r.drift])).toEqual([[2, 'unexpected']]);
     });
 });
+
+describe('reconcilePorts start channels', () => {
+    // K32_EYard on the show network: counts right, every port 89 channels low.
+    const intent = [
+        { port: 1, models: ['Lamppost'], pixels: 300, startChannel: 892867 },
+        { port: 3, models: ['Bat'], pixels: 74, startChannel: 894667 },
+    ];
+    const CONTROLLER_START = 892867;
+
+    it('accepts ports at their intended absolute start', () => {
+        const rows = reconcilePorts(
+            intent,
+            [
+                { port: 1, pixels: 300, startChannel: 892867 },
+                { port: 3, pixels: 74, startChannel: 894667 },
+            ],
+            CONTROLLER_START,
+        );
+        expect(rows.map((r) => r.drift)).toEqual(['ok', 'ok']);
+        expect(hasPortDrift(rows)).toBe(false);
+    });
+
+    it('flags a board whose strings start at the wrong channel', () => {
+        const rows = reconcilePorts(
+            intent,
+            [
+                { port: 1, pixels: 300, startChannel: 892778 },
+                { port: 3, pixels: 74, startChannel: 894578 },
+            ],
+            CONTROLLER_START,
+        );
+        expect(rows.map((r) => r.drift)).toEqual(['start', 'start']);
+        expect(rows[0]).toMatchObject({ intendedStart: 892867, actualStart: 892778 });
+        expect(hasPortDrift(rows)).toBe(true);
+    });
+
+    it('accepts controller-relative numbering (HinksPix-style)', () => {
+        const rows = reconcilePorts(
+            [{ port: 1, models: ['Roof'], pixels: 100, startChannel: 11043 }],
+            [{ port: 1, pixels: 100, startChannel: 1 }],
+            11043,
+        );
+        expect(rows[0].drift).toBe('ok');
+    });
+
+    it('accepts only the absolute frame when the controller start is unknown', () => {
+        const rows = reconcilePorts(
+            [{ port: 1, models: ['Roof'], pixels: 100, startChannel: 11043 }],
+            [{ port: 1, pixels: 100, startChannel: 1 }],
+        );
+        expect(rows[0].drift).toBe('start');
+    });
+
+    it('reports a count difference ahead of a start difference', () => {
+        const rows = reconcilePorts(intent.slice(0, 1), [{ port: 1, pixels: 250, startChannel: 1 }], CONTROLLER_START);
+        expect(rows[0].drift).toBe('count');
+        expect(rows[0].intendedStart).toBeUndefined();
+    });
+
+    it('does not compare a start within a universe (AlphaPix-style)', () => {
+        const rows = reconcilePorts(
+            [{ port: 2, models: ['Arch'], pixels: 50, startChannel: 11193 }],
+            [{ port: 2, pixels: 50, startChannel: 1, universe: 12 }],
+            11043,
+        );
+        expect(rows[0].drift).toBe('ok');
+    });
+
+    it('does not compare starts either side leaves unreported', () => {
+        const rows = reconcilePorts(
+            [{ port: 1, models: ['Tree'], pixels: 50 }],
+            [{ port: 1, pixels: 50, startChannel: 99 }],
+            CONTROLLER_START,
+        );
+        expect(rows[0].drift).toBe('ok');
+    });
+});

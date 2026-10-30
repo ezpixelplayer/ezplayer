@@ -10,6 +10,13 @@ import { Card, CardContent, Typography, Chip, Stack, Tooltip, IconButton, useThe
 import { Box } from '../box/Box';
 import { ZoomIn, ZoomOut, FitScreen, Refresh } from '@mui/icons-material';
 import { alpha } from '@mui/material/styles';
+import {
+    buildScheduleColorIndexByType,
+    getScheduleColorSeriesKey,
+    getScheduleColorSwatch,
+    resolveScheduleDisplaySwatch,
+} from '../../util/scheduleDisplayColor';
+import type { PaletteColor } from '@mui/material/styles';
 
 interface TimelineByScheduleProps {
     data: PlaybackLogDetail[];
@@ -17,9 +24,14 @@ interface TimelineByScheduleProps {
     onItemClick?: (scheduleId?: string, playlistId?: string) => void;
     simulationStartTime?: number;
     simulationEndTime?: number;
+    /** Window shown on first load and by Fit to Screen. Defaults to the simulation range. */
+    viewStartTime?: number;
+    viewEndTime?: number;
     // Horizontal scroll limits
     minScrollTime?: Date | number;
     maxScrollTime?: Date | number;
+    /** When false, hides the grey scheduled-time comparison strips behind bars. Default true. */
+    showScheduledMarkers?: boolean;
 }
 
 interface TimelineItem {
@@ -61,11 +73,9 @@ interface TimelineGroup {
 
 type Priority = 'high' | 'normal' | 'low';
 
-interface TimelinePalette {
-    high: string;
-    normal: string;
-    low: string;
-    background: string;
+interface TimelineScheduleColors {
+    main: PaletteColor;
+    background: PaletteColor;
 }
 
 const SCHEDULE_EVENT_TYPES = new Set<string>([
@@ -108,14 +118,15 @@ function timingLines(scheduledStart: Date | undefined, actualStart: Date): strin
 }
 
 /**
- * Turn the simulation log into vis-timeline items (one row per schedule).
+ * Turn the simulation log into vis-timeline items (one row per schedule; repeats share a row).
  * Pure so it can be memoized on its inputs.
  */
 function buildTimelineData(
     data: PlaybackLogDetail[],
     schedules: ScheduledPlaylist[],
-    palette: TimelinePalette,
+    scheduleColors: TimelineScheduleColors,
     simulationEndTime?: number,
+    showScheduledMarkers: boolean = true,
 ): { items: TimelineItem[]; groups: TimelineGroup[] } {
     const items: TimelineItem[] = [];
     const groups: TimelineGroup[] = [];
@@ -127,7 +138,22 @@ function buildTimelineData(
     const nameOf = (id: string) => scheduleById.get(id)?.title || `Schedule ${id.slice(0, 8)}`;
     const priorityOf = (id: string) => toPriority(scheduleById.get(id)?.priority);
     const isBackground = (id: string) => scheduleById.get(id)?.scheduleType === 'background';
-    const colorOf = (id: string) => (isBackground(id) ? palette.background : palette[priorityOf(id)]);
+    // Earliest series of each type gets index 0 (exact theme color); later series get stronger variants.
+    // Indexed per type so the timeline matches the calendar, which only ever shows one type at a time.
+    const colorIndexById = buildScheduleColorIndexByType(schedules);
+    const swatchOf = (id: string) => {
+        const schedule = scheduleById.get(id);
+        const base = isBackground(id) ? scheduleColors.background : scheduleColors.main;
+        // A saved custom color wins; unparseable values fall back to the auto swatch instead of throwing.
+        return resolveScheduleDisplaySwatch(schedule?.color, getScheduleColorSwatch(base, colorIndexById.get(id) ?? 0));
+    };
+    // Repeats of one schedule share a row. The row label shows name, type and priority, so an
+    // occurrence edited to differ in any of those gets its own row rather than a wrong label.
+    const rowIdOf = (id: string) => {
+        const schedule = scheduleById.get(id);
+        if (!schedule) return id;
+        return JSON.stringify([getScheduleColorSeriesKey(schedule), isBackground(id), priorityOf(id), nameOf(id)]);
+    };
     const scheduledTimesOf = (id: string) => {
         const schedule = scheduleById.get(id);
         if (!schedule) return { scheduledStart: undefined, scheduledEnd: undefined };
@@ -150,11 +176,16 @@ function buildTimelineData(
         events.sort((a, b) => a.eventTime - b.eventTime);
 
         const scheduleName = nameOf(scheduleId);
+        const rowId = rowIdOf(scheduleId);
         const background = isBackground(scheduleId);
-        const color = colorOf(scheduleId);
+        const swatch = swatchOf(scheduleId);
         const { scheduledStart, scheduledEnd } = scheduledTimesOf(scheduleId);
-        // Background schedules are colored by CSS; main schedules carry their priority color inline.
-        const barStyle = background ? undefined : `background-color: ${color}; border-color: ${color};`;
+        // Per-item colors (including variants) so multiple schedules stay distinguishable;
+        // text color follows the fill so light variants stay readable.
+        const barStyle =
+            `background-color: ${swatch.main}; ` +
+            `border-color: ${background ? swatch.dark : swatch.main}; ` +
+            `color: ${swatch.contrastText};`;
 
         let currentSegmentStart: Date | null = null;
         let lastSuspendTime: Date | null = null;
@@ -185,7 +216,7 @@ function buildTimelineData(
                 content: scheduleName,
                 start,
                 end,
-                group: scheduleId,
+                group: rowId,
                 className,
                 title,
                 type: 'range',
@@ -221,7 +252,7 @@ function buildTimelineData(
                         content: 'Interruption',
                         start: lastSuspendTime,
                         end: eventTime,
-                        group: scheduleId,
+                        group: rowId,
                         className: 'schedule-interruption',
                         title,
                         type: 'range',
@@ -259,7 +290,7 @@ function buildTimelineData(
         }
 
         // Scheduled-time marker for comparison against what actually ran
-        if (scheduledStart && scheduledEnd) {
+        if (showScheduledMarkers && scheduledStart && scheduledEnd) {
             const ran = items.some((item) => item.scheduleId === scheduleId && item.actualStart && item.actualEnd);
             let title = `${scheduleName} - ${ran ? 'Scheduled Time' : 'Scheduled Only'}`;
             title += `\nScheduled: ${format(scheduledStart, 'HH:mm:ss')} - ${format(scheduledEnd, 'HH:mm:ss')}`;
@@ -270,7 +301,7 @@ function buildTimelineData(
                 content: `${scheduleName} (Scheduled)`,
                 start: scheduledStart,
                 end: scheduledEnd,
-                group: scheduleId,
+                group: rowId,
                 className: ran ? 'schedule-scheduled-marker' : 'schedule-scheduled-only',
                 title,
                 type: 'range',
@@ -288,13 +319,18 @@ function buildTimelineData(
         }
     });
 
-    // One row per schedule that produced something to draw. (A schedule that only
+    // One row per schedule series that produced something to draw. (A schedule that only
     // appears in Deferred/Prevented events with no known scheduled time has no bar,
-    // and an empty row would just be confusing.)
-    const rowIds = Array.from(new Set(items.map((item) => item.scheduleId)));
+    // and an empty row would just be confusing.) Every schedule in a row has the same
+    // name, type and priority, so any one of them can stand in for the row.
+    const scheduleIdByRow = new Map<string, string>();
+    items.forEach((item) => {
+        if (!scheduleIdByRow.has(item.group)) scheduleIdByRow.set(item.group, item.scheduleId);
+    });
+    const rows = Array.from(scheduleIdByRow, ([rowId, scheduleId]) => ({ rowId, scheduleId }));
 
     // Background schedules first, then by priority (high first), then by name
-    rowIds.sort((a, b) => {
+    rows.sort(({ scheduleId: a }, { scheduleId: b }) => {
         const bgA = isBackground(a);
         const bgB = isBackground(b);
         if (bgA !== bgB) return bgA ? -1 : 1;
@@ -304,11 +340,11 @@ function buildTimelineData(
         return nameOf(a).localeCompare(nameOf(b));
     });
 
-    rowIds.forEach((scheduleId) => {
+    rows.forEach(({ rowId, scheduleId }) => {
         const background = isBackground(scheduleId);
         const priority = priorityOf(scheduleId);
         groups.push({
-            id: scheduleId,
+            id: rowId,
             content: nameOf(scheduleId),
             className: background ? 'schedule-background-group' : `schedule-main-${priority}-priority`,
             typeLabel: background ? 'Background' : 'Main',
@@ -366,8 +402,11 @@ const TimelineBySchedule: React.FC<TimelineByScheduleProps> = ({
     onItemClick,
     simulationStartTime,
     simulationEndTime,
+    viewStartTime,
+    viewEndTime,
     minScrollTime,
     maxScrollTime,
+    showScheduledMarkers = true,
 }) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const timelineRef = useRef<Timeline | null>(null);
@@ -385,30 +424,31 @@ const TimelineBySchedule: React.FC<TimelineByScheduleProps> = ({
     const theme = useTheme();
     const schedules = useSelector((state: RootState) => state.schedule.scheduledPlaylists || []);
 
-    const palette = useMemo<TimelinePalette>(
+    const scheduleColors = useMemo<TimelineScheduleColors>(
         () => ({
-            high: theme.palette.error.main,
-            normal: theme.palette.primary.main,
-            low: theme.palette.info.main,
-            background: theme.palette.info.main,
+            main: theme.palette.primary,
+            background: theme.palette.secondary,
         }),
         [theme],
     );
 
     const timelineData = useMemo(
-        () => buildTimelineData(data, schedules, palette, simulationEndTime),
-        [data, schedules, palette, simulationEndTime],
+        () => buildTimelineData(data, schedules, scheduleColors, simulationEndTime, showScheduledMarkers),
+        [data, schedules, scheduleColors, simulationEndTime, showScheduledMarkers],
     );
 
     const hasData = data.length > 0;
 
     // The window the user asked to look at
     const displayRange = useMemo(() => {
+        if (viewStartTime && viewEndTime) {
+            return { start: new Date(viewStartTime), end: new Date(viewEndTime) };
+        }
         if (simulationStartTime && simulationEndTime) {
             return { start: new Date(simulationStartTime), end: new Date(simulationEndTime) };
         }
         return dayWindow();
-    }, [simulationStartTime, simulationEndTime]);
+    }, [viewStartTime, viewEndTime, simulationStartTime, simulationEndTime]);
 
     // How far the user may scroll
     const scrollBoundaries = useMemo(() => {
@@ -428,6 +468,11 @@ const TimelineBySchedule: React.FC<TimelineByScheduleProps> = ({
         const { start, end } = dayWindow();
         return { minTime: start, maxTime: end };
     }, [minScrollTime, maxScrollTime, simulationStartTime, simulationEndTime, data]);
+
+    const displayRangeRef = useRef(displayRange);
+    const scrollBoundariesRef = useRef(scrollBoundaries);
+    displayRangeRef.current = displayRange;
+    scrollBoundariesRef.current = scrollBoundaries;
 
     // Create the timeline once the container exists; updates below are applied in place
     useEffect(() => {
@@ -491,6 +536,21 @@ const TimelineBySchedule: React.FC<TimelineByScheduleProps> = ({
                     },
                 },
             });
+
+            let placedMarker = false;
+            const placeCurrentTimeMarker = () => {
+                if (placedMarker) return;
+                placedMarker = true;
+                requestAnimationFrame(() => {
+                    if (timelineRef.current !== timeline) return;
+                    const range = displayRangeRef.current;
+                    const bounds = scrollBoundariesRef.current;
+                    timeline.setOptions({ min: bounds.minTime, max: bounds.maxTime });
+                    timeline.setWindow(range.start, range.end, { animation: false });
+                    timeline.redraw();
+                });
+            };
+            timeline.on('changed', placeCurrentTimeMarker);
 
             timeline.on('select', (properties: { items: (string | number)[] }) => {
                 if (properties.items.length > 0) {
@@ -811,20 +871,15 @@ const TimelineBySchedule: React.FC<TimelineByScheduleProps> = ({
             top: 4px !important;
           }
 
-          /* Main schedules: background/border color is set per item from its priority */
-          .vis-item.schedule-started {
-            color: ${theme.palette.common.white};
-          }
-
+          /* Main and background schedules: fill, border and text color are set per item */
           .vis-item.schedule-suspended {
             border-style: dashed !important;
             opacity: 0.8;
           }
 
           .vis-item.schedule-background {
-            background-color: ${theme.palette.info.main} !important;
-            border: 3px solid ${theme.palette.info.dark} !important;
-            color: ${theme.palette.info.contrastText};
+            border-width: 3px !important;
+            border-style: solid !important;
             font-style: italic;
             opacity: 0.95;
           }

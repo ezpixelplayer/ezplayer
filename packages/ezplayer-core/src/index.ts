@@ -1,4 +1,5 @@
 export type {
+    CloudAudioMode,
     CloudConfig,
     CloudStatus,
     EZPlayerVersions,
@@ -20,6 +21,11 @@ export type {
     PrefetchCacheStats,
     PlaybackStatistics,
     PlayingItem,
+    PlaybackStackEntry,
+    PlaybackPendingEntry,
+    PlaybackView,
+    PlaybackOrderEntry,
+    PlaybackItemOrder,
     UIConnectSnapshot,
     RemoteAccessAvailability,
     EZPlayerCommand,
@@ -55,6 +61,9 @@ export type {
     CloudFileEntry,
     CloudFileIdent,
     CloudSequenceMeta,
+    CloudRightsRequirement,
+    CloudRightsScanInfo,
+    CloudRightsStatus,
     CloudSeqManifestEntry,
     CloudSequenceProgress,
     CloudLayoutInfo,
@@ -67,9 +76,20 @@ export type {
     UpdateCommand,
     AutoUpdateOpsState,
     DiagnosticsConsent,
+    SupportBundleLevel,
     LoginItemState,
     AppSettingsState,
     AppSettingsCommand,
+    PreventSleepMode,
+    ControllerRefreshSettings,
+    ControllerRefreshMode,
+} from './types/DataTypes';
+
+export {
+    controllerRefreshSettingsFor,
+    controllerRefreshMode,
+    SUPPORT_BUNDLE_LEVELS,
+    isSupportBundleLevel,
 } from './types/DataTypes';
 
 export type {
@@ -86,6 +106,7 @@ export type {
     ControllerOpProgress,
     ControllerOp,
     ControllerOpsState,
+    ControllerSenderStats,
     ControllerCommand,
     KnownController,
     EzpControllerRecord,
@@ -156,6 +177,10 @@ export type {
     VcSelectionOutcome,
     VcPublicSong,
     VcPublicShowState,
+    VcStatsEventKind,
+    VcStatsEvent,
+    VcStatsSnapshot,
+    VcStatsResponse,
 } from './types/ViewerControlWire';
 
 export type {
@@ -181,6 +206,8 @@ export { CLOUD_API_ENDPOINTS } from './constants/CloudApiEndpoints';
 export { mergePlaylists, mergeSchedule, mergeSequences } from './util/Mergers';
 
 export { isSequencePlayable } from './util/seqFilter';
+
+export { activeRequestFor, isPlaybackActive } from './util/playerStatus';
 
 export {
     CONVERTIBLE_AUDIO_EXTENSIONS,
@@ -208,6 +235,7 @@ export {
     playlistsToMap,
     priorityToNumber,
     PlayerRunState,
+    RepeatGuard,
 } from './util/schedulecomp';
 
 export {
@@ -216,13 +244,63 @@ export {
     findMatchingScheduleEntry,
 } from './util/SettingsScheduleUtils';
 
-export {
-    type FrameBackingBuffer,
-    type FrameBufferReadResult,
-    LatestFrameRingBuffer
-} from './util/FrameRingBuffer';
+export { type FrameBackingBuffer, type FrameBufferReadResult, LatestFrameRingBuffer } from './util/FrameRingBuffer';
+
+export { type AudioChunkReadResult, AudioChunkRingBuffer } from './util/AudioChunkRingBuffer';
 
 export {
-    type AudioChunkReadResult,
-    AudioChunkRingBuffer
-} from './util/AudioChunkRingBuffer';
+    AUDIO_WIRE_MAGIC,
+    AUDIO_WIRE_VERSION,
+    AUDIO_WIRE_HEADER_BYTES,
+    AUDIO_WIRE_FLAG_CONTINUOUS,
+    AUDIO_WIRE_FLAG_STREAM_START,
+    AudioWireCodec,
+    type AudioWireHeader,
+    type AudioWireFrame,
+    type AudioBridgeControlMessage,
+    buildAudioWireFrame,
+    parseAudioWireFrame,
+    splitOpusPackets,
+    joinOpusPackets,
+} from './util/AudioStreamWire';
+
+export {
+    summarizeViewerStats,
+    dedupeViewerStatsEvents,
+    viewerStatsEventKey,
+    trimViewerStatsEvents,
+    LOCAL_STATS_EPOCH,
+    emptyPicksBySource,
+    viewerStatsDayKey,
+    viewerStatsDayKeys,
+    type StoredViewerStatsEvent,
+    type ViewerStatsCounts,
+    type ViewerStatsDay,
+    type ViewerStatsSong,
+    type ViewerStatsSummary,
+    type SummarizeOptions,
+} from './util/viewerStats';
+
+export {
+    DEFAULT_VOLUME_TARGET_ID,
+    resolveVolumeTargets,
+    scheduledVolumeLevel,
+    type VolumeOutputMode,
+    type VolumeTarget,
+    type VolumeTargets,
+} from './util/volumeTargets';
+export {
+    hasViewerControlBackend,
+    primaryViewerControlType,
+    viewerControlBackends,
+    viewerControlSchedule,
+    viewerControlScheduleList,
+    withViewerControlBackends,
+} from './util/viewerControlBackends';
+export type {
+    ViewerControlBackend,
+    ViewerControlScheduleList,
+    ViewerControlResyncResult,
+    PlaySongSource,
+} from './types/DataTypes';
+export type { VcPickSource, VcDropReason } from './types/ViewerControlWire';

@@ -1,0 +1,11 @@
+{
+    "Name": "RefSong.fseq",
+    "Version": "2.0",
+    "ID": "6072351293984886833",
+    "StepTime": 50,
+    "NumFrames": 1200,
+    "MaxChannel": 150,
+    "ChannelCount": 150,
+    "CompressionType": 0,
+    "CompressionTypeString": "none"
+}

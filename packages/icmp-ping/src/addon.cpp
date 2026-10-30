@@ -61,15 +61,20 @@ using TSFN = Napi::TypedThreadSafeFunction<void, PingRequest, CallJs>;
 // Per-ping request (allocated on JS thread, freed in CallJs or on abort)
 // ---------------------------------------------------------------------------
 struct PingRequest {
-    Napi::Promise::Deferred deferred;
+    /** Held as the C deferred: resolving through the C++ wrapper throws on
+     *  failure, which is fatal on a thread whose environment is going away. */
+    napi_deferred deferred = nullptr;
+    /** Only valid in the call that created it, which returns it straight away. */
+    napi_value promise = nullptr;
     std::string host;
     int timeout_ms;
     bool alive = false;
     double elapsed_ms = 0.0;
     std::string error;
 
-    PingRequest(Napi::Env env, const std::string& h, int t)
-        : deferred(Napi::Promise::Deferred::New(env)), host(h), timeout_ms(t) {}
+    PingRequest(Napi::Env env, const std::string& h, int t) : host(h), timeout_ms(t) {
+        napi_create_promise(env, &deferred, &promise);
+    }
 };
 
 // ---------------------------------------------------------------------------
@@ -94,14 +99,30 @@ struct AddonState {
 static void CallJs(Napi::Env env, Napi::Function /*jsCallback*/,
                    void* /*context*/, PingRequest* data) {
     if (data == nullptr) return;
+    // The C API with status checks, not the C++ wrappers: a worker terminated
+    // without its stop message can leave this running against an environment
+    // that is going away, and there a wrapper failure is fatal to the process.
     if (env != nullptr) {
-        auto obj = Napi::Object::New(env);
-        obj.Set("alive", Napi::Boolean::New(env, data->alive));
-        obj.Set("elapsed", Napi::Number::New(env, data->elapsed_ms));
-        if (!data->error.empty()) {
-            obj.Set("error", Napi::String::New(env, data->error));
+        napi_handle_scope scope = nullptr;
+        if (napi_open_handle_scope(env, &scope) == napi_ok) {
+            napi_value obj = nullptr;
+            napi_value alive = nullptr;
+            napi_value elapsed = nullptr;
+            if (napi_create_object(env, &obj) == napi_ok &&
+                napi_get_boolean(env, data->alive, &alive) == napi_ok &&
+                napi_create_double(env, data->elapsed_ms, &elapsed) == napi_ok &&
+                napi_set_named_property(env, obj, "alive", alive) == napi_ok &&
+                napi_set_named_property(env, obj, "elapsed", elapsed) == napi_ok) {
+                if (!data->error.empty()) {
+                    napi_value err = nullptr;
+                    if (napi_create_string_utf8(env, data->error.c_str(), NAPI_AUTO_LENGTH, &err) == napi_ok) {
+                        napi_set_named_property(env, obj, "error", err);
+                    }
+                }
+                napi_resolve_deferred(env, data->deferred, obj);
+            }
+            napi_close_handle_scope(env, scope);
         }
-        data->deferred.Resolve(obj);
     }
     delete data;
 }
@@ -326,9 +347,51 @@ struct PendingPing {
     std::chrono::steady_clock::time_point deadline;
 };
 
+/**
+ * Open the ICMP socket: unprivileged datagram ICMP, falling back to raw, which
+ * needs root.  `why` carries both errnos so a caller can report which failed.
+ */
+static int open_icmp_socket(std::string& why) {
+    int s = socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMP);
+    if (s >= 0) return s;
+    const std::string dgram_err = strerror(errno);
+    s = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
+    if (s >= 0) return s;
+    why = "ICMP socket unavailable (dgram: " + dgram_err +
+          "; raw: " + strerror(errno) + ")";
+    return -1;
+}
+
+/**
+ * With no socket, fail every ping with `why` until shutdown.  The thread has to
+ * keep draining the queue; were it to exit, callers' promises would never settle.
+ */
+static void fail_all_pings(AddonState* st, const std::string& why) {
+    while (!st->shutting_down.load()) {
+        {
+            std::lock_guard<std::mutex> lk(st->queue_mutex);
+            for (auto* req : st->ping_queue) {
+                req->error = why;
+                post_result(st, req);
+            }
+            st->ping_queue.clear();
+        }
+        struct pollfd wake = {st->wake_pipe[0], POLLIN, 0};
+        poll(&wake, 1, 200);
+        if (wake.revents & POLLIN) {
+            char buf[64];
+            while (read(st->wake_pipe[0], buf, sizeof(buf)) > 0) {}
+        }
+    }
+}
+
 static void ping_thread_func(AddonState* st) {
-    int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMP);
-    if (sock < 0) return;   // can't ping — give up silently
+    std::string why;
+    int sock = open_icmp_socket(why);
+    if (sock < 0) {
+        fail_all_pings(st, why);
+        return;
+    }
 
     int fl = fcntl(sock, F_GETFL, 0);
     fcntl(sock, F_SETFL, fl | O_NONBLOCK);
@@ -417,9 +480,23 @@ static void ping_thread_func(AddonState* st) {
                                      reinterpret_cast<struct sockaddr*>(&from),
                                      &fl2);
                 if (n <= 0) break;
-                if (n < 8 || static_cast<uint8_t>(rbuf[0]) != 0) continue;
 
-                uint16_t rseq = ntohs(*reinterpret_cast<uint16_t*>(rbuf + 6));
+                // Linux ping sockets hand back the ICMP header first; macOS
+                // and raw sockets include the IP header.  Skip it when present:
+                // an IPv4 header starts 0x4N, an echo reply's type byte is 0.
+                const uint8_t* icmp = reinterpret_cast<const uint8_t*>(rbuf);
+                size_t len = static_cast<size_t>(n);
+                if (len >= 20 && (icmp[0] >> 4) == 4) {
+                    const size_t ihl = (icmp[0] & 0x0F) * 4;
+                    if (len <= ihl) continue;
+                    icmp += ihl;
+                    len  -= ihl;
+                }
+                if (len < 8 || icmp[0] != 0) continue;   // not an echo reply
+
+                uint16_t rseq_net;
+                std::memcpy(&rseq_net, icmp + 6, sizeof(rseq_net));
+                const uint16_t rseq = ntohs(rseq_net);
 
                 for (int i = static_cast<int>(pending.size()) - 1; i >= 0; --i) {
                     if (pending[i].seq == rseq &&
@@ -506,7 +583,7 @@ static Napi::Value Ping(const Napi::CallbackInfo& info) {
     if (timeout_ms <= 0) timeout_ms = 1000;
 
     auto* req = new PingRequest(env, host, timeout_ms);
-    auto promise = req->deferred.Promise();
+    auto promise = Napi::Value(env, req->promise);
 
     {
         std::lock_guard<std::mutex> lk(st->queue_mutex);

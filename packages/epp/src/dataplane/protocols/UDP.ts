@@ -102,6 +102,12 @@ export class UdpClient {
         try {
             this._connAttemptInProgress = true;
             this.socket = dgram.createSocket(this.type);
+            // Connected sockets report port-unreachable (controller off or not
+            // listening) as 'error'; record it rather than throw.
+            this.socket.on('error', (err) => {
+                ++this.nErrors;
+                this.lastError = err.message;
+            });
 
             // Bind to a specific local NIC first when requested (ForceLocalIP).
             // Must complete ('listening') before connect() is issued.
@@ -120,15 +126,6 @@ export class UdpClient {
                     this.socket?.once('listening', onListening);
                     this.socket?.bind({ address: this.localAddress });
                 });
-            }
-
-            if (this.sendBufSize) {
-                try {
-                    this.socket.setSendBufferSize(this.sendBufSize);
-                } catch (e) {
-                    const err = e as Error;
-                    this.lastError = err.message;
-                }
             }
 
             await new Promise<void>((resolve, reject) => {
@@ -151,6 +148,18 @@ export class UdpClient {
 
                 this.socket?.connect(this.port, this.address);
             });
+
+            // The OS socket handle only exists once bound or connected; setting
+            // the buffer before that throws ENOTSOCK and silently leaves the
+            // default (64 KB on Windows), too small for a frame's worth of packets.
+            if (this.sendBufSize) {
+                try {
+                    this.socket?.setSendBufferSize(this.sendBufSize);
+                } catch (e) {
+                    const err = e as Error;
+                    this.lastError = err.message;
+                }
+            }
         } catch (e) {
             const error = e as Error;
             this.lastError = error.message;
@@ -197,6 +206,8 @@ export class UdpClient {
             if (err) {
                 sendBatch.err = err;
                 ++sendBatch.nECBs;
+                ++this.nErrors;
+                this.lastError = err.message;
             } else {
                 ++sendBatch.nSCBs;
             }
@@ -210,9 +221,9 @@ export class UdpClient {
         this.sendBatch = sendBatch;
     }
     endSendBatch(callOnComplete?: () => void) {
-        ++this.batchesInFlight;
         const sb = this.sendBatch;
         if (!sb) return sb;
+        ++this.batchesInFlight;
         sb.batchClosed = true;
         sb.callOnComplete = callOnComplete;
         if (sb.isComplete()) {
@@ -281,6 +292,16 @@ export class UdpClient {
     }
 }
 
+/** A sender's own account of what it has sent, as reported to the UI. */
+export interface SenderStats {
+    connected: boolean;
+    sent: number;
+    skipped: number;
+    errors: number;
+    bytes: number;
+    lastError?: string;
+}
+
 export abstract class UDPSender implements Sender {
     controller?: ControllerState = undefined;
 
@@ -295,6 +316,20 @@ export abstract class UDPSender implements Sender {
     isCurrentlySending(): boolean {
         if (!this.client) return false;
         return this.client.batchesInFlight > 0;
+    }
+
+    /** What this sender has done so far, for reporting; absent until opened. */
+    stats(): SenderStats | undefined {
+        if (!this.client) return undefined;
+        const s = this.client.getStats();
+        return {
+            connected: s.isConnected,
+            sent: s.nSent,
+            skipped: s.nSkipped,
+            errors: s.nErrors,
+            bytes: s.bytesSent,
+            ...(s.lastError ? { lastError: s.lastError } : {}),
+        };
     }
 
     client?: UdpClient;
