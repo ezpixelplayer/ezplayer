@@ -826,9 +826,61 @@ WebSocket snapshot (`playbackSettings`) and send it back with your changes.
 
 ---
 
+### GET /api/ezp/playback-settings
+
+The current `PlaybackSettings` object, as the player holds it: the same value
+the WebSocket snapshot carries under `playbackSettings`. Read it before a
+whole-object POST so unrelated settings survive the round trip.
+
+**Response:**
+
+- Status: 200 OK - the `PlaybackSettings` object
+- Status: 503 Service Unavailable - the player has not loaded settings yet (still starting)
+
+---
+
+### GET /api/ezp/playback-settings/:path
+
+### POST /api/ezp/playback-settings/:path
+
+One part of the settings, addressed by its path in the object with `/`
+between levels: `sync`, `sync/multisync`, `sync/multisync/remotes`,
+`volumeControl/defaultVolume`, `sendIdleBlackFrames`. The first segment must
+be a `PlaybackSettings` key.
+
+GET returns the value at that path as JSON. POST replaces just that value
+and leaves every other setting as it is, so an integration can configure its
+own block without reading and resending the whole object. Missing parents are
+created, so `sync/multisync` works before `sync` exists. The body is any JSON
+value; `null` unsets an optional part. `viewerControl` and `volumeControl`
+cannot be unset.
+
+**Example — turn on MultiSync master, unicast to a connector on the same
+machine, leaving everything else alone:**
+
+```bash
+curl -X POST http://127.0.0.1:8080/api/ezp/playback-settings/sync/multisync \
+  -H 'Content-Type: application/json' \
+  -d '{ "enabled": true, "remotes": ["127.0.0.1:32320"], "mediaSync": true }'
+```
+
+```bash
+curl http://127.0.0.1:8080/api/ezp/playback-settings/sync/multisync
+# {"enabled":true,"remotes":["127.0.0.1:32320"],"mediaSync":true}
+```
+
+**Response:**
+
+- Status: 200 OK - GET: the value; POST: `{ "success": true }`
+- Status: 400 Bad Request - no JSON body, an intermediate segment is not an object, or unsetting a required part
+- Status: 404 Not Found - the first segment is not a settings key, or (GET) the part is not set
+- Status: 503 Service Unavailable - settings not loaded yet; POST the whole object first
+
+---
+
 ### GET /api/ezp/model-coordinates
 
-Get model coordinates for 3D preview. Returns coordinate data used to render the 3D light layout preview.
+Get model coordinates for the Show View. Returns coordinate data used to render the 3D light layout preview.
 
 **Request:**
 
@@ -1047,7 +1099,7 @@ curl http://localhost:3000/api/ezp/audio?afterSeq=42 --output audio.bin
 
 ### GET /api/ezp/view-objects
 
-Get view objects for the 3D preview. Returns the list of view objects (meshes and image planes) parsed from the xLights XML layout. Each entry describes an OBJ mesh or background image with its position, rotation, scale, brightness, and channel mapping.
+Get view objects for the Show View. Returns the list of view objects (meshes and image planes) parsed from the xLights XML layout. Each entry describes an OBJ mesh or background image with its position, rotation, scale, brightness, and channel mapping.
 
 **Request:**
 

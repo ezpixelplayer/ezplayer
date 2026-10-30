@@ -14,7 +14,7 @@ The short version:
 
 2. **The desktop app can send anonymous crash and diagnostic reports.**
    This helps us find and fix problems, and it is **on by default — you can
-   opt out** in Settings → Player → Diagnostics. Reports contain the error
+   opt out** in Settings → Diagnostics. Reports contain the error
    or crash details (message, stack trace), the app version, and the
    operating system and architecture. They never contain your show data,
    files, or personal information. A second, separate checkbox — **off by

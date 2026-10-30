@@ -24,8 +24,10 @@ describe('probeWebGLSupport', () => {
             getParameter: () => 0,
             getExtension: (name: string) => (name === 'WEBGL_lose_context' ? { loseContext } : null),
         };
+        // The mock's return type follows the last getContext overload, which
+        // @webgpu/types (via @types/three) adds, so cast to whatever that is.
         vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(
-            fakeGl as unknown as WebGL2RenderingContext,
+            fakeGl as unknown as ReturnType<HTMLCanvasElement['getContext']>,
         );
         expect(probeWebGLSupport().supported).toBe(true);
         expect(loseContext).toHaveBeenCalledTimes(1);
@@ -66,7 +68,7 @@ describe('PreviewErrorBoundary', () => {
                 <Thrower message="Error creating WebGL context." />
             </PreviewErrorBoundary>,
         );
-        expect(screen.getByText('3D preview unavailable')).toBeTruthy();
+        expect(screen.getByText('Show View unavailable')).toBeTruthy();
         expect(screen.getByText(/could not create a WebGL context/i)).toBeTruthy();
     });
 
@@ -88,7 +90,7 @@ describe('PreviewErrorBoundary', () => {
                 <Thrower message="Error creating WebGL context." />
             </PreviewErrorBoundary>,
         );
-        expect(screen.getByText('3D preview unavailable')).toBeTruthy();
+        expect(screen.getByText('Show View unavailable')).toBeTruthy();
         rerender(
             <PreviewErrorBoundary resetKey="2d">
                 <div>fine now</div>

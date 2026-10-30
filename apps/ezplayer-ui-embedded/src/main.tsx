@@ -5,7 +5,6 @@ import { HelmetProvider } from 'react-helmet-async';
 import { SidebarProvider, PageHeaderLogoProvider } from '@ezplayer/shared-ui-components';
 import { initI18N } from '@ezplayer/player-ui-components';
 import 'nprogress/nprogress.css';
-import 'react-toastify/dist/ReactToastify.css';
 import App from './App';
 import './index.css';
 import ezplayerLogo from '../../ezplayer-ui-electron/src/assets/images/EZPlayerLogoTransparent128.png';
