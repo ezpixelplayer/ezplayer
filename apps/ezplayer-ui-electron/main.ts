@@ -42,6 +42,7 @@ import {
     stopPlayerPlayback,
 } from './mainsrc/ipcezplayer.js';
 import { registerAutoUpdateHandlers, cleanupAutoUpdate } from './mainsrc/ipcautoupdate.js';
+import { syncPowerBlock } from './mainsrc/powerblock.js';
 import {
     closeShowFolder,
     ensureExclusiveFolder,
@@ -483,6 +484,8 @@ if (isToolVerb()) {
         }
 
         console.log('GPU feature status:', JSON.stringify(app.getGPUFeatureStatus()));
+        // Takes effect from here on when the setting is "always"; playback status refines it.
+        syncPowerBlock(undefined);
         pruneCrashDumps();
         for (const prev of beginSession(ezpVersions.version)) {
             if (prev.sessionEnding) {
