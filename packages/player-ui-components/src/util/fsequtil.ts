@@ -132,17 +132,17 @@ export class FSEQReaderBrowser {
             throw new Error('Not a PSEQ file');
         }
 
-        let nframes = 0;
-        let stepsz = 0;
+        let nframes: number;
+        let stepsz: number;
         const compblocklist: CompBlock[] = [];
         const chrangelist: SparseRange[] = [];
         const v1headers: { [key: string]: string } = {};
         let comp = 0;
-        let ccount = 0;
+        let ccount: number;
         let stepms = 50;
-        let off2chdata = 0;
-        let minver = 0;
-        let majver = 0;
+        let off2chdata: number;
+        let minver: number;
+        let majver: number;
         let modelcnt = 0;
         let modelstart = 0;
         let modelsize = 0;
@@ -239,7 +239,8 @@ export class FSEQReaderBrowser {
                         // which is only here when the whole file was handed in.
                         const at = this.offset - hlen;
                         if (hlen >= 14 && new TextDecoder().decode(hdata.subarray(0, 2)) === 'SR') {
-                            const pos = this.buffer.getUint32(at + 2, true) + this.buffer.getUint32(at + 6, true) * 2 ** 32;
+                            const pos =
+                                this.buffer.getUint32(at + 2, true) + this.buffer.getUint32(at + 6, true) * 2 ** 32;
                             const len = this.buffer.getUint32(at + 10, true);
                             if (pos + len <= this.buffer.byteLength) srTable = this.readAt(len, pos);
                         }

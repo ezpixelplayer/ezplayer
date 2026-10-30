@@ -14,6 +14,8 @@ import {
     PlayerCloudRegistrationDialog,
     PlayerScreen,
     PlayerSettings,
+    DiagnosticsSettings,
+    DIAGNOSTICS_SETTINGS_SECTION_KEY,
     PlaylistList,
     SoftwareUpdateSettings,
     canControlUpdates,
@@ -49,6 +51,7 @@ import VisibilityIcon from '@mui/icons-material/Visibility';
 import LibraryMusicIcon from '@mui/icons-material/LibraryMusic';
 import VolumeUpIcon from '@mui/icons-material/VolumeUp';
 import TuneIcon from '@mui/icons-material/Tune';
+import TroubleshootIcon from '@mui/icons-material/Troubleshoot';
 import SystemUpdateAltIcon from '@mui/icons-material/SystemUpdateAlt';
 
 import { AddSongDialogElectron } from '../components/song/AddSongDialogElectron';
@@ -117,6 +120,12 @@ const ElectronSettingsPage = () => {
             icon: <TuneIcon sx={{ fontSize: 56 }} />,
             title: 'Player Settings',
             content: <PlayerSettings />,
+        },
+        {
+            key: DIAGNOSTICS_SETTINGS_SECTION_KEY,
+            label: 'Diagnostics',
+            icon: <TroubleshootIcon sx={{ fontSize: 56 }} />,
+            content: <DiagnosticsSettings />,
         },
         {
             key: 'softwareUpdate',

@@ -705,6 +705,7 @@ export async function putSequencesWithDurations(recs: SequenceRecord[]): Promise
                 const title = ups.work?.title || path.basename(ups.files.audio);
                 throw new Error(
                     `Cannot derive playable audio for "${title}": ${err instanceof Error ? err.message : String(err)}`,
+                    { cause: err },
                 );
             }
         }

@@ -21,12 +21,19 @@ import { applyGpuStartupPolicy, maybeFallbackToSoftwareGpu, noteChildProcessGone
 import { describeExitCode } from './mainsrc/rendererCrashPolicy.js';
 import { installDiagLogRing, primeDiagEnv } from './mainsrc/diagEnv.js';
 installDiagLogRing();
-import { beginSession, captureRendererConsole, installAppLog, markSessionEnding } from './mainsrc/applog.js';
+import {
+    beginSession,
+    captureRendererConsole,
+    guardStdio,
+    installAppLog,
+    markSessionEnding,
+} from './mainsrc/applog.js';
 import { crashDumpsSince, pruneCrashDumps } from './mainsrc/diagbundle.js';
 import { faultPageUrl, faultPreloadPath, injectMainFaults } from './mainsrc/faultinject-main.js';
 import { watchRenderer } from './mainsrc/rendererwatch.js';
 // Text-only verbs are short-lived and may run beside a player; keep them out of its log.
-if (!isToolVerb()) installAppLog();
+if (isToolVerb()) guardStdio();
+else installAppLog();
 import { registerFileListHandlers } from './mainsrc/ipcmain.js';
 import {
     isScheduleActive,
