@@ -248,7 +248,7 @@ export class E131Sender extends UDPSender {
                 this.headers.push(nh);
             }
             const hdr = this.headers[this.curPacketNum];
-            updateE131PacketHeader(hdr, univ, state.nextE131SeqNum(), bytesThisPacket);
+            updateE131PacketHeader(hdr, univ, state.getE131SeqNum(), bytesThisPacket);
             this.client!.addSendToBatch([hdr, ...packetBufs]);
             const wire = bytesThisPacket + this.packetWireOverhead();
             state.wireBytesSent += wire;
@@ -293,9 +293,12 @@ export class E131Sender extends UDPSender {
     }
 
     sendPush(_frame: SendJob, _job: SenderJob, state: SendJobSenderState): void {
+        // Sequence numbers are per universe and each universe goes out once a
+        // frame, so the whole frame shares one and it steps here.
+        const seq = state.nextE131SeqNum();
         // syncUniverse 0 means "not synchronized" per E1.31 — never send a sync packet there.
         if (this.pushAtEnd && this.syncUniverse > 0) {
-            buildE131SyncPacket(this.syncPacket, this.syncUniverse, state.nextE131SeqNum());
+            buildE131SyncPacket(this.syncPacket, this.syncUniverse, seq);
             if (this.client?.isConnected()) {
                 this.client?.addSendToBatch(this.syncPacket);
                 state.wireBytesSent += E131_SYNCPACKET_LEN + UDP_WIRE_OVERHEAD;

@@ -1,9 +1,16 @@
 import { promises as fsp } from 'fs';
+import { inflateSync } from 'zlib';
 import { ZSTDDecoder } from 'zstddec';
 import { FileReadRequest, FileReadWorker } from '../util/ReadFileWorkers';
 import { readUInt24LE, toDataView, toUint8Array } from '../util/Utils';
 
 const utfDecoder = new TextDecoder('utf-8');
+
+/** Each zlib block is its own stream. */
+function inflateBlock(block: Uint8Array) {
+    const out = inflateSync(block);
+    return new Uint8Array(out.buffer, out.byteOffset, out.length);
+}
 
 //
 // This is a very top-heavy view of fseq files.  It reads and calls back with data.
@@ -458,18 +465,20 @@ export class FSEQReaderSync {
             let lenraw = dsz;
             //console.log("Read of " + str(dsz) + " got "+str(len(raw)))
             foff += dsz;
-            if (this.header.compression === 1) {
+            if (this.header.compression === 1 || this.header.compression === 2) {
                 let nframes = this.header.frames - curframe;
                 if (cn < this.header.compblocklist.length - 1) {
                     nframes = this.header.compblocklist[cn + 1].framenum - curframe;
                 }
                 lenraw = nframes * this.header.stepsize;
-                const decoder = new ZSTDDecoder();
-                await decoder.init();
-                //console.log(`${dsz} - ${lenraw} - ${nframes} - ${this.header.stepsize} - ${cn} - ${curframe}`);
-                raw = decoder.decode(raw, lenraw);
-            } else if (this.header.compression === 2) {
-                throw new Error('Need to implement zlib');
+                if (this.header.compression === 2) {
+                    raw = inflateBlock(raw);
+                } else {
+                    const decoder = new ZSTDDecoder();
+                    await decoder.init();
+                    //console.log(`${dsz} - ${lenraw} - ${nframes} - ${this.header.stepsize} - ${cn} - ${curframe}`);
+                    raw = decoder.decode(raw, lenraw);
+                }
             }
 
             let frmoffset = 0;
@@ -852,7 +861,7 @@ export class FSEQReaderAsync {
             //console.log(`${dsz} - ${lenraw} - ${nframes} - ${this.header.stepsize} - ${cn} - ${curframe}`);
             chunk.decompBuf = decoder.decode(req.buf!, lenraw);
         } else if (this.header.compression === 2) {
-            throw new Error('Need to implement zlib');
+            chunk.decompBuf = inflateBlock(req.buf!);
         } else {
             chunk.decompBuf = req.buf!;
         }

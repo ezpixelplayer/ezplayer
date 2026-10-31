@@ -109,7 +109,7 @@ import { avgFrameSendTime, FrameSender, OverallFrameSendStats, resetFrameSendSta
 import { MultiSyncSender, type SyncFrameInfo } from './multisync';
 import { fileBaseName } from './pathnames';
 
-import { decompressZStdWithWorker, getZstdStats, resetZstdStats } from './zstdparent';
+import { decompressZlibWithWorker, decompressZStdWithWorker, getZstdStats, resetZstdStats } from './zstdparent';
 import { setPingConfig, getLatestPingStats, stopPing } from './pingparent';
 import type { PingTarget } from './pingworker';
 
@@ -2629,6 +2629,7 @@ async function processQueue() {
                 now: performance.now(),
                 fseqSpace: playbackParams.fseqSpace,
                 decompZstd: decompressZStdWithWorker,
+                decompZlib: decompressZlibWithWorker,
             },
             emitError,
             emitWarning,
@@ -2704,7 +2705,7 @@ async function processQueue() {
             emitInfo('');
         }
         // Start with the channel ceiling implied by the configured DMX controllers.
-        let nChannels = Math.max(0, ...(controllers ?? []).map((e) => e.setup.startCh + e.setup.nCh));
+        let nChannels = Math.max(0, ...(controllers ?? []).map((e) => e.setup.startCh - 1 + e.setup.nCh));
 
         // Extend to cover every model's actual channel extent.
         //   This handles models not yet wired to a controller

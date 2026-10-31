@@ -15,6 +15,8 @@ export interface FixtureShowOptions {
     controllerName?: string;
     /** DDP destination. Default 127.0.0.1 (the mock). */
     controllerIp?: string;
+    /** xLights DDP "Channels Per Packet". Default 1440. */
+    ddpChannelsPerPacket?: number;
     /** Make the controller E1.31 with these universes; `channels` becomes their total. */
     e131Universes?: { universe: number; size: number }[];
 }
@@ -41,7 +43,7 @@ export async function createFixtureShow(opts: FixtureShowOptions = {}): Promise<
                   `<network ComPort="${ip}" BaudRate="${u.universe}" NetworkType="E131" MaxChannels="${u.size}" Enabled="Yes"/>`,
           )
         : [
-              `<network ChannelsPerPacket="1440" KeepChannelNumbers="1" ComPort="${ip}" BaudRate="1" NetworkType="DDP" MaxChannels="${channels}"/>`,
+              `<network ChannelsPerPacket="${opts.ddpChannelsPerPacket ?? 1440}" KeepChannelNumbers="1" ComPort="${ip}" BaudRate="1" NetworkType="DDP" MaxChannels="${channels}"/>`,
           ];
 
     const networks = `<?xml version="1.0" encoding="UTF-8"?>

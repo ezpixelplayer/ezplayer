@@ -185,4 +185,40 @@ describe('E131Sender packetizing', () => {
         ]);
         expect(sent.flatMap((p) => p.slots)).toEqual(ramp(0, 306));
     });
+
+    // A receiver treats a step of -19..0 as a stale packet (E1.31 6.7.2).
+    it.each([1, 10, 237, 255, 256, 512])('steps every universe by one a frame with %i universes', (n) => {
+        const sender = new E131Sender();
+        sender.pushAtEnd = false;
+        sender.universes = Array.from({ length: n }, (_, i) => ({ universe: i + 1, size: 3 }));
+        const sequences = new Map<number, number[]>();
+        sender.client = {
+            isConnected: () => true,
+            addSendToBatch: (bufs: Uint8Array[]) => {
+                const hdr = Buffer.from(bufs[0]);
+                const universe = hdr.readUInt16BE(113);
+                sequences.set(universe, [...(sequences.get(universe) ?? []), hdr[111]]);
+            },
+        } as unknown as UdpClient;
+
+        const job = new SendJob();
+        const sj = new SenderJob();
+        sj.sender = sender;
+        sj.burstSize = 1_000_000;
+        sj.parts.push({ bufIdx: 0, bufStart: 0, bufLen: n * 3 });
+        job.senders.push(sj);
+        job.dataBuffers = [new Uint8Array(n * 3)];
+
+        const state = new SendJobSenderState();
+        state.curE131SeqNum = 254; // over the wrap
+        for (let frame = 0; frame < 4; ++frame) {
+            state.reset();
+            sender.startFrame();
+            while (!sender.sendPortion(job, sj, state));
+            sender.sendPush(job, sj, state);
+        }
+
+        expect(sequences.size).toBe(n);
+        for (const seqs of sequences.values()) expect(seqs).toEqual([254, 255, 0, 1]);
+    });
 });

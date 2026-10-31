@@ -1,4 +1,4 @@
-import { DDPSender } from '../dataplane/protocols/DDP';
+import { DDP_MAX_PAYLOAD, DDPSender } from '../dataplane/protocols/DDP';
 import { e131Universes, E131Sender } from '../dataplane/protocols/E131';
 import { Sender, SenderJob, SendJob } from '../dataplane/SenderJob';
 import { ControllerSetup, OpenControllerReport } from '../controllers/controllertypes';
@@ -157,6 +157,9 @@ export async function openControllerForDataSend(
             if (opts?.ddpPort) dsender.port = opts.ddpPort;
             dsender.pushAtEnd = false; // TODO try variety
             dsender.startChNum = proxied || xc.keepChannelNumbers ? xc.startch - 1 : 0;
+            if (xc.channelsPerPacket && xc.channelsPerPacket > 0) {
+                dsender.channelsPerPacket = Math.min(xc.channelsPerPacket, DDP_MAX_PAYLOAD);
+            }
             dsender.localAddress = xc.forceLocalIP;
             dsender.minTimeBetweenFrames = minFrameTimeFor(xc, opts);
             dsender.sendBufSize = Math.max(256_000, c.setup.nCh * 2);
