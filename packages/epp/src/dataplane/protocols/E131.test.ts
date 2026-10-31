@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { fillE131PacketHeaderStatic, updateE131PacketHeader } from './E131';
+import { SendJob, SenderJob, SendJobSenderState } from '../SenderJob';
+import { e131Universes, E131Sender, fillE131PacketHeaderStatic, updateE131PacketHeader } from './E131';
+import type { UdpClient } from './UDP';
 
 /**
  * Reference: the original single-pass header builder (every field, every
@@ -73,5 +75,114 @@ describe('E1.31 data packet header', () => {
         const hdr = Buffer.alloc(HDR);
         fillE131PacketHeaderStatic(hdr, 'n');
         expect(() => updateE131PacketHeader(hdr, 1, 0, 513)).toThrow(/512/);
+    });
+});
+
+describe('e131Universes', () => {
+    it('pairs numbers with sizes in channel order', () => {
+        expect(e131Universes([1, 7], [3, 150])).toEqual([
+            { universe: 1, size: 3 },
+            { universe: 7, size: 150 },
+        ]);
+    });
+
+    it('defaults a missing size, skips empty universes, and always yields one', () => {
+        expect(e131Universes([1, 2, 3], [0, 100])).toEqual([
+            { universe: 2, size: 100 },
+            { universe: 3, size: 510 },
+        ]);
+        expect(e131Universes()).toEqual([{ universe: 1, size: 510 }]);
+    });
+});
+
+describe('E131Sender packetizing', () => {
+    interface Sent {
+        universe: number;
+        slots: number[];
+    }
+
+    /** Send `channels` of ramp data (value = channel index & 0xff), recording each packet. */
+    function sendFrame(sender: E131Sender, channels: number, burstSize = 1_000_000) {
+        const sent: Sent[] = [];
+        sender.pushAtEnd = false; // as controller setup does
+        sender.client = {
+            isConnected: () => true,
+            addSendToBatch: (bufs: Uint8Array[]) => {
+                const [hdr, ...data] = bufs;
+                sent.push({
+                    universe: Buffer.from(hdr).readUInt16BE(113),
+                    slots: data.flatMap((d) => Array.from(d)),
+                });
+            },
+        } as unknown as UdpClient;
+
+        const job = new SendJob();
+        const sj = new SenderJob();
+        sj.sender = sender;
+        sj.burstSize = burstSize;
+        sj.parts.push({ bufIdx: 0, bufStart: 0, bufLen: channels });
+        job.senders.push(sj);
+        job.dataBuffers = [Uint8Array.from({ length: channels }, (_, i) => i & 0xff)];
+
+        const state = new SendJobSenderState();
+        sender.startFrame();
+        let calls = 1;
+        while (!sender.sendPortion(job, sj, state)) ++calls;
+        return { sent, sj, state, calls };
+    }
+
+    const ramp = (start: number, n: number) => Array.from({ length: n }, (_, i) => (start + i) & 0xff);
+
+    it('universe per string: gives each universe its own size', () => {
+        const sender = new E131Sender();
+        sender.universes = e131Universes([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], [3, 3, 3, 3, 3, 150, 150, 150, 150, 150]);
+
+        const { sent, sj, state } = sendFrame(sender, 765);
+
+        expect(sent.map((p) => p.universe)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+        expect(sent.map((p) => p.slots.length)).toEqual([3, 3, 3, 3, 3, 150, 150, 150, 150, 150]);
+        expect(sent[5].slots).toEqual(ramp(15, 150));
+        expect(sent[9].slots).toEqual(ramp(615, 150));
+        expect(state.wireBytesSent).toBe(sender.frameWireBytes(sj));
+    });
+
+    it('follows gaps in the universe numbers', () => {
+        const sender = new E131Sender();
+        sender.universes = e131Universes([1, 100, 40], [6, 3, 9]);
+
+        const { sent } = sendFrame(sender, 18);
+
+        expect(sent).toEqual([
+            { universe: 1, slots: ramp(0, 6) },
+            { universe: 100, slots: ramp(6, 3) },
+            { universe: 40, slots: ramp(9, 9) },
+        ]);
+    });
+
+    it('continues on consecutive universes past the end of the list', () => {
+        const sender = new E131Sender();
+        sender.universes = e131Universes([5, 9], [3, 510]);
+
+        const { sent, sj, state } = sendFrame(sender, 1200);
+
+        expect(sent.map((p) => p.universe)).toEqual([5, 9, 10, 11]);
+        expect(sent.map((p) => p.slots.length)).toEqual([3, 510, 510, 177]);
+        expect(state.wireBytesSent).toBe(sender.frameWireBytes(sj));
+    });
+
+    it('stays on the right universe when a frame spans several bursts', () => {
+        const sender = new E131Sender();
+        sender.universes = e131Universes([1, 2, 3, 4], [3, 150, 3, 150]);
+
+        const { sent, calls } = sendFrame(sender, 306, 1); // one packet per burst
+
+        expect(calls).toBe(4);
+        expect(sent.map((p) => [p.universe, p.slots.length])).toEqual([
+            [1, 3],
+            [2, 150],
+            [3, 3],
+            [4, 150],
+        ]);
+        expect(sent.flatMap((p) => p.slots)).toEqual(ramp(0, 306));
     });
 });

@@ -1,5 +1,5 @@
 import { DDPSender } from '../dataplane/protocols/DDP';
-import { E131Sender } from '../dataplane/protocols/E131';
+import { e131Universes, E131Sender } from '../dataplane/protocols/E131';
 import { Sender, SenderJob, SendJob } from '../dataplane/SenderJob';
 import { ControllerSetup, OpenControllerReport } from '../controllers/controllertypes';
 
@@ -189,9 +189,7 @@ export async function openControllerForDataSend(
             esender.localAddress = xc.forceLocalIP;
             esender.sendBufSize = Math.max(256_000, c.setup.nCh * 2);
             esender.pushAtEnd = false; // TODO try variety
-            // TODO!  Must fill in universe and ch per packet on multiple universes!  Do not do this now.
-            esender.startUniverse = xc.universeNumbers?.[0] ?? 1;
-            esender.channelsPerPacket = xc.universeSizes?.[0] ?? 510;
+            esender.universes = e131Universes(xc.universeNumbers, xc.universeSizes);
             esender.minTimeBetweenFrames = minFrameTimeFor(xc, opts);
             try {
                 await esender.connect();
