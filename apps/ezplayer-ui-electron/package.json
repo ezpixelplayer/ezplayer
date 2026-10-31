@@ -155,7 +155,7 @@
         "@vitejs/plugin-react": "catalog:",
         "concurrently": "^10.0.6",
         "dmg-builder": "26.16.0",
-        "electron": "^44.9.3",
+        "electron": "^44.10.1",
         "electron-builder": "26.16.0",
         "electron-builder-squirrel-windows": "26.16.0",
         "esbuild": "catalog:",

@@ -126,7 +126,6 @@ export class FrameSender {
     exportBuffer: LatestFrameRingBuffer | undefined = undefined;
     emitWarning?: (msg: string) => void;
     emitError?: (err: Error) => void;
-    private warnedShortFrame = false;
     private warnedLongFrame = false;
     private warnedSendOverrun = false;
     private sendInProgress = false; // Guards SendJobState from concurrent send
@@ -267,6 +266,12 @@ export class FrameSender {
                     const mixTime = performance.now() - preMax;
                     args.playbackStatsAgg.totalMixTime += mixTime;
                     this.job.dataBuffers = [this.mixFrame];
+                } else if (this.mixFrame && args.frame.frame.length < this.nChannels) {
+                    // Sparse sequences end at their last model. Senders packetize
+                    // the whole controller range, so the rest has to exist, as black.
+                    this.mixFrame.set(args.frame.frame);
+                    this.mixFrame.fill(0, args.frame.frame.length);
+                    this.job.dataBuffers = [this.mixFrame];
                 } else {
                     this.job.dataBuffers = [args.frame.frame];
                 }
@@ -274,14 +279,7 @@ export class FrameSender {
                 // Export frame
                 if (this.exportBuffer) {
                     const srcLen = this.job.dataBuffers[0].length;
-                    if (srcLen < this.nChannels && !this.warnedShortFrame) {
-                        this.warnedShortFrame = true;
-                        this.emitWarning?.(
-                            `[framesend] export frame shorter than nChannels: ` +
-                                `src=${srcLen} nChannels=${this.nChannels} ` +
-                                `(trailing ${this.nChannels - srcLen} bytes of each ring-buffer slot will retain stale data)`,
-                        );
-                    } else if (srcLen > this.nChannels && !this.warnedLongFrame) {
+                    if (srcLen > this.nChannels && !this.warnedLongFrame) {
                         this.warnedLongFrame = true;
                         this.emitWarning?.(
                             `[framesend] export frame longer than nChannels (truncating): ` +
