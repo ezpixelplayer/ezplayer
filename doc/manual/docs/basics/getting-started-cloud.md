@@ -101,8 +101,9 @@ Go to [EZRGB](https://ezrgb.com) to submit a new layout, get more songs,
 manage the show remotely, or set up show details and a viewer page. Details:
 [Registering](../cloud/registering.md),
 [Cloud Status / Control UI](../cloud/status-control-ui.md),
-[Getting Sequences](../cloud/getting-sequences.md), and
-[Full Cloud Control](../cloud/full-cloud-control.md).
+[Getting Sequences](../cloud/getting-sequences.md),
+[Full Cloud Control](../cloud/full-cloud-control.md), and
+[Setting Up a Viewer Page](../cloud/viewer-page.md).
 
 ## Where to next
 

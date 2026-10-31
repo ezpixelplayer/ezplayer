@@ -32,7 +32,7 @@ On [EZRGB](https://ezrgb.com) you can:
   automatically once assigned).
 - Open **Manage Player** from the **EZPlayer** section of your account for the
   full remote player UI over the internet.
-- Set your show name, and set up a viewer page.
+- Set your show name, and set up a [viewer page](./viewer-page.md).
 
 Changes you make on the website flow down to EZPlayer on the next sync. Watch
 progress on the [Cloud screen](./status-control-ui.md), or click
@@ -55,10 +55,12 @@ Remote control works only while the Cloud screen in EZPlayer shows
 
 ## Optional: viewer / show page
 
-EZRGB can also host a public **show page** for your audience — show info, song
-requests during allowed hours, and optional audio. Configure the page on
-[Show Settings](./show-settings.md). Set request hours and playlists in
-EZPlayer under [Viewer Control](../advanced/viewer-control.md).
+EZRGB can also host a public **show page** for your audience.  This page provides show info,
+accepts song requests during allowed hours, and tells your audience how to hear the audio. See
+[Setting Up a Viewer Page](./viewer-page.md) for the walkthrough and
+[Show Settings](./show-settings.md) for a description of what each item controls. Request hours and
+playlists are set in EZPlayer under
+[Viewer Control](../advanced/viewer-control.md).
 
 ## What still happens locally
 

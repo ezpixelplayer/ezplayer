@@ -12,7 +12,7 @@ Once connected, the player can:
 2. Sync your layout with the cloud service
 3. Appear under **EZPlayer** on your EZRGB account and offer a **Remote Control
    Link** on the Cloud screen, so you can open the full player UI over the internet
-4. Set up a viewer page.
+4. Set up a [viewer page](./viewer-page.md).
 
 You only need to register once per show folder. If you reopen a folder that is
 already registered, EZPlayer picks up where you left off.
