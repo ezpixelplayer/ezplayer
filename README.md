@@ -107,7 +107,7 @@ EZPlayer is tested on Raspberry Pi 5 and 4 (64-bit OS and 4GB or more required).
 
 ### Running EZPlayer
 
-For detailed documentation, see the [EZPlayer manual](https://docs.ezplayer.dev/). The manual is [CC BY-SA 4.0](doc/LICENSE), so feel free to quote and share it.
+For detailed documentation, see the [EZPlayer manual](https://ezplayer.dev/). The manual is [CC BY-SA 4.0](doc/LICENSE), so feel free to quote and share it.
 
 #### Running EZPlayer Locally
 

@@ -13,7 +13,7 @@ const config = {
         v4: true,
     },
 
-    url: 'https://docs.ezplayer.dev',
+    url: 'https://ezplayer.dev',
     baseUrl: '/',
     // Emit /path.html so Cloudflare Pages serves /path directly; keeps the
     // served URL, canonical and sitemap entries identical (no 308 hop).
