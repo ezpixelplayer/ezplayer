@@ -40,14 +40,14 @@ Deploy once so the project's `*.pages.dev` hostname exists.
 
 ## Custom domain
 
-1. In the Pages project → **Custom domains → Set up a domain**, add
-   `ezplayer.dev`, `www.ezplayer.dev`, and `docs.ezplayer.dev`. Because the
-   zone is on Cloudflare, it offers to create/replace the DNS records itself
-   (apex via CNAME flattening); accept. TLS is issued within minutes.
+1. In the Pages project → **Custom domains**, `ezplayer.dev` and
+   `docs.ezplayer.dev` are attached. DNS: apex and `docs` are proxied CNAMEs to
+   `ezplayer-46l.pages.dev`; `www` is a proxied CNAME to `ezplayer.dev` and is
+   deliberately *not* attached to Pages (a Pages-attached hostname bypassed the
+   zone redirect rule below).
 2. **Rules → Redirect Rules**: one dynamic rule, hostname `docs.ezplayer.dev`
    or `www.ezplayer.dev` → `concat("https://ezplayer.dev", http.request.uri.path)`,
-   301, preserve query string. Pages custom domains must stay attached so the
-   hostnames are proxied and the rule can fire.
+   301, preserve query string.
 3. Old WordPress paths (`/faq`, `/forum`, `/news`, ...) are mapped in
    `static/_redirects`, which Pages applies at the edge.
 4. **Security → Bots** (or **AI Crawl Control**): leave *Block AI bots* and
