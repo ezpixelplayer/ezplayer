@@ -1,7 +1,0 @@
-#!/usr/bin/env bash
-# NetworkManager dispatcher: refresh only Ethernet-related show routing.
-set -euo pipefail
-[[ "${1:-}" == eth0 ]] || exit 0
-case "${2:-}" in
- up|down|dhcp4-change|reapply) /usr/bin/python3 /opt/ezplayer-network/show_output.py apply ;;
-esac

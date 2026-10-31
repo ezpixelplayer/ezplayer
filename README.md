@@ -106,7 +106,7 @@ The EZPlayer appliance image targets Raspberry Pi 3B+, 4, and 5 with a 64-bit OS
 
 Local HDMI and USB audio continue to work in appliance mode through a hidden audio process; a monitor and graphical login are not required. The Pi 3B+'s 1 GB of RAM makes it the minimum supported model, so large shows and high channel counts should be tested on the intended hardware. Pi 4 and 5 remain the better choice for heavier shows.
 
-The standalone Linux ARM packages are still available for an existing 64-bit Linux installation. The flashable appliance image and its build instructions live under [`pi-appliance`](./pi-appliance/README.md).
+The standalone Linux ARM packages are still available for an existing 64-bit Linux installation. The flashable appliance image, its network setup stack and its build instructions live in the separate [pi-image](https://github.com/ezpixelplayer/pi-image) repository, which consumes the ARM64 package from an EZPlayer release.
 
 ### Running EZPlayer
 
