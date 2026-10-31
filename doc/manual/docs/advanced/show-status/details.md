@@ -14,6 +14,8 @@ something isn't behaving as expected.
 
 ## Player Status
 
+![Player Status card](/img/status-player.png)
+
 What the playback engine is doing right now:
 
 - **Type** — the kind of player.
@@ -36,6 +38,8 @@ The **Stats** button opens detailed playback statistics — see
 
 ## Test Sequences
 
+![Test Sequences card](/img/status-test-sequences.png)
+
 Play a test sequence on demand.
 The dropdown lists sequences carrying one of the configured test
 tags (default `test`; set under
@@ -56,6 +60,8 @@ A summary of the show data the player has loaded:
 - **Sync times** — when the sequence and schedule data were last refreshed.
 
 ## Viewer Control
+
+![Viewer Control card](/img/status-viewer-control.png)
 
 A summary of viewer requests. See [Viewer Control](../viewer-control.md) for how
 to set it up.

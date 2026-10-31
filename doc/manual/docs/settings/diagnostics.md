@@ -9,6 +9,8 @@ The **Diagnostics** tile holds crash reporting and the support bundle. Crash
 report consent is stored on the machine, not in the show folder, so it applies
 to every show folder you open.
 
+![Diagnostics](/img/diagnostics.png)
+
 ## Crash reports
 
 - **Send anonymous crash reports** — sends anonymous crash and error reports to

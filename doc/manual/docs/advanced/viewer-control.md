@@ -42,7 +42,7 @@ sequences on the Remote Falcon site (the player cannot see this). Remote
 Falcon's reply appears under the button, so if a list is rejected,
 the reason is shown there.
 
-![Remote Falcon show page](/img/remote-falcon-1.png)
+![Viewer Control settings](/img/remote-falcon-1.png)
 
 During active viewer-control hours, the player keeps your Remote Falcon show
 page updated with what's playing and checks for viewer requests as it chooses
@@ -78,6 +78,8 @@ limits how many songs a show can list), or take requests at different hours.
 The Remote Falcon schedule starts as a copy of the shared schedule; after that,
 edit either list on its own. Viewer-page requests still play before Remote
 Falcon suggestions whenever both windows are open.
+
+![Viewer page and Remote Falcon schedules](/img/viewer-control-schedules.png)
 
 ## Songs Between Repeats
 
