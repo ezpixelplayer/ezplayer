@@ -69,31 +69,6 @@ player. **Read controller details automatically** sets when this happens:
 | **Also when a controller comes back mid-show** | Also reads a controller that just came back up; it joins the show once the read finishes.                         |
 | **Never**                                      | No automatic reads.                                                                                               |
 
-## Diagnostics
-
-- **Send anonymous crash reports** — sends anonymous crash and error reports to
-  help improve EZPlayer. No show data, files, or personal information is
-  included.
-- **Include my Player ID with reports** — lets support connect reports to your
-  player when you ask for help. Off by default, and available only when crash
-  reports are on.
-
-### Support bundle
-
-A zip of information about the player computer, to send when asking for help.
-Passwords and tokens are removed. It is offered when you open settings on the
-player computer itself, not through the cloud. Choose what to **Include**, then
-click **Download**:
-
-| Option                                | What it includes                                                                                                                          |
-| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| **Logs**                              | Recent logs, crash information, versions, system details, and settings changed from their defaults.                                        |
-| **Logs and player setup**             | Adds network addresses, the xLights controller setup, and your songs, playlists, and schedule. No audio or sequence files.                 |
-| **Logs, player setup, and layout**    | Adds the xLights layout file as well.                                                                                                      |
-
-The download is an ordinary zip file. Open it and look through it before you
-send it, and remove anything you would rather not share.
-
 ## Sync Output
 
 Enable **FPP MultiSync master** to have FPP or xSchedule remotes follow this

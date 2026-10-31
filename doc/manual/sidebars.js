@@ -89,6 +89,7 @@ const sidebars = {
                 'settings/ui',
                 'settings/audio',
                 'settings/player',
+                'settings/diagnostics',
                 'settings/software-update',
                 'settings/jukebox',
                 'settings/cloud',
