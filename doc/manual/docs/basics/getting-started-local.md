@@ -83,8 +83,10 @@ for URLs, port configuration, and troubleshooting.
 
 ## 7. Add cloud features (optional)
 
-If you start with a local EZPlayer, you [can still connect to the cloud later](../settings/cloud.md). Connecting your player to the cloud allows you to see status and control the show from anywhere, via the internet. Connecting to the cloud also allows you to
-download songs directly to your show.
+If you start with a local EZPlayer, you [can still connect to the cloud later](../settings/cloud.md).
+Connecting your player to the cloud allows you to see status and control the show from anywhere, via the internet,
+and allows you to create a simple web page for your viewers to visit.
+When connected to the cloud, your EZRGB sequences are downloaded directly to your show folder.
 
 ## Where to next
 

@@ -7,7 +7,7 @@ title: Player
 
 The **Player** tile holds playback-engine behaviors.
 
-## Start EZPlayer when I sign in
+## Start EZPlayer at sign-in
 
 _(Desktop app — Windows and Mac)_
 
@@ -56,6 +56,19 @@ Turn it **off** when another player drives the same controllers — EZPlayer the
 leaves the network untouched outside active playback. Note that with blackout
 off, lights hold their last frame when playback stops.
 
+## Controllers
+
+The player can read each controller's configuration on its own — ports,
+firmware, and anything that has drifted from xLights. A read takes up to tens of
+seconds and pauses that controller's data, so reads normally wait for an idle
+player. **Read controller details automatically** sets when this happens:
+
+| Option                                         | What it does                                                                                                      |
+| ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| **When nothing is playing (recommended)**      | Reads only while the player is idle.                                                                              |
+| **Also when a controller comes back mid-show** | Also reads a controller that just came back up; it joins the show once the read finishes.                         |
+| **Never**                                      | No automatic reads.                                                                                               |
+
 ## Sync Output
 
 Enable **FPP MultiSync master** to have FPP or xSchedule remotes follow this
@@ -68,6 +81,12 @@ listeners use; an FPP remote holding the same audio file will play it, so turn
 this off to keep such remotes silent. Details and limits:
 [FPP compatibility](../reference/fpp-compat.md#multisync-master).
 
+The **Remotes**, **MultiSync port** and **MultiSync multicast address** fields
+are available only while the master is enabled:
+
+- **MultiSync port** — default 32320.
+- **MultiSync multicast address** — default 239.70.80.80.
+
 ## Test Sequences
 
 Sequences carrying any of these tags (default `test`) are offered in the
@@ -79,7 +98,5 @@ the test area.
 
 Overrides for testing and unusual networks; leave blank for standard behavior.
 
-- **MultiSync port** — default 32320.
-- **MultiSync multicast address** — default 239.70.80.80.
 - **DDP output port** — default 4048. Takes effect when the show folder
   reloads or the player restarts.

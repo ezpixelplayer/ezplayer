@@ -10,46 +10,63 @@ On the [Show Status](./details.md) screen, the **Player Status** card has a
 detailed look at how the player is performing while a show runs.
 
 If the player has not reported any stats yet, the dialog shows _No playback
-statistics available_.
+statistics available_ until the player is running.
 
 ![Playback statistics](/img/stats-1.png)
 
 ## What you'll see
 
-The dialog groups numbers into a few areas:
+The dialog groups numbers into these cards:
 
-### Performance
+### Performance Metrics
 
-How busy the playback loop is — idle time, time spent sending data to
-controllers, and time spent blending background effects.
+How busy the playback loop is: the iteration count, the measurement interval,
+idle time, send time (time spent sending data to controllers), and **Loop Delay**
+(p50 / p99 / max). **Effect Processing** shows the time spent blending
+background effects.
 
-### Frames
+### Frame Statistics
 
-Counts of **sent**, **missed**, and **skipped** frames, plus timing numbers
-like average send time and worst lag. Rising missed or skipped counts can mean
-the player or network is struggling to keep up.
+Counts of **missed headers**, **missed frames**, **missed background frames**,
+**skipped frames**, and **sent frames**, plus **skipped frames (high backlog)**.
+Timing numbers include average send time, max send time, worst lag and worst
+advance.
 
-### Sequence and audio loading
+Also shown:
 
-How long the player spends reading and decompressing sequence files and decoding
-audio.
+- **Controller Frame Skips (intentional)** and **(incomplete)** — frames a
+  controller skipped on purpose, and frames skipped because the previous one had
+  not finished.
+- **Packets Dropped by Sender** — highlighted in a warning color when above zero.
 
-### Prefetch caches
+Rising missed or skipped counts can mean the player or network is struggling to
+keep up.
 
-How much sequence and audio data is cached ahead of playback — cache usage,
-fetch counts, hits/misses, and any load errors. Useful mainly when diagnosing
-slow starts or cloud-show downloads.
+### Worker Statistics
+
+How long the player spends reading and decompressing sequence files
+(**Sequence Read**) and reading and decoding audio (**Audio Read**).
+
+### Audio Prefetch and FSEQ Data Prefetch
+
+How much audio and sequence data is cached ahead of playback. Each card shows
+the cache budget and amount used, fetches and errors, hits and misses,
+evictions and expirations, and occupancy (items referenced, ready, pending,
+loading, or errored). FSEQ Data Prefetch also shows the overall memory
+footprint. Useful mainly when diagnosing slow starts or cloud-show downloads.
 
 ![FSEQ prefetch and last error](/img/stats-2.png)
 
-### Last error
+### Last Error
 
-If the player hit a recent error, it appears at the bottom of the dialog.
+If the player hit a recent error, it appears in a **Last Error** card at the
+bottom of the dialog.
 
 ## Reset
 
 Click **Reset** to clear the cumulative counters and start fresh — handy after
-you fix a problem and want a clean baseline for the next run.
+you fix a problem and want a clean baseline for the next run. Click **Close** to
+dismiss the dialog.
 
 For the broader Show Status screen, see [Details](./details.md). For per-controller
 health, see [Controllers](./controllers.md).

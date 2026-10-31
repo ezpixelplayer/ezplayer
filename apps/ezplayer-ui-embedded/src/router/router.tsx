@@ -5,6 +5,8 @@ import {
     AudioSettings,
     CloudPage,
     ControllersScreen,
+    DiagnosticsSettings,
+    DIAGNOSTICS_SETTINGS_SECTION_KEY,
     JukeboxSettings,
     MediaFolderSettings,
     PlayerCloudRegistrationDialog,
@@ -46,6 +48,7 @@ import VolumeUpIcon from '@mui/icons-material/VolumeUp';
 import TuneIcon from '@mui/icons-material/Tune';
 import FolderIcon from '@mui/icons-material/Folder';
 import SystemUpdateAltIcon from '@mui/icons-material/SystemUpdateAlt';
+import TroubleshootIcon from '@mui/icons-material/Troubleshoot';
 
 declare global {
     interface Window {
@@ -122,6 +125,12 @@ const EmbeddedSettingsPage = () => {
             icon: <TuneIcon sx={{ fontSize: 56 }} />,
             title: 'Player Settings',
             content: <PlayerSettings />,
+        },
+        {
+            key: DIAGNOSTICS_SETTINGS_SECTION_KEY,
+            label: 'Diagnostics',
+            icon: <TroubleshootIcon sx={{ fontSize: 56 }} />,
+            content: <DiagnosticsSettings />,
         },
         {
             key: 'softwareUpdate',
