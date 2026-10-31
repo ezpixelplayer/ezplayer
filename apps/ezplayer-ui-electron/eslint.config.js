@@ -29,9 +29,6 @@ export default tseslint.config({
         'react-hooks/rules-of-hooks': 'error',
         'react-hooks/exhaustive-deps': 'warn',
         'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
-        // New in eslint:recommended 10; existing findings stay warnings until fixed.
-        'no-useless-assignment': 'warn',
-        'preserve-caught-error': 'warn',
         '@typescript-eslint/no-explicit-any': ['warn'],
         '@typescript-eslint/no-require-imports': ['off'],
         '@typescript-eslint/no-unused-vars': [

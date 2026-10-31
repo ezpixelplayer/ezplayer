@@ -33,7 +33,7 @@ registration.
 
 ![Cloud Registration Screen](/img/FirstRunCloudReg.png)
 
-When EZRGB confirms the claim, EZPlayer pulls your layout and opens the main
+When EZRGB confirms the claim, EZPlayer downloads your layout and opens the main
 app. Your player also appears under **EZPlayer** on your EZRGB account — use
 **Manage Player** there later for remote control over the internet.
 
@@ -49,7 +49,7 @@ automatic poll.
 ![Play on jukebox](/img/jukebox.png)
 
 Use the **Jukebox** to queue sequences and let them run. Want to see it before
-it hits the real lights? The **3D Preview** screen renders the show on screen as it plays.
+it hits the real lights? The **Show View** screen renders the show on screen as it plays.
 
 ## 4. Build a playlist
 
@@ -62,8 +62,8 @@ the left into your playlist on the right, set a name, and save. Schedules play
 playlists — not individual songs — so group your sequences into at least one
 playlist before you set show times.
 
-You can also create and edit playlists from EZRGB via **Manage Player**, or on
-the website itself for a fully cloud-managed show.
+You can also create and edit playlists from EZRGB via **Manage Player** while
+your player is online.
 
 See [Playlists](./playlists.md) for sorting, tags, and cloning.
 
@@ -90,19 +90,23 @@ confirm under **Show Status → HTTP Listener Status**. See
 
 **Over the internet** — on [EZRGB](https://ezrgb.com), open your account →
 **EZPlayer** → **Manage Player** for the full remote player UI (playlists,
-schedule, playback, and more). Prefer a new browser tab.
+schedule, playback, and more). Prefer a new browser tab. The **Remote Control
+Link** on the **Cloud** screen opens the same UI; see
+[Remote Control Link](../cloud/status-control-ui.md#remote-control-link) before
+sharing it.
 
 ## 7. Use cloud features
 
-Go to [EZRGB](https://ezrgb.com) to adjust your layout, get more songs, and
-manage the show from anywhere. Details:
+Go to [EZRGB](https://ezrgb.com) to submit a new layout, get more songs,
+manage the show remotely, or set up show details and a viewer page. Details:
 [Registering](../cloud/registering.md),
 [Cloud Status / Control UI](../cloud/status-control-ui.md),
-[Getting Sequences](../cloud/getting-sequences.md), and
-[Full Cloud Control](../cloud/full-cloud-control.md).
+[Getting Sequences](../cloud/getting-sequences.md),
+[Full Cloud Control](../cloud/full-cloud-control.md), and
+[Setting Up a Viewer Page](../cloud/viewer-page.md).
 
 ## Where to next
 
 - [Songs](../basics/songs.md), [Playlists](../basics/playlists.md), and [Schedules](../basics/simple-schedules.md) - How to set up songs, playlists, and schedules.
-- [Player](../basics/player-screen.md), [Jukebox](../basics/jukebox.md), and [Preview](../basics/preview.md) - How to control and see your show.
+- [Player](../basics/player-screen.md), [Jukebox](../basics/jukebox.md), and [Show View](../basics/preview.md) - How to control and see your show.
 - [Web UI](../basics/local-web-interface.md) - How to control the show over your local network

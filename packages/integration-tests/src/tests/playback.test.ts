@@ -90,10 +90,16 @@ describe('playback', () => {
         await fpp.waitForStatus((s) => s.status_name === 'playing', { label: 'resumed' });
     });
 
-    it('volume is readable but not writable (settings-driven)', async () => {
-        expect((await fpp.command('Volume Set', 37)).status).toBe(404);
-        const vol = (await (await fetch(`${app.base}/api/system/volume`)).json()) as { volume: number };
-        expect(typeof vol.volume).toBe('number');
+    it('Volume Set writes the default volume and the live level ramps to it', async () => {
+        expect((await fpp.command('Volume Set', 37)).status).toBe(200);
+
+        const deadline = Date.now() + 15_000;
+        let level: number | undefined;
+        while (level !== 37 && Date.now() < deadline) {
+            await new Promise((r) => setTimeout(r, 250));
+            level = ((await (await fetch(`${app.base}/api/system/volume`)).json()) as { volume: number }).volume;
+        }
+        expect(level).toBe(37);
     });
 
     it('Stop Now goes idle and output goes dark', async () => {

@@ -7,11 +7,11 @@
  * @param speed - Speed of cycling (higher = faster)
  * @returns [r, g, b] tuple (0-255 range)
  */
-export function getColorCycle(time: number, speed: number = 1, l:number = .5): [number, number, number] {
+export function getColorCycle(time: number, speed: number = 1, l: number = 0.5): [number, number, number] {
     const hue = (time * speed) % 360; // Cycle through 0-360 degrees
     return hslToRgb(hue, 1.0, l); // Full saturation, 50% lightness
 }
-  
+
 /**
  * Converts HSL to RGB (0-255 range).
  * @param h Hue (0-360)
@@ -21,10 +21,10 @@ export function getColorCycle(time: number, speed: number = 1, l:number = .5): [
  */
 export function hslToRgb(h: number, s: number, l: number): [number, number, number] {
     const c = (1 - Math.abs(2 * l - 1)) * s;
-    const x = c * (1 - Math.abs((h / 60) % 2 - 1));
+    const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
     const m = l - c / 2;
 
-    let [r, g, b] = [0, 0, 0];
+    let r: number, g: number, b: number;
     if (h < 60) [r, g, b] = [c, x, 0];
     else if (h < 120) [r, g, b] = [x, c, 0];
     else if (h < 180) [r, g, b] = [0, c, x];
@@ -32,9 +32,5 @@ export function hslToRgb(h: number, s: number, l: number): [number, number, numb
     else if (h < 300) [r, g, b] = [x, 0, c];
     else [r, g, b] = [c, 0, x];
 
-    return [
-        Math.round((r + m) * 255),
-        Math.round((g + m) * 255),
-        Math.round((b + m) * 255),
-    ];
+    return [Math.round((r + m) * 255), Math.round((g + m) * 255), Math.round((b + m) * 255)];
 }

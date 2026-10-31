@@ -72,18 +72,25 @@ function ago(ts: number | undefined, now: number): string {
     return `${Math.round(h / 24)} d ago`;
 }
 
+const clockFormatters = new Map<string, Intl.DateTimeFormat | null>();
+
 function clock(ts: number, tz: string): string {
-    try {
-        return new Intl.DateTimeFormat(undefined, {
-            timeZone: tz,
-            month: 'short',
-            day: 'numeric',
-            hour: 'numeric',
-            minute: '2-digit',
-        }).format(new Date(ts));
-    } catch {
-        return new Date(ts).toLocaleString();
+    let f = clockFormatters.get(tz);
+    if (f === undefined) {
+        try {
+            f = new Intl.DateTimeFormat(undefined, {
+                timeZone: tz,
+                month: 'short',
+                day: 'numeric',
+                hour: 'numeric',
+                minute: '2-digit',
+            });
+        } catch {
+            f = null;
+        }
+        clockFormatters.set(tz, f);
     }
+    return f ? f.format(new Date(ts)) : new Date(ts).toLocaleString();
 }
 
 function dayLabel(day: string): string {
@@ -495,7 +502,7 @@ export function ViewerStatsBody() {
                                     <Stack spacing={0.75}>
                                         {summary.recent.map((ev) => (
                                             <Stack
-                                                key={`${ev.ts}-${ev.seq}`}
+                                                key={`${ev.epoch}-${ev.seq}`}
                                                 direction="row"
                                                 spacing={1}
                                                 alignItems="flex-start"

@@ -21,12 +21,19 @@ import { applyGpuStartupPolicy, maybeFallbackToSoftwareGpu, noteChildProcessGone
 import { describeExitCode } from './mainsrc/rendererCrashPolicy.js';
 import { installDiagLogRing, primeDiagEnv } from './mainsrc/diagEnv.js';
 installDiagLogRing();
-import { beginSession, captureRendererConsole, installAppLog, markSessionEnding } from './mainsrc/applog.js';
+import {
+    beginSession,
+    captureRendererConsole,
+    guardStdio,
+    installAppLog,
+    markSessionEnding,
+} from './mainsrc/applog.js';
 import { crashDumpsSince, pruneCrashDumps } from './mainsrc/diagbundle.js';
 import { faultPageUrl, faultPreloadPath, injectMainFaults } from './mainsrc/faultinject-main.js';
 import { watchRenderer } from './mainsrc/rendererwatch.js';
 // Text-only verbs are short-lived and may run beside a player; keep them out of its log.
-if (!isToolVerb()) installAppLog();
+if (isToolVerb()) guardStdio();
+else installAppLog();
 import { registerFileListHandlers } from './mainsrc/ipcmain.js';
 import {
     isScheduleActive,
@@ -35,6 +42,7 @@ import {
     stopPlayerPlayback,
 } from './mainsrc/ipcezplayer.js';
 import { registerAutoUpdateHandlers, cleanupAutoUpdate } from './mainsrc/ipcautoupdate.js';
+import { syncPowerBlock } from './mainsrc/powerblock.js';
 import {
     closeShowFolder,
     ensureExclusiveFolder,
@@ -476,6 +484,8 @@ if (isToolVerb()) {
         }
 
         console.log('GPU feature status:', JSON.stringify(app.getGPUFeatureStatus()));
+        // Takes effect from here on when the setting is "always"; playback status refines it.
+        syncPowerBlock(undefined);
         pruneCrashDumps();
         for (const prev of beginSession(ezpVersions.version)) {
             if (prev.sessionEnding) {

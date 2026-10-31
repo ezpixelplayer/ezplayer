@@ -81,11 +81,49 @@ describe('runFppCommand', () => {
         expect(sent.map((c) => c.command)).toEqual(['stopnow', 'stopgraceful', 'pause', 'resume', 'endsong']);
     });
 
-    it('volume commands are not honored (settings/schedule own volume)', async () => {
-        const { deps, sent } = makeDeps();
-        expect((await runFppCommand('Volume Set', ['50'], deps)).status).toBe(404);
-        expect((await runFppCommand('Volume Increase', ['10'], deps)).status).toBe(404);
-        expect(sent.length).toBe(0);
+    describe('volume commands write the default volume', () => {
+        function withVolume(defaultVolume: number, activeWindows: string[] = []) {
+            const { deps, sent } = makeDeps();
+            const written: number[] = [];
+            deps.volume = {
+                getVolume: () => ({ defaultVolume, activeWindows }),
+                setDefaultVolume: async (level) => void written.push(level),
+            };
+            return { deps, sent, written };
+        }
+
+        it('Volume Set writes the default and never sends a player command', async () => {
+            const { deps, sent, written } = withVolume(70);
+            const res = await runFppCommand('Volume Set', ['50'], deps);
+            expect(res.status).toBe(200);
+            expect(written).toEqual([50]);
+            expect(sent).toEqual([]);
+        });
+
+        it('Increase/Decrease/Adjust are relative to the default and clamp to 0-100', async () => {
+            const { deps, written } = withVolume(95);
+            await runFppCommand('Volume Increase', ['10'], deps);
+            await runFppCommand('Volume Decrease', ['20'], deps);
+            await runFppCommand('Volume Adjust', ['-100'], deps);
+            await runFppCommand('Volume Adjust', ['+3'], deps);
+            expect(written).toEqual([100, 75, 0, 98]);
+        });
+
+        it('is declined with the reason while a scheduled window is in effect', async () => {
+            const { deps, written } = withVolume(70, ['System default: 20:00-22:00 at 40%']);
+            const res = await runFppCommand('Volume Set', ['50'], deps);
+            expect(res.status).toBe(500);
+            expect(res.message).toMatch(/20:00-22:00 at 40%/);
+            expect(written).toEqual([]);
+        });
+
+        it('rejects a non-numeric level and reports unloaded settings', async () => {
+            const { deps } = withVolume(70);
+            expect((await runFppCommand('Volume Set', ['loud'], deps)).status).toBe(400);
+            expect((await runFppCommand('Volume Set', [], deps)).status).toBe(400);
+            const { deps: bare } = makeDeps();
+            expect((await runFppCommand('Volume Set', ['50'], bare)).status).toBe(500);
+        });
     });
 
     it('unknown command 404s, Prev is a 500 not-supported', async () => {

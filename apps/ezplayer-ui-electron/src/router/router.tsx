@@ -198,8 +198,8 @@ const menuRoutes: MenuRoute[] = [
     },
     {
         path: ROUTES.PREVIEW_3D,
-        element: <Preview3DPage title="3D Preview" statusArea={getStatusArea()} />,
-        sidebar: { icon: <ViewInArIcon />, label: '3D Preview' },
+        element: <Preview3DPage title="Show View" statusArea={getStatusArea()} />,
+        sidebar: { icon: <ViewInArIcon />, label: 'Show View' },
     },
     {
         path: ROUTES.CLOUD,

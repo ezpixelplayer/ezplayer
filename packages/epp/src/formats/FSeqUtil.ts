@@ -1,9 +1,16 @@
 import { promises as fsp } from 'fs';
+import { inflateSync } from 'zlib';
 import { ZSTDDecoder } from 'zstddec';
 import { FileReadRequest, FileReadWorker } from '../util/ReadFileWorkers';
 import { readUInt24LE, toDataView, toUint8Array } from '../util/Utils';
 
 const utfDecoder = new TextDecoder('utf-8');
+
+/** Each zlib block is its own stream. */
+function inflateBlock(block: Uint8Array) {
+    const out = inflateSync(block);
+    return new Uint8Array(out.buffer, out.byteOffset, out.length);
+}
 
 //
 // This is a very top-heavy view of fseq files.  It reads and calls back with data.
@@ -259,17 +266,17 @@ export class FSEQReaderSync {
         }
 
         // Things we will need to read the frames
-        let nframes = 0; // Number of frames
-        let stepsz = 0; // Size of uncompressed frame
+        let nframes: number; // Number of frames
+        let stepsz: number; // Size of uncompressed frame
         const compblocklist: CompBlock[] = []; // Bit about reading the file and decompressing
         const chrangelist: SparseRange[] = [];
         const v1headers: { [key: string]: string } = {};
         let comp = 0;
-        let ccount = 0;
+        let ccount: number;
         let stepms = 50;
-        let off2chdata = 0;
-        let minver = 0;
-        let majver = 0;
+        let off2chdata: number;
+        let minver: number;
+        let majver: number;
         let modelcnt = 0;
         let modelstart = 0;
         let modelsize = 0;
@@ -333,7 +340,7 @@ export class FSEQReaderSync {
                 blks = (compandblks & 240) * 16;
                 blks += await this.read8bit();
                 //console.log ("blocks: "+str(blks))
-                nranges = await this.read8bit();
+                await this.read8bit(); // sparse range count; recounted from the table below
                 reserved2 = await this.read8bit();
                 uuid1 = await this.read32bit();
                 uuid2 = await this.read32bit();
@@ -458,18 +465,20 @@ export class FSEQReaderSync {
             let lenraw = dsz;
             //console.log("Read of " + str(dsz) + " got "+str(len(raw)))
             foff += dsz;
-            if (this.header.compression === 1) {
+            if (this.header.compression === 1 || this.header.compression === 2) {
                 let nframes = this.header.frames - curframe;
                 if (cn < this.header.compblocklist.length - 1) {
                     nframes = this.header.compblocklist[cn + 1].framenum - curframe;
                 }
                 lenraw = nframes * this.header.stepsize;
-                const decoder = new ZSTDDecoder();
-                await decoder.init();
-                //console.log(`${dsz} - ${lenraw} - ${nframes} - ${this.header.stepsize} - ${cn} - ${curframe}`);
-                raw = decoder.decode(raw, lenraw);
-            } else if (this.header.compression === 2) {
-                throw new Error('Need to implement zlib');
+                if (this.header.compression === 2) {
+                    raw = inflateBlock(raw);
+                } else {
+                    const decoder = new ZSTDDecoder();
+                    await decoder.init();
+                    //console.log(`${dsz} - ${lenraw} - ${nframes} - ${this.header.stepsize} - ${cn} - ${curframe}`);
+                    raw = decoder.decode(raw, lenraw);
+                }
             }
 
             let frmoffset = 0;
@@ -598,17 +607,17 @@ export class FSEQReaderAsync {
         }
 
         // Things we will need to read the frames
-        let nframes = 0; // Number of frames
-        let stepsz = 0; // Size of uncompressed frame
+        let nframes: number; // Number of frames
+        let stepsz: number; // Size of uncompressed frame
         const compblocklist: CompBlock[] = []; // Bit about reading the file and decompressing
         const chrangelist: SparseRange[] = [];
         const v1headers: { [key: string]: string } = {};
         let comp = 0;
-        let ccount = 0;
+        let ccount: number;
         let stepms = 50;
-        let off2chdata = 0;
-        let minver = 0;
-        let majver = 0;
+        let off2chdata: number;
+        let minver: number;
+        let majver: number;
         let modelcnt = 0;
         let modelstart = 0;
         let modelsize = 0;
@@ -638,7 +647,6 @@ export class FSEQReaderAsync {
             modelstart = buf.getUint32(off, true);
             off += 4;
             ccount = buf.getUint32(off, true);
-            off += 4;
             modelsize = ccount;
 
             // Noting the lack of #frames, frame timing, or any compression.  This format sucks.
@@ -853,7 +861,7 @@ export class FSEQReaderAsync {
             //console.log(`${dsz} - ${lenraw} - ${nframes} - ${this.header.stepsize} - ${cn} - ${curframe}`);
             chunk.decompBuf = decoder.decode(req.buf!, lenraw);
         } else if (this.header.compression === 2) {
-            throw new Error('Need to implement zlib');
+            chunk.decompBuf = inflateBlock(req.buf!);
         } else {
             chunk.decompBuf = req.buf!;
         }

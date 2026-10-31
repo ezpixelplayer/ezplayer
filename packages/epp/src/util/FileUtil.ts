@@ -6,7 +6,7 @@ export async function readJsonFile(filePath: string): Promise<unknown> {
         const data = await fsp.readFile(filePath, { encoding: 'utf8' });
         return JSON.parse(data);
     } catch (error) {
-        throw new Error(`Error reading JSON file: ${error}`);
+        throw new Error(`Error reading JSON file: ${error}`, { cause: error });
     }
 }
 

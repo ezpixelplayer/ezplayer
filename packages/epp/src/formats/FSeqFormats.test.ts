@@ -19,7 +19,7 @@
 import { promises as fsp } from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { zstdCompressSync } from 'zlib';
+import { deflateSync, zstdCompressSync } from 'zlib';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { FSEQReaderAsync, FSEQReaderSync } from './FSeqUtil';
 import { FSeqPrefetchCache } from './FSeqPrefetcher';
@@ -35,9 +35,11 @@ interface Spec {
     frames: number;
     msPerFrame?: number;
     zstd?: boolean;
+    /** v2 zlib, one stream per block: how xLights writes Effect sequences. */
+    zlib?: boolean;
     /** v2 uncompressed: how many block entries to emit (real writers: 0). */
     uncompressedBlocks?: number;
-    /** v2 zstd: frames per block. */
+    /** v2 zstd/zlib: frames per block. */
     framesPerBlock?: number;
     /** v2 zstd: trailing zero block entries, as FPP's reserved table leaves them. */
     reservedBlocks?: number;
@@ -118,11 +120,12 @@ function buildV2(spec: Spec) {
 
     // Channel data blocks and their index entries
     const blocks: { framenum: number; data: Buffer }[] = [];
-    if (spec.zstd) {
+    if (spec.zstd || spec.zlib) {
+        const compress = spec.zstd ? zstdCompressSync : deflateSync;
         const fpb = spec.framesPerBlock ?? spec.frames;
         for (let f = 0; f < spec.frames; f += fpb) {
             const n = Math.min(fpb, spec.frames - f);
-            blocks.push({ framenum: f, data: zstdCompressSync(raw.subarray(f * stride, (f + n) * stride)) });
+            blocks.push({ framenum: f, data: compress(raw.subarray(f * stride, (f + n) * stride)) });
         }
     } else {
         const nb = spec.uncompressedBlocks ?? 0;
@@ -150,7 +153,7 @@ function buildV2(spec: Spec) {
     h.writeUInt32LE(spec.frames, 14);
     h[18] = spec.msPerFrame ?? 50;
     h[19] = 0;
-    h[20] = (spec.zstd ? 1 : 0) | ((nblockEntries >> 8) << 4);
+    h[20] = (spec.zlib ? 2 : spec.zstd ? 1 : 0) | ((nblockEntries >> 8) << 4);
     h[21] = nblockEntries & 255;
     h[22] = nranges;
     h[23] = 0;
@@ -262,6 +265,24 @@ const CASES: { name: string; spec: Spec }[] = [
         },
     },
     {
+        name: 'v2 zlib, three frames per block',
+        spec: { kind: 'v2', channels: 150, frames: 7, zlib: true, framesPerBlock: 3 },
+    },
+    {
+        name: 'v2 zlib sparse, two frames per block (xLights Effect sequence)',
+        spec: {
+            kind: 'v2',
+            channels: 300,
+            frames: 7,
+            zlib: true,
+            framesPerBlock: 2,
+            sparse: [
+                { startch: 10, chcount: 15 },
+                { startch: 100, chcount: 33 },
+            ],
+        },
+    },
+    {
         name: 'v2 zstd, 25ms frames, 2000 channels',
         spec: { kind: 'v2', channels: 2000, frames: 11, msPerFrame: 25, zstd: true, framesPerBlock: 4 },
     },
@@ -297,7 +318,7 @@ function checkHeader(
 ) {
     expect(h.majver).toBe(spec.kind === 'v1' ? 1 : 2);
     expect(h.frames).toBe(spec.frames);
-    expect(h.compression).toBe(spec.zstd ? 1 : 0);
+    expect(h.compression).toBe(spec.zlib ? 2 : spec.zstd ? 1 : 0);
     expect(h.nsparseranges).toBe(spec.sparse?.length ?? 0);
     if (spec.kind !== 'eseq') expect(h.msperframe).toBe(spec.msPerFrame ?? 50);
     for (const [k, v] of Object.entries(spec.headers ?? {})) expect(h.headers[k]).toBe(v);

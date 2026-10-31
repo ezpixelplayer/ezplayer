@@ -1,6 +1,6 @@
 /**
  * App-global settings that live outside the show folder: diagnostics consent
- * (electron-store) and the OS login item. One snapshot is pushed to every UI
+ * and prevent-sleep mode (electron-store) and the OS login item. One snapshot is pushed to every UI
  * (Electron renderer, LAN WS, cloud bridge); changes arrive as an
  * `AppSettingsCommand` over any of those transports.
  */
@@ -8,6 +8,7 @@
 import { app } from 'electron';
 import type { AppSettingsCommand, AppSettingsState, LoginItemState } from '@ezplayer/ezplayer-core';
 import { getDiagnosticsConsent, setDiagnosticsConsent } from './diagnostics.js';
+import { getPreventSleepMode, setPreventSleepMode } from './powerblock.js';
 
 /** Electron login items are available on Windows and macOS (not Linux). */
 function isLoginItemPlatformSupported(): boolean {
@@ -52,7 +53,11 @@ function setOpenAtLogin(openAtLogin: boolean): void {
 }
 
 export function getAppSettingsState(): AppSettingsState {
-    return { diagnostics: getDiagnosticsConsent(), loginItem: getLoginItemState() };
+    return {
+        diagnostics: getDiagnosticsConsent(),
+        loginItem: getLoginItemState(),
+        preventSleep: getPreventSleepMode(),
+    };
 }
 
 let broadcaster: ((state: AppSettingsState) => void) | null = null;
@@ -81,6 +86,9 @@ export async function dispatchAppSettingsCommand(cmd: AppSettingsCommand): Promi
             }
             case 'setOpenAtLogin':
                 setOpenAtLogin(cmd.openAtLogin);
+                break;
+            case 'setPreventSleep':
+                setPreventSleepMode(cmd.mode);
                 break;
         }
     } finally {

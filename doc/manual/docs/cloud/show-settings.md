@@ -5,7 +5,7 @@ title: Show Settings
 
 # Show Settings
 
-On [EZRGB](https://ezrgb.com), open **Show Settings** to configure your show
+On [EZRGB](https://ezrgb.com), open **My Show Settings** to configure your show
 identity and the public page viewers open in a browser.
 
 Changes save when you confirm each row or dialog. Click the edit control on a

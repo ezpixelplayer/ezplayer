@@ -80,6 +80,7 @@ export type {
     LoginItemState,
     AppSettingsState,
     AppSettingsCommand,
+    PreventSleepMode,
     ControllerRefreshSettings,
     ControllerRefreshMode,
     ContentDistributionSettings,
@@ -279,6 +280,8 @@ export {
 
 export {
     summarizeViewerStats,
+    dedupeViewerStatsEvents,
+    viewerStatsEventKey,
     trimViewerStatsEvents,
     LOCAL_STATS_EPOCH,
     emptyPicksBySource,
