@@ -30,6 +30,7 @@ describe('Pi HTTP control routes', () => {
     let server: Server;
     let origin: string;
     beforeEach(async () => {
+        // The routes only exist on a Linux appliance; CI also runs this on Windows and macOS.
         Object.defineProperty(process, 'platform', { ...platformDescriptor, value: 'linux' });
         vi.stubEnv('EZPLAYER_PI_APPLIANCE', '1');
         vi.spyOn(fs, 'existsSync').mockReturnValue(true);

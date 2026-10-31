@@ -1413,6 +1413,7 @@ export async function registerContentHandlers(mainWindow: BrowserWindow | null, 
                 curStatus = { ...curStatus, controller: merged, controller_updated: Date.now() };
                 safeSend(mainWindow, 'playback:nstatus', merged);
                 broadcastToWebSocket('nStatus', merged);
+                refreshControllersNowAlive(msg.status);
                 break;
             }
             case 'pstatus': {
