@@ -5,6 +5,8 @@ import {
     AudioSettings,
     CloudPage,
     ControllersScreen,
+    DiagnosticsSettings,
+    DIAGNOSTICS_SETTINGS_SECTION_KEY,
     JukeboxSettings,
     MediaFolderSettings,
     PlayerCloudRegistrationDialog,
@@ -46,6 +48,7 @@ import VolumeUpIcon from '@mui/icons-material/VolumeUp';
 import TuneIcon from '@mui/icons-material/Tune';
 import FolderIcon from '@mui/icons-material/Folder';
 import SystemUpdateAltIcon from '@mui/icons-material/SystemUpdateAlt';
+import TroubleshootIcon from '@mui/icons-material/Troubleshoot';
 
 declare global {
     interface Window {
@@ -124,6 +127,12 @@ const EmbeddedSettingsPage = () => {
             content: <PlayerSettings />,
         },
         {
+            key: DIAGNOSTICS_SETTINGS_SECTION_KEY,
+            label: 'Diagnostics',
+            icon: <TroubleshootIcon sx={{ fontSize: 56 }} />,
+            content: <DiagnosticsSettings />,
+        },
+        {
             key: 'softwareUpdate',
             label: 'Software Update',
             icon: <SystemUpdateAltIcon sx={{ fontSize: 56 }} />,
@@ -196,8 +205,8 @@ const allMenuRoutes: MenuRoute[] = [
     },
     {
         path: ROUTES.PREVIEW_3D,
-        element: <Preview3DPage title="3D Preview" statusArea={getStatusArea()} compressed />,
-        sidebar: { icon: <ViewInArIcon />, label: '3D Preview' },
+        element: <Preview3DPage title="Show View" statusArea={getStatusArea()} compressed />,
+        sidebar: { icon: <ViewInArIcon />, label: 'Show View' },
     },
     {
         path: ROUTES.CLOUD,

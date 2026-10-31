@@ -4,7 +4,7 @@ import {
     performance,
     PerformanceObserver,
     PerformanceEntry,
-    IntervalHistogram,
+    ELDHistogram,
 } from 'node:perf_hooks';
 import inspector from 'node:inspector';
 import { createWriteStream } from 'node:fs';
@@ -65,7 +65,7 @@ function eluNow() {
 const LOOP_DELAY_THRESHOLD_MS = 10; // flag if single-tick delay exceeds this
 const BUSY_UTIL_THRESHOLD = 0.9; // flag if ELU > 95%
 
-let eldHist: IntervalHistogram | undefined = undefined;
+let eldHist: ELDHistogram | undefined = undefined;
 let eldTimeout: NodeJS.Timeout | undefined = undefined;
 export function startELDMonitor(log: (l: string) => void): void {
     if (eldHist) return;

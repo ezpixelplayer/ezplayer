@@ -44,41 +44,39 @@ export function resetZstdStats() {
     decompTime = 0;
 }
 
-export const decompressZStdWithWorker: DecompZStd = (
-    decomp: ArrayBuffer,
-    comp: ArrayBuffer,
-    compOff: number,
-    compLen: number,
-    expLen: number,
-    post?: DecompPost,
-) => {
-    const id = nextId++;
-    const worker = workers.pop();
-    if (!worker) throw new Error('Too many outstanding requests');
+const decompressWithWorker =
+    (codec: 'zstd' | 'zlib'): DecompZStd =>
+    (decomp: ArrayBuffer, comp: ArrayBuffer, compOff: number, compLen: number, expLen: number, post?: DecompPost) => {
+        const id = nextId++;
+        const worker = workers.pop();
+        if (!worker) throw new Error('Too many outstanding requests');
 
-    return new Promise((resolve, reject) => {
-        const onMessage = (msg: WorkerOk | WorkerErr) => {
-            workers.push(worker);
-            if (msg.id !== id) return;
-            worker.off('message', onMessage);
+        return new Promise((resolve, reject) => {
+            const onMessage = (msg: WorkerOk | WorkerErr) => {
+                workers.push(worker);
+                if (msg.id !== id) return;
+                worker.off('message', onMessage);
 
-            if (!msg.ok) {
-                // The buffers may end up getting GC'd
-                // However ... this is a problematic situation w/ a corrupt file or some such...
-                reject(new Error(msg.error));
-                return;
-            }
+                if (!msg.ok) {
+                    // The buffers may end up getting GC'd
+                    // However ... this is a problematic situation w/ a corrupt file or some such...
+                    reject(new Error(msg.error));
+                    return;
+                }
 
-            decompTime += msg.ok ? msg.decompTime : 0;
+                decompTime += msg.ok ? msg.decompTime : 0;
 
-            // Recreate views on the returned (transferred-back) buffers
-            resolve({ decompBuf: msg.decompBuf, compBuf: msg.compBuf, outBuf: msg.outBuf });
-        };
+                // Recreate views on the returned (transferred-back) buffers
+                resolve({ decompBuf: msg.decompBuf, compBuf: msg.compBuf, outBuf: msg.outBuf });
+            };
 
-        worker.on('message', onMessage);
+            worker.on('message', onMessage);
 
-        // Transfer the buffers to the worker (zero-copy); the map program is SharedArrayBuffer-backed.
-        const transfer = post ? [decomp, comp, post.outBuf] : [decomp, comp];
-        worker.postMessage({ id, expLen, compOff, compLen, decompBuf: decomp, compBuf: comp, post }, transfer);
-    });
-};
+            // Transfer the buffers to the worker (zero-copy); the map program is SharedArrayBuffer-backed.
+            const transfer = post ? [decomp, comp, post.outBuf] : [decomp, comp];
+            worker.postMessage({ id, codec, expLen, compOff, compLen, decompBuf: decomp, compBuf: comp, post }, transfer);
+        });
+    };
+
+export const decompressZStdWithWorker = decompressWithWorker('zstd');
+export const decompressZlibWithWorker = decompressWithWorker('zlib');

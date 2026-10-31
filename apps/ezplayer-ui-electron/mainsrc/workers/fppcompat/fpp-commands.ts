@@ -4,9 +4,10 @@
  * drift. Results follow FPP: text 200 on success, 404 unknown command,
  * 500 on failure.
  *
- * Volume write commands are deliberately not supported: EZPlayer volume is
- * settings/schedule-driven, and a one-shot override has no clean semantics
- * against that automation.
+ * Volume commands write EZPlayer's default volume, which is what FPP's own
+ * persistent volume setting amounts to. While a scheduled volume window is
+ * in effect the schedule owns the level, so the command is declined with the
+ * reason rather than silently reverted at the next slew.
  */
 
 import * as crypto from 'crypto';
@@ -14,12 +15,19 @@ import { fileBaseName } from '../pathnames.js';
 import type { EZPlayerCommand, PlayerPStatusContent, PlaylistRecord, SequenceRecord } from '@ezplayer/ezplayer-core';
 import { isPlaybackActive } from '@ezplayer/ezplayer-core';
 
+export interface FppVolumeDeps {
+    /** The default level and the windows in effect; undefined until settings load. */
+    getVolume: () => { defaultVolume: number; activeWindows: string[] } | undefined;
+    setDefaultVolume: (level: number) => Promise<void>;
+}
+
 export interface FppCommandDeps {
     sendPlayerCommand: (cmd: EZPlayerCommand) => Promise<void> | void;
     getPlaylists: () => PlaylistRecord[] | undefined;
     getSequences: () => SequenceRecord[] | undefined;
     /** Current player state, for the "if not running" argument. */
     getPStatus?: () => PlayerPStatusContent | undefined;
+    volume?: FppVolumeDeps;
 }
 
 export interface FppCommandResult {
@@ -135,6 +143,29 @@ const simple = (cmd: EZPlayerCommand) => async (_args: string[], deps: FppComman
 
 const notSupported = (what: string) => async () => err(500, `${what} is not supported by EZPlayer`);
 
+/** Write the default volume as `next(current)`, unless a schedule window owns
+ *  the level right now. FPP applies a Set/Adjust persistently, so the default
+ *  is the honest counterpart. */
+export async function writeVolume(
+    deps: FppCommandDeps,
+    amount: string | undefined,
+    next: (current: number, amount: number) => number,
+): Promise<FppCommandResult> {
+    const n = Number(amount);
+    if (amount === undefined || !Number.isFinite(n)) return err(400, 'Volume argument must be a number');
+    const state = deps.volume?.getVolume();
+    if (!deps.volume || !state) return err(500, 'Volume settings are not loaded');
+    if (state.activeWindows.length > 0) {
+        return err(
+            500,
+            `Volume is under schedule control (${state.activeWindows.join('; ')}); it can be set when the window ends, or change the schedule`,
+        );
+    }
+    const level = Math.max(0, Math.min(100, Math.round(next(state.defaultVolume, n))));
+    await deps.volume.setDefaultVolume(level);
+    return ok(`Volume set to ${level}`);
+}
+
 const COMMANDS: FppCommandDef[] = [
     {
         name: 'Start Playlist',
@@ -231,6 +262,39 @@ const COMMANDS: FppCommandDef[] = [
         description: 'Stop playback (lights go dark)',
         args: [],
         run: simple({ command: 'stopnow' }),
+    },
+    {
+        name: 'Volume Set',
+        category: 'Media',
+        level: 0,
+        description: 'Set the default volume (declined while a scheduled volume window is in effect)',
+        args: [arg('volume', 'int', 'Volume 0-100')],
+        run: (args, deps) => writeVolume(deps, args[0], (_cur, n) => n),
+    },
+    {
+        name: 'Volume Increase',
+        category: 'Media',
+        level: 0,
+        description: 'Raise the default volume (declined while a scheduled volume window is in effect)',
+        args: [arg('amount', 'int', 'Amount')],
+        run: (args, deps) => writeVolume(deps, args[0], (cur, n) => cur + n),
+    },
+    {
+        name: 'Volume Decrease',
+        category: 'Media',
+        level: 0,
+        description: 'Lower the default volume (declined while a scheduled volume window is in effect)',
+        args: [arg('amount', 'int', 'Amount')],
+        run: (args, deps) => writeVolume(deps, args[0], (cur, n) => cur - n),
+    },
+    {
+        name: 'Volume Adjust',
+        category: 'Media',
+        level: 0,
+        description:
+            'Adjust the default volume by a signed amount (declined while a scheduled volume window is in effect)',
+        args: [arg('amount', 'int', 'Signed amount')],
+        run: (args, deps) => writeVolume(deps, args[0], (cur, n) => cur + n),
     },
 ];
 

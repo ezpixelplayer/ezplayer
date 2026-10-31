@@ -114,6 +114,36 @@ describe('isPlaying', () => {
     });
 });
 
+describe('adoptPendingRequests', () => {
+    it('carries queued and immediate requests into a rebuilt state, dropping ones whose target is gone', () => {
+        const prev = new PlayerRunState(0);
+        prev.addInteractiveCommand({ immediate: true, startTime: 5, seqId: 'A', requestId: 'imm' });
+        prev.addInteractiveCommand({ immediate: false, startTime: 10, playlistId: 'plAB', requestId: 'pl' });
+        prev.addInteractiveCommand({ immediate: false, startTime: 20, seqId: 'C', requestId: 'gone' });
+
+        const next = new PlayerRunState(0);
+        next.setUpSequences([seqA, seqB], [plAB], [], []);
+        next.adoptPendingRequests(prev);
+
+        expect(next.immediateItem?.requestId).toBe('imm');
+        expect(next.interactiveQueue.map((q) => q.requestId)).toEqual(['pl']);
+    });
+
+    it('starts an adopted request once its time comes', () => {
+        const bt = baseTime();
+        const prev = new PlayerRunState(bt);
+        prev.addInteractiveCommand({ immediate: false, startTime: bt + 100, seqId: 'A', requestId: 'q' });
+
+        const next = new PlayerRunState(bt);
+        next.setUpSequences([seqA, seqB, seqC], [plAB], [], []);
+        next.adoptPendingRequests(prev);
+        next.runUntil(bt + 1000);
+
+        expect(next.depth).toBe(1);
+        expect(next.interactiveQueue).toEqual([]);
+    });
+});
+
 describe('applyDataUpdate', () => {
     it('leaves the active stack object untouched (no rebuild)', () => {
         const plr = runningState();

@@ -151,14 +151,28 @@ function buildE131SyncPacket(rsyncData: Uint8Array, syncUniverse: number, sequen
     syncData.setUint16(45, syncUniverse, false);
 }
 
-export type E131UniversePlan = { universe: number; size: number };
+const E131_DEFAULT_UNIVERSE_SIZE = 510;
+
+/** A universe on the wire and how many channels it carries. */
+export interface E131Universe {
+    universe: number;
+    size: number;
+}
+
+/** Pair xLights' parallel universe number and size lists, in channel order.
+ *  Sizes and numbering may vary: universe-per-string layouts have both. */
+export function e131Universes(numbers: number[] = [], sizes: number[] = []): E131Universe[] {
+    const universes = numbers
+        .map((universe, i) => ({ universe, size: sizes[i] ?? E131_DEFAULT_UNIVERSE_SIZE }))
+        .filter((u) => u.size > 0);
+    return universes.length ? universes : [{ universe: 1, size: E131_DEFAULT_UNIVERSE_SIZE }];
+}
 
 export class E131Sender extends UDPSender {
-    /** Per-universe plan, in channel order. Empty: consecutive from startUniverse, channelsPerPacket each. */
-    universes: E131UniversePlan[] = [];
-    startUniverse: number = 0;
+    /** Filled in order, one per packet; must not be empty. Channels past the last
+     *  one continue on consecutive universes of its size. */
+    universes: E131Universe[] = e131Universes();
     syncUniverse: number = 0;
-    channelsPerPacket: number = 510;
     pushAtEnd: boolean = true;
     useTimecodes: boolean = false;
 
@@ -194,29 +208,22 @@ export class E131Sender extends UDPSender {
         return E131_PACKET_HEADERLEN + UDP_WIRE_OVERHEAD;
     }
 
-    /** Universe number and channel budget of the idx'th packet in a frame. */
-    private planAt(idx: number): E131UniversePlan {
-        const plan = this.universes;
-        let p: E131UniversePlan;
-        if (!plan.length) {
-            p = { universe: this.startUniverse + idx, size: this.channelsPerPacket };
-        } else if (idx < plan.length) {
-            p = plan[idx];
-        } else {
-            // Data past the plan keeps flowing on consecutive universes rather than being dropped.
-            const last = plan[plan.length - 1];
-            p = { universe: last.universe + (idx - plan.length + 1), size: last.size };
-        }
-        // A zero-size universe would never make progress; oversize would fail the header.
-        const size = Math.max(1, Math.min(E131_MAX_PAYLOAD, p.size));
-        return size === p.size ? p : { universe: p.universe, size };
+    private universeOfPacket(packetNum: number): number {
+        const last = this.universes.length - 1;
+        return packetNum <= last
+            ? this.universes[packetNum].universe
+            : this.universes[last].universe + packetNum - last;
+    }
+
+    private sizeOfPacket(packetNum: number): number {
+        return this.universes[Math.min(packetNum, this.universes.length - 1)].size;
     }
 
     frameWireBytes(job: SenderJob): number {
         let payload = 0;
         for (const p of job.parts) payload += p.bufLen;
         let packets = 0;
-        for (let left = payload; left > 0; ++packets) left -= this.planAt(packets).size;
+        for (let left = payload; left > 0; ++packets) left -= this.sizeOfPacket(packets);
         const push = this.pushAtEnd ? E131_SYNCPACKET_LEN + UDP_WIRE_OVERHEAD : 0;
         return payload + packets * this.packetWireOverhead() + push;
     }
@@ -234,14 +241,14 @@ export class E131Sender extends UDPSender {
 
         const sendOut = (sourceName: string, _last: boolean) => {
             if (!bytesThisPacket) return;
-            const univ = this.planAt(state.sendPacketNum()).universe;
+            const univ = this.universeOfPacket(state.sendPacketNum());
             if (this.curPacketNum >= this.headers.length) {
                 const nh = Buffer.alloc(E131_PACKET_HEADERLEN);
                 fillE131PacketHeaderStatic(nh, sourceName);
                 this.headers.push(nh);
             }
             const hdr = this.headers[this.curPacketNum];
-            updateE131PacketHeader(hdr, univ, state.nextE131SeqNum(), bytesThisPacket);
+            updateE131PacketHeader(hdr, univ, state.getE131SeqNum(), bytesThisPacket);
             this.client!.addSendToBatch([hdr, ...packetBufs]);
             const wire = bytesThisPacket + this.packetWireOverhead();
             state.wireBytesSent += wire;
@@ -252,9 +259,9 @@ export class E131Sender extends UDPSender {
             ++this.curPacketNum;
         };
 
-        // Go through the parts, packetizing on universe boundaries; stop at a packet
-        // boundary once the burst budget is spent (the scheduler calls again at the paced time).
-        for (; state.curPart < job.parts.length; ) {
+        // Go through the parts, packetizing; stop at a packet boundary once the
+        // burst budget is spent (the scheduler calls again at the paced time).
+        for (; state.curPart < job.parts.length;) {
             const part = job.parts[state.curPart];
             const leftThisJob = part.bufLen - state.curOffset;
             if (!leftThisJob) {
@@ -263,7 +270,7 @@ export class E131Sender extends UDPSender {
                 continue;
             }
 
-            const avToSend = this.planAt(state.sendPacketNumber).size - bytesThisPacket;
+            const avToSend = this.sizeOfPacket(state.sendPacketNumber) - bytesThisPacket;
 
             if (avToSend === 0) {
                 // Only way to make progress is to send -- and we know there is more.
@@ -286,9 +293,12 @@ export class E131Sender extends UDPSender {
     }
 
     sendPush(_frame: SendJob, _job: SenderJob, state: SendJobSenderState): void {
+        // Sequence numbers are per universe and each universe goes out once a
+        // frame, so the whole frame shares one and it steps here.
+        const seq = state.nextE131SeqNum();
         // syncUniverse 0 means "not synchronized" per E1.31 — never send a sync packet there.
         if (this.pushAtEnd && this.syncUniverse > 0) {
-            buildE131SyncPacket(this.syncPacket, this.syncUniverse, state.nextE131SeqNum());
+            buildE131SyncPacket(this.syncPacket, this.syncUniverse, seq);
             if (this.client?.isConnected()) {
                 this.client?.addSendToBatch(this.syncPacket);
                 state.wireBytesSent += E131_SYNCPACKET_LEN + UDP_WIRE_OVERHEAD;

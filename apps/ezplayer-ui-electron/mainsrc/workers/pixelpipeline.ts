@@ -63,7 +63,8 @@ export interface PixelPipelineOptions {
     openOpts: { ddpPort?: number; fpsOverrides?: Record<string, number> };
     settings: { outputEnabled: boolean; blackFramesEnabled: boolean; maxSlotFraction: number };
     /** Existing channel-space ring for preview readers. */
-    legacyRing: SharedArrayBuffer;
+    /** Channel-space export ring for the existing previews; absent when there are no channels. */
+    legacyRing?: SharedArrayBuffer;
     slotCount?: number;
     /** UDP port for overlay lease payloads; 0 disables the receiver. */
     overlayPort?: number;
@@ -269,7 +270,7 @@ export class PixelPipeline {
             stats: p.stats.buffer,
             outputs: outputs.map(serializeOutput),
             senderOutput,
-            legacy: { ring: opts.legacyRing, output: serializeOutput(legacyOutput) },
+            legacy: opts.legacyRing ? { ring: opts.legacyRing, output: serializeOutput(legacyOutput) } : undefined,
             settings: opts.settings,
         });
         // Reports come back by controller index; the worker's clones are its own.

@@ -1949,7 +1949,7 @@ async function uploadLayout(): Promise<void> {
                 const buf = await fsp.readFile(p);
                 zip.file(name, buf);
             } catch (e) {
-                throw new Error(`missing ${name}: ${(e as Error).message}`);
+                throw new Error(`missing ${name}: ${(e as Error).message}`, { cause: e });
             }
         }
         const assetRels = await collectReferencedAssets(

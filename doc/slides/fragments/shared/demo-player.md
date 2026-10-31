@@ -54,9 +54,9 @@ doc/assets/img/ and swap each placeholder blockquote for an image, e.g.
 
 ---
 
-## 3D preview
+## Show View
 
-<!-- > 📷 **Screenshot:** 3D preview of the show -->
+<!-- > 📷 **Screenshot:** Show View of the show -->
 
 ![w:760](assets/img/3D-preview.png)
 

@@ -35,7 +35,13 @@ import {
     type FppIdentity,
     type FppStatusSources,
 } from './fpp-status.js';
-import { fppCommandDescriptors, runFppCommand, type FppCommandDeps } from './fpp-commands.js';
+import {
+    fppCommandDescriptors,
+    runFppCommand,
+    writeVolume,
+    type FppCommandDeps,
+    type FppVolumeDeps,
+} from './fpp-commands.js';
 import { buildFppdPlaylistConfig, buildFppdPlaylists, buildPlayerCurrent, buildPlayerStatus } from './fpp-player.js';
 import { findSequenceByName, fppPlaylistToRecord, recordToFppPlaylist, type FppPlaylist } from './fpp-playlists.js';
 import {
@@ -57,6 +63,8 @@ export interface FppApiDeps {
     putSequences: (recs: unknown[]) => Promise<unknown[]>;
     /** Cached controller-discovery state; feeds /api/fppd/multiSyncSystems. */
     getControllerOps?: () => ControllerOpsState | undefined;
+    /** Default-volume read/write for the volume commands and POST /api/system/volume. */
+    volume?: FppVolumeDeps;
     appVersion: string;
 }
 
@@ -126,6 +134,7 @@ export function registerFppCompatRoutes(router: Router, deps: FppApiDeps): void 
         getPlaylists: deps.getPlaylists,
         getSequences: deps.getSequences,
         getPStatus: deps.getPStatus,
+        volume: deps.volume,
     };
 
     // ---- status / identity -------------------------------------------------
@@ -536,12 +545,19 @@ export function registerFppCompatRoutes(router: Router, deps: FppApiDeps): void 
         ctx.body = { status: 'OK', method: 'EZPlayer', volume: Math.round(deps.getPStatus()?.volume?.level ?? 100) };
     });
 
-    // Volume writes are settings/schedule-driven in EZPlayer; see fpp-commands.ts.
-    router.post('/api/system/volume', (ctx) => {
-        ctx.status = 500;
-        ctx.body = {
-            status: 'error',
-            error: 'Volume is schedule/settings-driven in EZPlayer; set it via playback settings',
-        };
+    // Writes the default volume, as FPP's persistent volume setting does;
+    // declined while a scheduled window owns the level (see fpp-commands.ts).
+    router.post('/api/system/volume', async (ctx) => {
+        const body = ctx.request.body as { volume?: unknown } | undefined;
+        const result = await writeVolume(
+            cmdDeps,
+            body?.volume === undefined ? undefined : String(body.volume),
+            (_c, n) => n,
+        );
+        ctx.status = result.status;
+        ctx.body =
+            result.status === 200
+                ? { status: 'OK', method: 'EZPlayer', volume: cmdDeps.volume?.getVolume()?.defaultVolume }
+                : { status: 'error', error: result.message };
     });
 }

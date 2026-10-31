@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
 import type { VcStatsEvent } from '../types/ViewerControlWire';
-import { summarizeViewerStats, trimViewerStatsEvents, viewerStatsDayKey, viewerStatsDayKeys } from './viewerStats';
+import {
+    dedupeViewerStatsEvents,
+    summarizeViewerStats,
+    trimViewerStatsEvents,
+    viewerStatsDayKey,
+    viewerStatsDayKeys,
+} from './viewerStats';
 
 const TZ = 'America/New_York';
 // 2026-09-26 21:30 New York (01:30Z on the 27th) — a time where UTC and show-local days differ.
@@ -73,6 +79,16 @@ describe('viewerStats', () => {
         );
         expect(trimViewerStatsEvents(events, NOW, 1e9, 3)).toEqual(events.slice(7));
         expect(trimViewerStatsEvents(events, NOW, 1e9, 100)).toBe(events);
+    });
+
+    it('drops repeated (epoch, seq) pairs, keeping the first, and the same seq in another epoch', () => {
+        const a1 = { ...ev('request', NOW - 3000), seq: 1, epoch: 'a' };
+        const a2 = { ...ev('vote', NOW - 2000), seq: 2, epoch: 'a' };
+        const b1 = { ...ev('play', NOW - 1000), seq: 1, epoch: 'b' };
+        const again = { ...a1, title: 'resent' };
+        expect(dedupeViewerStatsEvents([a1, a2, again, b1, a2])).toEqual([a1, a2, b1]);
+        const clean = [a1, a2, b1];
+        expect(dedupeViewerStatsEvents(clean)).toBe(clean);
     });
 });
 

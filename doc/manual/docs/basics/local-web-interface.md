@@ -35,7 +35,7 @@ check [Show Status](../advanced/show-status/details.md).
 
 ## Special LAN UI Features
 
-On the **web / LAN UI**, a speaker icon in the header of the Jukebox and 3D preview pages
+On the **web / LAN UI**, a speaker icon in the header of the Jukebox and Show View pages
 toggles a live **audio stream** — useful for listening over the network when you are not at the show PC.
 
 ## Desktop app vs LAN UI

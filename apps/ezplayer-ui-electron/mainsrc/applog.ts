@@ -33,7 +33,36 @@ export function logsDir(): string {
 // eslint-disable-next-line no-control-regex
 const ANSI = /\x1b\[[0-9;]*m/g;
 
+/**
+ * Drop writes to `stream` once it fails or has no console. A pipe whose reader
+ * has gone (EPIPE) fails asynchronously; unhandled, each failure is an
+ * uncaughtException, whose handler logs, which fails again.
+ */
+export function guardStream(stream: NodeJS.WriteStream): void {
+    const orig = stream.write.bind(stream) as (...args: unknown[]) => boolean;
+    let broken = false;
+    stream.on('error', () => {
+        broken = true;
+    });
+    stream.write = ((...args: unknown[]) => {
+        if (broken) return true;
+        try {
+            return orig(...args);
+        } catch {
+            // No console attached (packaged GUI app).
+            return true;
+        }
+    }) as typeof stream.write;
+}
+
+/** guardStream for stdout and stderr. */
+export function guardStdio(): void {
+    guardStream(process.stdout);
+    guardStream(process.stderr);
+}
+
 export function hookStream(stream: NodeJS.WriteStream, tag: string, log: Pick<AsyncBatchLogger, 'log'>): void {
+    guardStream(stream);
     const orig = stream.write.bind(stream) as (...args: unknown[]) => boolean;
     let partial = '';
     stream.write = ((chunk: unknown, ...rest: unknown[]) => {
@@ -48,12 +77,7 @@ export function hookStream(stream: NodeJS.WriteStream, tag: string, log: Pick<As
         } catch {
             /* never break the real stream */
         }
-        try {
-            return orig(chunk, ...rest);
-        } catch {
-            // No console attached (packaged GUI app); the file copy is what matters.
-            return true;
-        }
+        return orig(chunk, ...rest);
     }) as typeof stream.write;
 }
 

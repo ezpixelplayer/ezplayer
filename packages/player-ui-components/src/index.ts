@@ -42,6 +42,10 @@ export { JukeboxSettings } from './components/playback-settings/sections/Jukebox
 export { AudioSettings } from './components/playback-settings/sections/AudioSettings';
 export { PlayerSettings } from './components/playback-settings/sections/PlayerSettings';
 export {
+    DiagnosticsSettings,
+    DIAGNOSTICS_SETTINGS_SECTION_KEY,
+} from './components/playback-settings/sections/DiagnosticsSettings';
+export {
     SoftwareUpdateSettings,
     canControlUpdates,
 } from './components/playback-settings/sections/SoftwareUpdateSettings';

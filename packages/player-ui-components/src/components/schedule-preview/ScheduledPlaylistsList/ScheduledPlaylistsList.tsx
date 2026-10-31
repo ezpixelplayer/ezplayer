@@ -721,56 +721,14 @@ const ScheduledPlaylistsList = forwardRef<ScheduledPlaylistsListRef, ScheduledPl
             const priority = schedule?.priority || 'normal';
             const scheduleType = schedule?.scheduleType || 'main';
 
-            let priorityLabel = '';
-            let priorityClass = '';
-            let typeLabel = '';
-            let typeClass = '';
-
-            if (scheduleType === 'background') {
-                // For background schedules, show both type and priority
-                typeLabel = 'Background';
-                typeClass = 'type-bg';
-
-                // Show the actual priority for background schedules
-                switch (priority) {
-                    case 'high':
-                        priorityLabel = 'High Priority';
-                        priorityClass = 'priority-high';
-                        break;
-                    case 'normal':
-                        priorityLabel = 'Normal Priority';
-                        priorityClass = 'priority-normal';
-                        break;
-                    case 'low':
-                        priorityLabel = 'Low Priority';
-                        priorityClass = 'priority-low';
-                        break;
-                    default:
-                        priorityLabel = 'Normal Priority';
-                        priorityClass = 'priority-normal';
-                }
-            } else {
-                // Priority labels for main schedules
-                switch (priority) {
-                    case 'high':
-                        priorityLabel = 'High Priority';
-                        priorityClass = 'priority-high';
-                        break;
-                    case 'normal':
-                        priorityLabel = 'Normal Priority';
-                        priorityClass = 'priority-normal';
-                        break;
-                    case 'low':
-                        priorityLabel = 'Low Priority';
-                        priorityClass = 'priority-low';
-                        break;
-                    default:
-                        priorityLabel = 'Normal Priority';
-                        priorityClass = 'priority-normal';
-                }
-                typeLabel = 'Main'; // Type indicator
-                typeClass = 'type-main';
-            }
+            const priorityStyles: Record<string, [label: string, className: string]> = {
+                high: ['High Priority', 'priority-high'],
+                normal: ['Normal Priority', 'priority-normal'],
+                low: ['Low Priority', 'priority-low'],
+            };
+            const [priorityLabel, priorityClass] = priorityStyles[priority] ?? priorityStyles.normal;
+            const [typeLabel, typeClass] =
+                scheduleType === 'background' ? ['Background', 'type-bg'] : ['Main', 'type-main'];
 
             return {
                 priorityLabel,

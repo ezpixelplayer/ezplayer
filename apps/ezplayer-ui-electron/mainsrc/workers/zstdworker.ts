@@ -187,12 +187,14 @@ export class ZSTDDecoder {
 
 import { parentPort } from 'node:worker_threads';
 import { runDecompPost, type DecompPost } from '@ezplayer/epp';
+import { inflateSync } from 'node:zlib';
 
 //import { setThreadAffinity } from '../affinity/affinity.js';
 //setThreadAffinity([5,6,7,8]);
 
 type InMsg = {
     id: number;
+    codec: 'zstd' | 'zlib';
     compOff: number;
     compLen: number;
     expLen: number;
@@ -221,7 +223,7 @@ if (!parentPort) {
 }
 
 parentPort.on('message', async (msg: InMsg) => {
-    const { id, expLen, decompBuf, compBuf, compOff, compLen, post } = msg;
+    const { id, codec, expLen, decompBuf, compBuf, compOff, compLen, post } = msg;
     const outBuf = post?.outBuf;
     const transfer = outBuf ? [decompBuf, compBuf, outBuf] : [decompBuf, compBuf];
 
@@ -236,11 +238,17 @@ parentPort.on('message', async (msg: InMsg) => {
             // Recreate views on the transferred buffers
             const decompView = new Uint8Array(decompBuf, 0, expLen);
 
-            // Decode into a temporary view, then copy into caller-provided decompView since zstd does not
-            //  accept a passed-in buffer
-            const decodedLen = decoder!.decode(compView, decompView, expLen);
-            if (decodedLen > decompView.byteLength) {
-                throw new Error(`Decoded output (${decodedLen}) exceeds provided decomp buffer (${decompView.byteLength})`);
+            if (codec === 'zlib') {
+                const inflated = inflateSync(compView);
+                if (inflated.length < expLen) throw new Error(`zlib block inflated to ${inflated.length}, expected ${expLen}`);
+                decompView.set(inflated.subarray(0, expLen));
+            } else {
+                // Decode into a temporary view, then copy into caller-provided decompView since zstd does not
+                //  accept a passed-in buffer
+                const decodedLen = decoder!.decode(compView, decompView, expLen);
+                if (decodedLen > decompView.byteLength) {
+                    throw new Error(`Decoded output (${decodedLen}) exceeds provided decomp buffer (${decompView.byteLength})`);
+                }
             }
             if (post) runDecompPost(decompView, post);
         }

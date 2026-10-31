@@ -129,7 +129,7 @@ export const UISettings: React.FC = () => {
             ) : null}
 
             <Typography variant="body2" color="text.secondary" sx={{ mt: 4, mb: 1 }}>
-                3D preview controls. Orbit mode is friendlier on trackpads and touch devices; the default auto-picks
+                Show View controls. Orbit mode is friendlier on trackpads and touch devices; the default auto-picks
                 based on whether your device looks touch-only.
             </Typography>
             <FormControlLabel

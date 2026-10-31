@@ -1,5 +1,5 @@
-import { DDPSender } from '../dataplane/protocols/DDP';
-import { E131Sender } from '../dataplane/protocols/E131';
+import { DDP_MAX_PAYLOAD, DDPSender } from '../dataplane/protocols/DDP';
+import { e131Universes, E131Sender } from '../dataplane/protocols/E131';
 import { Sender, SenderJob, SendJob } from '../dataplane/SenderJob';
 import { ControllerSetup, OpenControllerReport } from '../controllers/controllertypes';
 
@@ -157,6 +157,9 @@ export async function openControllerForDataSend(
             if (opts?.ddpPort) dsender.port = opts.ddpPort;
             dsender.pushAtEnd = false; // TODO try variety
             dsender.startChNum = proxied || xc.keepChannelNumbers ? xc.startch - 1 : 0;
+            if (xc.channelsPerPacket && xc.channelsPerPacket > 0) {
+                dsender.channelsPerPacket = Math.min(xc.channelsPerPacket, DDP_MAX_PAYLOAD);
+            }
             dsender.localAddress = xc.forceLocalIP;
             dsender.minTimeBetweenFrames = minFrameTimeFor(xc, opts);
             dsender.sendBufSize = Math.max(256_000, c.setup.nCh * 2);
@@ -189,14 +192,7 @@ export async function openControllerForDataSend(
             esender.localAddress = xc.forceLocalIP;
             esender.sendBufSize = Math.max(256_000, c.setup.nCh * 2);
             esender.pushAtEnd = false; // TODO try variety
-            // Fallback for when xLights gives no usable per-universe plan.
-            esender.startUniverse = xc.universeNumbers?.[0] ?? 1;
-            esender.channelsPerPacket = xc.universeSizes?.[0] ?? 510;
-            const unums = xc.universeNumbers;
-            const usizes = xc.universeSizes;
-            if (unums && usizes && unums.length === usizes.length) {
-                esender.universes = unums.map((universe, i) => ({ universe, size: usizes[i] }));
-            }
+            esender.universes = e131Universes(xc.universeNumbers, xc.universeSizes);
             esender.minTimeBetweenFrames = minFrameTimeFor(xc, opts);
             try {
                 await esender.connect();

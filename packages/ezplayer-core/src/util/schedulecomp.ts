@@ -1865,7 +1865,6 @@ export class PlayerRunState {
             }
 
             // At this point, there either is no stack top, or we have one until a time we just grabbed
-            let nextDecisionTime = et;
 
             // Check for heap / interruptions / queue candidates
             let heapCutIn: number | undefined = undefined;
@@ -1999,7 +1998,7 @@ export class PlayerRunState {
             }
 
             // What will be next decision time - recalculate from heap push
-            nextDecisionTime = et;
+            let nextDecisionTime = et;
 
             //  Something ends off the stack? / Stack says to do that?  Check that.
             const se = this.#stackTop;
@@ -2190,6 +2189,14 @@ export class PlayerRunState {
         }
 
         return upcoming;
+    }
+
+    /** Take over the requests `from` has not started yet, for a rebuild that replaces
+     *  it. Call after setUpSequences; requests whose target is gone are dropped. */
+    adoptPendingRequests(from: PlayerRunState) {
+        for (const cmd of [...(from.immediateItem ? [from.immediateItem] : []), ...from.interactiveQueue]) {
+            if (this.#requestResolves(cmd)) this.addInteractiveCommand(cmd);
+        }
     }
 
     // Interactive cmd to consider?

@@ -63,7 +63,8 @@ EZPlayer) while keeping the shape FPP-parseable. The `uuid` persists in
 | GET    | `/api/playlist/{Name}/start[/{Repeat}[/{SchedProtected}]]` | convenience |
 | GET    | `/api/playlists/stop` `stopgracefully` `stopgracefullyafterloop` `pause` `resume` | convenience |
 
-| GET    | `/api/system/volume` | read: `{status, method, volume}`. `POST` is answered **500 with a reason** (FPP accepts it): EZPlayer volume is settings/schedule-driven, so a one-shot override would be reverted at the next schedule change |
+| GET    | `/api/system/volume` | read: `{status, method, volume}` — the live level |
+| POST   | `/api/system/volume` | `{volume}` writes EZPlayer's **default volume**, the counterpart of FPP's persistent volume setting (see [Volume](#volume)). Answers `{status: "OK", method, volume}`, or **500 with a reason** while a scheduled volume window is in effect |
 
 Between a graceful stop and the player going idle, the status reads
 `status: 2` / `stopping gracefully`, as FPP's does: it plays on to the next
@@ -82,6 +83,24 @@ Supported commands and their EZPlayer semantics:
 | `Next Playlist Item` | Skip to next item |
 | `Prev Playlist Item` | **Not supported** (500) |
 | `All Lights Off` | Maps to an immediate stop |
+| `Volume Set {volume}` | Sets the default volume (see [Volume](#volume)); **declined with 500** and the reason while a scheduled volume window is in effect |
+| `Volume Increase {amount}` / `Volume Decrease {amount}` / `Volume Adjust {±amount}` | Relative to the current default volume, clamped to 0–100; declined the same way during a window |
+
+### Volume
+
+EZPlayer automates volume: the player ramps toward a **default volume**, or
+toward a **scheduled volume window** when one is in effect (per output, when
+named outputs are configured). FPP's volume is a persistent setting, so its
+counterpart here is the default volume, and that is what the `Volume *`
+commands and `POST /api/system/volume` write. The player ramps to the new
+level within about a second. While a window is in effect the schedule owns
+the level, so the write is **declined with 500** and a reason naming the
+window rather than being applied and silently ramped back. With several
+named outputs the write sets every output's default and is declined if any
+output is inside a window. EZPlayer's own
+[`/api/ezp/volume`](./api.md#get-apiezpvolume) addresses outputs and windows
+individually. `GET /api/system/volume` returns the live level, so a read
+straight after a write may catch the ramp part-way.
 
 ## Playlists
 
@@ -227,8 +246,9 @@ either, so they are tracked as their own project.
 Two things answer rather than 404 — the only deliberate behavioural
 differences from FPP:
 
-- **Volume writes** (`POST /api/system/volume`, the `Volume *` commands) are
-  declined with **500 and a reason**.
+- **Volume writes** (`POST /api/system/volume`, the `Volume *` commands) set
+  the default volume and are declined with **500 and a reason** while a
+  scheduled volume window is in effect (see [Volume](#volume)).
 - **Media metadata** (`GET /api/media/{name}/meta`) answers a subset, rather
   than faking codec detail.
 

@@ -3,7 +3,6 @@ import { useApiBase } from './ApiBaseProvider';
 // Works in Node and compiles for browser bundles
 function pathToFileURLCompat(path: string): URL {
     if (typeof process !== 'undefined' && process.versions?.node) {
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
         const { pathToFileURL } = require('url');
         return pathToFileURL(path);
     }

@@ -18,9 +18,12 @@ afterEach(() => {
 });
 
 describe('hookStream', () => {
+    const fakeStream = (write: (chunk: unknown) => boolean) =>
+        Object.assign(new EventEmitter(), { write }) as unknown as NodeJS.WriteStream;
+
     it('logs whole lines, tags them, strips colors, and still writes through', () => {
         const written: unknown[] = [];
-        const stream = { write: (chunk: unknown) => (written.push(chunk), true) } as unknown as NodeJS.WriteStream;
+        const stream = fakeStream((chunk) => (written.push(chunk), true));
         const lines: string[] = [];
         hookStream(stream, 'E ', { log: (l: string) => (lines.push(l), true) });
 
@@ -33,15 +36,28 @@ describe('hookStream', () => {
     });
 
     it('keeps logging when the real stream throws', () => {
-        const stream = {
-            write: () => {
-                throw new Error('EBADF');
-            },
-        } as unknown as NodeJS.WriteStream;
+        const stream = fakeStream(() => {
+            throw new Error('EBADF');
+        });
         const lines: string[] = [];
         hookStream(stream, '', { log: (l: string) => (lines.push(l), true) });
         expect(stream.write('x\n')).toBe(true);
         expect(lines).toEqual(['x']);
+    });
+
+    it('stops writing to the real stream after it errors, and keeps logging', () => {
+        const written: unknown[] = [];
+        const stream = fakeStream((chunk) => (written.push(chunk), true));
+        const lines: string[] = [];
+        hookStream(stream, '', { log: (l: string) => (lines.push(l), true) });
+
+        stream.write('a\n');
+        // Without a listener this emit would throw.
+        stream.emit('error', Object.assign(new Error('EPIPE: broken pipe, write'), { code: 'EPIPE' }));
+        stream.write('b\n');
+
+        expect(written).toEqual(['a\n']);
+        expect(lines).toEqual(['a', 'b']);
     });
 });
 

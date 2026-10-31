@@ -35,10 +35,19 @@ let app: EzPlayerProc;
 let fpp: FppClient;
 let songId: string;
 
+/** The playback loop publishes stats about once a second, and only once it
+ *  has run for a second — a request right after the show loads can land before
+ *  the first publish (503). Poll briefly rather than assert on the first try. */
 async function getStats(): Promise<StatsBody> {
-    const res = await fetch(`${app.base}/api/ezp/playback-stats`);
-    expect(res.status).toBe(200);
-    return (await res.json()) as StatsBody;
+    const deadline = Date.now() + 6000;
+    for (;;) {
+        const res = await fetch(`${app.base}/api/ezp/playback-stats`);
+        if (res.status === 200) return (await res.json()) as StatsBody;
+        if (res.status !== 503 || Date.now() > deadline) {
+            expect(res.status).toBe(200);
+        }
+        await new Promise((r) => setTimeout(r, 200));
+    }
 }
 
 async function playSong(requestId: string) {

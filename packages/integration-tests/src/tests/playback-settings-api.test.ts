@@ -27,18 +27,17 @@ const post = (p: string, value: unknown) =>
     fetch(url(p), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(value) });
 
 /** The settings file the player keeps in the show folder. The player writes it
- *  after answering the request, so wait briefly for the expected content. */
-const onDisk = async (expect?: (s: Record<string, unknown>) => boolean) => {
+ *  after answering the POST, so give the write a moment to land. */
+const onDisk = async () => {
     const file = path.join(show.dir, '.ezplayer', 'playbackSettings.json');
-    const deadline = Date.now() + 3000;
+    const deadline = Date.now() + 5000;
     for (;;) {
         try {
-            const parsed = JSON.parse(await fsp.readFile(file, 'utf8'));
-            if (!expect || expect(parsed) || Date.now() > deadline) return parsed;
-        } catch (e) {
-            if (Date.now() > deadline) throw e;
+            return JSON.parse(await fsp.readFile(file, 'utf8'));
+        } catch (err) {
+            if ((err as NodeJS.ErrnoException).code !== 'ENOENT' || Date.now() > deadline) throw err;
+            await new Promise((r) => setTimeout(r, 200));
         }
-        await new Promise((r) => setTimeout(r, 50));
     }
 };
 
@@ -79,8 +78,7 @@ describe('playback settings API', () => {
         // Everything else is as it was.
         expect(whole).toMatchObject(BASE_SETTINGS);
         // ...and it reached the disk copy the player reloads from.
-        const disk = await onDisk((s) => !!(s.sync as { multisync?: unknown } | undefined)?.multisync);
-        expect(disk.sync.multisync).toEqual(multisync);
+        expect((await onDisk()).sync.multisync).toEqual(multisync);
     });
 
     it('POST of a leaf changes one field within its block', async () => {

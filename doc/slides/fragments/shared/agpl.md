@@ -6,3 +6,4 @@ EZPlayer is licensed **AGPL-3.0-only**.
 - Changes you **ship or serve over a network** must be offered back as source
 - The community keeps a player it can always inspect and rebuild
 - EZRGB exception: copyright holders allow them to embed in nonshared source
+- The manual and slides are **CC BY-SA 4.0** — quote, translate, and share them

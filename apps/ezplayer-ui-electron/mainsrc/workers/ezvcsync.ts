@@ -120,7 +120,9 @@ export class EzvcApiClient {
             return (await res.text()) as unknown as T;
         } catch (err) {
             if (err instanceof Error && err.name === 'AbortError') {
-                throw new Error(`${method} ${url} timed out after ${timeoutMs ?? this.defaultTimeoutMs} ms`);
+                throw new Error(`${method} ${url} timed out after ${timeoutMs ?? this.defaultTimeoutMs} ms`, {
+                    cause: err,
+                });
             }
             throw err;
         } finally {

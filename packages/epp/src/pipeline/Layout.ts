@@ -329,7 +329,8 @@ export function compileLayout(specs: LayoutModelSpec[], opts?: LayoutOptions): D
     pushSpan(cursor, totalChannels);
 
     const rawCount = rawOff;
-    const frameBytes = pixelBytes + Math.ceil(rawCount / 4) * 4;
+    // An empty layout still gets a (zero) frame to publish, so the pool has something to hand out.
+    const frameBytes = Math.max(4, pixelBytes + Math.ceil(rawCount / 4) * 4);
 
     let world: Float32Array | undefined;
     if (opts?.keepWorld) {

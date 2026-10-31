@@ -94,7 +94,7 @@ export function resetWebGLSupportCache(): void {
 /** Message body shown when the preview cannot be rendered. */
 export const WebGLUnavailableMessage: React.FC<{ reason?: string; title?: string }> = ({
     reason,
-    title = '3D preview unavailable',
+    title = 'Show View unavailable',
 }) => (
     <Box
         sx={{
@@ -161,7 +161,7 @@ export class PreviewErrorBoundary extends React.Component<BoundaryProps, Boundar
             const isContextError = /webgl/i.test(error.message);
             return (
                 <WebGLUnavailableMessage
-                    title={isContextError ? '3D preview unavailable' : 'Preview failed to render'}
+                    title={isContextError ? 'Show View unavailable' : 'Preview failed to render'}
                     reason={
                         isContextError
                             ? 'This computer’s graphics driver could not create a WebGL context.'

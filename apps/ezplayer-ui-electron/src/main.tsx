@@ -5,7 +5,6 @@ import { MemoryRouter } from 'react-router-dom';
 import 'nprogress/nprogress.css';
 import App from './App';
 import { SidebarProvider, PageHeaderLogoProvider } from '@ezplayer/shared-ui-components';
-import 'react-toastify/dist/ReactToastify.css';
 import { WELCOME_ROUTE } from './modules/Welcome/WelcomeScreen';
 import { RootErrorBoundary } from './components/RootErrorBoundary';
 

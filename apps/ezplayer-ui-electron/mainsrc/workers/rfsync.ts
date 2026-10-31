@@ -145,7 +145,9 @@ export class RFApiClient {
         } catch (err) {
             // Surface AbortError more nicely if desired
             if (err instanceof Error && err.name === 'AbortError') {
-                throw new Error(`${method} ${url} timed out after ${timeoutMs ?? this.defaultTimeoutMs} ms`);
+                throw new Error(`${method} ${url} timed out after ${timeoutMs ?? this.defaultTimeoutMs} ms`, {
+                    cause: err,
+                });
             }
             throw err;
         } finally {
@@ -487,7 +489,7 @@ async function handleRequestNextSuggestion() {
             }
         }
 
-        let suggestion: NextToPlay | null = null;
+        let suggestion: NextToPlay;
 
         if (viewerMode === 'voting') {
             try {
@@ -510,7 +512,7 @@ async function handleRequestNextSuggestion() {
         send({
             type: 'nextSuggestion',
             viewerMode,
-            suggestion: suggestion,
+            suggestion,
         });
     });
 }
