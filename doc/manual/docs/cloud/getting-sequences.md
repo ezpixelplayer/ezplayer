@@ -5,8 +5,8 @@ title: Getting Sequences from EZRGB
 
 # Getting Sequences from EZRGB
 
-Once your player is [registered](./registering.md) with EZRGB, sequences (songs)
-can be delivered to your show folder over the internet. You choose what the
+Once your player is [registered](./registering.md) with EZRGB, songs (sequences)
+can be delivered to your show folder over the internet. You choose songs the
 player should have on [EZRGB](https://ezrgb.com); EZPlayer downloads the files
 and adds them to your library.
 
@@ -16,7 +16,7 @@ Make sure:
 
 - EZPlayer is registered and shows **Cloud connected** on the
   [Cloud screen](./status-control-ui.md).
-- Cloud is not paused.
+- Cloud connectivity is not paused.
 
 If you are on a polling schedule that only syncs during certain hours, downloads
 may wait until the next allowed window. See [Cloud settings](../settings/cloud.md).
@@ -38,6 +38,7 @@ an internet connection will pick it up on the next content poll.
 For status, open the **Cloud** screen and check **Cloud Content** to see each
 sequence and whether it is **downloading**, **installed**, **pending** /
 **rendering**, **disabled**, or in **error**.
+Rows also show **Last Updated** and size; expand a row for per-file progress.
 
 If you just made a change and do not want to wait, click **Sync Content Now**
 (or **Sync Layout + Content** on a cloud-managed show) on the Cloud screen.

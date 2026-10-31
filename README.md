@@ -13,17 +13,17 @@ _An easy-to-use pixel show player for the xLights ecosystem._
 
 ### Features
 
-While we will continue to add features through the 2026 season, EZPlayer was tested on several 4th of July shows and is ready for use.
+While we will continue to add features through the 2026 season, EZPlayer was tested on a double-digit number of Halloween shows and is ready for use.
 
 EZPlayer can be used completely locally, supporting:
 
-- A flexible schedule of playlists of sequences
+- A flexible schedule of playlists of songs (a.k.a. sequences)
 - A jukebox view of songs to choose from for immediate / queued playback
 - Audio (.mp3, and auto-conversion from other formats) and .fseq playback from an xLights show folder
 - DDP and E1.31 controllers on attached IPv4 networks
 - Live view of the show
 - Status screens
-- Network scan, controller status, and controller actions for many common controllers
+- Network scan, controller status, and controller configuration actions for many common controllers
 - Remote Falcon viewer control
 - Local (LAN) Web UI
 - Background sequences, volume control automation, etc.
@@ -32,7 +32,7 @@ EZPlayer can be used completely locally, supporting:
 With the (optional) EZPlayer cloud registration:
 
 - See the full EZPlayer UI for your show over the internet
-- Configure show page for your viewers
+- Configure a show page for your viewers, allowing them to choose songs and hear the show
 
 For sequences from EZRGB:
 
@@ -103,7 +103,7 @@ sudo sysctl -p /etc/sysctl.d/99-ezplayer-ping.conf
 
 #### Raspberry Pi
 
-EZPlayer is tested on Raspberry Pi 5 and 4 (64-bit OS and 4GB or more required). The Linux ARM releases work, or you can build it yourself. Releases currently only include the application; it is not a full OS image (though that might be added later).
+EZPlayer is tested on Raspberry Pi 5 and 4 (64-bit OS and 4GB or more required). The Linux ARM releases work, or you can build it yourself. Releases currently only include the application; it is not a full OS image (though that may be provided by EZRGB later).
 
 ### Running EZPlayer
 
@@ -166,7 +166,7 @@ So, we started a new one, featuring:
 
 ### Roadmap
 
-September 2026: With 0.6 wrapping up, we expect 0.7 to contain one more round of architectural features related to the playback pipeline (pixel data and audio).  We also expect to add some smaller features (brightness control, more schedule options, video playback, and a round of cloud improvements).  October onward will be focused on stability and fixes.
+October 2026: With 0.6 under maintenance through the end of 2026, we are also releasing 0.7 with an enhanced playback pipeline (pixel data processing).  We also expect to add some smaller features (brightness control, more schedule options, video playback, and a round of cloud improvements).  November onward will be focused on stability and fixes.
 
 We have a lot of features planned for the coming years. We aim to simplify the way the xLights ecosystem works, while solving long-standing problems. We have a plan for interactive show elements, but without resorting to a complex and brittle plugin architecture or a tangled web of version dependencies.
 

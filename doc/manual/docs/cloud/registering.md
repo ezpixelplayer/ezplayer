@@ -12,6 +12,9 @@ Once connected, the player can:
 2. Sync your layout with the cloud service
 3. Appear under **EZPlayer** on your EZRGB account, so you can open the full
    player UI over the internet (**Manage Player**)
+4. Get a **Remote Control Link** on the Cloud screen so you can open the full
+   player UI over the internet
+5. Set up a viewer page.
 
 You only need to register once per show folder. If you reopen a folder that is
 already registered, EZPlayer picks up where you left off.
@@ -72,6 +75,9 @@ When registration succeeds:
 - On [EZRGB](https://ezrgb.com), the player appears under **EZPlayer** on your
   account screen. From there, click **Manage Player** to open the full remote
   player UI in the browser (open it in a new tab for more screen space).
+- The Cloud screen shows a **Remote Control Link** (QR and URL). Anyone with
+  that link can control the player — treat it like a key. See
+  [Cloud Status / Control UI](./status-control-ui.md#remote-control-link).
 
 ## If cloud is paused
 
@@ -111,8 +117,14 @@ down. See [Using Full Cloud Control](./full-cloud-control.md).
   under **Advanced** in the registration dialog. See [Cloud settings](../settings/cloud.md)
   for details.
 
-**You want to change how often content syncs, pause cloud, or point at a different
-cloud server**
+**You want to change how often content syncs, pause cloud, or point at a different cloud server**
 
 - See [Cloud settings](../settings/cloud.md) for polling schedule, pause/resume,
   and other advanced options.
+
+**You shared the remote-control link and need to revoke it**
+
+- On the Cloud screen, click **Change Player ID**. That moves the existing
+  registration onto a new ID. Old links and QR codes stop working; you do not
+  re-register the player.  (Do not use **Generate New** in Advanced for this — that
+  creates a new ID and requires a full re-registration.)

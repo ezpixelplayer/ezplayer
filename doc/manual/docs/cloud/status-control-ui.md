@@ -6,12 +6,13 @@ title: Cloud Status / Control UI
 # Cloud Status / Control UI
 
 Open the **Cloud** screen from the sidebar to see how your player is connected
-to EZRGB, watch layout and sequence downloads, and trigger a sync when you have
+to EZRGB, monitor layout and sequence downloads, and trigger a sync when you have
 just changed something on [EZRGB](https://ezrgb.com).
 
 If the player is not registered yet, start with [Registering](./registering.md).
 
 ![Cloud screen](/img/cloud-screen.png)
+![Cloud player register screen](/img/cloud-screen-player-register.png)
 
 ## Connection summary
 
@@ -32,8 +33,9 @@ owns the layout:
   sequences and other content.
 
 A line below may show current activity — **Pulling layout…**,
-**Unpacking layout…**, **Pushing layout…**, downloading sequences, or that
-everything is **Up to date**.
+**Unpacking layout…**, **Pushing layout…**, downloading sequences, or
+**Up to date as of** a time. If there is no recent content poll yet, it may
+show **Last cloud contact** instead.
 
 ### Buttons on the top card
 
@@ -59,6 +61,30 @@ A quick health check:
 
 If something is wrong, **Last Error** usually points you in the right direction.
 
+## Remote Control Link
+
+When the player is registered, a **Remote Control Link** card appears with a
+QR code, the URL, and a copy button. Open that link in any browser to use the
+full EZPlayer UI over the internet — playlists, schedule, playback, volume, and
+the rest of the management screens — without being on the show network.
+
+The link includes the Player ID. **Anyone who has the link can control the
+player; no additional sign-in is required.** Share it only with people you trust.
+If the link leaked, use **Change Player ID** on this screen (see
+[Cloud Configuration](#cloud-configuration)) so old links and QR codes stop
+working immediately.
+
+You can also open the same remote UI from your [EZRGB](https://ezrgb.com)
+account: **EZPlayer** → **Manage Player**. Prefer a new browser tab so the
+player UI has full screen space.
+
+Turn off **Enable Cloud Remote Control** to refuse remote control from the
+cloud. The link and QR code are hidden and anyone currently connected is
+disconnected. Registration, status reporting, and content sync continue.
+
+The player must stay registered, online, and not paused for remote control to
+work.
+
 ## Cloud Layout
 
 Shows layout sync between EZRGB and your show folder — status, direction, when
@@ -73,9 +99,9 @@ From this card you can also:
 ## Cloud Content
 
 Lists the sequences assigned to this player and how far along each download is.
-Click a row to expand it and see individual files.
-
-Common sequence statuses:
+Each row shows a **Last Updated** time (from the newest file on that sequence)
+and size. Click a row to expand it and see individual files; use the copy icon
+to copy a file's path in the show folder.
 
 | Status                      | Meaning                                                |
 | --------------------------- | ------------------------------------------------------ |
@@ -91,22 +117,20 @@ have sequences assigned on EZRGB. A **halted** chip means content sync stopped
 with an error — check **Last Error** and try **Sync Content Now** (or
 **Sync Layout + Content**) after fixing the underlying problem.
 
-## Remote Control Link
-
-Shown once the player is registered. The QR code and link open the player's
-control page in any browser with no sign-in. The link contains the Player ID,
-so share it only with people who should be able to control the player.
-
-Turn off **Enable Cloud Remote Control** to refuse remote control from the
-cloud. The link and QR code are hidden and anyone currently connected is
-disconnected. Registration, status reporting, and content sync continue.
-
 ## Cloud Configuration
 
-Shows this folder's cloud URL and Player ID. The Player ID is masked; use the
-eye icon to reveal it or the copy icon to copy it. Click **Edit** to open the
-same registration / settings dialog as **Settings → Cloud**. See
-[Cloud settings](../settings/cloud.md) for polling schedule and other options.
+Shows this folder's cloud URL and Player ID.
+
+- **Change Player ID** — generates a new Player ID and **moves** this player's
+  cloud registration (sequences, settings, and server assignment) onto it. The
+  old ID, and every remote-control link or QR that used it, stops working
+  immediately. Use this if you shared the control link with someone who should
+  no longer have access. This is not the same as **Generate New** in the
+  registration dialog, which creates a new ID and requires a full
+  re-registration. See [Cloud settings](../settings/cloud.md).
+- **Edit** — opens the same registration / settings dialog as
+  **Settings → Cloud**. Use it for polling schedule, cloud URL, or reassigning
+  an existing Player ID.
 
 ## On the EZRGB website
 

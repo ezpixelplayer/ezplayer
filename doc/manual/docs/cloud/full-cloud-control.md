@@ -30,18 +30,14 @@ On [EZRGB](https://ezrgb.com) you can:
 - Build, edit, or upload your **layout**.
 - Acquire **sequences** (they map, render, and download to the player
   automatically once assigned).
-- Set up **playlists** and **schedule** entries.
 - Open **Manage Player** from the **EZPlayer** section of your account for the
   full remote player UI over the internet.
+- Set your show name, and set up a viewer page.
 
 Changes you make on the website flow down to EZPlayer on the next sync. Watch
 progress on the [Cloud screen](./status-control-ui.md), or click
 **Sync Layout + Content** (cloud-managed) / **Sync Content Now** (xLights-managed)
 there if you want updates right away.
-
-Some **player settings** — such as volume rules and viewer-control options — can
-also be pushed from EZRGB and adopted by the player when they change on the
-cloud.
 
 ## Control from near and far
 
@@ -51,11 +47,13 @@ cloud.
   EZRGB account → **EZPlayer** → **Manage Player**. That loads the full EZPlayer
   UI remotely so you can check status, edit playlists and schedules, play songs,
   adjust volume, and more when you are not on site. Open it in a **new tab** for
-  the most usable layout.
+  the most usable layout.  You can also get your show remote control URL/QR code
+  from the **Remote Control Link** section of the Cloud screen.  For details see:
+  [Cloud Status / Control UI](./status-control-ui.md#remote-control-link).
 
-The player must stay registered, online, and not paused for remote control to
-work. The Cloud screen in EZPlayer is where you confirm that connection on the
-player side.
+The player must stay registered, online, and have cloud access enabled for remote
+control to work. The Cloud screen in EZPlayer is where you confirm that connection
+on the player side.
 
 ## Optional: viewer / show page
 
