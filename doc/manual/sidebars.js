@@ -9,7 +9,7 @@ const sidebars = {
             type: 'category',
             label: 'Introduction',
             collapsed: false,
-            items: ['introduction/what-is-ezplayer', 'introduction/privacy'],
+            items: ['introduction/what-is-ezplayer', 'introduction/faq', 'introduction/privacy'],
         },
         {
             type: 'category',

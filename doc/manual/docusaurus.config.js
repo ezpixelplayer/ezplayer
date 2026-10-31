@@ -15,6 +15,9 @@ const config = {
 
     url: 'https://docs.ezplayer.dev',
     baseUrl: '/',
+    // Emit /path.html so Cloudflare Pages serves /path directly; keeps the
+    // served URL, canonical and sitemap entries identical (no 308 hop).
+    trailingSlash: false,
 
     organizationName: 'ezpixelplayer',
     projectName: 'ezplayer',
@@ -46,6 +49,12 @@ const config = {
                 theme: {
                     customCss: './src/css/custom.css',
                 },
+                sitemap: {
+                    lastmod: 'date',
+                    changefreq: 'weekly',
+                    priority: 0.5,
+                    ignorePatterns: ['/search'],
+                },
             }),
         ],
     ],
@@ -68,11 +77,22 @@ const config = {
     themeConfig:
         /** @type {import('@docusaurus/preset-classic').ThemeConfig} */
         ({
+            image: 'img/ezplayer-logo.png',
+            metadata: [
+                {
+                    name: 'keywords',
+                    content: 'EZPlayer, xLights, pixel show player, light show scheduler, FSEQ, E1.31, DDP, xSchedule, FPP',
+                },
+            ],
             colorMode: {
                 respectPrefersColorScheme: true,
             },
             navbar: {
                 title: 'EZPlayer',
+                logo: {
+                    alt: 'EZPlayer logo',
+                    src: 'img/ezplayer-logo-128.png',
+                },
                 items: [
                     {
                         type: 'docSidebar',

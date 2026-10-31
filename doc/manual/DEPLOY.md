@@ -1,7 +1,9 @@
 # Deploying the manual
 
 The manual is a static Docusaurus site hosted on **Cloudflare Pages** at
-**https://docs.ezplayer.dev**. DNS for `ezplayer.dev` is managed at **GoDaddy**.
+**https://docs.ezplayer.dev**. The `ezplayer.dev` DNS zone is on **Cloudflare**
+(registrar is GoDaddy), so zone-level Cloudflare settings — Managed robots.txt,
+Block AI bots, etc. — apply to the manual as well as the WordPress site.
 
 `doc/manual/docusaurus.config.js` sets `url: 'https://docs.ezplayer.dev'` and
 `baseUrl: '/'` — keep those in sync with wherever the site actually lives
@@ -35,21 +37,20 @@ Git**, select this repo, then set:
 
 Deploy once so the project's `*.pages.dev` hostname exists.
 
-## Custom domain (Cloudflare + GoDaddy)
+## Custom domain
 
 1. In the Pages project → **Custom domains → Set up a domain** →
    `docs.ezplayer.dev`. Cloudflare shows a CNAME target like
    `ezplayer-docs.pages.dev` and marks the domain **pending**.
-2. In **GoDaddy DNS**, add a record:
+2. In the **Cloudflare DNS** tab for `ezplayer.dev`, add a record:
    - **Type:** `CNAME`
    - **Name / Host:** `docs`
    - **Value:** the `<project>.pages.dev` hostname Cloudflare gave you
 3. Wait for propagation. Cloudflare validates the CNAME and issues the TLS
    certificate automatically (usually minutes); the domain flips to **active**.
 
-`docs.ezplayer.dev` is a subdomain, so a plain CNAME works even though DNS is at
-GoDaddy — no need to move the zone to Cloudflare. (An apex CNAME on
-`ezplayer.dev` itself would be a problem; a subdomain is not.)
+Because the zone is on Cloudflare, Pages can also be attached to the apex
+`ezplayer.dev` later via CNAME flattening if the manual becomes the main site.
 
 Finally, link `ezplayer.dev` to `docs.ezplayer.dev` from the main site.
 
