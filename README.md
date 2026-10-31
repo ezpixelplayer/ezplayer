@@ -13,7 +13,7 @@ _An easy-to-use pixel show player for the xLights ecosystem._
 
 ### Features
 
-While we will continue to add features through the 2026 season, EZPlayer was tested on a double-digit number of Halloween shows and is ready for use.
+While we will continue to add features through the 2026 season, EZPlayer was tested on dozens of Halloween shows and is ready for use.
 
 EZPlayer can be used completely locally, supporting:
 

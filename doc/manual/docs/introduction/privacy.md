@@ -26,18 +26,15 @@ The short version:
    connect to), not by EZPlayer. What you upload — layouts, sequences, show
    settings, viewer pages — is handled under that provider's terms.
 
-4. **Cloud remote control: anyone who has your Player
-   ID can control your player.** The remote-control link contains the
-   Player ID, which is the entire credential. Treat the link like
-   a key. If you believe it is in the hands of someone who should not have
-   it, use **Change Player ID** on the player's Cloud screen: one click
-   generates a new ID, moves your registration to it, and every old link or
-   QR code stops working immediately. See
-   [Cloud Status / Control UI](../cloud/status-control-ui.md#remote-control-link).
-   EZPlayer and its developers are not
-   responsible or liable for any consequences of sharing your Player ID or
-   control link.
- 
+4. **Cloud remote control: anyone who has your Player ID can control your
+   player.** The remote-control link contains the Player ID, which is the
+   entire credential. Treat the link like a key. If you believe it is in the
+   hands of someone who should not have it, use **Change Player ID** on the
+   player's Cloud screen; every old link or QR code stops working immediately.
+   See [Cloud Configuration](../cloud/status-control-ui.md#cloud-configuration).
+   EZPlayer and its developers are not responsible or liable for any
+   consequences of sharing your Player ID or control link.
+
 ## Where things are stored
 
 - **Show data** (sequences, layout, playlists, schedules, settings) — your

@@ -36,7 +36,6 @@ registration.
 When EZRGB confirms the claim, EZPlayer downloads your layout and opens the main
 app. Your player also appears under **EZPlayer** on your EZRGB account — use
 **Manage Player** there later for remote control over the internet.
-You can also open the **Cloud** screen for a **Remote Control Link** (URL/QR code) for your player.
 
 ## 2. Wait for content
 
@@ -91,8 +90,10 @@ confirm under **Show Status → HTTP Listener Status**. See
 
 **Over the internet** — on [EZRGB](https://ezrgb.com), open your account →
 **EZPlayer** → **Manage Player** for the full remote player UI (playlists,
-schedule, playback, and more). Prefer a new browser tab.
-A remote management URL/QR code can also be found on the **Cloud** screen.
+schedule, playback, and more). Prefer a new browser tab. The **Remote Control
+Link** on the **Cloud** screen opens the same UI; see
+[Remote Control Link](../cloud/status-control-ui.md#remote-control-link) before
+sharing it.
 
 ## 7. Use cloud features
 

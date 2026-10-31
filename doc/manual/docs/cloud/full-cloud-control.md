@@ -6,15 +6,15 @@ title: Using Full Cloud Control
 # Using Full Cloud Control
 
 **Full cloud control** means running your show from the [EZRGB](https://ezrgb.com)
-website — layout, sequences, playlists, and schedule — while EZPlayer on the show
-PC handles playback. In this configuration, xLights is not required to maintain
+website — layout and sequences — while EZPlayer on the show PC handles
+playback. In this configuration, xLights is not required to maintain
 the player's show folder day to day.
 
 ## Two ways to use the cloud
 
 | Setup                    | Best for                                                                                                                                               |
 | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Cloud-managed show**   | Starting fresh on EZRGB. Layout, sequences, playlists, and schedule all come from the cloud.                                                           |
+| **Cloud-managed show**   | Starting fresh on EZRGB. Layout and sequences come from the cloud.                                                                                     |
 | **xLights show + cloud** | You already have a local xLights folder. The cloud syncs sequences and other content; your folder keeps the layout unless you switch to cloud-managed. |
 
 A cloud-managed show is the simplest path to full cloud control. Start with
@@ -47,13 +47,11 @@ there if you want updates right away.
   EZRGB account → **EZPlayer** → **Manage Player**. That loads the full EZPlayer
   UI remotely so you can check status, edit playlists and schedules, play songs,
   adjust volume, and more when you are not on site. Open it in a **new tab** for
-  the most usable layout.  You can also get your show remote control URL/QR code
-  from the **Remote Control Link** section of the Cloud screen.  For details see:
-  [Cloud Status / Control UI](./status-control-ui.md#remote-control-link).
+  the most usable layout. The **Remote Control Link** on the Cloud screen opens
+  the same UI; see [Remote Control Link](./status-control-ui.md#remote-control-link).
 
-The player must stay registered, online, and have cloud access enabled for remote
-control to work. The Cloud screen in EZPlayer is where you confirm that connection
-on the player side.
+Remote control works only while the Cloud screen in EZPlayer shows
+**Cloud connected**. That is where you confirm the connection on the player side.
 
 ## Optional: viewer / show page
 

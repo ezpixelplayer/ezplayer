@@ -14,9 +14,8 @@ and adds them to your library.
 
 Make sure:
 
-- EZPlayer is registered and shows **Cloud connected** on the
-  [Cloud screen](./status-control-ui.md).
-- Cloud connectivity is not paused.
+- EZPlayer is registered and the [Cloud screen](./status-control-ui.md) shows
+  **Cloud connected** (not **Cloud paused**).
 
 If you are on a polling schedule that only syncs during certain hours, downloads
 may wait until the next allowed window. See [Cloud settings](../settings/cloud.md).
@@ -55,7 +54,8 @@ sequence file is ready, you may see it on the Cloud screen with a status like
 - Confirm the player is registered to the same account as the sequence.
 - Check **Cloud Status** on the Cloud screen — **Cloud Reachable** should be
   **yes**, and **Last Error** should be **(none)**.
-- Make sure cloud is not paused and your player has internet access.
+- Make sure your player has internet access. If the Cloud screen shows
+  **Cloud paused**, click **Resume Cloud**.
 - Try **Sync Content Now** (or **Sync Layout + Content**) once to force a
   refresh.
 
