@@ -1,8 +1,9 @@
-import { parentPort } from 'node:worker_threads';
+import { parentPort, workerData } from 'node:worker_threads';
 import * as fsp from 'node:fs/promises';
 import { Buffer } from 'node:buffer';
 import { MPEGDecoder } from 'mpg123-decoder-ezp';
 import { getFileSize } from '@ezplayer/epp';
+import { growReservation } from './audioLengthLimit';
 
 //import { setThreadAffinity } from '../affinity/affinity.js';
 //setThreadAffinity([5,6,7,8]);
@@ -36,6 +37,7 @@ class ListPool {
 }
 
 const pool = new ListPool();
+const workerOptions = (workerData ?? {}) as { maxReserveSeconds?: number; totalMemBytes?: number };
 let suggestedMaxAudioDur: number | undefined = undefined; // 15*60;
 function getAudioReserveDur() {
     return suggestedMaxAudioDur || 15 * 60;
@@ -48,7 +50,11 @@ function getOrAllocate() {
     return new ArrayBuffer(samplesPerAudioChunk * 4);
 }
 function reservationTooSmall() {
-    suggestedMaxAudioDur = getAudioReserveDur() * 2;
+    suggestedMaxAudioDur = growReservation(
+        getAudioReserveDur(),
+        workerOptions.maxReserveSeconds,
+        workerOptions.totalMemBytes ?? 0,
+    );
 }
 
 function makeAllocation(durationSec: number): Float32Array<ArrayBuffer>[] {
@@ -127,8 +133,9 @@ parentPort.on('message', async (msg: DecodeReq) => {
     if (type !== 'decode') return;
     const { id, filePath, suggestedMaxAudioDur: smad } = msg;
     if (smad) {
-        if (!suggestedMaxAudioDur || suggestedMaxAudioDur < smad) {
-            suggestedMaxAudioDur = smad;
+        const hint = Math.min(smad, workerOptions.maxReserveSeconds ?? smad);
+        if (!suggestedMaxAudioDur || suggestedMaxAudioDur < hint) {
+            suggestedMaxAudioDur = hint;
         }
     }
 

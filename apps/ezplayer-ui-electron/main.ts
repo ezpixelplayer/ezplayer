@@ -2,6 +2,8 @@
 // showfolder/webport/ipcautoupdate construct their electron-stores.
 import { cliUsage, getCliArgs, getResetArgs, getUnknownVerb, isHeadless, isToolVerb } from './mainsrc/earlycli.js';
 import { app, crashReporter, BrowserWindow, Menu, dialog, session } from 'electron';
+import { totalmem } from 'node:os';
+import { hasMinimumRam, insufficientRamMessage } from './mainsrc/minimumRam.js';
 import { Worker } from 'node:worker_threads';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -480,6 +482,16 @@ if (isToolVerb()) {
         if (unknownVerb) {
             console.error(`EZPlayer: unknown command '${unknownVerb}'\n\n${cliUsage()}`);
             app.exit(64);
+            return;
+        }
+
+        // Below the minimum the player stalls or gets OOM-killed mid-show; refuse up front.
+        const ram = totalmem();
+        if (!hasMinimumRam(ram)) {
+            const msg = insufficientRamMessage(ram);
+            console.error(`EZPlayer: ${msg}`);
+            if (!isHeadless()) dialog.showErrorBox('EZPlayer cannot start', msg);
+            exitFlushed(69); // EX_UNAVAILABLE
             return;
         }
 
