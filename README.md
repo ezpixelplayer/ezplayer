@@ -105,8 +105,6 @@ sudo sysctl -p /etc/sysctl.d/99-ezplayer-ping.conf
 
 EZPlayer is tested on Raspberry Pi 5 and 4 (64-bit OS and 4GB or more required). The Linux ARM releases work, or you can build it yourself. Releases currently only include the application; it is not a full OS image (though that may be provided by EZRGB later).
 
-The flashable appliance image, its network setup stack and its build instructions live in the separate [pi-image](https://github.com/ezpixelplayer/pi-image) repository, which consumes the ARM64 package from an EZPlayer release.
-
 ### Running EZPlayer
 
 For detailed documentation, see the [EZPlayer manual](https://ezplayer.dev/). The manual is [CC BY-SA 4.0](doc/LICENSE), so feel free to quote and share it.
