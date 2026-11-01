@@ -97,6 +97,7 @@ import {
 const PARSE_OPTS: ModelParseOptions = { warnUnusedAttrs: false };
 
 import { buildInterleavedAudioChunkFromSegments, MP3PrefetchCache } from './mp3decodecache';
+import { formatAudioLength, maxAudioSeconds } from './audioLengthLimit';
 import { AsyncBatchLogger } from './logger';
 
 import { monitorEventLoopDelay, performance } from 'perf_hooks';
@@ -1436,6 +1437,8 @@ const playbackParams = {
     sendAudioChunkMs: 100, // The "hop": how far each chunk advances. Multiple of 10 for 44100kHz.
     audioCrossfadeMs: 10, // Trailing overlap appended to each music chunk; ramped to crossfade seams.
     mp3CacheSeconds: 3600, // We reuse the memory in ~5s chunks
+    audioMemFraction: 0.25, // One song's decoded audio may use this much of RAM
+    maxAudioSeconds: Number.POSITIVE_INFINITY, // Set from RAM below
     audioPrefetchTime: 30_000, // forward-run horizon for audio; decode is fast, beyond this is margins
     fseqSpace: 1_000_000_000,
     idleSleepInterval: 200,
@@ -1668,14 +1671,17 @@ const playbackStats: PlaybackStatistics = {
 // above suit 8 GB+ boards; trim on ~4 GB boards, and warn (surfaced to the UI via
 // playbackStats.lastError) on memory too small to run reliably (~2 GB and below).
 {
-    const totalMemGB = totalmem() / 1e9;
+    const totalMemBytes = totalmem();
+    const totalMemGB = totalMemBytes / 1e9;
+    playbackParams.maxAudioSeconds = maxAudioSeconds(totalMemBytes, playbackParams.audioMemFraction);
     if (totalMemGB < 6) {
         playbackParams.mp3CacheSeconds = 1000; // ~380 MB of 48 kHz stereo audio
         playbackParams.fseqSpace = 256_000_000; // 256 MB of decompressed frames
     }
     emitInfo(
         `System RAM ${totalMemGB.toFixed(1)} GB → mp3 cache ${playbackParams.mp3CacheSeconds}s, ` +
-            `fseq cache ${Math.round(playbackParams.fseqSpace / 1e6)} MB`,
+            `fseq cache ${Math.round(playbackParams.fseqSpace / 1e6)} MB, ` +
+            `max audio length ${formatAudioLength(playbackParams.maxAudioSeconds)}`,
     );
     if (totalMemGB < 2.5) {
         emitError(
@@ -2614,6 +2620,8 @@ async function processQueue() {
             log: emitInfo,
             now: rtcConverter.computeTime(performance.now()),
             mp3SpaceSeconds: playbackParams.mp3CacheSeconds,
+            maxAudioSeconds: playbackParams.maxAudioSeconds,
+            totalMemBytes: totalmem(),
             // Map record audio -> precomputed derived file. Never builds here; a
             // missing derivation surfaces as an audio error for the song.
             resolveFile: (audioFile, opts) => {
