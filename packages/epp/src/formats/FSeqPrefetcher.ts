@@ -224,9 +224,6 @@ export class FSeqPrefetchCache {
         arg: {
             now: number;
             fseqSpace?: number;
-            ageoutMs?: number;
-            decompPoolBytes?: number;
-            maxConcurrency?: number;
             decompZstd?: DecompZStd; // Allow a worker thread...
             decompZlib?: DecompZStd;
         },
@@ -237,8 +234,7 @@ export class FSeqPrefetchCache {
         this.now = arg.now;
         this.emitWarning = emitWarning ?? emitError;
         this.emitInfo = emitInfo;
-        this.ageoutMs = arg.ageoutMs ?? 60_000;
-        this.decompDataPool = new ArrayBufferPool(arg.decompPoolBytes);
+        this.decompDataPool = new ArrayBufferPool();
         this.decompFunc = arg.decompZstd ?? defDecompZStd;
         this.decompZlibFunc = arg.decompZlib ?? defDecompZlib;
         this.decompPrefetchCache = new PrefetchCache<DecompCacheKey, DecompCacheVal, NeededTimePriority>({
@@ -341,7 +337,7 @@ export class FSeqPrefetchCache {
             budgetCalculator: (key) => key.decompLen,
             keyToId: (key) => `${key.fseqfile}:${key.chunknum}`,
             budgetLimit: arg.fseqSpace ?? 512_000_000,
-            maxConcurrency: arg.maxConcurrency ?? 4,
+            maxConcurrency: 4,
             allowOversizedItem: true,
             priorityComparator: needTimePriorityCompare,
             onDispose: (_k, v) => {
@@ -514,10 +510,9 @@ export class FSeqPrefetchCache {
     }
 
     dispatch(ageout?: number) {
-        const maxAge = ageout ?? this.ageoutMs;
-        this.headerPrefetchCache.cleanupAndDispatchRequests(this.now, this.now - maxAge);
+        this.headerPrefetchCache.cleanupAndDispatchRequests(this.now, this.now - (ageout ?? 60000));
 
-        this.decompPrefetchCache.cleanupAndDispatchRequests(this.now, this.now - maxAge);
+        this.decompPrefetchCache.cleanupAndDispatchRequests(this.now, this.now - (ageout ?? 60000));
     }
 
     now: number;
@@ -556,7 +551,6 @@ export class FSeqPrefetchCache {
     fileReadTimeCumulative: number = 0;
     private emitWarning: (msg: string) => void;
     private emitInfo?: (msg: string) => void;
-    private readonly ageoutMs: number;
 
     getStats() {
         const decompPool = this.decompDataPool.getStats();

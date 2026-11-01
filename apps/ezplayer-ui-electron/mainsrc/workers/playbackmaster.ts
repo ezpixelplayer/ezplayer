@@ -98,7 +98,6 @@ import {
 const PARSE_OPTS: ModelParseOptions = { warnUnusedAttrs: false };
 
 import { buildInterleavedAudioChunkFromSegments, MP3PrefetchCache } from './mp3decodecache';
-import { playbackMemoryProfile } from './playbackMemoryProfile';
 import { AsyncBatchLogger } from './logger';
 
 import { monitorEventLoopDelay, performance } from 'perf_hooks';
@@ -1443,12 +1442,8 @@ const playbackParams = {
     sendAudioChunkMs: 100, // The "hop": how far each chunk advances. Multiple of 10 for 44100kHz.
     audioCrossfadeMs: 10, // Trailing overlap appended to each music chunk; ramped to crossfade seams.
     mp3CacheSeconds: 3600, // We reuse the memory in ~5s chunks
-    mp3CacheAgeoutMs: 25 * 3600 * 1000,
     audioPrefetchTime: 30_000, // forward-run horizon for audio; decode is fast, beyond this is margins
     fseqSpace: 1_000_000_000,
-    fseqCacheAgeoutMs: 60_000,
-    fseqPoolBytes: 256_000_000,
-    fseqMaxConcurrency: 4,
     idleSleepInterval: 200,
     // Earliest a commanded song starts. Its audio may not have decoded by then; the start
     // is then held by holdInteractiveStartsForAudio() rather than played without sound.
@@ -1679,17 +1674,20 @@ const playbackStats: PlaybackStatistics = {
 // above suit 8 GB+ boards; trim on ~4 GB boards, and warn (surfaced to the UI via
 // playbackStats.lastError) on memory too small to run reliably (~2 GB and below).
 {
-    const totalMemBytes = totalmem();
-    const totalMemGB = totalMemBytes / 1e9;
-    Object.assign(playbackParams, playbackMemoryProfile(totalMemBytes));
+    const totalMemGB = totalmem() / 1e9;
+    if (totalMemGB < 6) {
+        playbackParams.mp3CacheSeconds = 1000; // ~380 MB of 48 kHz stereo audio
+        playbackParams.fseqSpace = 256_000_000; // 256 MB of decompressed frames
+    }
     emitInfo(
         `System RAM ${totalMemGB.toFixed(1)} GB → mp3 cache ${playbackParams.mp3CacheSeconds}s, ` +
-            `fseq cache ${Math.round(playbackParams.fseqSpace / 1e6)} MB, ` +
-            `audio age-out ${playbackParams.mp3CacheAgeoutMs} ms, ` +
-            `FSEQ pool ${Math.round(playbackParams.fseqPoolBytes / 1e6)} MB`,
+            `fseq cache ${Math.round(playbackParams.fseqSpace / 1e6)} MB`,
     );
     if (totalMemGB < 2.5) {
-        emitInfo(`Low-memory playback profile active for ${totalMemGB.toFixed(1)} GB of RAM.`);
+        emitError(
+            `Low system memory: ${totalMemGB.toFixed(1)} GB. EZPlayer recommends at least 4 GB; ` +
+                `audio/FSEQ caches were reduced and playback may be unstable.`,
+        );
     }
 }
 
@@ -2622,7 +2620,6 @@ async function processQueue() {
             log: emitInfo,
             now: rtcConverter.computeTime(performance.now()),
             mp3SpaceSeconds: playbackParams.mp3CacheSeconds,
-            ageoutMs: playbackParams.mp3CacheAgeoutMs,
             // Map record audio -> precomputed derived file. Never builds here; a
             // missing derivation surfaces as an audio error for the song.
             resolveFile: (audioFile, opts) => {
@@ -2637,9 +2634,6 @@ async function processQueue() {
             {
                 now: performance.now(),
                 fseqSpace: playbackParams.fseqSpace,
-                ageoutMs: playbackParams.fseqCacheAgeoutMs,
-                decompPoolBytes: playbackParams.fseqPoolBytes,
-                maxConcurrency: playbackParams.fseqMaxConcurrency,
                 decompZstd: decompressZStdWithWorker,
                 decompZlib: decompressZlibWithWorker,
             },

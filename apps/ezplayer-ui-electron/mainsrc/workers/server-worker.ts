@@ -2136,9 +2136,7 @@ async function startServer(config: ServerWorkerData) {
     // ----------------------------------------------
     // API: GET /api/ezp/frames - binary frame data for 3D viewer
     // ----------------------------------------------
-    // Viewer responses can be large on dense layouts. Keep some reuse without
-    // retaining every historical response allocation for the life of the server.
-    const frameBufferPool = new BufferPool(16_000_000);
+    const frameBufferPool = new BufferPool();
 
     router.get('/api/ezp/frames', async (ctx) => {
         // CORS headers for Electron renderer (file:// origin)

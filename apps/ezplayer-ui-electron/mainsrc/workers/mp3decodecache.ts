@@ -116,12 +116,10 @@ export class MP3PrefetchCache {
         readonly log: (msg: string) => void;
         now: number;
         mp3SpaceSeconds?: number;
-        ageoutMs?: number;
         /** Map a record audio path to the file to decode (its precomputed derivation). */
         resolveFile?: (audioFile: string, opts: { normalize: boolean }) => Promise<string>;
     }) {
         this.now = arg.now;
-        this.ageoutMs = arg.ageoutMs ?? 25 * 3600 * 1000;
         this.decodewc = new Mp3DecodeWorkerClient(arg.log);
         this.mp3PrefetchCache = new PrefetchCache<MP3FileKey, MP3FileCacheVal, NeededTimePriority>({
             fetchFunction: async (key, _abort) => {
@@ -204,13 +202,12 @@ export class MP3PrefetchCache {
     }
 
     dispatch(ageout?: number) {
-        this.mp3PrefetchCache.cleanupAndDispatchRequests(this.now, this.now - (ageout ?? this.ageoutMs));
+        this.mp3PrefetchCache.cleanupAndDispatchRequests(this.now, this.now - (ageout ?? 25 * 3600 * 1000)); // Keep for 25 hours
     }
 
     now: number;
     mp3PrefetchCache: PrefetchCache<MP3FileKey, MP3FileCacheVal, NeededTimePriority>;
     decodewc: Mp3DecodeWorkerClient;
-    private readonly ageoutMs: number;
     /** mp3file -> estimated decoded length (sec), fed from prefetch hints. */
     private durationHints = new Map<string, number>();
 
