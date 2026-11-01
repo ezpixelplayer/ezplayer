@@ -995,6 +995,9 @@ describe('calcschedule', () => {
         expect(logs1.find((e) => e.eventType === 'Schedule Prevented')).toBeDefined();
         expect(logs1.find((e) => e.eventType === 'Schedule Deferred')).toBeDefined();
         expect(plr1.heapById.size).toBe(0);
+        // The prevented occurrence must not linger as a pending item in the status views.
+        expect(plr1.getQueueItems().some((q) => q.schedule_id === 'parts1Med')).toBe(false);
+        expect(plr1.getStatusView().pending.some((q) => q.schedule_id === 'parts1Med')).toBe(false);
         expect(logs1[logs1.length - 1].eventTime).toBe(bt + 18 * 60 * 60 * 1000 + 60 * 10 * 1000);
         expect(logs1[logs1.length - 1].eventType).toBe('Schedule Ended');
         //

@@ -14,7 +14,6 @@ import type {
 } from './playbacktypes';
 import { RPCClient, RPCServer } from './rpc';
 import { ClockConverter } from '../../sharedsrc/ClockConverter';
-import { applyDirectPiControllerOutput } from './pi-controller-output';
 
 import type {
     SequenceRecord,
@@ -1143,6 +1142,7 @@ function holdInteractiveStartsForAudio(now: number): void {
     let moved = false;
     for (const cmd of fs.interactiveQueue) moved = hold(cmd) || moved;
     if (moved) fs.interactiveQueue.sort((a, b) => a.startTime - b.startTime);
+    // Requests that left the queue (stopped, skipped, or started without audio) never return.
     for (const requestId of interactiveAudioWaitSince.keys()) {
         if (!activeRequestIds.has(requestId)) interactiveAudioWaitSince.delete(requestId);
     }
@@ -2684,13 +2684,6 @@ async function processQueue() {
                   // Surface library-side skips in the warning log, not console.
                   logger: (msg) => emitWarning(msg),
               });
-
-        const ignoredProxies = applyDirectPiControllerOutput(controllers, process.env.EZPLAYER_PI_APPLIANCE === '1');
-        if (ignoredProxies) {
-            emitInfo(
-                `Pi controller output: ignoring ${ignoredProxies} FPP proxy setting(s); sending directly to controller addresses`,
-            );
-        }
 
         // Per-controller max-FPS overrides from our records in the show folder
         const fpsOverrides = await readControllerFpsOverrides(showFolder!);
