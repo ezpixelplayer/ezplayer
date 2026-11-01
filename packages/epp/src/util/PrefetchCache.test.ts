@@ -6,7 +6,7 @@ export class TestPrefetchCache extends PrefetchCache<string, string, NeededTimeP
     clearCounts() {
         this.counts = new Map();
     }
-    constructor(budget: number) {
+    constructor(budget: number, allowOversizedItem = false) {
         super({
             fetchFunction: async (key, _abort) => {
                 this.counts.set(key, (this.counts.get(key) ?? 0) + 1);
@@ -23,6 +23,7 @@ export class TestPrefetchCache extends PrefetchCache<string, string, NeededTimeP
             keyToId: (key) => key,
             budgetLimit: budget,
             maxConcurrency: 1,
+            allowOversizedItem,
             priorityComparator: needTimePriorityCompare,
             onDispose: (_k, _v) => {},
         });
@@ -57,6 +58,16 @@ export class TestPrefetchCache extends PrefetchCache<string, string, NeededTimeP
 }
 
 describe('PrefetchCache dispatch & eviction', () => {
+    it('can admit one required item larger than the cache budget', async () => {
+        const cache = new TestPrefetchCache(2, true);
+        cache.beginGeneration();
+        cache.prefetch({ key: 'big-10', now: 0, expiry: 1000, priority: { neededTime: 0 } });
+        cache.cleanupAndDispatchRequests(0, -1);
+        await cache.finishFetches();
+        expect(cache.check('big-10', 0)).toBe(true);
+        expect(cache.getStats().cacheBudgetUsed).toBe(10);
+    });
+
     // Budget counts only committed memory (fetching/ready). Highest-priority items fill
     // it; lower-priority ones stay queued. (maxConcurrency 1 → one dispatch per pass.)
     it('fills the budget with the highest-priority items', async () => {

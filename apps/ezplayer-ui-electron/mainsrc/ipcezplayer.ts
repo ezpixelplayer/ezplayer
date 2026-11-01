@@ -80,6 +80,7 @@ import type {
     CloudPlayerSettings,
     CloudPollScheduleEntry,
     CombinedPlayerStatus,
+    PlayerNStatusContent,
     UIConnectSnapshot,
     FullPlayerState,
     PlaybackItemOrder,
@@ -90,6 +91,7 @@ import type {
 } from '@ezplayer/ezplayer-core';
 
 import { FSEQReaderAsync } from '@ezplayer/epp';
+import { copyPiSongFiles } from './data/pi-import-files.js';
 
 import {
     CLOUD_API_ENDPOINTS,
@@ -127,7 +129,7 @@ import {
     hasRunningControllerOps,
     setKnownControllers,
 } from './controller-ops.js';
-import type { ControllerCommand, PlayerNStatusContent } from '@ezplayer/ezplayer-core';
+import type { ControllerCommand } from '@ezplayer/ezplayer-core';
 import {
     updateFrameBuffer,
     updateAudioBuffer,
@@ -673,7 +675,10 @@ function queueInstallCommit(record: SequenceRecord): void {
 
 /** Sequence upsert shared by the renderer IPC and the server-worker RPC.
  *  API clients may send show-relative file names and omit ids. */
-export async function putSequencesWithDurations(recs: SequenceRecord[]): Promise<SequenceRecord[]> {
+export async function putSequencesWithDurations(
+    recs: SequenceRecord[],
+    localImport = false,
+): Promise<SequenceRecord[]> {
     const showFolder = getCurrentShowFolder();
     const uppl = recs.map((r) => {
         return { ...r, updatedAt: Date.now() };
@@ -690,6 +695,9 @@ export async function putSequencesWithDurations(recs: SequenceRecord[]): Promise
                 const p = ups.files[key];
                 if (p && !path.isAbsolute(p)) ups.files[key] = path.join(showFolder, p);
             }
+        }
+        if (localImport && process.env.EZPLAYER_PI_APPLIANCE === '1' && ups.files && showFolder && !ups.deleted) {
+            ups.files = await copyPiSongFiles(showFolder, ups.files);
         }
         // Pin the normalization choice: new local songs take the setting default,
         // edits that omit it keep the record's value. Cloud songs arrive normalized.
@@ -1173,9 +1181,7 @@ export async function registerContentHandlers(mainWindow: BrowserWindow | null, 
         return Promise.resolve(curSequences);
     });
     ipcMain.handle('ipcPutCloudSequences', async (_event, recs: SequenceRecord[]): Promise<SequenceRecord[]> => {
-        // TODO Cloud sync if that makes sense...
-        // TODO calculate any effect on the schedule
-        return await putSequencesWithDurations(recs);
+        return await putSequencesWithDurations(recs, true);
     });
 
     ipcMain.handle('ipcAutoDetectSongFilesFromFseq', async (_event, fseqPath: string) => {
@@ -1193,7 +1199,7 @@ export async function registerContentHandlers(mainWindow: BrowserWindow | null, 
             normalize: getSettingsCache()?.normalizeNewSongs,
             onProgress: (p) => safeSend(updateWindow, 'update:batchImportProgress', p),
             existingSequences: curSequences,
-            putSequences: putSequencesWithDurations,
+            putSequences: (records) => putSequencesWithDurations(records, true),
         });
     });
     ipcMain.handle('ipcBatchImportSequencesFromFolder', async (_event, folderPath: string) => {
@@ -1204,7 +1210,7 @@ export async function registerContentHandlers(mainWindow: BrowserWindow | null, 
             normalize: getSettingsCache()?.normalizeNewSongs,
             onProgress: (p) => safeSend(updateWindow, 'update:batchImportProgress', p),
             existingSequences: curSequences,
-            putSequences: putSequencesWithDurations,
+            putSequences: (records) => putSequencesWithDurations(records, true),
         });
     });
 

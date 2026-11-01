@@ -106,6 +106,8 @@ export interface BatchImportSkipped {
 }
 
 export interface BatchImportSummary {
+    /** Files confirmed saved by a LAN upload, independent of catalog import results. */
+    uploadedFiles?: string[];
     total: number;
     imported: number;
     failed: number;
@@ -129,6 +131,8 @@ export interface BatchImportProgress {
 export type { GetNodeResult, ChannelRole, ChannelRoleKind, ImageInfo } from 'xllayoutcalcs';
 
 export interface EZPElectronAPI {
+    piAvailable?: () => Promise<boolean>;
+    piRequest?: (request: Record<string, unknown>) => Promise<unknown>;
     shouldShowWelcomeOnLaunch: () => boolean;
 
     // FS Utilities

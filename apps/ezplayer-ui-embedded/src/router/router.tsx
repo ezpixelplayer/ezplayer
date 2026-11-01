@@ -1,5 +1,6 @@
 import { Navigate, RouteObject } from 'react-router-dom';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { PiSettings } from '../../../ezplayer-ui-electron/src/components/PiSettings';
 import { useSelector } from 'react-redux';
 import {
     AudioSettings,
@@ -8,7 +9,6 @@ import {
     DiagnosticsSettings,
     DIAGNOSTICS_SETTINGS_SECTION_KEY,
     JukeboxSettings,
-    MediaFolderSettings,
     PlayerCloudRegistrationDialog,
     PlayerSettings,
     ShowStatusScreen,
@@ -46,7 +46,6 @@ import VisibilityIcon from '@mui/icons-material/Visibility';
 import LibraryMusicIcon from '@mui/icons-material/LibraryMusic';
 import VolumeUpIcon from '@mui/icons-material/VolumeUp';
 import TuneIcon from '@mui/icons-material/Tune';
-import FolderIcon from '@mui/icons-material/Folder';
 import SystemUpdateAltIcon from '@mui/icons-material/SystemUpdateAlt';
 import TroubleshootIcon from '@mui/icons-material/Troubleshoot';
 
@@ -72,6 +71,15 @@ const KIOSK_HIDDEN_ROUTES = new Set<string>([
 const getStatusArea = () => [];
 
 const EmbeddedSettingsPage = () => {
+    const [piAvailable, setPiAvailable] = useState(false);
+    useEffect(() => {
+        const controller = new AbortController();
+        void fetch('/api/ezp/pi/available', { signal: controller.signal })
+            .then((response) => response.json())
+            .then((result) => setPiAvailable(result.available === true))
+            .catch(() => {});
+        return () => controller.abort();
+    }, []);
     const [cloudOpen, setCloudOpen] = useState(false);
     const { section: shellSection, dialog: shellDialog } = useShellSection();
     const { section: filesSection, dialog: filesDialog } = useFilesSection();
@@ -81,13 +89,6 @@ const EmbeddedSettingsPage = () => {
     const canUpdate = useSelector((s: RootState) => s.autoUpdate.ops != null);
     // Embedded is a browser; show-folder selection isn't possible here.
     const sections: SettingsSection[] = [
-        {
-            key: 'mediaFolder',
-            label: 'Media Folder',
-            icon: <FolderIcon sx={{ fontSize: 56 }} />,
-            title: 'Media Folder',
-            content: <MediaFolderSettings />,
-        },
         {
             key: 'ui',
             label: 'UI',
@@ -137,16 +138,38 @@ const EmbeddedSettingsPage = () => {
             label: 'Software Update',
             icon: <SystemUpdateAltIcon sx={{ fontSize: 56 }} />,
             title: 'Software Update',
-            available: canUpdate,
+            available: canUpdate && !piAvailable,
             content: <SoftwareUpdateSettings />,
         },
         // Present only when available.
+        {
+            key: 'piNetwork',
+            label: 'Pi Network',
+            icon: <RouterIcon sx={{ fontSize: 56 }} />,
+            available: piAvailable,
+            onClick: () => {
+                const portalHost = window.location.protocol === 'file:' ? '127.0.0.1' : window.location.hostname || '127.0.0.1';
+                window.open(`http://${portalHost}/setup`, '_blank', 'noopener,noreferrer');
+            },
+        },
+        {
+            key: 'piSystem',
+            label: 'Pi System',
+            icon: <TuneIcon sx={{ fontSize: 56 }} />,
+            available: piAvailable,
+            content: <PiSettings system />,
+        },
         shellSection,
         filesSection,
     ];
     return (
         <>
-            <SettingsDrawer title="Settings" statusArea={getStatusArea()} sections={sections} />
+            <SettingsDrawer
+                title="Settings"
+                statusArea={getStatusArea()}
+                sections={sections}
+                initialSection={new URLSearchParams(window.location.search).get('section') ?? undefined}
+            />
             <PlayerCloudRegistrationDialog open={cloudOpen} onClose={() => setCloudOpen(false)} />
             {shellDialog}
             {filesDialog}

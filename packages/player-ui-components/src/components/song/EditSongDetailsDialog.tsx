@@ -19,17 +19,11 @@ import { FileButton, isElectron, TextField, ToastMsgs } from '@ezplayer/shared-u
 
 import type { SequenceFiles, SequenceRecord } from '@ezplayer/ezplayer-core';
 import { SUPPORTED_AUDIO_EXTENSIONS } from '@ezplayer/ezplayer-core';
-import {
-    AppDispatch,
-    extractShowAudioMetadata,
-    postSequenceData,
-    RootState,
-    setSequenceTags,
-    uploadShowFiles,
-} from '../..';
+import { AppDispatch, postSequenceData, RootState, setSequenceTags, uploadShowFiles } from '../..';
 import { getFSEQDurationMSBrowser } from '../../util/fsequtil';
 import { ServerFilePickerDialog } from './ServerFilePickerDialog';
 import { saveErrorMessage, SongSaveProgress } from './SongSaveProgress';
+import { UploadProgressDialog, type UploadProgress } from './UploadProgressDialog';
 
 const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
 
@@ -127,6 +121,8 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
     const [newDurationSecs, setNewDurationSecs] = useState<number | undefined>(undefined);
     /** Save in flight: derived audio is built before the record commits. */
     const [saving, setSaving] = useState(false);
+    const [pendingFiles, setPendingFiles] = useState<Partial<Record<keyof SequenceFiles, File>>>({});
+    const [progress, setProgress] = useState<UploadProgress | null>(null);
 
     useEffect(() => {
         if (open && selectedSongId) {
@@ -148,6 +144,7 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
 
             setUploadedFiles(selectedSong?.files || {});
             setNewFiles({});
+            setPendingFiles({});
         }
     }, [open, selectedSongId, sequenceData]);
 
@@ -215,19 +212,12 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
      *  its bytes into the show folder first, then reference it by name. */
     const handleWebFileReplace = async (event: React.ChangeEvent<HTMLInputElement>, type: 'fseq' | 'mp3' | 'image') => {
         const file = event.target.files?.[0];
-        if (!file) return;
+        event.target.value = '';
+        if (!file || saving) return;
         try {
-            await dispatch(uploadShowFiles([{ name: file.name, data: file }])).unwrap();
             const fileKey = type === 'mp3' ? 'audio' : type === 'image' ? 'thumb' : 'fseq';
             setNewFiles((prev) => ({ ...prev, [fileKey]: file.name }));
-            if (type === 'mp3') {
-                try {
-                    const meta = await dispatch(extractShowAudioMetadata(file.name)).unwrap();
-                    applyDetectedMetadata(meta);
-                } catch {
-                    /* tags are best-effort */
-                }
-            }
+            setPendingFiles((prev) => ({ ...prev, [fileKey]: file }));
             if (type === 'fseq') {
                 try {
                     const durationMs = await getFSEQDurationMSBrowser(file);
@@ -372,6 +362,20 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
                 // Send to the server
                 setSaving(true);
                 try {
+                    for (const file of Object.values(pendingFiles)) {
+                        if (!file) continue;
+                        setProgress({ name: file.name, loaded: 0, total: file.size });
+                        await dispatch(
+                            uploadShowFiles([
+                                {
+                                    name: file.name,
+                                    data: file,
+                                    onProgress: (loaded, total) => setProgress({ name: file.name, loaded, total }),
+                                },
+                            ]),
+                        ).unwrap();
+                    }
+                    setProgress(null);
                     await dispatch(postSequenceData([updatedSong])).unwrap();
                     setSaving(false);
                     ToastMsgs.showSuccessMessage('Song settings updated successfully', {
@@ -411,6 +415,7 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
         setImageUrl(originalSong?.work?.artwork || '');
         setErrors({ title: false, artist: false, lead_time: false, trail_time: false, volume_adj: false, tags: false });
         setNewFiles({});
+        setPendingFiles({});
         setNewDurationSecs(undefined);
     };
 
@@ -420,6 +425,7 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
     };
 
     const handleDialogClose = (event?: object, reason?: string) => {
+        if (saving) return;
         // If the dialog is closed by backdrop click, reset the form data
         if (reason === 'backdropClick') {
             resetFormData();
@@ -603,7 +609,7 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
 
                             {/* Image File */}
                             <Box>
-                                <FileFieldLabel title="Image File" extensions={IMAGE_EXTENSIONS} />
+                                <FileFieldLabel title="Artwork" extensions={IMAGE_EXTENSIONS} />
                                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                                     {isElectron() ? (
                                         <FileSelectButton
@@ -783,6 +789,7 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
             </DialogTitle>
             <DialogContent>{editDialogContent}</DialogContent>
 
+            <UploadProgressDialog open={saving && !isElectron()} progress={progress} />
             <ServerFilePickerDialog
                 open={pickerFor !== null}
                 onClose={() => setPickerFor(null)}
@@ -791,6 +798,7 @@ export function EditSongDetailsDialog({ onClose, open, title, selectedSongId }: 
                 onSelect={(name) => {
                     const fileKey = pickerFor === 'mp3' ? 'audio' : pickerFor === 'image' ? 'thumb' : 'fseq';
                     setNewFiles((prev) => ({ ...prev, [fileKey]: name }));
+                    setPendingFiles((prev) => ({ ...prev, [fileKey]: undefined }));
                     if (pickerFor === 'fseq') setNewDurationSecs(0); // server refills from header
                 }}
             />

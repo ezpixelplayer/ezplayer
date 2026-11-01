@@ -1,6 +1,5 @@
 import * as path from 'path';
 
-import { ArrayBufferPool } from '@ezplayer/epp';
 import { NeededTimePriority, needTimePriorityCompare, PrefetchCache, RefHandle } from '@ezplayer/epp';
 
 import { Worker } from 'node:worker_threads';
@@ -125,7 +124,6 @@ export class MP3PrefetchCache {
         resolveFile?: (audioFile: string, opts: { normalize: boolean }) => Promise<string>;
     }) {
         this.now = arg.now;
-        this.readBufPool = new ArrayBufferPool();
         this.maxAudioSeconds = arg.maxAudioSeconds;
         this.totalMemBytes = arg.totalMemBytes ?? 0;
         this.decodewc = new Mp3DecodeWorkerClient(arg.log, {
@@ -156,9 +154,11 @@ export class MP3PrefetchCache {
             keyToId: (key) => (key.normalize ? `${key.mp3file}|norm` : key.mp3file),
             budgetLimit: arg.mp3SpaceSeconds ?? 5400,
             maxConcurrency: 1,
+            allowOversizedItem: true,
             priorityComparator: needTimePriorityCompare,
-            onDispose: (_k, v) => {
+            onDispose: (key, v) => {
                 this.decodewc.returnBuffer(v.decompAudio);
+                this.durationHints.delete(key.mp3file);
             },
         });
     }
@@ -214,7 +214,6 @@ export class MP3PrefetchCache {
     }
 
     now: number;
-    readBufPool: ArrayBufferPool;
     mp3PrefetchCache: PrefetchCache<MP3FileKey, MP3FileCacheVal, NeededTimePriority>;
     decodewc: Mp3DecodeWorkerClient;
     private readonly maxAudioSeconds?: number;
@@ -223,15 +222,8 @@ export class MP3PrefetchCache {
     private durationHints = new Map<string, number>();
 
     getStats() {
-        const readBufPool = this.readBufPool.getStats();
-        let totalReadMem = 0;
-        for (const di of readBufPool) {
-            totalReadMem += di.size * di.total;
-        }
         return {
             mp3Prefetch: this.mp3PrefetchCache.getStats(),
-            readBufPool,
-            totalDecompMem: totalReadMem,
             fileReadTimeCumulative: this.decodewc.fileReadTimeCumulative,
             decodeTimeCumulative: this.decodewc.decodeTimeCumulative,
         };
