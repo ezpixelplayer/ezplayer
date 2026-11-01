@@ -117,19 +117,12 @@ export class MP3PrefetchCache {
         now: number;
         mp3SpaceSeconds?: number;
         ageoutMs?: number;
-        decodePoolBytes?: number;
-        decodeReserveSeconds?: number;
-        scratchRetainBytes?: number;
         /** Map a record audio path to the file to decode (its precomputed derivation). */
         resolveFile?: (audioFile: string, opts: { normalize: boolean }) => Promise<string>;
     }) {
         this.now = arg.now;
         this.ageoutMs = arg.ageoutMs ?? 25 * 3600 * 1000;
-        this.decodewc = new Mp3DecodeWorkerClient(arg.log, {
-            maxPoolBytes: arg.decodePoolBytes,
-            defaultReserveSeconds: arg.decodeReserveSeconds,
-            maxScratchRetainBytes: arg.scratchRetainBytes,
-        });
+        this.decodewc = new Mp3DecodeWorkerClient(arg.log);
         this.mp3PrefetchCache = new PrefetchCache<MP3FileKey, MP3FileCacheVal, NeededTimePriority>({
             fetchFunction: async (key, _abort) => {
                 arg.log(`Starting mp3 load of ${key.mp3file}`);
@@ -272,28 +265,15 @@ export class Mp3DecodeWorkerClient {
         this.decodeTimeCumulative = 0;
     }
 
-    constructor(
-        log?: (msg: string) => void,
-        options?: { maxPoolBytes?: number; defaultReserveSeconds?: number; maxScratchRetainBytes?: number },
-    ) {
+    constructor(log?: (msg: string) => void) {
         this.log = log ?? ((m) => console.error(m));
-        this.options = options;
         this.spawn();
     }
-
-    private readonly options?: {
-        maxPoolBytes?: number;
-        defaultReserveSeconds?: number;
-        maxScratchRetainBytes?: number;
-    };
 
     private spawn(): Worker {
         const worker = new Worker(path.join(__dirname, 'mp3decodeworker.js'), {
             workerData: {
                 name: 'mp3decode',
-                maxPoolBytes: this.options?.maxPoolBytes,
-                defaultReserveSeconds: this.options?.defaultReserveSeconds,
-                maxScratchRetainBytes: this.options?.maxScratchRetainBytes,
             },
         });
         this.worker = worker;

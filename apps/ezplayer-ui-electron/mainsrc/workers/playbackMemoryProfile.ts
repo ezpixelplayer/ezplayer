@@ -5,9 +5,6 @@ export type PlaybackMemoryProfile = {
     fseqPoolBytes: number;
     fseqMaxConcurrency: number;
     mp3CacheAgeoutMs: number;
-    mp3DecodePoolBytes: number;
-    mp3DecodeReserveSeconds: number;
-    mp3ScratchRetainBytes: number;
 };
 
 /** Keep decoded playback data within the practical RAM available on the host. */
@@ -24,10 +21,6 @@ export function playbackMemoryProfile(totalMemBytes: number): PlaybackMemoryProf
             fseqMaxConcurrency: 1,
             // Drop completed tracks promptly instead of retaining a playlist's PCM all day.
             mp3CacheAgeoutMs: 5_000,
-            // A small pool still avoids churn without pinning hundreds of MiB after eviction.
-            mp3DecodePoolBytes: 16_000_000,
-            mp3DecodeReserveSeconds: 300,
-            mp3ScratchRetainBytes: 16_000_000,
         };
     }
     if (totalMemGB < 6) {
@@ -38,9 +31,6 @@ export function playbackMemoryProfile(totalMemBytes: number): PlaybackMemoryProf
             fseqPoolBytes: 64_000_000,
             fseqMaxConcurrency: 4,
             mp3CacheAgeoutMs: 25 * 3600 * 1000,
-            mp3DecodePoolBytes: 128_000_000,
-            mp3DecodeReserveSeconds: 15 * 60,
-            mp3ScratchRetainBytes: 32_000_000,
         };
     }
     return {
@@ -50,8 +40,5 @@ export function playbackMemoryProfile(totalMemBytes: number): PlaybackMemoryProf
         fseqPoolBytes: 256_000_000,
         fseqMaxConcurrency: 4,
         mp3CacheAgeoutMs: 25 * 3600 * 1000,
-        mp3DecodePoolBytes: 512_000_000,
-        mp3DecodeReserveSeconds: 15 * 60,
-        mp3ScratchRetainBytes: 64_000_000,
     };
 }

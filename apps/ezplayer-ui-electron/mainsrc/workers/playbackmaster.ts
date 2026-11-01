@@ -1444,9 +1444,6 @@ const playbackParams = {
     audioCrossfadeMs: 10, // Trailing overlap appended to each music chunk; ramped to crossfade seams.
     mp3CacheSeconds: 3600, // We reuse the memory in ~5s chunks
     mp3CacheAgeoutMs: 25 * 3600 * 1000,
-    mp3DecodePoolBytes: 512_000_000,
-    mp3DecodeReserveSeconds: 15 * 60,
-    mp3ScratchRetainBytes: 64_000_000,
     audioPrefetchTime: 30_000, // forward-run horizon for audio; decode is fast, beyond this is margins
     fseqSpace: 1_000_000_000,
     fseqCacheAgeoutMs: 60_000,
@@ -1689,7 +1686,6 @@ const playbackStats: PlaybackStatistics = {
         `System RAM ${totalMemGB.toFixed(1)} GB → mp3 cache ${playbackParams.mp3CacheSeconds}s, ` +
             `fseq cache ${Math.round(playbackParams.fseqSpace / 1e6)} MB, ` +
             `audio age-out ${playbackParams.mp3CacheAgeoutMs} ms, ` +
-            `decode pool ${Math.round(playbackParams.mp3DecodePoolBytes / 1e6)} MB, ` +
             `FSEQ pool ${Math.round(playbackParams.fseqPoolBytes / 1e6)} MB`,
     );
     if (totalMemGB < 2.5) {
@@ -2627,9 +2623,6 @@ async function processQueue() {
             now: rtcConverter.computeTime(performance.now()),
             mp3SpaceSeconds: playbackParams.mp3CacheSeconds,
             ageoutMs: playbackParams.mp3CacheAgeoutMs,
-            decodePoolBytes: playbackParams.mp3DecodePoolBytes,
-            decodeReserveSeconds: playbackParams.mp3DecodeReserveSeconds,
-            scratchRetainBytes: playbackParams.mp3ScratchRetainBytes,
             // Map record audio -> precomputed derived file. Never builds here; a
             // missing derivation surfaces as an audio error for the song.
             resolveFile: (audioFile, opts) => {

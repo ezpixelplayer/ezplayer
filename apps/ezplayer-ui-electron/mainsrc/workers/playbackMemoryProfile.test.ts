@@ -11,9 +11,6 @@ describe('playbackMemoryProfile', () => {
             fseqPoolBytes: 16_000_000,
             fseqMaxConcurrency: 1,
             mp3CacheAgeoutMs: 5_000,
-            mp3DecodePoolBytes: 16_000_000,
-            mp3DecodeReserveSeconds: 300,
-            mp3ScratchRetainBytes: 16_000_000,
         });
     });
 

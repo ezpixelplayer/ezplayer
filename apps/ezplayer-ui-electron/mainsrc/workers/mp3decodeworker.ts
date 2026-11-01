@@ -1,4 +1,4 @@
-import { parentPort, workerData } from 'node:worker_threads';
+import { parentPort } from 'node:worker_threads';
 import * as fsp from 'node:fs/promises';
 import { Buffer } from 'node:buffer';
 import { MPEGDecoder } from 'mpg123-decoder-ezp';
@@ -11,23 +11,17 @@ const samplesPerAudioChunk = 256 * 1024; // A bit over 5 seconds
 
 class ListPool {
     private list: ArrayBuffer[] = [];
-    private pooledBytes = 0;
-
-    constructor(private readonly maxBytes: number) {}
 
     take(): ArrayBuffer | null {
         if (!this.list.length) return null;
         const item = this.list[this.list.length - 1];
         this.list.pop();
-        this.pooledBytes -= item.byteLength;
         return item;
     }
 
     give(item: ArrayBuffer) {
         if (item.detached) throw new TypeError('Should not be returning a detached buffer');
-        if (this.pooledBytes + item.byteLength > this.maxBytes) return;
         this.list.push(item);
-        this.pooledBytes += item.byteLength;
     }
 
     size() {
@@ -41,14 +35,11 @@ class ListPool {
     }
 }
 
-const workerOptions = (workerData ?? {}) as {
-    maxPoolBytes?: number;
-    defaultReserveSeconds?: number;
-    maxScratchRetainBytes?: number;
-};
-const pool = new ListPool(workerOptions.maxPoolBytes ?? 512_000_000);
-const defaultReserveSeconds = workerOptions.defaultReserveSeconds ?? 15 * 60;
-const maxScratchRetainBytes = workerOptions.maxScratchRetainBytes ?? 64_000_000;
+const pool = new ListPool();
+let suggestedMaxAudioDur: number | undefined = undefined; // 15*60;
+function getAudioReserveDur() {
+    return suggestedMaxAudioDur || 15 * 60;
+}
 
 function getOrAllocate() {
     const e = pool.take();
@@ -56,6 +47,10 @@ function getOrAllocate() {
     if (e) return e;
     return new ArrayBuffer(samplesPerAudioChunk * 4);
 }
+function reservationTooSmall() {
+    suggestedMaxAudioDur = getAudioReserveDur() * 2;
+}
+
 function makeAllocation(durationSec: number): Float32Array<ArrayBuffer>[] {
     const nChunks = Math.ceil(durationSec / 5) || 1;
     const res: Float32Array<ArrayBuffer>[] = [];
@@ -111,7 +106,7 @@ export type DecodedAudioResp = {
     decodeTime: number;
 };
 
-let scratchBuf: Buffer | null = null;
+let scratchBuf: Buffer | null = Buffer.allocUnsafe(32000000);
 
 function getScratchBuf(size: number) {
     if (!scratchBuf || scratchBuf.byteLength < size) {
@@ -131,6 +126,11 @@ parentPort.on('message', async (msg: DecodeReq) => {
 
     if (type !== 'decode') return;
     const { id, filePath, suggestedMaxAudioDur: smad } = msg;
+    if (smad) {
+        if (!suggestedMaxAudioDur || suggestedMaxAudioDur < smad) {
+            suggestedMaxAudioDur = smad;
+        }
+    }
 
     try {
         const fileLen = await getFileSize(filePath);
@@ -165,13 +165,12 @@ parentPort.on('message', async (msg: DecodeReq) => {
 
         // Retry loop: if too small, discard the pair, double cap, allocate a new one
         // (or try the pool again first — optional)
-        let reserveSeconds = Math.max(1, smad ?? defaultReserveSeconds);
         while (true) {
             // Must reset before retry because decoder state advanced
             await decoder.reset();
 
-            const lsamp = makeAllocation(reserveSeconds);
-            const rsamp = makeAllocation(reserveSeconds);
+            const lsamp = makeAllocation(getAudioReserveDur());
+            const rsamp = makeAllocation(getAudioReserveDur());
 
             const res = decoder.decodeIntoChunks(nodeBuf.subarray(0, fileLen), lsamp, rsamp, { allowPartial: true });
 
@@ -203,17 +202,15 @@ parentPort.on('message', async (msg: DecodeReq) => {
                     },
                     [...sendl.map((b) => b.buffer), ...sendr.map((b) => b.buffer)],
                 );
-                if (nodeBuf.byteLength > maxScratchRetainBytes) scratchBuf = null;
                 return;
             }
 
             // Too small: return buffers and try to get more
             trimAllocation(lsamp, 0, 0);
             trimAllocation(rsamp, 0, 0);
-            reserveSeconds *= 2;
+            reservationTooSmall();
         }
     } catch (err) {
-        if (scratchBuf && scratchBuf.byteLength > maxScratchRetainBytes) scratchBuf = null;
         console.error(err);
         // Return mp3 buffer if we still own it so the main thread can reclaim
         try {
