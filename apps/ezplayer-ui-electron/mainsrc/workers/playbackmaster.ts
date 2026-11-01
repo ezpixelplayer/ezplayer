@@ -1112,7 +1112,9 @@ function interactiveAudioReady(seqId: string): boolean {
  */
 function holdInteractiveStartsForAudio(now: number): void {
     const horizon = now + playbackParams.sendAudioInAdvanceMs + playbackParams.sendAudioChunkMs;
+    const activeRequestIds = new Set<string>();
     const hold = (cmd: { seqId?: string; startTime: number; requestId: string }): boolean => {
+        activeRequestIds.add(cmd.requestId);
         if (!cmd.seqId || cmd.startTime > horizon) return false;
         if (interactiveAudioReady(cmd.seqId)) {
             interactiveAudioWaitSince.delete(cmd.requestId);
@@ -1140,6 +1142,10 @@ function holdInteractiveStartsForAudio(now: number): void {
     let moved = false;
     for (const cmd of fs.interactiveQueue) moved = hold(cmd) || moved;
     if (moved) fs.interactiveQueue.sort((a, b) => a.startTime - b.startTime);
+    // Requests that left the queue (stopped, skipped, or started without audio) never return.
+    for (const requestId of interactiveAudioWaitSince.keys()) {
+        if (!activeRequestIds.has(requestId)) interactiveAudioWaitSince.delete(requestId);
+    }
 }
 
 /////////
@@ -3174,6 +3180,7 @@ async function processQueue() {
                     if (saf && !path.isAbsolute(saf)) saf = path.join(showFolder!, saf);
                     if (saf) {
                         audioref = mp3Cache.getMp3(saf, !!curAudioSeq?.settings?.normalize);
+                        if (audioref?.ref || audioref?.err) audioPendingLoggedAt.delete(saf);
                         if (!audioref) {
                             emitError(`Audio ${saf} not ready.`);
                             break;
