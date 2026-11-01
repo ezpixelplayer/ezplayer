@@ -129,7 +129,7 @@ describe('separate LAN uploads', () => {
             id: 'existing-song',
             instanceId: 'existing-instance',
             work: { title: 'Custom title', artist: 'Custom artist', length: 42 },
-            files: { fseq: '/show/Song.fseq', video: '/show/custom.mp4' },
+            files: { fseq: '/show/Song.fseq', thumb: '/show/custom.png' },
             settings: { normalize: false, volume_adj: -10 },
             updatedAt: 1,
         };

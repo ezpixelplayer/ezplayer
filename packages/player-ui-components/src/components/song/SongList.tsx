@@ -312,21 +312,7 @@ export function SongList({
         return [...byName.values()];
     };
 
-    const AUDIO_UPLOAD_EXTS = new Set([
-        '.mp3',
-        '.wav',
-        '.m4a',
-        '.aac',
-        '.flac',
-        '.ogg',
-        '.wma',
-        '.mp4',
-        '.mkv',
-        '.avi',
-        '.mov',
-        '.mpg',
-        '.mpeg',
-    ]);
+    const AUDIO_UPLOAD_EXTS = new Set(['.mp3', '.wav', '.m4a', '.aac', '.flac', '.ogg', '.wma', '.mp4']);
     const IMAGE_UPLOAD_EXTS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp']);
 
     const pathExt = (name: string) => {
@@ -359,7 +345,7 @@ export function SongList({
             throw new Error('Files in an upload must have different filenames.');
         const fseqFiles = collectFseqUploadFiles(files);
         const companions = collectCompanionUploadFiles(files);
-        if (!fseqFiles.length && !companions.length) throw new Error('Choose audio, video, or FSEQ files to upload.');
+        if (!fseqFiles.length && !companions.length) throw new Error('Choose audio or FSEQ files to upload.');
         const names = [...fseqFiles, ...companions].map((f) => f.name);
         if (new Set(names).size !== names.length) throw new Error('Files in an upload must have different filenames.');
         const companionAudio = companions.filter((f) => AUDIO_UPLOAD_EXTS.has(pathExt(f.name)));
@@ -944,7 +930,7 @@ export function SongList({
                                                     document.getElementById('ezplayer-bulk-fseq-files')?.click();
                                                 }}
                                             >
-                                                Upload audio, video, or FSEQ files…
+                                                Upload audio or FSEQ files…
                                             </MenuItem>
                                             <MenuItem
                                                 onClick={() => {
@@ -971,7 +957,7 @@ export function SongList({
                                         <input
                                             id="ezplayer-bulk-fseq-files"
                                             type="file"
-                                            accept=".fseq,.mp3,.m4a,.aac,.wav,.ogg,.flac,.wma,.mp4,.mkv,.avi,.mov,.mpg,.mpeg,.xml,.jpg,.jpeg,.png,.webp"
+                                            accept=".fseq,.mp3,.m4a,.aac,.wav,.ogg,.flac,.wma,.mp4,.xml,.jpg,.jpeg,.png,.webp"
                                             multiple
                                             style={{ display: 'none' }}
                                             disabled={bulkImporting}

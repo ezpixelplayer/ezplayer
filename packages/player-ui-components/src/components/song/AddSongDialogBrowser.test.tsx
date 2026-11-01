@@ -50,11 +50,6 @@ afterEach(() => {
     vi.unstubAllGlobals();
 });
 describe('Add Song browser save', () => {
-    it('does not offer a separate video file field', () => {
-        render(<AddSongDialogBrowser open title="Add Song" onClose={vi.fn()} />);
-        expect(screen.queryByText(/Video file/i)).toBeNull();
-        expect(screen.getAllByText('Choose on player')).toHaveLength(3);
-    });
     it.each(['.mp3', '.fseq'])('accepts one %s file and uploads only on Save', async (ext) => {
         const close = vi.fn();
         render(<AddSongDialogBrowser open title="Add Song" onClose={close} />);

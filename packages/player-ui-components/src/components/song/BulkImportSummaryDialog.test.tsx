@@ -28,7 +28,7 @@ describe('Upload results by file type', () => {
                 open
                 summary={{
                     ...empty,
-                    uploadedFiles: ['One.fseq', 'Two.FSEQ', 'Song.mp3', 'Other.wav', 'Intro.mp4', 'Cover.png'],
+                    uploadedFiles: ['One.fseq', 'Two.FSEQ', 'Song.mp3', 'Other.wav', 'Cover.png'],
                 }}
                 onClose={vi.fn()}
             />,
@@ -36,7 +36,6 @@ describe('Upload results by file type', () => {
         for (const [label, count] of [
             ['Sequences', 2],
             ['Audio files', 2],
-            ['Video files', 1],
             ['Artwork files', 1],
         ]) {
             expect(screen.getByText(new RegExp(`${label}: uploaded`)).textContent).toBe(

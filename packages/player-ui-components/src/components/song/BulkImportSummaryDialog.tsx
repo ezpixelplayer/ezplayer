@@ -23,7 +23,7 @@ import type {
 import { isSupportedAudioName } from '@ezplayer/ezplayer-core';
 import type { RootState } from '../..';
 
-/** Count each saved file once. MP4 is shown as video; other song audio formats as audio. */
+/** Count each saved file once by type. */
 export function uploadedFileRows(files: string[]): { label: string; count: number }[] {
     const counts = new Map<string, number>();
     for (const name of files) {
@@ -31,16 +31,14 @@ export function uploadedFileRows(files: string[]): { label: string; count: numbe
         const label =
             ext === '.fseq'
                 ? 'Sequences'
-                : ['.mp4', '.mkv', '.avi', '.mov', '.mpg', '.mpeg'].includes(ext)
-                  ? 'Video files'
-                  : isSupportedAudioName(name)
-                    ? 'Audio files'
-                    : ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'].includes(ext)
-                      ? 'Artwork files'
-                      : 'Other files';
+                : isSupportedAudioName(name)
+                  ? 'Audio files'
+                  : ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'].includes(ext)
+                    ? 'Artwork files'
+                    : 'Other files';
         counts.set(label, (counts.get(label) ?? 0) + 1);
     }
-    return ['Sequences', 'Audio files', 'Video files', 'Artwork files', 'Other files']
+    return ['Sequences', 'Audio files', 'Artwork files', 'Other files']
         .filter((label) => counts.has(label))
         .map((label) => ({ label, count: counts.get(label)! }));
 }

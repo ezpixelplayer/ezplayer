@@ -110,17 +110,17 @@ describe('LAN files arriving separately', () => {
             await fs.rm(folder, { recursive: true, force: true });
         }
     });
-    it('accepts video-only uploads', async () => {
-        const folder = await fs.mkdtemp(path.join(os.tmpdir(), 'ezp-video-'));
+    it('accepts audio-only uploads', async () => {
+        const folder = await fs.mkdtemp(path.join(os.tmpdir(), 'ezp-audio-'));
         try {
             const result = await batchUploadImportSequencesCore(
                 folder,
                 { getShowFolder: () => folder, getSequences: () => [], putSequences: async (r) => r },
-                upload([{ name: 'Intro.mp4', data: 'video-bytes' }]),
+                upload([{ name: 'Intro.mp3', data: 'audio-bytes' }]),
             );
             expect(result.status).toBe(200);
-            expect(result.body).toMatchObject({ uploadedFiles: ['Intro.mp4'] });
-            expect(await fs.readFile(path.join(folder, 'Intro.mp4'), 'utf8')).toBe('video-bytes');
+            expect(result.body).toMatchObject({ uploadedFiles: ['Intro.mp3'] });
+            expect(await fs.readFile(path.join(folder, 'Intro.mp3'), 'utf8')).toBe('audio-bytes');
         } finally {
             await fs.rm(folder, { recursive: true, force: true });
         }
