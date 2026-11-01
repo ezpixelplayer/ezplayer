@@ -16,8 +16,10 @@ class FakeContents extends EventEmitter {
     isDestroyed = () => false;
     getURL = () => 'file:///app/index.html';
     executeJavaScript = vi.fn(async () => ({ rootChildren: 0 }));
+    // Async, like real IPC.
     send = (channel: string, seq: number) => {
-        if (channel === 'ezp:ping' && this.answering) ipcMain.emit('ezp:pong', { sender: this }, seq);
+        if (channel === 'ezp:ping' && this.answering)
+            setTimeout(() => ipcMain.emit('ezp:pong', { sender: this }, seq), 0);
     };
 }
 
@@ -86,6 +88,22 @@ describe('watchRenderer', () => {
         win.webContents.answering = false;
         await vi.advanceTimersByTimeAsync(HANG_AFTER_MS + 10_000);
         expect(kinds()).toEqual(['renderer-hang', 'renderer-hang']);
+    });
+
+    it('does not count system sleep or a wall-clock jump as a hang', async () => {
+        const win = setup();
+        ready(win);
+        await vi.advanceTimersByTimeAsync(22_000); // mid-interval, last pong received
+        // Clock jumps with no timers running (sleep, time sync).
+        vi.setSystemTime(Date.now() + 19_000_000);
+        await vi.advanceTimersByTimeAsync(HANG_AFTER_MS * 2);
+        vi.setSystemTime(Date.now() - 3_600_000);
+        await vi.advanceTimersByTimeAsync(HANG_AFTER_MS * 2);
+        expect(reportDiagEvent).not.toHaveBeenCalled();
+
+        win.webContents.answering = false;
+        await vi.advanceTimersByTimeAsync(HANG_AFTER_MS + 10_000);
+        expect(kinds()).toEqual(['renderer-hang']);
     });
 
     it('does not judge a hidden window', async () => {

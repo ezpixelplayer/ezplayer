@@ -33,7 +33,7 @@ beforeAll(async () => {
 
     // Kept short: the schedule ends at the nearest sequence boundary, and a song
     // that has started plays out, so the wind-down lasts as long as this does.
-    await fpp.uploadFile('sequences', 'Sched.fseq', buildFseq({ channels: 150, frames: 100, value: 77 })); // 5s
+    await fpp.upload('sequences', 'Sched.fseq', buildFseq({ channels: 150, frames: 100, value: 77 })); // 5s
     const res = await fpp.putPlaylist('Nightly', {
         name: 'Nightly',
         mainPlaylist: [{ type: 'sequence', sequenceName: 'Sched.fseq' }],

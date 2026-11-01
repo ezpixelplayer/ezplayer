@@ -6,6 +6,13 @@ All documentation lives here as git artifacts, built with a small toolchain:
 - **[Docusaurus](https://docusaurus.io/)** — the manual (public)
 - **[d2](https://d2lang.com/)** — diagrams, compiled to SVG and shared by both
 
+## License
+
+The content here (manual pages, slides, diagrams, screenshots) is
+[CC BY-SA 4.0](LICENSE); code samples inside the docs are additionally CC0.
+The build tooling (`manual/src`, `manual/*.js`, `slides/build-tool`) stays
+under the project's AGPL-3.0-only license. See [LICENSE](LICENSE).
+
 ```
 doc/
   assets/                 # shared assets used by slides AND the manual

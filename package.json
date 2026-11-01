@@ -1,6 +1,6 @@
 {
     "name": "@ezplayer/ezplayer",
-    "version": "0.6.11",
+    "version": "0.6.12",
     "private": true,
     "type": "module",
     "repository": {
@@ -35,24 +35,19 @@
         "eslint-plugin-react-refresh": "catalog:",
         "globals": "catalog:",
         "husky": "^9.1.7",
-        "lint-staged": "^16.4.0",
+        "lint-staged": "^17.6.0",
         "prettier": "catalog:",
         "typescript-eslint": "catalog:"
     },
     "dependencies": {
         "@types/node": "catalog:"
     },
+    "comment:immer-override": "immer 11.2.9+ exports a WritableNonArrayDraft type that leaks into every RTK slice's inferred actions type, which the emitted .d.ts cannot name (TS2742). Pinned to 11.1.x until that is fixed upstream.",
     "pnpm": {
         "overrides": {
-            "esbuild@0.27": "0.28.2"
-        },
-        "onlyBuiltDependencies": [
-            "@parcel/watcher",
-            "@swc/core",
-            "electron",
-            "electron-winstaller",
-            "esbuild",
-            "ffmpeg-static"
-        ]
+            "esbuild@0.27": "0.28.2",
+            "moment": "^2.31.0",
+            "immer": "~11.1.23"
+        }
     }
 }

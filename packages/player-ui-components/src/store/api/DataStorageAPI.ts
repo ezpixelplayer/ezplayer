@@ -7,6 +7,7 @@ import type {
     ControllerCommand,
     UpdateCommand,
     EZPlayerCommand,
+    ViewerControlResyncResult,
     PlaybackSettings,
     BatchImportSummary,
     AppSettingsCommand,
@@ -138,6 +139,11 @@ export interface DataStorageAPI {
     issueAppSettingsCommand?: (cmd: AppSettingsCommand) => Promise<void>;
 
     issuePlayerCommand: (req: EZPlayerCommand) => Promise<boolean>;
+
+    /** Re-push the Remote Falcon song list and report what Remote Falcon said.
+     *  Absent on backends with no direct line to the player worker — the
+     *  caller falls back to the fire-and-forget command. */
+    resyncViewerControl?: () => Promise<ViewerControlResyncResult>;
     setPlayerSettings: (req: PlaybackSettings) => Promise<boolean>;
 
     /** Upload a file's bytes into the player's show folder (web/LAN backends

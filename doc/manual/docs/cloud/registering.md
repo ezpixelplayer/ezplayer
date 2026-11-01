@@ -10,8 +10,9 @@ Once connected, the player can:
 
 1. Download your sequences from the cloud
 2. Sync your layout with the cloud service
-3. Appear under **EZPlayer** on your EZRGB account, so you can open the full
-   player UI over the internet (**Manage Player**)
+3. Appear under **EZPlayer** on your EZRGB account and offer a **Remote Control
+   Link** on the Cloud screen, so you can open the full player UI over the internet
+4. Set up a [viewer page](./viewer-page.md).
 
 You only need to register once per show folder. If you reopen a folder that is
 already registered, EZPlayer picks up where you left off.
@@ -72,6 +73,9 @@ When registration succeeds:
 - On [EZRGB](https://ezrgb.com), the player appears under **EZPlayer** on your
   account screen. From there, click **Manage Player** to open the full remote
   player UI in the browser (open it in a new tab for more screen space).
+- The Cloud screen shows a **Remote Control Link** (QR and URL) that opens the
+  same remote UI. Read [Remote Control Link](./status-control-ui.md#remote-control-link)
+  before sharing it.
 
 ## If cloud is paused
 
@@ -84,15 +88,15 @@ as usual. Your player ID and settings are kept while paused.
 What happens next depends on how your show folder is set up:
 
 - **Cloud-managed show** — EZPlayer downloads your layout from EZRGB, then keeps
-  sequences, playlists, and schedule in sync. Watch progress on the
+  sequences in sync. Watch progress on the
   [Cloud screen](./status-control-ui.md).
 - **xLights show folder** — your local layout stays in charge; the cloud mainly
   syncs sequences and other content. You can push layout updates to the cloud
   from the Cloud screen (**Push Layout**), or switch to cloud-managed later.
 
 From the website, use **Manage Player** for remote status and control, or manage
-layout / sequences / schedule on [EZRGB](https://ezrgb.com) and let them sync
-down. See [Using Full Cloud Control](./full-cloud-control.md).
+layout and sequences on [EZRGB](https://ezrgb.com) and let them sync down.
+See [Using Full Cloud Control](./full-cloud-control.md).
 
 ## Troubleshooting
 
@@ -100,7 +104,8 @@ down. See [Using Full Cloud Control](./full-cloud-control.md).
 
 - Make sure you finished the claim flow on EZRGB while logged into the correct
   account.
-- Confirm the player has internet access and cloud is not paused.
+- Confirm the player has internet access. If the Cloud screen shows
+  **Cloud paused**, click **Resume Cloud**.
 - Try opening the registration link again in a fresh browser tab.
 
 **You need to connect a different EZRGB account or replace this player**
@@ -111,8 +116,13 @@ down. See [Using Full Cloud Control](./full-cloud-control.md).
   under **Advanced** in the registration dialog. See [Cloud settings](../settings/cloud.md)
   for details.
 
-**You want to change how often content syncs, pause cloud, or point at a different
-cloud server**
+**You want to change how often content syncs, pause cloud, or point at a different cloud server**
 
 - See [Cloud settings](../settings/cloud.md) for polling schedule, pause/resume,
   and other advanced options.
+
+**You shared the remote-control link and need to revoke it**
+
+- On the Cloud screen, click **Change Player ID**. Old links and QR codes stop
+  working and you do not re-register. See
+  [Cloud Configuration](./status-control-ui.md#cloud-configuration).

@@ -14,7 +14,7 @@ The short version:
 
 2. **The desktop app can send anonymous crash and diagnostic reports.**
    This helps us find and fix problems, and it is **on by default — you can
-   opt out** in Settings → Player → Diagnostics. Reports contain the error
+   opt out** in Settings → Diagnostics. Reports contain the error
    or crash details (message, stack trace), the app version, and the
    operating system and architecture. They never contain your show data,
    files, or personal information. A second, separate checkbox — **off by
@@ -26,16 +26,14 @@ The short version:
    connect to), not by EZPlayer. What you upload — layouts, sequences, show
    settings, viewer pages — is handled under that provider's terms.
 
-4. **Cloud remote control is capability-based: anyone who has your Player
-   ID can control your player.** The remote-control link contains the
-   Player ID, which is the entire credential — that is what makes "send a
-   link to a helper" work with no accounts or sign-in. Treat the link like
-   a key. If you believe it is in the hands of someone who should not have
-   it, use **Change Player ID** on the player's Cloud screen: one click
-   generates a new ID, moves your registration to it, and every old link or
-   QR code stops working immediately. EZPlayer and its developers are not
-   responsible or liable for any consequences of sharing your Player ID or
-   control link.
+4. **Cloud remote control: anyone who has your Player ID can control your
+   player.** The remote-control link contains the Player ID, which is the
+   entire credential. Treat the link like a key. If you believe it is in the
+   hands of someone who should not have it, use **Change Player ID** on the
+   player's Cloud screen; every old link or QR code stops working immediately.
+   See [Cloud Configuration](../cloud/status-control-ui.md#cloud-configuration).
+   EZPlayer and its developers are not responsible or liable for any
+   consequences of sharing your Player ID or control link.
 
 ## Where things are stored
 

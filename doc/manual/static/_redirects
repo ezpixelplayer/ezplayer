@@ -1,0 +1,13 @@
+# Old WordPress URLs on ezplayer.dev -> manual pages (Cloudflare Pages redirects)
+/faq                           /introduction/faq                                   301
+/faq/*                         /introduction/faq                                   301
+/getting-started-with-ezplayer   /basics/getting-started-local                     301
+/getting-started-with-ezplayer/* /basics/getting-started-local                     301
+/forum                         https://github.com/ezpixelplayer/ezplayer/discussions 301
+/forum/*                       https://github.com/ezpixelplayer/ezplayer/discussions 301
+/forums/*                      https://github.com/ezpixelplayer/ezplayer/discussions 301
+/news                          /                                                   301
+/news/*                        /                                                   301
+/site-launched/*               /                                                   301
+/author/*                      /                                                   301
+/wp-sitemap.xml                /sitemap.xml                                        301

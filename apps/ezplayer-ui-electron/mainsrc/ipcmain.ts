@@ -101,7 +101,7 @@ export function registerFileListHandlers() {
             return filePath; // Return the file path on success
         } catch (error) {
             console.error('Error writing file:', error);
-            throw new Error('Failed to write file');
+            throw new Error('Failed to write file', { cause: error });
         }
     });
 
@@ -112,7 +112,7 @@ export function registerFileListHandlers() {
             return content; // Return the file path on success
         } catch (error) {
             console.error('Error reading file:', error);
-            throw new Error('Failed to read file');
+            throw new Error('Failed to read file', { cause: error });
         }
     });
 

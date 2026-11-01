@@ -16,6 +16,8 @@ import { injectRendererFaults } from './faultinject-main.js';
 export const READY_TIMEOUT_MS = 45_000;
 export const HANG_AFTER_MS = 30_000;
 const PING_INTERVAL_MS = 5_000;
+/** A tick later than this means the system slept or the clock jumped. */
+const MAX_TICK_GAP_MS = PING_INTERVAL_MS * 3;
 const PROBE_TIMEOUT_MS = 2_000;
 const REPORT_PREFIX = '[ezp-report] ';
 
@@ -84,15 +86,21 @@ export function watchRenderer(win: BrowserWindow, recentErrors: () => string[]):
     ipcMain.on('ezp:renderer-ready', onReady);
     ipcMain.on('ezp:pong', onPong);
 
+    let lastTickAt = Date.now();
     const pinger = setInterval(() => {
         if (wc.isDestroyed()) return;
-        // Hidden or minimized windows may be throttled; skip them.
-        if (!ready || !win.isVisible() || win.isMinimized()) {
-            lastPongAt = Date.now();
+        const now = Date.now();
+        const tickGapMs = now - lastTickAt;
+        lastTickAt = now;
+        // Skip hidden or minimized windows (may be throttled) and ticks after
+        // a sleep or clock jump.
+        const clockSkipped = tickGapMs > MAX_TICK_GAP_MS || tickGapMs < 0;
+        if (!ready || !win.isVisible() || win.isMinimized() || clockSkipped) {
+            lastPongAt = now;
             return;
         }
         wc.send('ezp:ping', ++seq);
-        const silentMs = Date.now() - lastPongAt;
+        const silentMs = now - lastPongAt;
         if (silentMs > HANG_AFTER_MS && !hangReported) {
             hangReported = true;
             const secs = Math.round(silentMs / 1000);

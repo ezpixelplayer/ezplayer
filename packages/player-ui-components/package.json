@@ -1,7 +1,7 @@
 {
     "name": "@ezplayer/player-ui-components",
     "private": true,
-    "version": "0.15.10",
+    "version": "0.15.11",
     "type": "module",
     "sideEffects": false,
     "main": "./dist/index.js",
@@ -73,8 +73,8 @@
         "sass": "catalog:",
         "three": "catalog:",
         "uuid": "catalog:",
-        "vis-data": "^8.0.4",
-        "vis-timeline": "^8.5.1"
+        "vis-data": "^8.0.6",
+        "vis-timeline": "^8.5.6"
     },
     "peerDependencies": {
         "@ezplayer/ezplayer-core": "*",
@@ -109,6 +109,6 @@
         "vite": "catalog:",
         "vite-plugin-svgr": "catalog:",
         "vitest": "catalog:",
-        "xllayoutcalcs": "file:..\\..\\libs\\xllayoutcalcs-0.4.0-dev.4.tgz"
+        "xllayoutcalcs": "file:..\\..\\libs\\xllayoutcalcs-0.4.1.tgz"
     }
 }

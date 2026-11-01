@@ -15,16 +15,22 @@ import { startEzPlayer, type EzPlayerProc } from '../harness/ezplayer-proc.js';
 import { FppClient } from '../harness/fpp-client.js';
 import { createFixtureShow, type FixtureShow } from '../fixtures/showfolder.js';
 import { buildFseq } from '../fixtures/fseq.js';
+import { sineWav } from '../fixtures/wav.js';
 
 const FPP_URL = process.env.FPP_URL;
 const SYNC_TARGET = process.env.FPP_SYNC_TARGET;
 const SONG = 'SyncLiveSong.fseq';
 const SHOW = 'SyncLiveShow';
+/** A second show whose song has audio, for the media sync packets. */
+const MEDIA_SONG = 'SyncLiveMedia.fseq';
+const MEDIA_WAV = 'SyncLiveMedia.wav';
+const MEDIA_SHOW = 'SyncLiveMediaShow';
 
 interface FppStatus {
     status_name: string;
     mode_name: string;
     current_sequence: string;
+    current_song: string;
     seconds_elapsed: string;
 }
 
@@ -82,6 +88,29 @@ describe.skipIf(!FPP_URL || !SYNC_TARGET)('EZPlayer sync master, real FPP remote
                 await ezp.putPlaylist(SHOW, {
                     name: SHOW,
                     mainPlaylist: [{ type: 'sequence', enabled: 1, playOnce: 0, sequenceName: SONG }],
+                })
+            ).status,
+        ).toBe(200);
+
+        // A song with audio, on both as well: the remote plays its own copy of
+        // the audio from our media sync packets.
+        const mediaBytes = buildFseq({ channels: 150, frames: 1200, value: 42 }); // 60 s
+        const wav = sineWav({ seconds: 60 });
+        for (const c of [ezp, fpp]) {
+            expect(
+                (await fetch(`${c.base}/api/sequence/${MEDIA_SONG}`, { method: 'POST', body: mediaBytes })).status,
+            ).toBe(200);
+            expect((await fetch(`${c.base}/api/file/music/${MEDIA_WAV}`, { method: 'POST', body: wav })).status).toBe(
+                200,
+            );
+        }
+        expect(
+            (
+                await ezp.putPlaylist(MEDIA_SHOW, {
+                    name: MEDIA_SHOW,
+                    mainPlaylist: [
+                        { type: 'both', enabled: 1, playOnce: 0, sequenceName: MEDIA_SONG, mediaName: MEDIA_WAV },
+                    ],
                 })
             ).status,
         ).toBe(200);
@@ -152,5 +181,36 @@ describe.skipIf(!FPP_URL || !SYNC_TARGET)('EZPlayer sync master, real FPP remote
 
         await ezp.command('Stop Now');
         await waitForFpp((s) => s.status_name === 'idle', 'follows our stop');
+    }, 120_000);
+
+    it('makes a real FPP remote play the song audio from our media sync packets', async (ctx) => {
+        if (!remoteReady) return ctx.skip();
+        await ezp.command('Start Playlist', MEDIA_SHOW, '0');
+        await ezp.waitForStatus((s) => s.status_name === 'playing', {
+            label: 'master playing media',
+            timeoutMs: 20_000,
+        });
+
+        // The remote opens both our sequence and, from the media OPEN/START, its
+        // own copy of the audio.
+        const playing = await waitForFpp(
+            (s) => s.status_name === 'playing' && s.current_sequence === MEDIA_SONG && s.current_song === MEDIA_WAV,
+            'follows our media start',
+        );
+        expect(playing.current_song).toBe(MEDIA_WAV);
+
+        // ...and keeps tracking our position while both run.
+        const first = Number(playing.seconds_elapsed);
+        await new Promise((r) => setTimeout(r, 3000));
+        const later = await waitForFpp((s) => s.status_name === 'playing', 'still playing media');
+        expect(later.current_song).toBe(MEDIA_WAV);
+        expect(Number(later.seconds_elapsed)).toBeGreaterThan(first);
+        const ours = Number(((await (await fetch(`${app.base}/api/fppd/status`)).json()) as FppStatus).seconds_elapsed);
+        expect(Math.abs(ours - Number(later.seconds_elapsed))).toBeLessThan(2.5);
+
+        // Our STOP closes the audio too: the remote goes idle with no song.
+        await ezp.command('Stop Now');
+        const idle = await waitForFpp((s) => s.status_name === 'idle', 'follows our stop');
+        expect(idle.current_song).toBe('');
     }, 120_000);
 });

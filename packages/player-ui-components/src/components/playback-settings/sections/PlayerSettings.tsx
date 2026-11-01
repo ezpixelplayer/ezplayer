@@ -1,40 +1,14 @@
-import { Download } from '@mui/icons-material';
-import { Button, Checkbox, Divider, FormControl, FormControlLabel, Switch, TextField, Typography } from '@mui/material';
+import { Checkbox, Divider, FormControl, FormControlLabel, Switch, TextField, Typography } from '@mui/material';
 import React from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { Select } from '@ezplayer/shared-ui-components';
-import type {
-    AppSettingsCommand,
-    ControllerRefreshMode,
-    DiagnosticsConsent,
-    SupportBundleLevel,
-} from '@ezplayer/ezplayer-core';
+import type { AppSettingsCommand, ControllerRefreshMode, PreventSleepMode } from '@ezplayer/ezplayer-core';
 import { controllerRefreshMode } from '@ezplayer/ezplayer-core';
 import { Box } from '../../box/Box';
 import { TagListInput } from '../../tag-list-input/TagListInput';
 import { playbackSettingsActions } from '../../../store/slices/PlaybackSettingsStore';
 import { sendAppSettingsCommand } from '../../../store/slices/AppSettingsStore';
 import type { AppDispatch, RootState } from '../../../store/Store';
-import { useFrameServerUrl } from '../../../hooks/useFrameServerUrl';
-import { useApiBase } from '../../../util/ApiBaseProvider';
-
-const BUNDLE_OPTIONS: { id: SupportBundleLevel; name: string; help: string }[] = [
-    {
-        id: 'logs',
-        name: 'Logs',
-        help: 'Recent logs, crash information, versions, system details, and settings changed from their defaults.',
-    },
-    {
-        id: 'setup',
-        name: 'Logs and player setup',
-        help: 'Adds network addresses, the xLights controller setup, and your songs, playlists, and schedule. No audio or sequence files.',
-    },
-    {
-        id: 'layout',
-        name: 'Logs, player setup, and layout',
-        help: 'Adds the xLights layout file as well.',
-    },
-];
 
 /** Number field that commits on blur; empty commits `undefined` (use default). */
 const PortField: React.FC<{
@@ -71,8 +45,8 @@ export const PlayerSettings: React.FC = () => {
     const settings = useSelector((s: RootState) => s.playbackSettings.settings);
     const multisync = settings.sync?.multisync;
 
-    // App-global settings (diagnostics consent, start at sign-in) are pushed by
-    // the player like any other state; null until the first snapshot arrives.
+    // App-global settings (start at sign-in) are pushed by the player like any
+    // other state; null until the first snapshot arrives.
     const appSettings = useSelector((s: RootState) => s.appSettings.state);
     const sendAppSettings = (cmd: AppSettingsCommand) => void dispatch(sendAppSettingsCommand(cmd));
 
@@ -85,16 +59,6 @@ export const PlayerSettings: React.FC = () => {
           : loginItem.availability === 'unsupported-platform'
             ? 'Start at sign-in is available on Windows and macOS.'
             : 'Launch EZPlayer automatically at sign-in on the player computer.';
-
-    const diag: DiagnosticsConsent = appSettings?.diagnostics ?? { uploadEnabled: true, includePlayerId: false };
-    const diagInteractive = appSettings !== null;
-
-    // The logs route is on the player's own web server; the cloud proxy does not carry it.
-    const apiBase = useApiBase();
-    const { url: playerUrl } = useFrameServerUrl();
-    const logsUrl = !apiBase && playerUrl ? `${playerUrl}/api/ezp/support/logs.zip` : undefined;
-    const [bundleLevel, setBundleLevel] = React.useState<SupportBundleLevel>('logs');
-    const [bundleSaved, setBundleSaved] = React.useState(false);
 
     return (
         <Box>
@@ -118,6 +82,31 @@ export const PlayerSettings: React.FC = () => {
                     {startupHelp}
                 </Typography>
             </Box>
+            <FormControl fullWidth size="small" sx={{ mb: 2 }}>
+                <Select
+                    options={[
+                        { id: 'always', name: 'Always, while EZPlayer is running (recommended)' },
+                        { id: 'playing', name: 'Only while playing' },
+                        { id: 'never', name: 'Never' },
+                    ]}
+                    itemText="name"
+                    itemValue="id"
+                    disabled={!appSettings}
+                    onChange={(e) =>
+                        sendAppSettings({
+                            type: 'setPreventSleep',
+                            mode: (e.target as HTMLSelectElement).value as PreventSleepMode,
+                        })
+                    }
+                    label="Prevent the computer from sleeping"
+                    value={appSettings?.preventSleep ?? 'always'}
+                />
+            </FormControl>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                {appSettings
+                    ? 'A sleeping computer cannot start a show or answer a remote request, and EZPlayer cannot wake it. The display may still turn off.'
+                    : 'Prevent sleeping is set in the EZPlayer desktop app.'}
+            </Typography>
             <Divider sx={{ my: 3 }} />
 
             <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
@@ -194,90 +183,6 @@ export const PlayerSettings: React.FC = () => {
 
             <Divider sx={{ my: 3 }} />
             <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
-                Diagnostics
-            </Typography>
-            <Box>
-                <FormControlLabel
-                    control={
-                        <Checkbox
-                            checked={diag.uploadEnabled}
-                            disabled={!diagInteractive}
-                            onChange={(_e, checked) =>
-                                sendAppSettings({ type: 'setDiagnosticsConsent', patch: { uploadEnabled: checked } })
-                            }
-                        />
-                    }
-                    label="Send anonymous crash reports"
-                />
-                <Typography variant="body2" color="text.secondary">
-                    Help improve EZPlayer by sending anonymous crash and error reports. No show data, files, or personal
-                    information is included.
-                </Typography>
-            </Box>
-            <Box sx={{ mt: 1 }}>
-                <FormControlLabel
-                    control={
-                        <Checkbox
-                            checked={diag.includePlayerId}
-                            disabled={!diagInteractive || !diag.uploadEnabled}
-                            onChange={(_e, checked) =>
-                                sendAppSettings({
-                                    type: 'setDiagnosticsConsent',
-                                    patch: { includePlayerId: checked },
-                                })
-                            }
-                        />
-                    }
-                    label="Include my Player ID with reports"
-                />
-                <Typography variant="body2" color="text.secondary">
-                    Lets support connect reports to your player when you ask for help. Off by default.
-                </Typography>
-            </Box>
-            {logsUrl && (
-                <Box sx={{ mt: 2 }}>
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-                        A zip of information about the player computer, to send when asking for help. Passwords and
-                        tokens are removed.
-                    </Typography>
-                    <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
-                        <FormControl size="small" sx={{ minWidth: 260 }}>
-                            <Select
-                                options={BUNDLE_OPTIONS}
-                                itemText="name"
-                                itemValue="id"
-                                onChange={(e) => {
-                                    setBundleLevel((e.target as HTMLSelectElement).value as SupportBundleLevel);
-                                    setBundleSaved(false);
-                                }}
-                                label="Include"
-                                value={bundleLevel}
-                            />
-                        </FormControl>
-                        <Button
-                            variant="outlined"
-                            size="small"
-                            startIcon={<Download />}
-                            href={`${logsUrl}?level=${bundleLevel}`}
-                            onClick={() => setBundleSaved(true)}
-                        >
-                            Download
-                        </Button>
-                    </Box>
-                    <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                        {BUNDLE_OPTIONS.find((o) => o.id === bundleLevel)?.help}
-                    </Typography>
-                    {bundleSaved && (
-                        <Typography variant="body2" sx={{ mt: 1 }}>
-                            The download is an ordinary zip file. Open it and look through it before you send it, and
-                            remove anything you would rather not share.
-                        </Typography>
-                    )}
-                </Box>
-            )}
-
-            <Divider sx={{ my: 3 }} />
-            <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
                 Sync Output
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
@@ -292,6 +197,20 @@ export const PlayerSettings: React.FC = () => {
                 }
                 label="FPP MultiSync master"
             />
+            <FormControlLabel
+                control={
+                    <Switch
+                        checked={multisync?.mediaSync !== false}
+                        disabled={!multisync?.enabled}
+                        onChange={(e) => dispatch(playbackSettingsActions.setMultisyncMediaSync(e.target.checked))}
+                    />
+                }
+                label="Send audio sync too"
+            />
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+                Media packets name the song's audio file and its playback position (with the audio sync adjust applied).
+                Remotes holding the same audio file will play it; turn off to keep them silent.
+            </Typography>
             <TextField
                 size="small"
                 fullWidth

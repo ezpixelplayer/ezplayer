@@ -547,7 +547,7 @@ export function CreateEditPlaylist({ title: _title, statusArea }: EditPlayListPr
                 setHasUnsavedChanges(false);
             }
         }
-    }, [id, sequenceData, anythingUpdating, playlists]);
+    }, [id, sequenceData, anythingUpdating, playlists?.playlists]);
 
     const handleDragStart = (event: DragStartEvent) => {
         setActiveId(event.active.id as string);

@@ -1,6 +1,6 @@
 {
     "name": "@ezplayer/epp",
-    "version": "0.1.11",
+    "version": "0.1.12",
     "description": "EZPlayer EPP Core (pixel / controller data layer)",
     "main": "./dist/index.js",
     "module": "./dist/index.mjs",
@@ -27,17 +27,17 @@
     "author": "",
     "license": "AGPL-3.0-only",
     "dependencies": {
-        "@xmldom/xmldom": "^0.8.13",
-        "zstddec": "^0.1.0"
+        "@xmldom/xmldom": "^0.8.15",
+        "zstddec": "^0.3.4"
     },
     "devDependencies": {
         "@eslint/js": "catalog:",
-        "@types/jest": "^29.5.14",
+        "@types/jest": "^30.0.0",
         "eslint": "catalog:",
-        "typescript-eslint": "catalog:",
         "tsup": "catalog:",
         "typescript": "catalog:",
+        "typescript-eslint": "catalog:",
         "vitest": "catalog:",
-        "xllayoutcalcs": "file:..\\..\\libs\\xllayoutcalcs-0.4.0-dev.4.tgz"
+        "xllayoutcalcs": "file:..\\..\\libs\\xllayoutcalcs-0.4.1.tgz"
     }
 }

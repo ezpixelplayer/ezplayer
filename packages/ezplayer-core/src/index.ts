@@ -80,6 +80,7 @@ export type {
     LoginItemState,
     AppSettingsState,
     AppSettingsCommand,
+    PreventSleepMode,
     ControllerRefreshSettings,
     ControllerRefreshMode,
 } from './types/DataTypes';
@@ -265,6 +266,8 @@ export {
 
 export {
     summarizeViewerStats,
+    dedupeViewerStatsEvents,
+    viewerStatsEventKey,
     trimViewerStatsEvents,
     LOCAL_STATS_EPOCH,
     emptyPicksBySource,
@@ -290,7 +293,14 @@ export {
     hasViewerControlBackend,
     primaryViewerControlType,
     viewerControlBackends,
+    viewerControlSchedule,
+    viewerControlScheduleList,
     withViewerControlBackends,
 } from './util/viewerControlBackends';
-export type { ViewerControlBackend, PlaySongSource } from './types/DataTypes';
+export type {
+    ViewerControlBackend,
+    ViewerControlScheduleList,
+    ViewerControlResyncResult,
+    PlaySongSource,
+} from './types/DataTypes';
 export type { VcPickSource, VcDropReason } from './types/ViewerControlWire';

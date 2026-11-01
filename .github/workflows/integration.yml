@@ -47,8 +47,15 @@ jobs:
             - name: Run app unit tests
               run: pnpm --filter ezplayer-ui-electron test
 
+            - name: Write core dumps to a file
+              # The runner pipes cores to a helper, which ignores ulimit -c 0; a
+              # crashed renderer then takes longer to exit than the fault tests wait.
+              run: |
+                  cat /proc/sys/kernel/core_pattern
+                  sudo sysctl -w kernel.core_pattern=core
+
             - name: Run integration tests
-              run: pnpm --filter @ezplayer/integration-tests test
+              run: ulimit -c 0 && pnpm --filter @ezplayer/integration-tests test
 
             - name: Upload EZPlayer logs on failure
               if: failure()

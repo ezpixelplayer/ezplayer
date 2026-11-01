@@ -29,6 +29,13 @@ import type {
 } from '@ezplayer/ezplayer-core';
 import { LatestFrameRingBuffer, AudioChunkRingBuffer, isSupportBundleLevel } from '@ezplayer/ezplayer-core';
 import type { AudioBridgeControlMessage, CloudAudioMode } from '@ezplayer/ezplayer-core';
+import {
+    activeWindowDescriptions,
+    describeVolume,
+    headlineDefaultVolume,
+    replaceVolumeSchedule,
+    setDefaultVolume,
+} from './volume-settings.js';
 import { AudioStreamEncoder } from './audio-stream-encoder.js';
 import { BufferPool } from '@ezplayer/epp';
 import { ZstdCodec, ZstdSimple } from 'zstd-codec';
@@ -276,6 +283,57 @@ function attachRemoteAccessUpgrade(
     });
 }
 
+const currentPlaybackSettings = () => wsBroadcaster.get('playbackSettings') as PlaybackSettings | undefined;
+const currentPStatus = () => wsBroadcaster.get('pStatus') as PlayerPStatusContent | undefined;
+
+/** Persist, push to the live player and re-broadcast — the one path every
+ *  settings write takes, so the UI, the disk and the player agree. */
+async function applyPlaybackSettings(settings: PlaybackSettings): Promise<void> {
+    const showFolder = currentShowFolder();
+    if (showFolder) {
+        const settingsPath = path.join(showFolder, '.ezplayer', 'playbackSettings.json');
+        await rpc.call('applySettingsFromRenderer', settingsPath, settings);
+    }
+    await rpc.call('sendPlaybackSettings', settings);
+    wsBroadcaster.set('playbackSettings', settings);
+}
+
+/** Reply body for a volume write: the state after it, and whether the default
+ *  is what the listener hears right now or a schedule window is in effect. */
+function volumeReply(settings: PlaybackSettings): Record<string, unknown> {
+    const volume = describeVolume(settings, currentPStatus());
+    const active = activeWindowDescriptions(volume);
+    return {
+        success: true,
+        defaultInEffect: active.length === 0,
+        ...(active.length > 0
+            ? {
+                  warning: `A scheduled volume window is in effect (${active.join('; ')}); the default applies when it ends`,
+              }
+            : {}),
+        volume,
+    };
+}
+
+/** `setvolume`: a level writes the default volume (the player's slew then ramps
+ *  the live level to it); only `mute` goes to the player as a live change. */
+async function handleSetVolume(cmd: {
+    volume?: unknown;
+    mute?: boolean;
+}): Promise<{ status: number; body: Record<string, unknown> }> {
+    let reply: Record<string, unknown> = { success: true };
+    if (cmd.volume !== undefined) {
+        const settings = currentPlaybackSettings();
+        if (!settings) return { status: 503, body: { error: 'Playback settings not loaded yet' } };
+        const r = setDefaultVolume(settings, cmd.volume);
+        if (!r.ok) return { status: r.status, body: { error: r.error } };
+        await applyPlaybackSettings(r.settings);
+        reply = volumeReply(r.settings);
+    }
+    if (cmd.mute !== undefined) await rpc.call('sendPlayerCommand', { command: 'setvolume', mute: cmd.mute });
+    return { status: 200, body: { ...reply, message: 'Command sent' } };
+}
+
 // Forward client → server WebSocket commands to main via RPC. Main pushes
 // resulting state back to all clients via the broadcast channel. These three
 // branches let the cloud bridge drive everything the LAN HTTP endpoints can
@@ -287,26 +345,15 @@ wsBroadcaster.setClientMessageHandler((msg) => {
             console.error('[server-worker] cloudCommand failed:', err);
         });
     } else if (msg.type === 'playerCommand') {
-        void rpc.call('sendPlayerCommand', msg.cmd).catch((err) => {
+        const cmd = msg.cmd as EZPlayerCommand | undefined;
+        const run = cmd?.command === 'setvolume' ? handleSetVolume(cmd) : rpc.call('sendPlayerCommand', msg.cmd);
+        void run.catch((err) => {
             console.error('[server-worker] playerCommand failed:', err);
         });
     } else if (msg.type === 'settings') {
-        // Mirror the POST /api/ezp/playback-settings flow: persist to disk first
-        // (so changes survive restart), then push to the live player, then
-        // re-broadcast so other clients update.
-        void (async () => {
-            try {
-                const showFolder = wsBroadcaster.get('showFolder') as string | undefined;
-                if (showFolder) {
-                    const settingsPath = path.join(showFolder, '.ezplayer', 'playbackSettings.json');
-                    await rpc.call('applySettingsFromRenderer', settingsPath, msg.settings);
-                }
-                await rpc.call('sendPlaybackSettings', msg.settings);
-                wsBroadcaster.set('playbackSettings', msg.settings);
-            } catch (err) {
-                console.error('[server-worker] settings failed:', err);
-            }
-        })();
+        void applyPlaybackSettings(msg.settings as PlaybackSettings).catch((err) => {
+            console.error('[server-worker] settings failed:', err);
+        });
     } else if (msg.type === 'updatePlaylists') {
         void rpc.call('updatePlaylistsHandler', msg.data).catch((err) => {
             console.error('[server-worker] updatePlaylists failed:', err);
@@ -436,6 +483,36 @@ interface CloudBridge {
 }
 let cloudBridge: CloudBridge | undefined;
 
+/** Bounds a dial; an unbounded CONNECTING socket counts as alive and blocks redial forever. */
+const BRIDGE_HANDSHAKE_TIMEOUT_MS = 15_000;
+const BRIDGE_PING_INTERVAL_MS = 30_000;
+
+/** A link that dies silently leaves the socket OPEN forever, which also blocks redial;
+ *  ping it and terminate (close → next checkin redials) when a full interval hears nothing. */
+function watchBridgeLiveness(ws: WebSocket, label: string): void {
+    let heard = true;
+    const mark = () => {
+        heard = true;
+    };
+    ws.on('pong', mark);
+    ws.on('ping', mark);
+    ws.on('message', mark);
+    const timer = setInterval(() => {
+        if (!heard) {
+            console.warn(`[server-worker] ${label} silent for ${BRIDGE_PING_INTERVAL_MS / 1000}s; terminating`);
+            ws.terminate();
+            return;
+        }
+        heard = false;
+        try {
+            ws.ping();
+        } catch {
+            /* closing; close handler cleans up */
+        }
+    }, BRIDGE_PING_INTERVAL_MS);
+    ws.once('close', () => clearInterval(timer));
+}
+
 /** Open, or still dialing (CONNECTING). Anything else is dead and gets redialed. */
 function bridgeAlive(b: { ws: WebSocket; open: boolean }): boolean {
     return b.open || b.ws.readyState === WebSocket.CONNECTING;
@@ -472,7 +549,7 @@ function openCloudBridge(
     }
     let ws: WebSocket;
     try {
-        ws = new WebSocket(wsUrl);
+        ws = new WebSocket(wsUrl, { handshakeTimeout: BRIDGE_HANDSHAKE_TIMEOUT_MS });
     } catch (err) {
         console.error('[server-worker] cloud bridge dial failed:', err);
         return;
@@ -483,6 +560,7 @@ function openCloudBridge(
     ws.on('open', () => {
         if (cloudBridge?.ws === ws) cloudBridge.open = true;
         console.log(`[server-worker] cloud bridge open sessionId=${sessionId.slice(0, 8)}... ttl=${ttlSeconds}s`);
+        watchBridgeLiveness(ws, 'cloud bridge');
         // Hand the live socket to the broadcaster. From here it's just another
         // Conn — first round dumps a snapshot of every cached key, subsequent
         // updates fan out via the existing set() path. The cloud relay
@@ -549,7 +627,7 @@ function openCloudProxyBridge(wsUrl: string, sessionId: string, ttlSeconds: numb
     }
     let ws: WebSocket;
     try {
-        ws = new WebSocket(wsUrl);
+        ws = new WebSocket(wsUrl, { handshakeTimeout: BRIDGE_HANDSHAKE_TIMEOUT_MS });
     } catch (err) {
         console.error('[server-worker] cloud proxy bridge dial failed:', err);
         return;
@@ -642,6 +720,7 @@ function openCloudProxyBridge(wsUrl: string, sessionId: string, ttlSeconds: numb
     ws.on('open', () => {
         if (cloudProxyBridge?.ws === ws) cloudProxyBridge.open = true;
         console.log(`[server-worker] cloud proxy bridge open sessionId=${sessionId.slice(0, 8)}...`);
+        watchBridgeLiveness(ws, 'cloud proxy bridge');
     });
     ws.on('message', (raw) => {
         // Errors at any layer become a 500 with the same reqId so the cloud's
@@ -910,7 +989,7 @@ function openCloudAudioBridge(wsUrl: string, sessionId: string, ttlSeconds: numb
     }
     let ws: WebSocket;
     try {
-        ws = new WebSocket(wsUrl);
+        ws = new WebSocket(wsUrl, { handshakeTimeout: BRIDGE_HANDSHAKE_TIMEOUT_MS });
     } catch (err) {
         console.error('[server-worker] cloud audio bridge dial failed:', err);
         return;
@@ -924,6 +1003,7 @@ function openCloudAudioBridge(wsUrl: string, sessionId: string, ttlSeconds: numb
         if (cloudAudioBridge?.ws !== ws) return;
         cloudAudioBridge.open = true;
         console.log(`[server-worker] cloud audio bridge open sessionId=${sessionId.slice(0, 8)}...`);
+        watchBridgeLiveness(ws, 'cloud audio bridge');
         ensureAudioPump();
     });
     ws.on('message', (data, isBinary) => {
@@ -1489,6 +1569,24 @@ async function startServer(config: ServerWorkerData) {
         updateSchedule: async (recs) => await rpc.call('updateScheduleHandler', recs),
         putSequences: async (recs) => await rpc.call('putSequences', recs),
         getControllerOps: () => wsBroadcaster.get('controllerops') as ControllerOpsState | undefined,
+        volume: {
+            getVolume: () => {
+                const settings = currentPlaybackSettings();
+                if (!settings) return undefined;
+                const overview = describeVolume(settings);
+                return {
+                    defaultVolume: headlineDefaultVolume(overview),
+                    activeWindows: activeWindowDescriptions(overview),
+                };
+            },
+            setDefaultVolume: async (level) => {
+                const settings = currentPlaybackSettings();
+                if (!settings) throw new Error('Playback settings not loaded yet');
+                const r = setDefaultVolume(settings, level);
+                if (!r.ok) throw new Error(r.error);
+                await applyPlaybackSettings(r.settings);
+            },
+        },
         appVersion: config.appVersion ?? '0.0.0',
     });
 
@@ -1546,7 +1644,8 @@ async function startServer(config: ServerWorkerData) {
     // API: GET /api/ezp/hello
     // ----------------------------------------------
     router.get('/api/ezp/hello', async (ctx) => {
-        ctx.body = { message: 'Hello from Koa + Electron!' };
+        // File and FPP routes need the show folder; until it loads they answer errors.
+        ctx.body = { message: 'Hello from Koa + Electron!', showLoaded: wsBroadcaster.get('showFolder') !== undefined };
     });
 
     // ----------------------------------------------
@@ -1651,6 +1750,12 @@ async function startServer(config: ServerWorkerData) {
                 ctx.body = { error: 'Invalid command format' };
                 return;
             }
+            if (command.command === 'setvolume') {
+                const reply = await handleSetVolume(command);
+                ctx.status = reply.status;
+                ctx.body = reply.body;
+                return;
+            }
             await rpc.call('sendPlayerCommand', command);
             ctx.body = { success: true, message: 'Command sent' };
         } catch (error) {
@@ -1701,27 +1806,220 @@ async function startServer(config: ServerWorkerData) {
     });
 
     // ----------------------------------------------
-    // API: POST /api/ezp/playback-settings
+    // API: GET/POST /api/ezp/playback-settings — the whole object
+    //      GET/POST /api/ezp/playback-settings/<key>[/<sub>...] — one part of it
     // ----------------------------------------------
+
+    /** Keys a part path may start with. Anything else is rejected, not written. */
+    const SETTINGS_KEYS = new Set<keyof PlaybackSettings>([
+        'audioSyncAdjust',
+        'normalizeNewSongs',
+        'backgroundSequence',
+        'viewerControl',
+        'volumeControl',
+        'jukebox',
+        'testSequenceTags',
+        'sendIdleBlackFrames',
+        'sync',
+        'controllerRefresh',
+        'advanced',
+        'mediaFolder',
+        'useDefaultAudioOutput',
+        'audioOutputs',
+    ]);
+    /** The player reads these unconditionally; a part write may not remove them. */
+    const REQUIRED_KEYS = new Set<string>(['viewerControl', 'volumeControl']);
+    const PART_ROUTE = /^\/api\/ezp\/playback-settings\/(.+)$/;
+
+    /** Split and vet a part path; answers the request itself when it is bad. */
+    const partPath = (ctx: Koa.Context): string[] | undefined => {
+        const captured = (ctx.captures as string[] | undefined)?.[0] ?? '';
+        const segs = captured
+            .split('/')
+            .filter((s: string) => s.length > 0)
+            .map((s: string) => decodeURIComponent(s));
+        if (segs.length === 0 || !SETTINGS_KEYS.has(segs[0] as keyof PlaybackSettings)) {
+            ctx.status = 404;
+            ctx.body = { error: `Unknown playback setting '${segs[0] ?? ''}'` };
+            return undefined;
+        }
+        if (segs.some((s) => s === '__proto__' || s === 'constructor' || s === 'prototype')) {
+            ctx.status = 400;
+            ctx.body = { error: 'Invalid settings path' };
+            return undefined;
+        }
+        return segs;
+    };
+    const isPlainObject = (v: unknown): v is Record<string, unknown> =>
+        !!v && typeof v === 'object' && !Array.isArray(v);
+
+    router.get('/api/ezp/playback-settings', async (ctx) => {
+        const settings = currentPlaybackSettings();
+        if (!settings) {
+            ctx.status = 503;
+            ctx.body = { error: 'Playback settings not loaded yet' };
+            return;
+        }
+        ctx.body = settings;
+    });
+
     router.post('/api/ezp/playback-settings', async (ctx) => {
         try {
             const settings = ctx.request.body;
-            if (!settings || typeof settings !== 'object') {
+            if (!isPlainObject(settings)) {
                 ctx.status = 400;
                 ctx.body = { error: 'Invalid playback settings format. Expected object.' };
                 return;
             }
-            const showFolder = wsBroadcaster.get('showFolder');
-            if (showFolder) {
-                const settingsPath = path.join(showFolder, '.ezplayer', 'playbackSettings.json');
-                await rpc.call('applySettingsFromRenderer', settingsPath, settings);
-            }
-            await rpc.call('sendPlaybackSettings', settings);
-            wsBroadcaster.set('playbackSettings', settings as PlaybackSettings);
-
+            await applyPlaybackSettings(settings as unknown as PlaybackSettings);
             ctx.body = { success: true };
         } catch (error) {
             console.error('[server-worker] Error processing playback settings update:', error);
+            ctx.status = 500;
+            ctx.body = { error: 'Internal server error' };
+        }
+    });
+
+    // One part, addressed by its path in the object (`sync/multisync`,
+    // `volumeControl/defaultVolume`). GET answers 404 while it is unset.
+    router.get(PART_ROUTE, async (ctx) => {
+        const settings = currentPlaybackSettings();
+        if (!settings) {
+            ctx.status = 503;
+            ctx.body = { error: 'Playback settings not loaded yet' };
+            return;
+        }
+        const segs = partPath(ctx);
+        if (!segs) return;
+        let cur: unknown = settings;
+        for (const s of segs) {
+            if (!isPlainObject(cur) || !(s in cur)) {
+                ctx.status = 404;
+                ctx.body = { error: `Playback setting '${segs.join('/')}' is not set` };
+                return;
+            }
+            cur = cur[s];
+        }
+        ctx.body = cur === undefined ? null : cur;
+    });
+
+    // POST replaces just that part — any JSON value, `null` to unset an optional
+    // one — and leaves the rest of the settings as they are. Missing parents
+    // are created, so `sync/multisync` works before `sync` exists.
+    router.post(PART_ROUTE, async (ctx) => {
+        try {
+            const settings = currentPlaybackSettings();
+            if (!settings) {
+                ctx.status = 503;
+                ctx.body = { error: 'Playback settings not loaded yet; POST the whole object first' };
+                return;
+            }
+            const segs = partPath(ctx);
+            if (!segs) return;
+            const value = ctx.request.body;
+            if (value === undefined) {
+                ctx.status = 400;
+                ctx.body = { error: 'Expected a JSON body' };
+                return;
+            }
+            if (value === null && segs.length === 1 && REQUIRED_KEYS.has(segs[0])) {
+                ctx.status = 400;
+                ctx.body = { error: `'${segs[0]}' is required and cannot be unset` };
+                return;
+            }
+            // Copy the spine so the cached object is never mutated in place.
+            const next = { ...settings } as Record<string, unknown>;
+            let cur = next;
+            for (const s of segs.slice(0, -1)) {
+                const child = cur[s];
+                if (child !== undefined && !isPlainObject(child)) {
+                    ctx.status = 400;
+                    ctx.body = { error: `'${s}' is not an object; set it whole instead` };
+                    return;
+                }
+                cur[s] = { ...(child ?? {}) };
+                cur = cur[s] as Record<string, unknown>;
+            }
+            const leaf = segs[segs.length - 1];
+            if (value === null) delete cur[leaf];
+            else cur[leaf] = value;
+            await applyPlaybackSettings(next as unknown as PlaybackSettings);
+            ctx.body = { success: true };
+        } catch (error) {
+            console.error('[server-worker] Error processing playback settings part update:', error);
+            ctx.status = 500;
+            ctx.body = { error: 'Internal server error' };
+        }
+    });
+
+    // ----------------------------------------------
+    // API: GET  /api/ezp/volume — default, windows and live level per output
+    //      POST /api/ezp/volume { volume, target? } — set the default(s)
+    //      GET/POST /api/ezp/volume/:target/schedule — one output's windows
+    // Outputs are addressed by id (`default`, or an AudioOutputConfig id),
+    // which the part-path route cannot do for the audioOutputs array.
+    // ----------------------------------------------
+    const settingsOr503 = (ctx: Koa.Context): PlaybackSettings | undefined => {
+        const settings = currentPlaybackSettings();
+        if (!settings) {
+            ctx.status = 503;
+            ctx.body = { error: 'Playback settings not loaded yet' };
+        }
+        return settings;
+    };
+
+    router.get('/api/ezp/volume', (ctx) => {
+        const settings = settingsOr503(ctx);
+        if (settings) ctx.body = describeVolume(settings, currentPStatus());
+    });
+
+    router.post('/api/ezp/volume', async (ctx) => {
+        const settings = settingsOr503(ctx);
+        if (!settings) return;
+        try {
+            const body = ctx.request.body as { volume?: unknown; target?: unknown } | undefined;
+            const target = typeof body?.target === 'string' ? body.target : undefined;
+            const r = setDefaultVolume(settings, body?.volume, target);
+            if (!r.ok) {
+                ctx.status = r.status;
+                ctx.body = { error: r.error };
+                return;
+            }
+            await applyPlaybackSettings(r.settings);
+            ctx.body = volumeReply(r.settings);
+        } catch (error) {
+            console.error('[server-worker] Error setting default volume:', error);
+            ctx.status = 500;
+            ctx.body = { error: 'Internal server error' };
+        }
+    });
+
+    router.get('/api/ezp/volume/:target/schedule', (ctx) => {
+        const settings = settingsOr503(ctx);
+        if (!settings) return;
+        const target = describeVolume(settings).targets.find((t) => t.id === ctx.params.target);
+        if (!target) {
+            ctx.status = 404;
+            ctx.body = { error: `Unknown volume target '${ctx.params.target}'` };
+            return;
+        }
+        ctx.body = target.schedule;
+    });
+
+    router.post('/api/ezp/volume/:target/schedule', async (ctx) => {
+        const settings = settingsOr503(ctx);
+        if (!settings) return;
+        try {
+            const r = replaceVolumeSchedule(settings, String(ctx.params.target), ctx.request.body);
+            if (!r.ok) {
+                ctx.status = r.status;
+                ctx.body = { error: r.error };
+                return;
+            }
+            await applyPlaybackSettings(r.settings);
+            ctx.body = volumeReply(r.settings);
+        } catch (error) {
+            console.error('[server-worker] Error replacing volume schedule:', error);
             ctx.status = 500;
             ctx.body = { error: 'Internal server error' };
         }

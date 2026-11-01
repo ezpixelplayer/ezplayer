@@ -1,5 +1,7 @@
 import { ZSTDDecoder } from 'zstddec';
 import { promises as fsp } from 'fs';
+import { promisify } from 'util';
+import { inflate } from 'zlib';
 
 import { ArrayBufferPool } from '../util/BufferRecycler';
 import { NeededTimePriority, needTimePriorityCompare, PrefetchCache, RefHandle } from '../util/PrefetchCache';
@@ -50,6 +52,22 @@ export async function defDecompZStd(
     const decoder = new ZSTDDecoder();
     await decoder.init();
     new Uint8Array(decompbuf, 0, explen).set(decoder.decode(new Uint8Array(compbuf, compoff, complen), explen));
+    return { compBuf: compbuf, decompBuf: decompbuf };
+}
+
+const inflateAsync = promisify(inflate);
+
+/** Each zlib block is its own stream. xLights writes Effect sequences this way. */
+export async function defDecompZlib(
+    decompbuf: ArrayBuffer,
+    compbuf: ArrayBuffer,
+    compoff: number,
+    complen: number,
+    explen: number,
+) {
+    const out = await inflateAsync(new Uint8Array(compbuf, compoff, complen));
+    if (out.length < explen) throw new Error(`zlib block inflated to ${out.length} bytes, expected ${explen}`);
+    new Uint8Array(decompbuf, 0, explen).set(out.subarray(0, explen));
     return { compBuf: compbuf, decompBuf: decompbuf };
 }
 
@@ -210,6 +228,7 @@ export class FSeqPrefetchCache {
             decompPoolBytes?: number;
             maxConcurrency?: number;
             decompZstd?: DecompZStd; // Allow a worker thread...
+            decompZlib?: DecompZStd;
         },
         emitError: (msg: string) => void,
         emitWarning?: (msg: string) => void,
@@ -221,6 +240,7 @@ export class FSeqPrefetchCache {
         this.ageoutMs = arg.ageoutMs ?? 60_000;
         this.decompDataPool = new ArrayBufferPool(arg.decompPoolBytes);
         this.decompFunc = arg.decompZstd ?? defDecompZStd;
+        this.decompZlibFunc = arg.decompZlib ?? defDecompZlib;
         this.decompPrefetchCache = new PrefetchCache<DecompCacheKey, DecompCacheVal, NeededTimePriority>({
             fetchFunction: async (key, _abort) => {
                 // Fetch file data
@@ -247,7 +267,7 @@ export class FSeqPrefetchCache {
                         // Non-sparse path: decode (or pass through) straight into the dense buffer;
                         // the file's on-disk frame stride already equals denseStep.
                         if (!isSparse) {
-                            if (key.compression === 1) {
+                            if (key.compression === 1 || key.compression === 2) {
                                 const dbuf = this.decompDataPool.get(denseChunkLen);
                                 if (dbuf.byteLength < denseChunkLen) {
                                     this.emitWarning(
@@ -256,11 +276,10 @@ export class FSeqPrefetchCache {
                                             `got=${dbuf.byteLength} want=${denseChunkLen}`,
                                     );
                                 }
-                                const decres = await this.decompFunc(dbuf, readBuf, 0, key.fileLen, denseChunkLen);
+                                const decomp = this.decompFor(key.compression);
+                                const decres = await decomp(dbuf, readBuf, 0, key.fileLen, denseChunkLen);
                                 readBuf = decres.compBuf;
                                 return { decompChunk: decres.decompBuf };
-                            } else if (key.compression === 2) {
-                                throw new Error('Compression type 2 not supported');
                             } else {
                                 readBufReleased = true;
                                 return { decompChunk: readBuf };
@@ -272,9 +291,10 @@ export class FSeqPrefetchCache {
                         const denseBuf = this.decompDataPool.get(denseChunkLen);
                         let sparseBuf: ArrayBuffer;
                         let sparseBufIsReadBuf = false;
-                        if (key.compression === 1) {
+                        if (key.compression === 1 || key.compression === 2) {
                             sparseBuf = this.decompDataPool.get(fileChunkLen);
-                            const decres = await this.decompFunc(sparseBuf, readBuf, 0, key.fileLen, fileChunkLen);
+                            const decomp = this.decompFor(key.compression);
+                            const decres = await decomp(sparseBuf, readBuf, 0, key.fileLen, fileChunkLen);
                             readBuf = decres.compBuf;
                             sparseBuf = decres.decompBuf;
                             if (sparseBuf.byteLength < fileChunkLen) {
@@ -288,7 +308,7 @@ export class FSeqPrefetchCache {
                             sparseBuf = readBuf;
                             sparseBufIsReadBuf = true;
                         } else {
-                            throw new Error('Compression type 2 not supported');
+                            throw new Error(`Compression type ${key.compression} not supported`);
                         }
                         try {
                             scatterChunk(
@@ -414,6 +434,10 @@ export class FSeqPrefetchCache {
         });
     }
 
+    private decompFor(compression: number): DecompZStd {
+        return compression === 2 ? this.decompZlibFunc : this.decompFunc;
+    }
+
     private getFrameKey(fseq: string, frame: { num?: number; time?: number }, needByTime?: number) {
         const hdr = this.getHeaderInfo({ fseqfile: fseq })?.ref;
         if (!hdr) {
@@ -527,6 +551,7 @@ export class FSeqPrefetchCache {
 
     decompDataPool: ArrayBufferPool;
     decompFunc: DecompZStd;
+    decompZlibFunc: DecompZStd;
     decompPrefetchCache: PrefetchCache<DecompCacheKey, DecompCacheVal, NeededTimePriority>;
     fileReadTimeCumulative: number = 0;
     private emitWarning: (msg: string) => void;

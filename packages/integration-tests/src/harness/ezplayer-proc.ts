@@ -102,7 +102,8 @@ export async function startEzPlayer(showFolder: string, opts: StartOptions = {})
     child.stderr!.pipe(log);
 
     const base = `http://127.0.0.1:${port}`;
-    if (!opts.noApiWait) await waitForApi(child, base, logFile);
+    // A windowed run loads its show only once the page is up, which some faults prevent.
+    if (!opts.noApiWait) await waitForApi(child, base, logFile, !opts.windowed);
 
     return {
         port,
@@ -128,7 +129,7 @@ export async function startEzPlayer(showFolder: string, opts: StartOptions = {})
     };
 }
 
-async function waitForApi(child: ChildProcess, base: string, logFile: string): Promise<void> {
+async function waitForApi(child: ChildProcess, base: string, logFile: string, waitForShow: boolean): Promise<void> {
     const deadline = Date.now() + 45_000;
     for (;;) {
         if (child.exitCode !== null) {
@@ -136,13 +137,15 @@ async function waitForApi(child: ChildProcess, base: string, logFile: string): P
         }
         try {
             const res = await fetch(`${base}/api/ezp/hello`, { signal: AbortSignal.timeout(2000) });
-            if (res.ok) break;
+            if (res.ok && (!waitForShow || ((await res.json()) as { showLoaded?: boolean }).showLoaded)) break;
         } catch {
             /* not up yet; keep polling */
         }
         if (Date.now() > deadline) {
             killTree(child);
-            throw new Error(`EZPlayer did not answer /api/ezp/hello within 45s (log: ${logFile})`);
+            throw new Error(
+                `EZPlayer did not answer /api/ezp/hello${waitForShow ? ' with its show loaded' : ''} within 45s (log: ${logFile})`,
+            );
         }
         await new Promise((r) => setTimeout(r, 500));
     }

@@ -8,7 +8,9 @@
 import * as fs from 'fs/promises';
 import {
     LOCAL_STATS_EPOCH,
+    dedupeViewerStatsEvents,
     trimViewerStatsEvents,
+    viewerStatsEventKey,
     type StoredViewerStatsEvent,
     type VcDropReason,
     type VcPickSource,
@@ -54,19 +56,21 @@ export async function loadViewerStatsFromDisk(filePath: string): Promise<ViewerS
             return current;
         }
         const parsed = JSON.parse(raw) as Partial<ViewerStatsFile>;
+        const stored = Array.isArray(parsed.events) ? (parsed.events as StoredViewerStatsEvent[]) : [];
+        // Files written before pulls were de-duplicated can hold repeats; clean them once.
+        const events = trimViewerStatsEvents(dedupeViewerStatsEvents(stored), Date.now(), RETAIN_MS, MAX_EVENTS);
         current = {
             version: 1,
             cursor: {
                 epoch: typeof parsed.cursor?.epoch === 'string' ? parsed.cursor.epoch : undefined,
                 seq: typeof parsed.cursor?.seq === 'number' ? parsed.cursor.seq : 0,
             },
-            events: Array.isArray(parsed.events)
-                ? trimViewerStatsEvents(parsed.events as StoredViewerStatsEvent[], Date.now(), RETAIN_MS, MAX_EVENTS)
-                : [],
+            events,
             lastSnapshot: parsed.lastSnapshot,
             lastPullAt: parsed.lastPullAt,
             gapAt: parsed.gapAt,
         };
+        if (events.length !== stored.length) void scheduleWrite();
         return current;
     } catch (e) {
         const err = e as { code?: string };
@@ -87,9 +91,20 @@ export function resetViewerStatsStore(): void {
 /** Merge one pull. Returns the number of new events stored. */
 export function applyViewerStatsPull(res: VcStatsResponse, now = Date.now()): number {
     const epochChanged = current.cursor.epoch !== undefined && current.cursor.epoch !== res.epoch;
-    // A new server epoch restarts seqs; everything it sends is new to us.
-    const incoming = res.events.filter((e) => epochChanged || e.seq > current.cursor.seq);
-    for (const e of incoming) current.events.push({ ...e, epoch: res.epoch });
+    // A new server epoch restarts seqs; everything it sends may be new to us. The
+    // cursor we sent belonged to the old epoch, so the answer can also repeat events
+    // we already hold (the target flipped back to a process we pulled from before).
+    const candidates = res.events.filter((e) => epochChanged || e.seq > current.cursor.seq);
+    const held = new Set(current.events.map(viewerStatsEventKey));
+    const incoming: StoredViewerStatsEvent[] = [];
+    for (const e of candidates) {
+        const stored = { ...e, epoch: res.epoch };
+        const k = viewerStatsEventKey(stored);
+        if (held.has(k)) continue;
+        held.add(k);
+        incoming.push(stored);
+    }
+    for (const e of incoming) current.events.push(e);
     current.events = trimViewerStatsEvents(current.events, now, RETAIN_MS, MAX_EVENTS);
     current.cursor = { epoch: res.epoch, seq: res.latestSeq };
     current.lastSnapshot = res.snapshot;
