@@ -303,3 +303,34 @@ export async function getFSEQDurationMSBrowser(file: File): Promise<number> {
     await reader.readHeader(false);
     return reader.header!.frames * reader.header!.msperframe;
 }
+
+const HEADER_AUDIO_EXTENSIONS = ['.mp3', '.wav', '.m4a', '.aac', '.flac', '.ogg', '.wma', '.mp4'];
+
+/** Audio file name an FSEQ header asks for, from its media variable headers.
+ *  xLights on Windows writes a full backslash path; only the file name matters. */
+export function audioNameFromFseqHeaders(headers: Record<string, string> | undefined): string | undefined {
+    if (!headers) return undefined;
+    for (const key of ['mf', 'mu', 'md']) {
+        const val = headers[key]?.trim();
+        if (!val) continue;
+        const name = val.replace(/\\/g, '/').split('/').pop() ?? '';
+        const dot = name.lastIndexOf('.');
+        if (dot >= 0 && HEADER_AUDIO_EXTENSIONS.includes(name.slice(dot).toLowerCase())) return name;
+    }
+    return undefined;
+}
+
+/** The audio name named by a browser File's FSEQ header, or undefined when it
+ *  names none (an animation). Throws when the file is not an FSEQ. */
+export async function getFSEQAudioNameBrowser(file: File): Promise<string | undefined> {
+    const fixed = new DataView(await file.slice(0, 32).arrayBuffer());
+    if (fixed.byteLength < 32) throw new Error('Not a PSEQ file');
+    const magic = new TextDecoder().decode(new Uint8Array(fixed.buffer, 0, 4));
+    if (magic === 'ESEQ') return undefined;
+    if (magic !== 'PSEQ' && magic !== 'FSEQ') throw new Error('Not a PSEQ file');
+    // The variable headers end where channel data starts.
+    const headerLength = fixed.getUint16(4, true);
+    const reader = new FSEQReaderBrowser(await file.slice(0, headerLength).arrayBuffer());
+    await reader.readHeader(true);
+    return audioNameFromFseqHeaders(reader.header?.headers);
+}

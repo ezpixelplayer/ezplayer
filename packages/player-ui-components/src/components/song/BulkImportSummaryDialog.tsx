@@ -21,6 +21,25 @@ import type {
     BatchImportSummary,
 } from '@ezplayer/ezplayer-core';
 import type { RootState } from '../..';
+import { kindOf } from './bulkUploadPlan';
+
+/** One row per file type written by a bulk upload. */
+export function uploadedFileRows(files: string[]): { label: string; count: number }[] {
+    const labels: Record<string, string> = {
+        fseq: 'Sequences',
+        audio: 'Audio files',
+        image: 'Artwork files',
+        other: 'Other files',
+    };
+    const counts = new Map<string, number>();
+    for (const name of files) {
+        const label = labels[kindOf(name)];
+        counts.set(label, (counts.get(label) ?? 0) + 1);
+    }
+    return Object.values(labels)
+        .filter((label) => counts.has(label))
+        .map((label) => ({ label, count: counts.get(label)! }));
+}
 
 export interface BulkImportSummaryDialogProps {
     open: boolean;
@@ -30,6 +49,8 @@ export interface BulkImportSummaryDialogProps {
      *  that invokes this and then retries those imports. */
     onChooseMediaFolderAndRetry?: () => void | Promise<void>;
     choosingMediaFolder?: boolean;
+    /** Files a bulk upload wrote without adding a song, with why. */
+    stored?: { name: string; reason: string }[];
 }
 
 function isMissingAudioFailure(reason: string): boolean {
@@ -42,6 +63,7 @@ export function BulkImportSummaryDialog({
     onClose,
     onChooseMediaFolderAndRetry,
     choosingMediaFolder = false,
+    stored = [],
 }: BulkImportSummaryDialogProps) {
     const mediaFolder = useSelector((s: RootState) => s.playbackSettings.settings.mediaFolder);
     const onDesktop = isElectron();
@@ -54,14 +76,23 @@ export function BulkImportSummaryDialog({
     return (
         <Dialog open={open} onClose={choosingMediaFolder ? undefined : onClose} maxWidth="sm" fullWidth>
             <DialogTitle>
-                <Typography variant="h5">Bulk Import Summary</Typography>
+                <Typography variant="h5">
+                    {summary.uploadedFiles ? 'Bulk Upload Summary' : 'Bulk Import Summary'}
+                </Typography>
             </DialogTitle>
             <Divider />
             <DialogContent>
-                <Typography sx={{ mb: 1 }}>
-                    Imported <strong>{summary.imported}</strong> of <strong>{summary.total}</strong> sequence
-                    {summary.total === 1 ? '' : 's'}.
-                </Typography>
+                {uploadedFileRows(summary.uploadedFiles ?? []).map(({ label, count }) => (
+                    <Typography key={label} sx={{ mb: 1 }}>
+                        {label} uploaded: <strong>{count}</strong>
+                    </Typography>
+                ))}
+                {(summary.total > 0 || !summary.uploadedFiles) && (
+                    <Typography sx={{ mb: 1 }}>
+                        Added <strong>{summary.imported}</strong> of <strong>{summary.total}</strong> song
+                        {summary.total === 1 ? '' : 's'}.
+                    </Typography>
+                )}
                 {summary.failed > 0 && (
                     <Typography color="error" sx={{ mb: 1 }}>
                         Failed: {summary.failed}
@@ -120,6 +151,21 @@ export function BulkImportSummaryDialog({
                                         secondary={`${s.title} — ${s.artist}${s.mediaFound ? '' : ' (no media)'}`}
                                         primaryTypographyProps={{ fontWeight: 600 }}
                                     />
+                                </ListItem>
+                            ))}
+                        </List>
+                    </>
+                )}
+
+                {stored.length > 0 && (
+                    <>
+                        <Typography variant="subtitle2" sx={{ mt: 2, mb: 0.5 }} color="text.secondary">
+                            Stored for later
+                        </Typography>
+                        <List dense disablePadding>
+                            {stored.map((s) => (
+                                <ListItem key={s.name} alignItems="flex-start" sx={{ px: 0 }}>
+                                    <ListItemText primary={s.name} secondary={s.reason} />
                                 </ListItem>
                             ))}
                         </List>

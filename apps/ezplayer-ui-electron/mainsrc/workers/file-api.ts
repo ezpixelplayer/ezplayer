@@ -90,6 +90,9 @@ const VIDEO_EXTS = new Set(['.mp4', '.mkv', '.avi', '.mov', '.mpg', '.mpeg']);
 const IMAGE_EXTS = new Set(['.gif', '.jpg', '.jpeg', '.png', '.webp', '.bmp']);
 const SEQ_EXTS = new Set(['.fseq']);
 
+/** Name-only listing of the media folder; not a DIR_MAP entry, so nothing can be written there. */
+const MEDIA_DIR = 'media';
+
 const DIR_MAP: Record<string, { exts?: Set<string> }> = {
     sequences: { exts: SEQ_EXTS },
     music: { exts: AUDIO_EXTS },
@@ -156,6 +159,32 @@ async function listDir(showFolder: string, exts?: Set<string>): Promise<string[]
         .filter((n) => !n.startsWith('.') && !PROTECTED_NAMES.has(n.toLowerCase()))
         .filter((n) => !exts || exts.has(path.extname(n).toLowerCase()))
         .sort((a, b) => a.localeCompare(b));
+}
+
+/** Audio names under the media folder, searched as deep as autodetect looks. */
+const MEDIA_LIST_DEPTH = 4;
+async function listMediaFolderAudio(mediaFolder: string | undefined): Promise<string[]> {
+    const names = new Set<string>();
+    if (!mediaFolder?.trim()) return [];
+    const stack = [{ dir: mediaFolder, depth: 0 }];
+    while (stack.length) {
+        const { dir, depth } = stack.pop()!;
+        let entries: fs.Dirent[];
+        try {
+            entries = await fsp.readdir(dir, { withFileTypes: true });
+        } catch {
+            continue;
+        }
+        for (const e of entries) {
+            if (e.name.startsWith('.')) continue;
+            if (e.isDirectory()) {
+                if (depth < MEDIA_LIST_DEPTH) stack.push({ dir: path.join(dir, e.name), depth: depth + 1 });
+            } else if (e.isFile() && AUDIO_EXTS.has(path.extname(e.name).toLowerCase())) {
+                names.add(e.name);
+            }
+        }
+    }
+    return [...names].sort((a, b) => a.localeCompare(b));
 }
 
 async function isFile(p: string): Promise<boolean> {
@@ -668,6 +697,11 @@ export function createFileApiRouter(deps: FileApiDeps): Router {
     router.get('/api/files/:dirName', async (ctx) => {
         const showFolder = requireShowFolder(ctx);
         if (!showFolder) return;
+        // Read-only view of the media folder so a browser can see what audio imports may use.
+        if (String(ctx.params.dirName ?? '').toLowerCase() === MEDIA_DIR) {
+            ctx.body = await listMediaFolderAudio(deps.getMediaFolder?.());
+            return;
+        }
         const dir = requireDir(ctx);
         if (!dir) return;
 
@@ -1074,9 +1108,9 @@ export interface BatchUploadManifestFile {
 export interface BatchUploadManifest {
     files: BatchUploadManifestFile[];
     companionAudioNames?: string[];
-    /** Import these show-folder FSEQs after writing `files` (e.g. audio-only
-     *  media-folder upload on LAN retry). When omitted, every `.fseq` in
-     *  `files` is imported. */
+    /** The exact show-folder FSEQs to import after writing `files`. When
+     *  omitted, every `.fseq` in `files` is imported. An empty list stores the
+     *  files without adding songs, so an FSEQ can wait for its audio. */
     importFseqNames?: string[];
 }
 
@@ -1230,17 +1264,27 @@ export async function batchUploadImportSequencesCore(
             fromManifest.push(name);
         }
     }
-    const fseqNames = uploadedFseqs.length ? uploadedFseqs : [...new Set(fromManifest)];
+    const explicit = Array.isArray(manifest.importFseqNames);
+    const fseqNames = explicit ? [...new Set(fromManifest)] : uploadedFseqs;
+    const uploadedFiles = prepared.map((f) => f.name);
     if (!fseqNames.length) {
-        return { status: 400, body: { error: 'No .fseq files in upload' } };
+        if (!explicit) return { status: 400, body: { error: 'No .fseq files in upload' } };
+        return { status: 200, body: { total: 0, imported: 0, failed: 0, successes: [], failures: [], uploadedFiles } };
     }
 
-    return batchImportSequencesCore(showFolder, deps, fseqNames, manifest.companionAudioNames ?? []);
+    const result = await batchImportSequencesCore(showFolder, deps, fseqNames, manifest.companionAudioNames ?? []);
+    if (result.status === 200) result.body = { ...(result.body as object), uploadedFiles };
+    return result;
 }
 
 /** Name listing (the `?nameOnly=1` shape) for the cloud proxy. */
-export async function listFileNamesCore(showFolder: string | undefined, dirName: string): Promise<ProxyResult> {
+export async function listFileNamesCore(
+    showFolder: string | undefined,
+    dirName: string,
+    mediaFolder?: string,
+): Promise<ProxyResult> {
     if (!showFolder) return { status: 400, body: { status: 'error', error: 'Show folder not set' } };
+    if (dirName.toLowerCase() === MEDIA_DIR) return { status: 200, body: await listMediaFolderAudio(mediaFolder) };
     const dir = DIR_MAP[dirName.toLowerCase()];
     if (!dir) return { status: 404, body: { status: 'error', error: `Unknown directory: ${dirName}` } };
     return { status: 200, body: await listDir(showFolder, dir.exts) };
