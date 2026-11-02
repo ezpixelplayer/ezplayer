@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { audioTooLongMessage, formatAudioLength, growReservation, maxAudioSeconds } from './audioLengthLimit';
+import {
+    audioCacheSeconds,
+    audioTooLongMessage,
+    formatAudioLength,
+    growReservation,
+    maxAudioSeconds,
+    maxSongSeconds,
+} from './audioLengthLimit';
 
 describe('maxAudioSeconds', () => {
     it('gives a quarter of RAM in 48 kHz stereo Float32, rounded down to a chunk', () => {
@@ -9,6 +16,23 @@ describe('maxAudioSeconds', () => {
     });
     it('never goes below one chunk', () => {
         expect(maxAudioSeconds(1000, 0.25)).toBe(5);
+    });
+});
+
+describe('audioCacheSeconds', () => {
+    it('scales with RAM up to the ceiling', () => {
+        expect(audioCacheSeconds(4e9, 0.25, 10400)).toBe(2600);
+        expect(audioCacheSeconds(16e9, 0.25, 10400)).toBe(10400);
+        expect(audioCacheSeconds(64e9, 0.25, 10400)).toBe(10400);
+    });
+});
+
+describe('maxSongSeconds', () => {
+    it('leaves headroom for the next song', () => {
+        expect(maxSongSeconds(2600, 300)).toBe(2300);
+    });
+    it('never goes below one chunk', () => {
+        expect(maxSongSeconds(100, 300)).toBe(5);
     });
 });
 
