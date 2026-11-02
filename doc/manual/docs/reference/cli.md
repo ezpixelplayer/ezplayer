@@ -505,6 +505,9 @@ cloud connectivity all behave exactly as in the windowed app. Audio is still
 decoded and streamed to the web UI and cloud listeners; by default it is not
 played out on the machine's local speakers (no hidden audio window is created).
 Add `--local-audio` to play it on the local speakers as the windowed app does.
+`--no-cloud-uploads` refuses file uploads relayed through the cloud service, for
+players whose files should only arrive over the LAN web API. Cloud sequence
+downloads and LAN uploads are unaffected.
 
 ```bash
 EZPlayer.exe headless --show-folder=D:\Shows\2025 --web-port=3000
