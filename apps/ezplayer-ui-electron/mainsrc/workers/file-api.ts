@@ -968,6 +968,10 @@ export function createFileApiRouter(deps: FileApiDeps): Router {
         const showFolder = requireShowFolder(ctx);
         if (!showFolder) return;
         const res = await batchUploadImportSequencesCore(showFolder, deps, ctx.req);
+        if (res.status >= 400) {
+            const reason = (res.body as { error?: string } | undefined)?.error ?? 'unknown';
+            console.log(`[BatchImport] Rejected batch upload (${res.status}): ${reason}`);
+        }
         ctx.status = res.status;
         ctx.body = res.body;
     });
