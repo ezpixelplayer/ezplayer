@@ -387,8 +387,8 @@ async function startPlaybackWorker(): Promise<Worker> {
     return worker;
 }
 
-/** The `headless` verb: full player, zero BrowserWindows, dialogs become
- *  fail-fast exit codes. */
+/** The `headless` verb: full player with no visible windows, dialogs become
+ *  fail-fast exit codes. `--local-audio` adds a hidden audio renderer. */
 async function startHeadless() {
     const resolved = await ensureExclusiveFolderHeadless();
     if ('error' in resolved) {
@@ -399,8 +399,18 @@ async function startHeadless() {
     }
     console.log(`EZPlayer headless: using show folder ${resolved.folder}`);
 
-    // Headless plays no local audio; decoding still feeds web/cloud clients.
-    setAudioWindowsEnabled(false);
+    // Decoding always feeds web/cloud clients. Local speakers need the hidden
+    // renderer window, which works under --ozone-platform=headless as well.
+    const localAudio = process.argv.includes('--local-audio');
+    setAudioWindowsEnabled(localAudio);
+    if (localAudio) {
+        configureAudioWindowPaths({
+            preloadPath: path.join(__dirname, 'preload-audio.js'),
+            htmlFilePath: audioWindowHtmlPath(__dirname),
+            htmlBaseUrl: audioWindowDevUrl(),
+        });
+        console.log('EZPlayer headless: local audio enabled');
+    }
 
     // persist:false — never write headless CLI values into stored preferences
     const portInfo = getWebPort({ persist: false });
