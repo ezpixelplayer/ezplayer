@@ -101,6 +101,16 @@ describe('BulkUploadDialog', () => {
         expect(onDone.mock.calls[0][1]).toEqual([{ name: 'Wait.fseq', reason: 'Needs Missing.mp3' }]);
     });
 
+    it('shows the message of a serialized thunk rejection', async () => {
+        mocks.upload.mockRejectedValue({ name: 'Error', message: 'Upload exceeds maximum size' });
+        render(<BulkUploadDialog open onClose={vi.fn()} onDone={vi.fn()} />);
+        await screen.findByText('No files chosen yet.');
+        addFiles(['Show.fseq', 'Song.mp3']);
+        await screen.findByText('Songs to add (1)');
+        fireEvent.click(screen.getByRole('button', { name: 'Upload' }));
+        await screen.findByText('Upload exceeds maximum size');
+    });
+
     it('keeps player copies when replace is unchecked', async () => {
         render(<BulkUploadDialog open onClose={vi.fn()} onDone={vi.fn()} />);
         await screen.findByText('No files chosen yet.');

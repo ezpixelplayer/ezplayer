@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { uploadRequest } from './uploadRequest';
+import { groupByBytes, uploadRequest } from './uploadRequest';
 
 class FakeRequest {
     static last: FakeRequest;
@@ -47,5 +47,23 @@ describe('uploadRequest', () => {
         const pending = uploadRequest('/api/file/uploads/song.mp3', new Blob(['audio']), {});
         FakeRequest.last.onerror?.();
         await expect(pending).rejects.toThrow(/connection lost/);
+    });
+});
+
+describe('groupByBytes', () => {
+    const file = (name: string, size: number) => ({ name, data: { size } });
+    it('fills groups in order up to the limit', () => {
+        const groups = groupByBytes([file('a', 6), file('b', 3), file('c', 2), file('d', 1)], 10);
+        expect(groups.map((g) => g.map((f) => f.name))).toEqual([
+            ['a', 'b'],
+            ['c', 'd'],
+        ]);
+    });
+    it('sends an oversized file alone', () => {
+        const groups = groupByBytes([file('a', 1), file('big', 50), file('c', 1)], 10);
+        expect(groups.map((g) => g.map((f) => f.name))).toEqual([['a'], ['big'], ['c']]);
+    });
+    it('returns no groups for no files', () => {
+        expect(groupByBytes([], 10)).toEqual([]);
     });
 });

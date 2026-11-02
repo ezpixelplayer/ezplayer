@@ -88,6 +88,13 @@ function describeFseq(p: FseqPlan): string {
     }
 }
 
+/** Thunk rejections arrive as plain serialized errors, not Error instances. */
+function messageOf(e: unknown): string {
+    if (e instanceof Error) return e.message;
+    if (e && typeof e === 'object' && 'message' in e && typeof e.message === 'string') return e.message;
+    return String(e);
+}
+
 /** Stage files from this computer, show what each will become on the player,
  *  then upload the batch and add the songs that are complete. Files with no
  *  match are stored in the show folder so a later upload can finish the job. */
@@ -130,7 +137,7 @@ export function BulkUploadDialog({ open, onClose, onDone }: BulkUploadDialogProp
                 );
                 if (!cancelled) setPlayer({ sequences, music, media });
             } catch (e) {
-                if (!cancelled) setPlayerError(e instanceof Error ? e.message : String(e));
+                if (!cancelled) setPlayerError(messageOf(e));
             }
         })();
         return () => {
@@ -205,7 +212,7 @@ export function BulkUploadDialog({ open, onClose, onDone }: BulkUploadDialogProp
             ).unwrap();
             onDone({ ...summary, uploadedFiles: summary.uploadedFiles ?? plan.uploadNames }, plan.stored);
         } catch (e) {
-            setError(e instanceof Error ? e.message : String(e));
+            setError(messageOf(e));
         } finally {
             setBusy(false);
             setProgress(null);

@@ -19,7 +19,7 @@ export { SongSaveProgress, describeSongSave, saveErrorMessage } from './componen
 export { DeleteSongDialog } from './components/song/DeleteSongDialog';
 export { BulkUploadDialog } from './components/song/BulkUploadDialog';
 export { UploadProgressDialog } from './components/song/UploadProgressDialog';
-export { uploadRequest } from './util/uploadRequest';
+export { groupByBytes, uploadRequest } from './util/uploadRequest';
 export { ControlButton } from './components/player/ControlButton';
 export { PlaybackControls } from './components/player/PlaybackControls';
 export { PlaybackDetailDialog } from './components/player/PlaybackDetailDialog';

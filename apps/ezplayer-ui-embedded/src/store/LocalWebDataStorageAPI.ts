@@ -14,7 +14,7 @@ import type {
 } from '@ezplayer/ezplayer-core';
 
 import type { DataStorageAPI, UserLoginBody, UserRegisterBody } from '@ezplayer/player-ui-components';
-import { uploadRequest } from '@ezplayer/player-ui-components';
+import { groupByBytes, uploadRequest } from '@ezplayer/player-ui-components';
 
 import {
     AppDispatch,
@@ -38,6 +38,10 @@ import {
     setSequenceData,
 } from '@ezplayer/player-ui-components';
 import { wsService } from '../services/websocket';
+
+/** Largest body sent in one batch upload request. The player's default
+ *  per-request limit is 2 GiB (EZPLAYER_MAX_UPLOAD_MB). */
+const BATCH_REQUEST_BYTES = 1024 * 1024 * 1024;
 
 /**
  * LocalWebDataStorageAPI - For web browsers connecting to local Electron Koa server
@@ -286,13 +290,45 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
         if (!unique.length) {
             throw new Error('No files to upload');
         }
+        // The player refuses a body over its limit before reading any file, so
+        // big selections go in several requests. Earlier ones only store; the
+        // last imports, which needs the import set spelled out.
+        const groups = groupByBytes(unique, BATCH_REQUEST_BYTES);
+        const toImport =
+            importFseqNames ??
+            (groups.length > 1
+                ? unique.filter((f) => f.name.toLowerCase().endsWith('.fseq')).map((f) => f.name)
+                : undefined);
+        const total = unique.reduce((n, f) => n + f.data.size, 0);
+        let done = 0;
+        const uploadedFiles: string[] = [];
+        let summary: BatchImportSummary | undefined;
+        for (let i = 0; i < groups.length; i++) {
+            const group = groups[i];
+            const last = i === groups.length - 1;
+            summary = await this.sendBatch(group, companionAudioNames ?? [], last ? toImport : [], (loaded) =>
+                onProgress?.(done + loaded, total),
+            );
+            done += group.reduce((n, f) => n + f.data.size, 0);
+            onProgress?.(done, total);
+            uploadedFiles.push(...(summary.uploadedFiles ?? group.map((f) => f.name)));
+        }
+        return { ...summary!, uploadedFiles };
+    }
+
+    private async sendBatch(
+        files: Array<{ name: string; data: Blob }>,
+        companionAudioNames: string[],
+        importFseqNames: string[] | undefined,
+        onProgress: (loaded: number, total: number) => void,
+    ): Promise<BatchImportSummary> {
         const manifest: {
             files: Array<{ name: string; size: number }>;
             companionAudioNames: string[];
             importFseqNames?: string[];
         } = {
-            files: unique.map((f) => ({ name: f.name, size: f.data.size })),
-            companionAudioNames: companionAudioNames ?? [],
+            files: files.map((f) => ({ name: f.name, size: f.data.size })),
+            companionAudioNames,
         };
         // An explicit list, even an empty one, is the exact import set.
         if (importFseqNames) {
@@ -305,7 +341,7 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
         new DataView(lengthPrefix.buffer).setUint32(0, manifestBytes.byteLength, false);
         const result = await uploadRequest(
             `${this.apiUrl}ezp/sequences/batch-upload-import`,
-            new Blob([lengthPrefix, manifestBytes, ...unique.map((f) => f.data)]),
+            new Blob([lengthPrefix, manifestBytes, ...files.map((f) => f.data)]),
             { 'Content-Type': 'application/octet-stream' },
             onProgress,
         );

@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { audioNameFromFseqHeaders, getFSEQAudioNameBrowser } from './fsequtil';
 
-/** A minimal v2 FSEQ: the 32-byte fixed header, then one variable header. */
+/** A minimal v2 FSEQ: the 32-byte fixed header, then one NUL-terminated
+ *  variable header as xLights writes them. */
 function fseqWithHeader(code: string, value: string): File {
-    const data = new TextEncoder().encode(value);
+    const data = new TextEncoder().encode(value + '\0');
     const variable = new Uint8Array(4 + data.length);
     new DataView(variable.buffer).setUint16(0, variable.length, true);
     variable.set(new TextEncoder().encode(code), 2);
@@ -37,6 +38,10 @@ describe('audioNameFromFseqHeaders', () => {
 describe('getFSEQAudioNameBrowser', () => {
     it('reads the media header from a file', async () => {
         await expect(getFSEQAudioNameBrowser(fseqWithHeader('mf', '/home/me/Song.wav'))).resolves.toBe('Song.wav');
+    });
+    it('drops the NUL terminator from a Windows path', async () => {
+        const file = fseqWithHeader('mf', 'M:\\show\\product\\sequenceaudio\\A Thousand Years Short.mp3');
+        await expect(getFSEQAudioNameBrowser(file)).resolves.toBe('A Thousand Years Short.mp3');
     });
     it('reports no audio for an animation', async () => {
         await expect(getFSEQAudioNameBrowser(fseqWithHeader('sp', 'xLights'))).resolves.toBeUndefined();

@@ -250,7 +250,8 @@ export class FSEQReaderBrowser {
                         srTable = hdata;
                         continue;
                     }
-                    v1headers[hname] = new TextDecoder().decode(hdata);
+                    // xLights NUL-terminates text headers; drop it as the Node reader does.
+                    v1headers[hname] = new TextDecoder().decode(hdata).replace(/\0+$/, '');
                 }
                 const fullRanges = srTable && extendedSparseRanges(srTable, chrangelist, ccount);
                 if (fullRanges) {

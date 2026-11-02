@@ -35,3 +35,22 @@ export function uploadRequest(
         request.send(body);
     });
 }
+
+/** Splits files into groups whose sizes sum to at most maxBytes, keeping order.
+ *  A file larger than maxBytes travels alone. */
+export function groupByBytes<T extends { data: { size: number } }>(files: T[], maxBytes: number): T[][] {
+    const groups: T[][] = [];
+    let current: T[] = [];
+    let bytes = 0;
+    for (const file of files) {
+        if (current.length && bytes + file.data.size > maxBytes) {
+            groups.push(current);
+            current = [];
+            bytes = 0;
+        }
+        current.push(file);
+        bytes += file.data.size;
+    }
+    if (current.length) groups.push(current);
+    return groups;
+}
