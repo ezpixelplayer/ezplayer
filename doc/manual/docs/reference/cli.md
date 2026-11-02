@@ -502,8 +502,9 @@ instance using the same folder is prompted to choose a different path or quit.
 The `headless` verb runs the **full player with no windows**: scheduled and
 API-driven playback, light output, the LAN web/API server, kiosk server, and
 cloud connectivity all behave exactly as in the windowed app. Audio is still
-decoded and streamed to the web UI and cloud listeners; it is simply not played
-out on the machine's local speakers (no hidden audio window is created).
+decoded and streamed to the web UI and cloud listeners; by default it is not
+played out on the machine's local speakers (no hidden audio window is created).
+Add `--local-audio` to play it on the local speakers as the windowed app does.
 
 ```bash
 EZPlayer.exe headless --show-folder=D:\Shows\2025 --web-port=3000
@@ -540,6 +541,13 @@ command line (it must come before EZPlayer's own arguments):
 
 ```bash
 ./EZPlayer --ozone-platform=headless headless --show-folder=/home/user/show
+```
+
+`--local-audio` works there too; the hidden audio renderer does not need a
+display server, only a working audio device:
+
+```bash
+./EZPlayer --ozone-platform=headless headless --show-folder=/home/user/show --local-audio
 ```
 
 ## LAN and kiosk ports

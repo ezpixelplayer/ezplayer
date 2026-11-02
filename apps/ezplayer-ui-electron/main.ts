@@ -298,7 +298,6 @@ const createWindow = (showFolder?: string, showWelcomeOnLaunch?: boolean) => {
         clearTimeout(splashFallback);
         if (!splash.isDestroyed()) splash.destroy();
         if (mainWindow && !mainWindow.isDestroyed()) {
-            if (process.env.EZPLAYER_PI_APPLIANCE === '1') mainWindow.maximize();
             mainWindow.show();
             mainWindow.focus();
             mainWindow.setAlwaysOnTop(true);
@@ -388,8 +387,8 @@ async function startPlaybackWorker(): Promise<Worker> {
     return worker;
 }
 
-/** The `headless` verb: full player with no visible UI; dialogs become
- *  fail-fast exit codes. Appliances may opt into one hidden audio renderer. */
+/** The `headless` verb: full player with no visible windows, dialogs become
+ *  fail-fast exit codes. `--local-audio` adds a hidden audio renderer. */
 async function startHeadless() {
     const resolved = await ensureExclusiveFolderHeadless();
     if ('error' in resolved) {
@@ -400,11 +399,9 @@ async function startHeadless() {
     }
     console.log(`EZPlayer headless: using show folder ${resolved.folder}`);
 
-    // A normal CLI headless run remains silent. The Pi appliance opts into the
-    // existing hidden Web Audio renderer while Electron uses Ozone's headless
-    // backend, so local HDMI/USB audio does not require X, Wayland, or a visible
-    // application window.
-    const localAudio = process.env.EZPLAYER_HEADLESS_AUDIO === '1';
+    // Decoding always feeds web/cloud clients. Local speakers need the hidden
+    // renderer window, which works under --ozone-platform=headless as well.
+    const localAudio = process.argv.includes('--local-audio');
     setAudioWindowsEnabled(localAudio);
     if (localAudio) {
         configureAudioWindowPaths({
@@ -412,7 +409,7 @@ async function startHeadless() {
             htmlFilePath: audioWindowHtmlPath(__dirname),
             htmlBaseUrl: audioWindowDevUrl(),
         });
-        console.log('EZPlayer headless: local audio renderer enabled');
+        console.log('EZPlayer headless: local audio enabled');
     }
 
     // persist:false — never write headless CLI values into stored preferences

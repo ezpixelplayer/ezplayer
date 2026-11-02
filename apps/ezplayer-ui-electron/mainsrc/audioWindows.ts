@@ -32,7 +32,7 @@ interface AudioOutputWindow {
 let preloadPath = '';
 let htmlFilePath = '';
 let htmlBaseUrl: string | undefined;
-/** Disabled for normal headless/CLI runs; an appliance can explicitly enable it. */
+/** Headless runs stay silent unless started with --local-audio. */
 let audioWindowsEnabled = true;
 
 /** DEFAULT_VOLUME_TARGET_ID or AudioOutputConfig.id */
@@ -63,6 +63,7 @@ function createAudioWindow(key: string, target: AudioOutputTarget): BrowserWindo
         throw new Error('configureAudioWindowPaths must be called before creating audio windows');
     }
     const win = new BrowserWindow({
+        // Never shown; keep it as small as possible for headless platforms.
         width: 1,
         height: 1,
         show: false,
