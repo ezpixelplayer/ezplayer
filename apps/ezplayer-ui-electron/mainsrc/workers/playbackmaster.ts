@@ -97,7 +97,7 @@ import {
 const PARSE_OPTS: ModelParseOptions = { warnUnusedAttrs: false };
 
 import { buildInterleavedAudioChunkFromSegments, MP3PrefetchCache } from './mp3decodecache';
-import { formatAudioLength, maxAudioSeconds } from './audioLengthLimit';
+import { audioCacheSeconds, formatAudioLength, maxSongSeconds } from './audioLengthLimit';
 import { AsyncBatchLogger } from './logger';
 
 import { monitorEventLoopDelay, performance } from 'perf_hooks';
@@ -1442,9 +1442,11 @@ const playbackParams = {
     sendAudioInAdvanceMs: 700,
     sendAudioChunkMs: 100, // The "hop": how far each chunk advances. Multiple of 10 for 44100kHz.
     audioCrossfadeMs: 10, // Trailing overlap appended to each music chunk; ramped to crossfade seams.
-    mp3CacheSeconds: 3600, // We reuse the memory in ~5s chunks
-    audioMemFraction: 0.25, // One song's decoded audio may use this much of RAM
-    maxAudioSeconds: Number.POSITIVE_INFINITY, // Set from RAM below
+    mp3CacheSeconds: 3600, // Set from RAM below; memory is reused in ~5s chunks
+    audioMemFraction: 0.25, // The decoded audio cache may use this much of RAM...
+    audioCacheCeilingSeconds: 10400, // ...up to about 4 GB
+    nextSongHeadroomSeconds: 300, // Cache room kept free beyond the longest song, to prefetch the next
+    maxAudioSeconds: Number.POSITIVE_INFINITY, // Set from the cache size below
     audioPrefetchTime: 30_000, // forward-run horizon for audio; decode is fast, beyond this is margins
     fseqSpace: 1_000_000_000,
     idleSleepInterval: 200,
@@ -1673,15 +1675,24 @@ const playbackStats: PlaybackStatistics = {
     },
 };
 
-// Scale cache budgets to available RAM so we fit on smaller devices. The defaults
-// above suit 8 GB+ boards; trim on ~4 GB boards, and warn (surfaced to the UI via
-// playbackStats.lastError) on memory too small to run reliably (~2 GB and below).
+// Scale cache budgets to available RAM so we fit on smaller devices. The audio
+// cache is a fraction of RAM and the longest song must fit it with room to
+// prefetch the next; the FSEQ default suits 8 GB+ boards and is trimmed on ~4 GB
+// boards. Warn (surfaced to the UI via playbackStats.lastError) on memory too
+// small to run reliably (~2 GB and below).
 {
     const totalMemBytes = totalmem();
     const totalMemGB = totalMemBytes / 1e9;
-    playbackParams.maxAudioSeconds = maxAudioSeconds(totalMemBytes, playbackParams.audioMemFraction);
+    playbackParams.mp3CacheSeconds = audioCacheSeconds(
+        totalMemBytes,
+        playbackParams.audioMemFraction,
+        playbackParams.audioCacheCeilingSeconds,
+    );
+    playbackParams.maxAudioSeconds = maxSongSeconds(
+        playbackParams.mp3CacheSeconds,
+        playbackParams.nextSongHeadroomSeconds,
+    );
     if (totalMemGB < 6) {
-        playbackParams.mp3CacheSeconds = 1000; // ~380 MB of 48 kHz stereo audio
         playbackParams.fseqSpace = 256_000_000; // 256 MB of decompressed frames
     }
     emitInfo(
