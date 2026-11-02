@@ -338,7 +338,6 @@ export class FSeqPrefetchCache {
             keyToId: (key) => `${key.fseqfile}:${key.chunknum}`,
             budgetLimit: arg.fseqSpace ?? 512_000_000,
             maxConcurrency: 4,
-            allowOversizedItem: true,
             priorityComparator: needTimePriorityCompare,
             onDispose: (_k, v) => {
                 this.decompDataPool.release(v.decompChunk);

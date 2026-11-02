@@ -154,11 +154,9 @@ export class MP3PrefetchCache {
             keyToId: (key) => (key.normalize ? `${key.mp3file}|norm` : key.mp3file),
             budgetLimit: arg.mp3SpaceSeconds ?? 5400,
             maxConcurrency: 1,
-            allowOversizedItem: true,
             priorityComparator: needTimePriorityCompare,
-            onDispose: (key, v) => {
+            onDispose: (_k, v) => {
                 this.decodewc.returnBuffer(v.decompAudio);
-                this.durationHints.delete(key.mp3file);
             },
         });
     }
