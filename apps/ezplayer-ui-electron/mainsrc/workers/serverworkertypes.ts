@@ -24,6 +24,7 @@ export interface ServerWorkerData {
     kioskPort?: number;
     kioskPortSource?: string;
     appVersion?: string;
+    noCloudUploads?: boolean;
 }
 
 export type ServerWorkerToMainMessage =
