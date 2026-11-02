@@ -443,6 +443,7 @@ async function startHeadless() {
             distDir: __dirname,
             kioskPort: kioskPortInfo?.port,
             kioskPortSource: kioskPortInfo?.source,
+            noCloudUploads: process.argv.includes('--no-cloud-uploads'),
         });
     } catch (e) {
         console.error(e);

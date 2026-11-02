@@ -74,6 +74,8 @@ export interface ServerWorkerConfig {
     distDir?: string; // Optional: base directory for workers (defaults to __dirname)
     kioskPort?: number;
     kioskPortSource?: string;
+    /** Refuse file uploads relayed from the cloud (see --no-cloud-uploads). */
+    noCloudUploads?: boolean;
 }
 
 export interface ServerStatus {
@@ -91,6 +93,7 @@ let playWorkerRef: Worker | null = null;
 let getMainWindowRef: (() => BrowserWindow | null) | null = null;
 let kioskPortRef: number | undefined = undefined;
 let kioskPortSourceRef: string | undefined = undefined;
+let noCloudUploadsRef = false;
 
 export function getServerStatus(): ServerStatus | null {
     return currentServerStatus;
@@ -217,6 +220,7 @@ export async function setUpServerWorker(config: ServerWorkerConfig): Promise<voi
     getMainWindowRef = getMainWindow;
     kioskPortRef = kioskPort;
     kioskPortSourceRef = kioskPortSource;
+    noCloudUploadsRef = config.noCloudUploads === true;
 
     console.log(`🌐 Starting Koa server worker on port ${port} (source: ${portSource})`);
 
@@ -412,6 +416,7 @@ function initializeServerWorker(port: number, portSource: string, _mainWindow: B
             kioskPort: kioskPortRef,
             kioskPortSource: kioskPortSourceRef,
             appVersion: ezpVersions.version,
+            noCloudUploads: noCloudUploadsRef,
         },
     };
 
