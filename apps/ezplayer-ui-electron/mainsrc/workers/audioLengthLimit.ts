@@ -3,7 +3,7 @@ export const DECODED_BYTES_PER_SAMPLE = 8;
 export const AUDIO_CHUNK_SECONDS = 5;
 export const DEFAULT_AUDIO_SAMPLE_RATE = 48000;
 
-/** Longest audio this host may decode: a fraction of RAM, rounded down to a chunk. */
+/** Seconds of decoded audio that a fraction of RAM holds, rounded down to a chunk. */
 export function maxAudioSeconds(
     totalMemBytes: number,
     memFraction: number,
@@ -11,6 +11,16 @@ export function maxAudioSeconds(
 ): number {
     const seconds = (totalMemBytes * memFraction) / (DECODED_BYTES_PER_SAMPLE * sampleRate);
     return Math.max(AUDIO_CHUNK_SECONDS, Math.floor(seconds / AUDIO_CHUNK_SECONDS) * AUDIO_CHUNK_SECONDS);
+}
+
+/** Audio cache budget: a fraction of RAM, no more than the ceiling. */
+export function audioCacheSeconds(totalMemBytes: number, memFraction: number, ceilingSeconds: number): number {
+    return Math.min(maxAudioSeconds(totalMemBytes, memFraction), ceilingSeconds);
+}
+
+/** Longest song the cache admits while still leaving room to prefetch the next one. */
+export function maxSongSeconds(cacheSeconds: number, nextSongHeadroomSeconds: number): number {
+    return Math.max(AUDIO_CHUNK_SECONDS, cacheSeconds - nextSongHeadroomSeconds);
 }
 
 /** Next decode reservation after one came up short; throws once the limit is reached. */
