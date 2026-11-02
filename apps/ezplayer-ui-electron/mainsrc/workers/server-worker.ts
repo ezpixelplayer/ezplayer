@@ -1333,7 +1333,8 @@ async function dispatchHttpProxy(
     const filesMatch = pathStr.match(/^\/api\/files\/([^/?]+)$/);
     if (filesMatch) {
         const showFolder = wsBroadcaster.get('showFolder') as string | undefined;
-        return proxyJson(await listFileNamesCore(showFolder, decodeURIComponent(filesMatch[1])));
+        const mediaFolder = (wsBroadcaster.get('playbackSettings') as PlaybackSettings | undefined)?.mediaFolder;
+        return proxyJson(await listFileNamesCore(showFolder, decodeURIComponent(filesMatch[1]), mediaFolder));
     }
 
     // Cloud endpoints deployed before the /api/ezp move still forward bare

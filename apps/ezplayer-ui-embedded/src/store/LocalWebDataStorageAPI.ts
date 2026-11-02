@@ -14,6 +14,7 @@ import type {
 } from '@ezplayer/ezplayer-core';
 
 import type { DataStorageAPI, UserLoginBody, UserRegisterBody } from '@ezplayer/player-ui-components';
+import { groupByBytes, uploadRequest } from '@ezplayer/player-ui-components';
 
 import {
     AppDispatch,
@@ -37,6 +38,10 @@ import {
     setSequenceData,
 } from '@ezplayer/player-ui-components';
 import { wsService } from '../services/websocket';
+
+/** Largest body sent in one batch upload request. The player's default
+ *  per-request limit is 2 GiB (EZPLAYER_MAX_UPLOAD_MB). */
+const BATCH_REQUEST_BYTES = 1024 * 1024 * 1024;
 
 /**
  * LocalWebDataStorageAPI - For web browsers connecting to local Electron Koa server
@@ -275,6 +280,7 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
         files: Array<{ name: string; data: Blob }>,
         companionAudioNames?: string[],
         importFseqNames?: string[],
+        onProgress?: (loaded: number, total: number) => void,
     ): Promise<BatchImportSummary> {
         const byName = new Map<string, Blob>();
         for (const f of files) {
@@ -284,15 +290,48 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
         if (!unique.length) {
             throw new Error('No files to upload');
         }
+        // The player refuses a body over its limit before reading any file, so
+        // big selections go in several requests. Earlier ones only store; the
+        // last imports, which needs the import set spelled out.
+        const groups = groupByBytes(unique, BATCH_REQUEST_BYTES);
+        const toImport =
+            importFseqNames ??
+            (groups.length > 1
+                ? unique.filter((f) => f.name.toLowerCase().endsWith('.fseq')).map((f) => f.name)
+                : undefined);
+        const total = unique.reduce((n, f) => n + f.data.size, 0);
+        let done = 0;
+        const uploadedFiles: string[] = [];
+        let summary: BatchImportSummary | undefined;
+        for (let i = 0; i < groups.length; i++) {
+            const group = groups[i];
+            const last = i === groups.length - 1;
+            summary = await this.sendBatch(group, companionAudioNames ?? [], last ? toImport : [], (loaded) =>
+                onProgress?.(done + loaded, total),
+            );
+            done += group.reduce((n, f) => n + f.data.size, 0);
+            onProgress?.(done, total);
+            uploadedFiles.push(...(summary.uploadedFiles ?? group.map((f) => f.name)));
+        }
+        return { ...summary!, uploadedFiles };
+    }
+
+    private async sendBatch(
+        files: Array<{ name: string; data: Blob }>,
+        companionAudioNames: string[],
+        importFseqNames: string[] | undefined,
+        onProgress: (loaded: number, total: number) => void,
+    ): Promise<BatchImportSummary> {
         const manifest: {
             files: Array<{ name: string; size: number }>;
             companionAudioNames: string[];
             importFseqNames?: string[];
         } = {
-            files: unique.map((f) => ({ name: f.name, size: f.data.size })),
-            companionAudioNames: companionAudioNames ?? [],
+            files: files.map((f) => ({ name: f.name, size: f.data.size })),
+            companionAudioNames,
         };
-        if (importFseqNames?.length) {
+        // An explicit list, even an empty one, is the exact import set.
+        if (importFseqNames) {
             manifest.importFseqNames = importFseqNames;
         }
         // Body framing: uint32BE manifest length, manifest JSON, then file bytes
@@ -300,18 +339,13 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
         const manifestBytes = new TextEncoder().encode(JSON.stringify(manifest));
         const lengthPrefix = new Uint8Array(4);
         new DataView(lengthPrefix.buffer).setUint32(0, manifestBytes.byteLength, false);
-        const response = await fetch(`${this.apiUrl}ezp/sequences/batch-upload-import`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/octet-stream',
-            },
-            body: new Blob([lengthPrefix, manifestBytes, ...unique.map((f) => f.data)]),
-        });
-        if (!response.ok) {
-            const err = await response.json().catch(() => ({}));
-            throw new Error((err as { error?: string }).error ?? `Batch upload-import failed: ${response.statusText}`);
-        }
-        return (await response.json()) as BatchImportSummary;
+        const result = await uploadRequest(
+            `${this.apiUrl}ezp/sequences/batch-upload-import`,
+            new Blob([lengthPrefix, manifestBytes, ...files.map((f) => f.data)]),
+            { 'Content-Type': 'application/octet-stream' },
+            onProgress,
+        );
+        return JSON.parse(result) as BatchImportSummary;
     }
 
     async listShowFiles(dir: string): Promise<string[]> {
@@ -322,7 +356,11 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
 
     /** Push a file's bytes into the show folder via the file-management API.
      *  Chunked (FPP-style PATCH) above 16MB so big fseqs don't ride one request. */
-    async uploadShowFile(fileName: string, data: Blob): Promise<void> {
+    async uploadShowFile(
+        fileName: string,
+        data: Blob,
+        onProgress?: (loaded: number, total: number) => void,
+    ): Promise<void> {
         const ext = fileName.toLowerCase().split('.').pop() ?? '';
         const dir =
             ext === 'fseq'
@@ -333,26 +371,27 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
 
         const CHUNK = 8 * 1024 * 1024;
         if (data.size <= CHUNK * 2) {
-            const res = await fetch(`${this.apiUrl}file/${dir}/${encodeURIComponent(fileName)}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/octet-stream' },
-                body: data,
-            });
-            if (!res.ok) throw new Error(`Upload of ${fileName} failed: ${res.statusText}`);
+            await uploadRequest(
+                `${this.apiUrl}file/${dir}/${encodeURIComponent(fileName)}`,
+                data,
+                { 'Content-Type': 'application/octet-stream' },
+                onProgress,
+            );
             return;
         }
         for (let off = 0; off < data.size; off += CHUNK) {
-            const res = await fetch(`${this.apiUrl}file/${dir}`, {
-                method: 'PATCH',
-                headers: {
+            await uploadRequest(
+                `${this.apiUrl}file/${dir}`,
+                data.slice(off, Math.min(off + CHUNK, data.size)),
+                {
                     'Content-Type': 'application/offset+octet-stream',
                     'Upload-Name': fileName,
                     'Upload-Offset': String(off),
                     'Upload-Length': String(data.size),
                 },
-                body: data.slice(off, Math.min(off + CHUNK, data.size)),
-            });
-            if (!res.ok) throw new Error(`Chunk upload of ${fileName} failed: ${res.statusText}`);
+                (loaded) => onProgress?.(off + loaded, data.size),
+                'PATCH',
+            );
         }
     }
 
