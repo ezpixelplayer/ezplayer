@@ -164,12 +164,7 @@ const EmbeddedSettingsPage = () => {
     ];
     return (
         <>
-            <SettingsDrawer
-                title="Settings"
-                statusArea={getStatusArea()}
-                sections={sections}
-                initialSection={new URLSearchParams(window.location.search).get('section') ?? undefined}
-            />
+            <SettingsDrawer title="Settings" statusArea={getStatusArea()} sections={sections} />
             <PlayerCloudRegistrationDialog open={cloudOpen} onClose={() => setCloudOpen(false)} />
             {shellDialog}
             {filesDialog}
