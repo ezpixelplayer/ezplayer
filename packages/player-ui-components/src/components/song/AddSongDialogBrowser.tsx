@@ -10,6 +10,7 @@ import {
     Divider,
     FormControlLabel,
     Grid,
+    LinearProgress,
     Typography,
 } from '@mui/material';
 import { Box } from '../box/Box';
@@ -29,7 +30,6 @@ import {
 } from '../..';
 import { ServerFilePickerDialog } from './ServerFilePickerDialog';
 import { saveErrorMessage, SongSaveProgress } from './SongSaveProgress';
-import { UploadProgressDialog, type UploadProgress } from './UploadProgressDialog';
 
 import { useDispatch, useSelector } from 'react-redux';
 import { v4 as uuidv4 } from 'uuid';
@@ -55,8 +55,6 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
     const [saving, setSaving] = useState(false);
 
     const [fseqFile, setFseqFile] = useState<File | null>(null);
-    const [artworkFile, setArtworkFile] = useState<File | null>(null);
-    const [progress, setProgress] = useState<UploadProgress | null>(null);
     const [mp3File, setMp3File] = useState<File | null>(null);
     // Files already in the player's show folder, chosen instead of uploading
     const [fseqPlayerName, setFseqPlayerName] = useState<string | null>(null);
@@ -66,6 +64,8 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
     const [pickerFor, setPickerFor] = useState<'fseq' | 'mp3' | 'image' | null>(null);
     const [needValidFseqFile, setNeedValidFseqFile] = useState(false);
     const [needValidMp3File, setNeedValidMp3File] = useState(false);
+    const [uploading, setUploading] = useState(false);
+    const [uploadingName, setUploadingName] = useState<string | null>(null);
 
     const [newSongData, setNewSongData] = useState({
         title: '',
@@ -80,8 +80,6 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
 
     useEffect(() => {
         setFseqFile(null);
-        setArtworkFile(null);
-        setProgress(null);
         setMp3File(null);
         setFseqPlayerName(null);
         setMp3PlayerName(null);
@@ -103,11 +101,9 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
         const messages: string[] = [];
         if (!newSongData.title.trim()) messages.push('Title is required.');
         if (!newSongData.artist.trim()) messages.push('Artist is required.');
-        if (!(fseqFile || fseqPlayerName || mp3File || mp3PlayerName)) {
-            messages.push('Choose a sequence or audio file.');
-        }
+        if (!(fseqFile || fseqPlayerName)) messages.push('A .fseq file is required.');
         return messages;
-    }, [newSongData.title, newSongData.artist, fseqFile, fseqPlayerName, mp3File, mp3PlayerName]);
+    }, [newSongData.title, newSongData.artist, fseqFile, fseqPlayerName]);
 
     const handleNewSongDataChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const { name, value } = e.target;
@@ -153,16 +149,38 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
         }
     };
 
-    // Selection stays on this computer. Only Save sends bytes to the player.
+    /** Push picked bytes to the player right away so server-side detection can
+     *  run and Save is a pure metadata commit. */
+    const uploadPicked = async (file: File): Promise<boolean> => {
+        setUploading(true);
+        setUploadingName(file.name);
+        try {
+            await dispatch(uploadShowFiles([{ name: file.name, data: file }])).unwrap();
+            return true;
+        } catch (error) {
+            console.error('Upload failed:', error);
+            ToastMsgs.showErrorMessage(`Failed to upload ${file.name}`, {
+                theme: 'colored',
+                position: 'bottom-right',
+                autoClose: 2000,
+            });
+            return false;
+        } finally {
+            setUploading(false);
+            setUploadingName(null);
+        }
+    };
+
     const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>, type: 'fseq' | 'mp3' | 'image') => {
         const file = event.target.files?.[0];
-        event.target.value = '';
-        if (!file || saving) return;
+        if (!file) return;
         if (type === 'fseq') {
-            if (!file.name.toLowerCase().endsWith('.fseq')) {
+            if (!file.name.endsWith('.fseq')) {
                 setNeedValidFseqFile(true);
+                setFseqFile(null);
                 return;
             }
+            if (!(await uploadPicked(file))) return;
             setFseqFile(file);
             setFseqPlayerName(null);
             setNeedValidFseqFile(false);
@@ -172,50 +190,30 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
             } catch (error) {
                 console.error('Error getting FSEQ duration:', error);
             }
+            await runAutodetect(file.name);
         } else if (type === 'mp3') {
             if (!isSupportedAudioName(file.name)) {
                 setNeedValidMp3File(true);
+                setMp3File(null);
                 return;
             }
+            if (!(await uploadPicked(file))) return;
             setMp3File(file);
             setMp3PlayerName(null);
             setNeedValidMp3File(false);
+            await applyAudioMetadata(file.name);
         } else {
-            setArtworkFile(file);
+            if (!(await uploadPicked(file))) return;
             setArtworkName(file.name);
-        }
-        if (type !== 'image') {
-            setNewSongData((prev) => ({
-                ...prev,
-                title: prev.title || file.name.replace(/\.[^.]+$/, ''),
-                artist: prev.artist || 'Unknown Artist',
-            }));
         }
     };
 
     const handleNewSongSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (saving || saveValidationMessages.length) return;
+        if (saving) return;
         setSaving(true);
 
         try {
-            const selected = [fseqFile, mp3File, artworkFile].filter((f): f is File => !!f);
-            if (new Set(selected.map((f) => f.name)).size !== selected.length) {
-                throw new Error('Selected files must have different filenames.');
-            }
-            for (const file of selected) {
-                setProgress({ name: file.name, loaded: 0, total: file.size });
-                await dispatch(
-                    uploadShowFiles([
-                        {
-                            name: file.name,
-                            data: file,
-                            onProgress: (loaded, total) => setProgress({ name: file.name, loaded, total }),
-                        },
-                    ]),
-                ).unwrap();
-            }
-            setProgress(null);
             // Generate UUID for id and instanceId
             const uuid1 = uuidv4();
             const newId = `${uuid1}`;
@@ -225,42 +223,14 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
             files.audio = mp3File?.name ?? mp3PlayerName ?? undefined;
             files.thumb = artworkName ?? undefined;
 
-            let detected: { detectedTitle?: string; detectedArtist?: string; durationSecs?: number } = {};
-            if (files.fseq) {
-                try {
-                    const result = await dispatch(autodetectShowSequence(files.fseq)).unwrap();
-                    detected = result;
-                    files.audio ??= result.audioFile;
-                    files.thumb ??= result.imageFile;
-                } catch {
-                    /* File selection remains usable when optional detection fails. */
-                }
-            }
-            if (files.audio) {
-                try {
-                    const result = await dispatch(extractShowAudioMetadata(files.audio)).unwrap();
-                    detected.detectedTitle ??= result.title;
-                    detected.detectedArtist ??= result.artist;
-                    files.thumb ??= result.imageFile;
-                } catch {
-                    /* Tags are optional. */
-                }
-            }
-            const defaultTitle = (fseqFile ?? mp3File)?.name.replace(/\.[^.]+$/, '');
             // Create the new song object with correct type structure
             const newSong: SequenceRecord = {
                 instanceId: newId,
                 id: newId,
                 work: {
-                    title:
-                        newSongData.title === defaultTitle
-                            ? detected.detectedTitle || newSongData.title
-                            : newSongData.title,
-                    artist:
-                        newSongData.artist === 'Unknown Artist'
-                            ? detected.detectedArtist || newSongData.artist
-                            : newSongData.artist,
-                    length: detected.durationSecs ?? newSongData.length, // Use the length from the FSEQ file
+                    title: newSongData.title,
+                    artist: newSongData.artist,
+                    length: newSongData.length, // Use the length from the FSEQ file
                     artwork: imageUrl.trim() || undefined,
                     description: '',
                     tags: [],
@@ -286,7 +256,7 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
                 },
             };
 
-            // Commit only after every selected file has reached the player.
+            // Picked files were uploaded at selection time; this is metadata-only.
             await dispatch(postSequenceData([newSong])).unwrap();
 
             ToastMsgs.showSuccessMessage('Song added successfully', {
@@ -306,7 +276,6 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
             });
         } finally {
             setSaving(false);
-            setProgress(null);
         }
     };
 
@@ -324,194 +293,194 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
         >
             <>
                 <form style={{ width: '100%', maxWidth: 600 }} onSubmit={handleNewSongSubmit}>
-                    <Typography variant="body2" sx={{ mb: 2 }}>
-                        Choose files from this computer, then click Save to upload them to the player. You can save a
-                        sequence or audio separately and add matching files later. Light playback requires a sequence
-                        file.
-                    </Typography>
-                    <fieldset disabled={saving} style={{ border: 0, padding: 0, margin: 0 }}>
-                        <Grid container spacing={2}>
-                            <Grid item xs={12}>
-                                <Typography variant="h5" sx={{ mb: 1 }} fontWeight="bold">
-                                    Sequence file (optional)
+                    <Grid container spacing={2}>
+                        <Grid item xs={12}>
+                            <Typography variant="h5" sx={{ mb: 1 }} fontWeight="bold">
+                                Upload .fseq File{' '}
+                                <Typography component="span" color="error">
+                                    *
                                 </Typography>
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                    <FileButton
-                                        fileType={['.fseq']}
-                                        isMultipleFile={false}
-                                        onChange={(e) =>
-                                            handleFileChange(e as React.ChangeEvent<HTMLInputElement>, 'fseq')
-                                        }
-                                    />
-                                    <Button variant="outlined" size="small" onClick={() => setPickerFor('fseq')}>
-                                        Choose on player
-                                    </Button>
-                                    <Typography variant="body2" color="text.secondary">
-                                        {fseqFile?.name ?? fseqPlayerName ?? ''}
-                                    </Typography>
-                                </Box>
-                                {needValidFseqFile && (
-                                    <Typography color="error" sx={{ mt: 1 }}>
-                                        Please upload a valid .fseq file
-                                    </Typography>
-                                )}
-                            </Grid>
-                            <Grid item xs={12}>
-                                <Typography variant="h5" sx={{ mb: 1 }} fontWeight="bold">
-                                    Audio file{' '}
-                                    <Typography component="span" variant="body2" color="text.secondary">
-                                        (optional: {SUPPORTED_AUDIO_EXTENSIONS.join(', ')})
-                                    </Typography>
+                            </Typography>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <FileButton
+                                    fileType={['.fseq']}
+                                    isMultipleFile={false}
+                                    onChange={(e) => handleFileChange(e as React.ChangeEvent<HTMLInputElement>, 'fseq')}
+                                />
+                                <Button variant="outlined" size="small" onClick={() => setPickerFor('fseq')}>
+                                    Choose on player
+                                </Button>
+                                <Typography variant="body2" color="text.secondary">
+                                    {fseqFile?.name ?? fseqPlayerName ?? ''}
                                 </Typography>
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                    <FileButton
-                                        fileType={[...SUPPORTED_AUDIO_EXTENSIONS]}
-                                        isMultipleFile={false}
-                                        onChange={(e) =>
-                                            handleFileChange(e as React.ChangeEvent<HTMLInputElement>, 'mp3')
-                                        }
-                                    />
-                                    <Button variant="outlined" size="small" onClick={() => setPickerFor('mp3')}>
-                                        Choose on player
-                                    </Button>
-                                    <Typography variant="body2" color="text.secondary">
-                                        {mp3File?.name ?? mp3PlayerName ?? ''}
-                                    </Typography>
-                                </Box>
-                                {needValidMp3File && (
-                                    <Typography color="error" sx={{ mt: 1 }}>
-                                        Please upload a supported audio file ({SUPPORTED_AUDIO_EXTENSIONS.join(', ')})
-                                    </Typography>
-                                )}
-                            </Grid>
-                            <Grid item xs={12}>
-                                <Typography variant="h5" sx={{ mb: 1 }} fontWeight="bold">
-                                    Artwork
+                            </Box>
+                            {needValidFseqFile && (
+                                <Typography color="error" sx={{ mt: 1 }}>
+                                    Please upload a valid .fseq file
                                 </Typography>
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                                    <FileButton
-                                        fileType={['.jpg', '.jpeg', '.png', '.gif', '.webp']}
-                                        isMultipleFile={false}
-                                        onChange={(e) =>
-                                            handleFileChange(e as React.ChangeEvent<HTMLInputElement>, 'image')
-                                        }
-                                    />
-                                    <Button variant="outlined" size="small" onClick={() => setPickerFor('image')}>
-                                        Choose on player
-                                    </Button>
-                                    <Typography variant="body2" color="text.secondary">
-                                        {artworkName ?? ''}
-                                    </Typography>
-                                </Box>
-                                <TextField
-                                    label="Image URL (optional)"
-                                    value={imageUrl}
-                                    onChange={(e) => setImageUrl(e.target.value)}
-                                    fullWidth
-                                    placeholder="https://example.com/image.jpg"
-                                />
-                            </Grid>
-                            <Grid item xs={6}>
-                                <TextField
-                                    label="Song Title"
-                                    name="title"
-                                    value={newSongData.title}
-                                    onChange={handleNewSongDataChange}
-                                    fullWidth
-                                    required
-                                    helperText="Required"
-                                />
-                            </Grid>
-                            <Grid item xs={6}>
-                                <TextField
-                                    label="Artist"
-                                    name="artist"
-                                    value={newSongData.artist}
-                                    onChange={handleNewSongDataChange}
-                                    fullWidth
-                                    required
-                                    helperText="Required"
-                                />
-                            </Grid>
-                            <Grid item xs={6}>
-                                <TextField
-                                    label="Vendor"
-                                    name="vendor"
-                                    value={newSongData.vendor}
-                                    onChange={handleNewSongDataChange}
-                                    fullWidth
-                                    placeholder="e.g., Local, xLights, etc."
-                                />
-                            </Grid>
-                            <Grid item xs={6}>
-                                <Autocomplete
-                                    multiple
-                                    freeSolo
-                                    options={availableTags}
-                                    value={newSongData.tags}
-                                    onChange={(_, newValue) => {
-                                        setNewSongData((prev) => ({ ...prev, tags: newValue }));
-                                        newValue.forEach((tag) => {
-                                            if (tag && !availableTags.includes(tag)) {
-                                                dispatch(setSequenceTags([...availableTags, tag]));
-                                            }
-                                        });
-                                    }}
-                                    renderInput={(params) => <TextField {...params} label="Tags" fullWidth />}
-                                />
-                            </Grid>
-                            <Grid item xs={6}>
-                                <TextField
-                                    label="Lead Time"
-                                    name="lead_time"
-                                    type="number"
-                                    value={newSongData.lead_time}
-                                    onChange={handleNewSongDataChange}
-                                    inputProps={{ min: -5, max: 5 }}
-                                    fullWidth
-                                />
-                            </Grid>
-                            <Grid item xs={6}>
-                                <TextField
-                                    label="Trail Time"
-                                    name="trail_time"
-                                    type="number"
-                                    value={newSongData.trail_time}
-                                    onChange={handleNewSongDataChange}
-                                    inputProps={{ min: -5, max: 5 }}
-                                    fullWidth
-                                />
-                            </Grid>
-                            <Grid item xs={6}>
-                                <TextField
-                                    label="Volume Adjustment"
-                                    name="volume_adj"
-                                    type="number"
-                                    value={newSongData.volume_adj}
-                                    onChange={handleNewSongDataChange}
-                                    inputProps={{ min: -100, max: 100 }}
-                                    fullWidth
-                                />
-                            </Grid>
-                            <Grid item xs={6}>
-                                <FormControlLabel
-                                    sx={{ mt: 1 }}
-                                    control={
-                                        <Checkbox
-                                            checked={normalize}
-                                            onChange={(e) => {
-                                                const next = e.target.checked;
-                                                setNormalize(next);
-                                                // Normalized audio makes a manual offset redundant; start from 0.
-                                                if (next) setNewSongData((prev) => ({ ...prev, volume_adj: '0' }));
-                                            }}
-                                        />
-                                    }
-                                    label="Normalize volume"
-                                />
-                            </Grid>
+                            )}
                         </Grid>
-                    </fieldset>
+                        <Grid item xs={12}>
+                            <Typography variant="h5" sx={{ mb: 1 }} fontWeight="bold">
+                                Upload Audio File{' '}
+                                <Typography component="span" variant="body2" color="text.secondary">
+                                    (optional: {SUPPORTED_AUDIO_EXTENSIONS.join(', ')})
+                                </Typography>
+                            </Typography>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <FileButton
+                                    fileType={[...SUPPORTED_AUDIO_EXTENSIONS]}
+                                    isMultipleFile={false}
+                                    onChange={(e) => handleFileChange(e as React.ChangeEvent<HTMLInputElement>, 'mp3')}
+                                />
+                                <Button variant="outlined" size="small" onClick={() => setPickerFor('mp3')}>
+                                    Choose on player
+                                </Button>
+                                <Typography variant="body2" color="text.secondary">
+                                    {mp3File?.name ?? mp3PlayerName ?? ''}
+                                </Typography>
+                            </Box>
+                            {needValidMp3File && (
+                                <Typography color="error" sx={{ mt: 1 }}>
+                                    Please upload a supported audio file ({SUPPORTED_AUDIO_EXTENSIONS.join(', ')})
+                                </Typography>
+                            )}
+                        </Grid>
+                        <Grid item xs={12}>
+                            <Typography variant="h5" sx={{ mb: 1 }} fontWeight="bold">
+                                Artwork
+                            </Typography>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                                <FileButton
+                                    fileType={['.jpg', '.jpeg', '.png', '.gif', '.webp']}
+                                    isMultipleFile={false}
+                                    onChange={(e) =>
+                                        handleFileChange(e as React.ChangeEvent<HTMLInputElement>, 'image')
+                                    }
+                                />
+                                <Button variant="outlined" size="small" onClick={() => setPickerFor('image')}>
+                                    Choose on player
+                                </Button>
+                                <Typography variant="body2" color="text.secondary">
+                                    {artworkName ?? ''}
+                                </Typography>
+                            </Box>
+                            <TextField
+                                label="Image URL (optional)"
+                                value={imageUrl}
+                                onChange={(e) => setImageUrl(e.target.value)}
+                                fullWidth
+                                placeholder="https://example.com/image.jpg"
+                            />
+                        </Grid>
+                        <Grid item xs={6}>
+                            <TextField
+                                label="Song Title"
+                                name="title"
+                                value={newSongData.title}
+                                onChange={handleNewSongDataChange}
+                                fullWidth
+                                required
+                                helperText="Required"
+                            />
+                        </Grid>
+                        <Grid item xs={6}>
+                            <TextField
+                                label="Artist"
+                                name="artist"
+                                value={newSongData.artist}
+                                onChange={handleNewSongDataChange}
+                                fullWidth
+                                required
+                                helperText="Required"
+                            />
+                        </Grid>
+                        <Grid item xs={6}>
+                            <TextField
+                                label="Vendor"
+                                name="vendor"
+                                value={newSongData.vendor}
+                                onChange={handleNewSongDataChange}
+                                fullWidth
+                                placeholder="e.g., Local, xLights, etc."
+                            />
+                        </Grid>
+                        <Grid item xs={6}>
+                            <Autocomplete
+                                multiple
+                                freeSolo
+                                options={availableTags}
+                                value={newSongData.tags}
+                                onChange={(_, newValue) => {
+                                    setNewSongData((prev) => ({ ...prev, tags: newValue }));
+                                    newValue.forEach((tag) => {
+                                        if (tag && !availableTags.includes(tag)) {
+                                            dispatch(setSequenceTags([...availableTags, tag]));
+                                        }
+                                    });
+                                }}
+                                renderInput={(params) => <TextField {...params} label="Tags" fullWidth />}
+                            />
+                        </Grid>
+                        <Grid item xs={6}>
+                            <TextField
+                                label="Lead Time"
+                                name="lead_time"
+                                type="number"
+                                value={newSongData.lead_time}
+                                onChange={handleNewSongDataChange}
+                                inputProps={{ min: -5, max: 5 }}
+                                fullWidth
+                            />
+                        </Grid>
+                        <Grid item xs={6}>
+                            <TextField
+                                label="Trail Time"
+                                name="trail_time"
+                                type="number"
+                                value={newSongData.trail_time}
+                                onChange={handleNewSongDataChange}
+                                inputProps={{ min: -5, max: 5 }}
+                                fullWidth
+                            />
+                        </Grid>
+                        <Grid item xs={6}>
+                            <TextField
+                                label="Volume Adjustment"
+                                name="volume_adj"
+                                type="number"
+                                value={newSongData.volume_adj}
+                                onChange={handleNewSongDataChange}
+                                inputProps={{ min: -100, max: 100 }}
+                                fullWidth
+                            />
+                        </Grid>
+                        <Grid item xs={6}>
+                            <FormControlLabel
+                                sx={{ mt: 1 }}
+                                control={
+                                    <Checkbox
+                                        checked={normalize}
+                                        onChange={(e) => {
+                                            const next = e.target.checked;
+                                            setNormalize(next);
+                                            // Normalized audio makes a manual offset redundant; start from 0.
+                                            if (next) setNewSongData((prev) => ({ ...prev, volume_adj: '0' }));
+                                        }}
+                                    />
+                                }
+                                label="Normalize volume"
+                            />
+                        </Grid>
+                    </Grid>
+                    {uploading && (
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, marginTop: 2 }}>
+                            <LinearProgress sx={{ flex: 1 }} />
+                            <Typography variant="caption" color="text.secondary">
+                                Uploading {uploadingName}...
+                            </Typography>
+                        </Box>
+                    )}
                     {saveValidationMessages.length > 0 && (
                         <Box sx={{ mt: 2 }} role="alert">
                             {saveValidationMessages.map((message) => (
@@ -540,7 +509,8 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
                             onClick={handleNewSongSubmit}
                             disabled={
                                 saving ||
-                                !(fseqFile || fseqPlayerName || mp3File || mp3PlayerName) ||
+                                uploading ||
+                                !(fseqFile || fseqPlayerName) ||
                                 !newSongData.title ||
                                 !newSongData.artist
                             }
@@ -554,7 +524,6 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
                     <SongSaveProgress saving={saving} audio={mp3File?.name ?? mp3PlayerName} normalize={normalize} />
                 </form>
             </>
-            <UploadProgressDialog open={saving} progress={progress} />
             <ServerFilePickerDialog
                 open={pickerFor !== null}
                 onClose={() => setPickerFor(null)}
@@ -578,7 +547,6 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
                         setNeedValidMp3File(false);
                         void applyAudioMetadata(name);
                     } else {
-                        setArtworkFile(null);
                         setArtworkName(name);
                     }
                 }}
@@ -587,7 +555,7 @@ export function AddSongDialogBrowser({ onClose, open, title }: AddSongProps) {
     );
 
     return (
-        <Dialog open={open} onClose={saving ? undefined : onClose}>
+        <Dialog open={open} onClose={onClose}>
             <DialogTitle>
                 <Typography variant="h3" fontWeight="bold">
                     {title}

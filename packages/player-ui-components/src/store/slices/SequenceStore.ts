@@ -98,13 +98,24 @@ export const batchImportShowSequences = createAsyncThunk<
     return await extra.batchImportShowSequences(fseqNames, companionAudioNames ?? [], allowExistingAudio);
 });
 
-/** LAN bulk import: upload files + import sequences in a single HTTP request. */
+const emptyImportSummary = (): BatchImportSummary => ({
+    total: 0,
+    imported: 0,
+    failed: 0,
+    successes: [],
+    failures: [],
+});
+
+/** Bulk upload: put files on the player, then import `importFseqNames` (or
+ *  every uploaded FSEQ when omitted). LAN does it in one request; a backend
+ *  with only per-file upload and the no-upload import gets the same result
+ *  from those two calls. */
 export const batchUploadImportShowSequences = createAsyncThunk<
     BatchImportSummary,
     {
         files: Array<{ name: string; data: Blob }>;
         companionAudioNames?: string[];
-        /** Existing show-folder FSEQs to import after an audio-only upload. */
+        /** Exact show-folder FSEQs to import after the upload; empty stores only. */
         importFseqNames?: string[];
         onProgress?: (loaded: number, total: number) => void;
     },
@@ -112,15 +123,32 @@ export const batchUploadImportShowSequences = createAsyncThunk<
 >(
     'sequences/batchUploadImportShowSequences',
     async ({ files, companionAudioNames, importFseqNames, onProgress }, { extra }) => {
-        if (!extra.batchUploadImportShowSequences) {
-            throw new Error('This player connection does not support bulk upload-import');
+        const companions = companionAudioNames ?? [];
+        const importExisting = async (names: string[]) => {
+            if (!names.length) return emptyImportSummary();
+            if (!extra.batchImportShowSequences) {
+                throw new Error('This player connection does not support bulk import');
+            }
+            return await extra.batchImportShowSequences(names, companions);
+        };
+        if (!files.length) return importExisting(importFseqNames ?? []);
+        if (extra.batchUploadImportShowSequences) {
+            return await extra.batchUploadImportShowSequences(files, companions, importFseqNames, onProgress);
         }
-        return await extra.batchUploadImportShowSequences(
-            files,
-            companionAudioNames ?? [],
-            importFseqNames,
-            onProgress,
-        );
+        if (!extra.uploadShowFile) {
+            throw new Error('This player connection does not support file upload');
+        }
+        const total = files.reduce((n, f) => n + f.data.size, 0);
+        let done = 0;
+        for (const f of files) {
+            await extra.uploadShowFile(f.name, f.data, (loaded) => onProgress?.(done + loaded, total));
+            done += f.data.size;
+            onProgress?.(done, total);
+        }
+        const toImport =
+            importFseqNames ?? files.filter((f) => f.name.toLowerCase().endsWith('.fseq')).map((f) => f.name);
+        const summary = await importExisting(toImport);
+        return { ...summary, uploadedFiles: files.map((f) => f.name) };
     },
 );
 

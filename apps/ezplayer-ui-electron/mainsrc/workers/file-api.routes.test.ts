@@ -108,6 +108,12 @@ describe('file API: where downloads are found', () => {
         expect(all).toEqual(expect.arrayContaining(['Sub.mp3', 'Media.mp3']));
     });
 
+    it('lists media folder audio read-only', async () => {
+        const media = JSON.parse((await get('/api/files/media?nameOnly=1')).text) as string[];
+        expect(media).toEqual(['Media.mp3']);
+        expect((await get('/api/file/media/Media.mp3')).status).toBe(404);
+    });
+
     it('still refuses names outside the show and media folders', async () => {
         expect((await get('/api/file/music/Outside.mp3')).status).toBe(404);
         expect((await get('/api/file/music/..%2FOutside.mp3')).status).toBe(400);

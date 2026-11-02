@@ -1,5 +1,5 @@
-/** Browser upload with byte progress. Completion means the server accepted the
- * file, not merely that all bytes left the browser. */
+/** Browser upload with byte progress. Resolves only once the player has accepted
+ *  the body, not when the last byte leaves the browser. */
 export function uploadRequest(
     url: string,
     body: Blob,
@@ -26,7 +26,7 @@ export function uploadRequest(
                     const result = JSON.parse(request.responseText) as { error?: string };
                     if (result.error) message = result.error;
                 } catch {
-                    /* Keep the HTTP error when the server did not return JSON. */
+                    /* Keep the HTTP status when the player did not answer with JSON. */
                 }
                 reject(new Error(message));
             }
@@ -34,4 +34,23 @@ export function uploadRequest(
         onProgress?.(0, body.size);
         request.send(body);
     });
+}
+
+/** Splits files into groups whose sizes sum to at most maxBytes, keeping order.
+ *  A file larger than maxBytes travels alone. */
+export function groupByBytes<T extends { data: { size: number } }>(files: T[], maxBytes: number): T[][] {
+    const groups: T[][] = [];
+    let current: T[] = [];
+    let bytes = 0;
+    for (const file of files) {
+        if (current.length && bytes + file.data.size > maxBytes) {
+            groups.push(current);
+            current = [];
+            bytes = 0;
+        }
+        current.push(file);
+        bytes += file.data.size;
+    }
+    if (current.length) groups.push(current);
+    return groups;
 }

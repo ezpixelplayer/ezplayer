@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -7,9 +7,10 @@ import { PageHeader, TextField, ToastMsgs, isElectron } from '@ezplayer/shared-u
 import type { BatchImportProgress, BatchImportSummary, SequenceSettings } from '@ezplayer/ezplayer-core';
 import { isSequencePlayable } from '@ezplayer/ezplayer-core';
 import { AppDispatch, RootState } from '../..';
-import { batchImportShowSequences, batchUploadImportShowSequences } from '../../store/slices/SequenceStore';
+import { batchImportShowSequences } from '../../store/slices/SequenceStore';
 import { savePlayerSettings, setMediaFolder } from '../../store/slices/PlaybackSettingsStore';
 import { callImmediateCommand } from '../../store/slices/RuntimeStore';
+import { PlayStopButton } from '../player/PlayStopButton';
 
 import {
     Autocomplete,
@@ -36,14 +37,13 @@ import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import LibraryAddIcon from '@mui/icons-material/LibraryAdd';
-import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 
 import { AddSongProps } from './AddSongDialogBrowser';
-import { UploadProgressDialog, type UploadProgress } from './UploadProgressDialog';
 import { BulkImportSummaryDialog } from './BulkImportSummaryDialog';
 import { DeleteSongDialog } from './DeleteSongDialog';
 import { EditSongDetailsDialog } from './EditSongDetailsDialog';
 import { ShowFolderImportDialog } from './ShowFolderImportDialog';
+import { BulkUploadDialog } from './BulkUploadDialog';
 
 export interface SongListProps {
     title: string;
@@ -228,15 +228,15 @@ export function SongList({
     const [tagInputValue, setTagInputValue] = useState('');
     const [bulkMenuAnchor, setBulkMenuAnchor] = useState<null | HTMLElement>(null);
     const [bulkImporting, setBulkImporting] = useState(false);
-    const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null);
     /** Bulk-import progress: per-song from Electron events; count-only on the web. */
     const [importProgress, setImportProgress] = useState<BatchImportProgress | null>(null);
     const [bulkSummary, setBulkSummary] = useState<BatchImportSummary | null>(null);
     const [bulkSummaryOpen, setBulkSummaryOpen] = useState(false);
     const [showFolderImportOpen, setShowFolderImportOpen] = useState(false);
     const [choosingMediaFolder, setChoosingMediaFolder] = useState(false);
-    /** LAN: companion audio names from the last selection (allowlist for retry). */
-    const lanCompanionAudioRef = useRef<string[]>([]);
+    const [bulkUploadOpen, setBulkUploadOpen] = useState(false);
+    /** Files the last bulk upload stored without adding a song. */
+    const [bulkStored, setBulkStored] = useState<{ name: string; reason: string }[]>([]);
 
     const sequenceData = useSelector((state: RootState) => state.sequences.sequenceData);
     const availableTags = useSelector((state: RootState) => state.sequences.tags || []);
@@ -269,6 +269,7 @@ export function SongList({
         try {
             const summary = await runner();
             if (!summary) return; // user cancelled picker
+            setBulkStored([]);
             setBulkSummary(summary);
             setBulkSummaryOpen(true);
         } catch (error) {
@@ -289,7 +290,6 @@ export function SongList({
             setBulkSummaryOpen(true);
         } finally {
             setBulkImporting(false);
-            setUploadProgress(null);
             setImportProgress(null);
         }
     };
@@ -303,85 +303,8 @@ export function SongList({
         }, 100);
     };
 
-    const collectFseqUploadFiles = (files: FileList | File[]): File[] => {
-        const byName = new Map<string, File>();
-        for (const file of files) {
-            if (!file.name.toLowerCase().endsWith('.fseq')) continue;
-            byName.set(file.name, file);
-        }
-        return [...byName.values()];
-    };
-
-    const AUDIO_UPLOAD_EXTS = new Set(['.mp3', '.wav', '.m4a', '.aac', '.flac', '.ogg', '.wma', '.mp4']);
-    const IMAGE_UPLOAD_EXTS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp']);
-
-    const pathExt = (name: string) => {
-        const i = name.lastIndexOf('.');
-        return i >= 0 ? name.slice(i).toLowerCase() : '';
-    };
-
-    /** Companion media from the same browser selection (folder pick includes them).
-     *  Mirrors Electron colocated-search: audio/image next to the fseq can be used. */
-    const collectCompanionUploadFiles = (files: FileList | File[]): File[] => {
-        const byName = new Map<string, File>();
-        for (const file of files) {
-            const ext = pathExt(file.name);
-            if (!AUDIO_UPLOAD_EXTS.has(ext) && !IMAGE_UPLOAD_EXTS.has(ext)) continue;
-            byName.set(file.name, file);
-        }
-        return [...byName.values()];
-    };
-
-    const uploadAndBatchImportBrowser = async (files: File[]): Promise<BatchImportSummary | undefined> => {
-        const selectedNames = files
-            .filter(
-                (f) =>
-                    f.name.toLowerCase().endsWith('.fseq') ||
-                    AUDIO_UPLOAD_EXTS.has(pathExt(f.name)) ||
-                    IMAGE_UPLOAD_EXTS.has(pathExt(f.name)),
-            )
-            .map((f) => f.name);
-        if (new Set(selectedNames).size !== selectedNames.length)
-            throw new Error('Files in an upload must have different filenames.');
-        const fseqFiles = collectFseqUploadFiles(files);
-        const companions = collectCompanionUploadFiles(files);
-        if (!fseqFiles.length && !companions.length) throw new Error('Choose audio or FSEQ files to upload.');
-        const names = [...fseqFiles, ...companions].map((f) => f.name);
-        if (new Set(names).size !== names.length) throw new Error('Files in an upload must have different filenames.');
-        const companionAudio = companions.filter((f) => AUDIO_UPLOAD_EXTS.has(pathExt(f.name)));
-        const companionAudioNames = companionAudio.map((f) => f.name);
-        lanCompanionAudioRef.current = companionAudioNames;
-        // One HTTP request: write all companions + fseqs, then import once.
-        const toUpload = [...companions, ...fseqFiles].map((f) => ({ name: f.name, data: f as Blob }));
-        console.log(
-            `[BulkImport] Uploading+importing ${fseqFiles.length} fseq(s), ${companionAudioNames.length} companion audio(s) in one request…`,
-        );
-        setImportProgress({ done: 0, total: toUpload.length });
-        const name = `${toUpload.length} file${toUpload.length === 1 ? '' : 's'}`;
-        setUploadProgress({ name, loaded: 0, total: toUpload.reduce((n, f) => n + f.data.size, 0) });
-        const summary = await dispatch(
-            batchUploadImportShowSequences({
-                files: toUpload,
-                companionAudioNames,
-                onProgress: (loaded, total) => setUploadProgress({ name, loaded, total }),
-            }),
-        ).unwrap();
-        ToastMsgs.showSuccessMessage(`${toUpload.length} file(s) uploaded to the player.`, { autoClose: 4000 });
-        return summary;
-    };
-
     const handleChooseMediaFolderAndRetry = async () => {
-        // LAN embedded UI always mounts this input. Prefer it over any Electron
-        // dialog so a remote browser never triggers the player PC picker.
-        const lanInput = document.getElementById('ezplayer-bulk-media-folder') as HTMLInputElement | null;
-        if (lanInput) {
-            lanInput.click();
-            return;
-        }
-        if (!isElectron()) {
-            console.warn('[BulkImport] LAN media-folder input missing; rebuild ui-embedded');
-            return;
-        }
+        if (!isElectron()) return;
         setChoosingMediaFolder(true);
         try {
             const api = window.electronAPI;
@@ -414,69 +337,6 @@ export function SongList({
         } finally {
             setChoosingMediaFolder(false);
         }
-    };
-
-    /** LAN: browser folder picker for companion MP3s, then upload + retry failed FSEQs. */
-    const handleLanMediaFolderInputChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
-        const fileArray = event.target.files ? Array.from(event.target.files) : [];
-        event.target.value = '';
-        if (!fileArray.length) return;
-
-        const companions = collectCompanionUploadFiles(fileArray).filter((f) => AUDIO_UPLOAD_EXTS.has(pathExt(f.name)));
-        if (!companions.length) {
-            ToastMsgs.showErrorMessage('No audio files found in the selected folder', {
-                theme: 'colored',
-                position: 'bottom-right',
-                autoClose: 3000,
-            });
-            return;
-        }
-
-        const missingAudio = (bulkSummary?.failures ?? []).filter((f) => /audio file not found/i.test(f.reason));
-        const importFseqNames = missingAudio.map((f) => f.fseqName).filter(Boolean);
-        if (!importFseqNames.length) return;
-
-        const companionAudioNames = [...new Set([...lanCompanionAudioRef.current, ...companions.map((f) => f.name)])];
-        lanCompanionAudioRef.current = companionAudioNames;
-
-        setChoosingMediaFolder(true);
-        setBulkSummaryOpen(false);
-        try {
-            await runBulkImport(async () => {
-                console.log(
-                    `[BulkImport] LAN media folder: uploading ${companions.length} audio(s), retrying ${importFseqNames.length} sequence(s)…`,
-                );
-                setImportProgress({ done: 0, total: importFseqNames.length });
-                return dispatch(
-                    batchUploadImportShowSequences({
-                        files: companions.map((f) => ({ name: f.name, data: f as Blob })),
-                        companionAudioNames,
-                        importFseqNames,
-                    }),
-                ).unwrap();
-            });
-        } finally {
-            setChoosingMediaFolder(false);
-        }
-    };
-
-    const handleBulkFilesInputChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
-        // Copy BEFORE clearing — FileList is live; setting value='' empties it.
-        const fileArray = event.target.files ? Array.from(event.target.files) : [];
-        event.target.value = '';
-        setBulkMenuAnchor(null);
-        if (!fileArray.length) return;
-        console.log(`[BulkImport] Browser selected ${fileArray.length} file(s)`);
-        await runBulkImport(() => uploadAndBatchImportBrowser(fileArray));
-    };
-
-    const handleBulkFolderInputChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
-        const fileArray = event.target.files ? Array.from(event.target.files) : [];
-        event.target.value = '';
-        setBulkMenuAnchor(null);
-        if (!fileArray.length) return;
-        console.log(`[BulkImport] Browser folder selected ${fileArray.length} file(s)`);
-        await runBulkImport(() => uploadAndBatchImportBrowser(fileArray));
     };
 
     const handleBulkImportFiles = () => {
@@ -779,13 +639,9 @@ export function SongList({
                               }}
                           >
                               {canShowPlay && (
-                                  <Button
-                                      aria-label="play"
-                                      title="Play immediately"
-                                      startIcon={<PlayArrowIcon />}
-                                      size="small"
-                                      color="success"
-                                      onClick={() => handlePlayClick(params.row)}
+                                  <PlayStopButton
+                                      target={{ songId: params.row.id }}
+                                      onPlay={() => handlePlayClick(params.row)}
                                       sx={{ minWidth: 'auto', padding: '6px', '& .MuiButton-startIcon': { m: 0 } }}
                                   />
                               )}
@@ -927,18 +783,10 @@ export function SongList({
                                             <MenuItem
                                                 onClick={() => {
                                                     setBulkMenuAnchor(null);
-                                                    document.getElementById('ezplayer-bulk-fseq-files')?.click();
+                                                    setBulkUploadOpen(true);
                                                 }}
                                             >
-                                                Upload audio or FSEQ files…
-                                            </MenuItem>
-                                            <MenuItem
-                                                onClick={() => {
-                                                    setBulkMenuAnchor(null);
-                                                    document.getElementById('ezplayer-bulk-fseq-folder')?.click();
-                                                }}
-                                            >
-                                                Upload folder…
+                                                Upload files from this computer…
                                             </MenuItem>
                                             <MenuItem
                                                 onClick={() => {
@@ -946,53 +794,11 @@ export function SongList({
                                                     setShowFolderImportOpen(true);
                                                 }}
                                             >
-                                                Import files already on player…
+                                                Import files already on the player…
                                             </MenuItem>
                                         </>
                                     )}
                                 </Menu>
-                                {/* Local browser file/folder uploads transfer bytes to the player. */}
-                                {!isElectron() && (
-                                    <>
-                                        <input
-                                            id="ezplayer-bulk-fseq-files"
-                                            type="file"
-                                            accept=".fseq,.mp3,.m4a,.aac,.wav,.ogg,.flac,.wma,.mp4,.xml,.jpg,.jpeg,.png,.webp"
-                                            multiple
-                                            style={{ display: 'none' }}
-                                            disabled={bulkImporting}
-                                            onChange={handleBulkFilesInputChange}
-                                        />
-                                        <input
-                                            id="ezplayer-bulk-fseq-folder"
-                                            ref={(el) => {
-                                                if (el) {
-                                                    el.setAttribute('webkitdirectory', '');
-                                                    el.setAttribute('directory', '');
-                                                }
-                                            }}
-                                            type="file"
-                                            multiple
-                                            style={{ display: 'none' }}
-                                            disabled={bulkImporting}
-                                            onChange={handleBulkFolderInputChange}
-                                        />
-                                        <input
-                                            id="ezplayer-bulk-media-folder"
-                                            ref={(el) => {
-                                                if (el) {
-                                                    el.setAttribute('webkitdirectory', '');
-                                                    el.setAttribute('directory', '');
-                                                }
-                                            }}
-                                            type="file"
-                                            multiple
-                                            style={{ display: 'none' }}
-                                            disabled={bulkImporting || choosingMediaFolder}
-                                            onChange={handleLanMediaFolderInputChange}
-                                        />
-                                    </>
-                                )}
                             </>
                         )}
                     </Box>
@@ -1016,7 +822,6 @@ export function SongList({
 
             {AddSongDialog && <AddSongDialog open={openAddDialog} onClose={handleClose} title="Add New Song" />}
 
-            <UploadProgressDialog open={bulkImporting && !isElectron()} progress={uploadProgress} />
             <BulkImportSummaryDialog
                 open={bulkSummaryOpen}
                 summary={bulkSummary}
@@ -1024,6 +829,18 @@ export function SongList({
                 // The retry uploads audio from the browser, so it is desktop-only.
                 onChooseMediaFolderAndRetry={isElectron() ? handleChooseMediaFolderAndRetry : undefined}
                 choosingMediaFolder={choosingMediaFolder}
+                stored={bulkStored}
+            />
+
+            <BulkUploadDialog
+                open={bulkUploadOpen}
+                onClose={() => setBulkUploadOpen(false)}
+                onDone={(summary, stored) => {
+                    setBulkUploadOpen(false);
+                    setBulkStored(stored);
+                    setBulkSummary(summary);
+                    setBulkSummaryOpen(true);
+                }}
             />
 
             <ShowFolderImportDialog

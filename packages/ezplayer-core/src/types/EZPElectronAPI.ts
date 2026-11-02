@@ -106,7 +106,7 @@ export interface BatchImportSkipped {
 }
 
 export interface BatchImportSummary {
-    /** Files confirmed saved by a LAN upload, independent of catalog import results. */
+    /** Files written by a bulk upload, whether or not a song was added for them. */
     uploadedFiles?: string[];
     total: number;
     imported: number;
