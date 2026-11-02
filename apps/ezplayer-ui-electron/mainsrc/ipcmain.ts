@@ -1,4 +1,3 @@
-import { registerPiSystemHandlers } from './piSystem.js';
 import { safeSend } from './safe-send.js';
 import { app, BrowserWindow, OpenDialogOptions, shell, dialog, ipcMain } from 'electron';
 
@@ -54,7 +53,6 @@ async function showNativeOpenDialog(props: OpenDialogOptions, pickedDirectory: b
 
 //// IPC Main
 export function registerFileListHandlers() {
-    registerPiSystemHandlers();
     ipcMain.handle('dialog:openFile', async (_event, options: FileSelectOptions) => {
         const filters =
             options.types?.map((f) => {
