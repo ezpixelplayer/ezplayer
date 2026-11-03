@@ -28,6 +28,7 @@ export type {
     PlaybackItemOrder,
     UIConnectSnapshot,
     RemoteAccessAvailability,
+    SettingsLink,
     EZPlayerCommand,
     JSONEditChoice,
     JSONEditHeader,

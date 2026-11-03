@@ -31,6 +31,7 @@ import {
     ViewerSettings,
     toRouteChildren,
     useShellSection,
+    useSettingsLinkSections,
     useFilesSection,
 } from '@ezplayer/player-ui-components';
 import type { MenuRoute, SettingsSection } from '@ezplayer/player-ui-components';
@@ -76,6 +77,7 @@ const ElectronSettingsPage = () => {
     const [cloudOpen, setCloudOpen] = useState(false);
     const { section: shellSection, dialog: shellDialog } = useShellSection();
     const { section: filesSection, dialog: filesDialog } = useFilesSection();
+    const linkSections = useSettingsLinkSections();
     const sections: SettingsSection[] = [
         {
             key: 'showFolder',
@@ -137,6 +139,8 @@ const ElectronSettingsPage = () => {
         },
         shellSection,
         filesSection,
+        // Link tiles from --settings-link, after everything built in.
+        ...linkSections,
     ];
     return (
         <>
