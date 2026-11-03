@@ -472,6 +472,7 @@ packages, `executableArgs` may include `--no-sandbox` automatically — see
 | `--kiosk-port=0`       | Disable the kiosk server                                        |
 | `--user-data-dir=<p>`  | Isolate all persisted app state to the given directory          |
 | `--no-update-check`    | Skip automatic update checks (startup and idle pre-download)    |
+| `--settings-link=<l>\|<url>[\|<icon>]` | Add a link tile to the Settings screen ([details](#settings-links)) |
 
 ## Show folder
 
@@ -496,6 +497,21 @@ offers to pick another folder.
 
 Only **one EZPlayer instance** can lock a given show folder at a time. A second
 instance using the same folder is prompted to choose a different path or quit.
+
+## Settings links
+
+`--settings-link=<label>|<url>[|<icon>]` adds a tile to the Settings screen that
+opens the URL in a new browser tab. Repeat the flag for more tiles; they appear
+after the built-in tiles in the order given, in both the desktop app and the
+LAN web UI. The URL is `http://` or `https://`, or a path such as `/setup` that
+resolves against the address the UI was opened from. The optional icon is one
+of `link` (default), `wifi`, `router`, `lan`, `settings`, `power` or `memory`.
+Quote the value when the label has spaces. An appliance that fronts the player
+with its own setup page can point at it this way:
+
+```bash
+./EZPlayer headless --show-folder=/home/user/show "--settings-link=Pi Setup|/setup|wifi"
+```
 
 ## Headless mode
 
