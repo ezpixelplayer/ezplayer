@@ -10,6 +10,7 @@ import cloudConfigReducer from './slices/CloudConfigStore';
 import cloudStatusReducer from './slices/CloudStatusStore';
 import controllerOpsReducer from './slices/ControllerOpsStore';
 import remoteAccessReducer from './slices/RemoteAccessStore';
+import settingsLinksReducer from './slices/SettingsLinksStore';
 import autoUpdateReducer from './slices/AutoUpdateStore';
 import audioDevicesReducer from './slices/AudioDevicesStore';
 import appSettingsReducer from './slices/AppSettingsStore';
@@ -29,6 +30,7 @@ export const playerReducers = {
     cloudStatus: cloudStatusReducer,
     controllerOps: controllerOpsReducer,
     remoteAccess: remoteAccessReducer,
+    settingsLinks: settingsLinksReducer,
     autoUpdate: autoUpdateReducer,
     audioDevices: audioDevicesReducer,
     appSettings: appSettingsReducer,

@@ -23,6 +23,7 @@ import {
     autoUpdateActions,
     cloudConfigActions,
     remoteAccessActions,
+    settingsLinksActions,
     viewerStatsActions,
     audioDevicesActions,
     cloudStatusActions,
@@ -125,6 +126,9 @@ export class LocalWebDataStorageAPI implements DataStorageAPI {
             }
             if (data.appSettings !== undefined) {
                 dispatch(appSettingsActions.setAppSettings(data.appSettings));
+            }
+            if (data.settingsLinks !== undefined) {
+                dispatch(settingsLinksActions.setSettingsLinks(data.settingsLinks));
             }
         });
 

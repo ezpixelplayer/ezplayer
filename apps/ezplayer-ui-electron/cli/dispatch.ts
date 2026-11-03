@@ -38,6 +38,7 @@ const APP_USAGE: Record<AppVerb, { summary: string; detail: string }> = {
         detail:
             'Usage: EZPlayer headless [--show-folder=<dir>] [--web-port=<n>] [--kiosk-port=<n>]\n' +
             '                         [--user-data-dir=<dir>] [--local-audio] [--no-cloud-uploads]\n' +
+            '                         [--settings-link=<label>|<url>[|<icon>]]...\n' +
             '\n' +
             'Runs the player — scheduled and API-driven playback, light output, the LAN\n' +
             'web/API server, kiosk server and cloud connectivity — exactly as the windowed\n' +
@@ -51,6 +52,12 @@ const APP_USAGE: Record<AppVerb, { summary: string; detail: string }> = {
             '\n' +
             '--no-cloud-uploads refuses file uploads relayed through the cloud service;\n' +
             'files still arrive over the LAN web API and cloud sequence downloads.\n' +
+            '\n' +
+            '--settings-link adds a tile to the Settings screen that opens <url> in a new\n' +
+            'tab; repeat it for more tiles. <url> is http(s):// or a path such as /setup,\n' +
+            'resolved against the page the UI was loaded from. <icon> is one of link,\n' +
+            'wifi, router, lan, settings, power, memory (default link). Works for the\n' +
+            'windowed app too.\n' +
             '\n' +
             'EZPLAYER_HEADLESS=1 in the environment is equivalent to the verb.\n' +
             '\n' +

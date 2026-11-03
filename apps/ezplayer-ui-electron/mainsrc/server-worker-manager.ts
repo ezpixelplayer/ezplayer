@@ -60,6 +60,7 @@ import type {
     SequenceRecord,
 } from '@ezplayer/ezplayer-core';
 import { ViewObject, LayoutSettings, type MhFixtureInfo } from './workers/playbacktypes.js';
+import { getSettingsLinks } from './settingsLinks.js';
 
 // Polyfill for `__dirname` in ES Modules
 const __filename = fileURLToPath(import.meta.url);
@@ -421,6 +422,9 @@ function initializeServerWorker(port: number, portSource: string, _mainWindow: B
     };
 
     serverWorker.postMessage(initMessage);
+    // Fixed for the life of the process; the broadcaster replays it to each new client.
+    const settingsLinks = getSettingsLinks();
+    if (settingsLinks.length) broadcastToWebSocket('settingsLinks', settingsLinks);
     if (lastCloudAudioMode) {
         serverWorker.postMessage({
             type: 'cloudAudioMode',
