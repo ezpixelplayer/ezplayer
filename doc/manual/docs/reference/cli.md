@@ -504,7 +504,8 @@ API-driven playback, light output, the LAN web/API server, kiosk server, and
 cloud connectivity all behave exactly as in the windowed app. Audio is still
 decoded and streamed to the web UI and cloud listeners; by default it is not
 played out on the machine's local speakers (no hidden audio window is created).
-Add `--local-audio` to play it on the local speakers as the windowed app does.
+Add `--local-audio` to play it on the local speakers as the windowed app does;
+the Settings screen in the LAN web UI then lists this machine's output devices.
 `--no-cloud-uploads` refuses file uploads relayed through the cloud service, for
 players whose files should only arrive over the LAN web API. Cloud sequence
 downloads and LAN uploads are unaffected.

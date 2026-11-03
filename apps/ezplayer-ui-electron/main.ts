@@ -65,6 +65,7 @@ import {
     audioWindowHtmlPath,
     configureAudioWindowPaths,
     destroyAllAudioWindows,
+    ensureAudioDeviceProbe,
     loadsFromDevServer,
     setAudioWindowsEnabled,
     syncAudioOutputsFromSettings,
@@ -409,6 +410,8 @@ async function startHeadless() {
             htmlFilePath: audioWindowHtmlPath(__dirname),
             htmlBaseUrl: audioWindowDevUrl(),
         });
+        // Publishes this machine's output devices to LAN clients.
+        ensureAudioDeviceProbe();
         console.log('EZPlayer headless: local audio enabled');
     }
 

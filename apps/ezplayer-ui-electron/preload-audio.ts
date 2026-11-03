@@ -21,9 +21,15 @@ function outputFromArgv(): AudioOutputTarget {
 }
 
 const configuredOutput = outputFromArgv();
+/** Main sets this on the device-probe window. */
+const audioProbe = process.argv.includes('--ezp-audio-probe');
 
 export interface AudioWindowAPI {
     getAudioOutput(): AudioOutputTarget;
+    /** True in the device-probe window, which plays nothing. */
+    isAudioProbe(): boolean;
+    /** Sends the output-device list to main. */
+    reportAudioOutputDevices(devices: AudioDevice[]): void;
     onAudioChunk(callback: (data: AudioChunk) => void): void;
     /** Linear amplitude 0..1 for this window's GainNode. */
     onAudioGain(callback: (gain: number) => void): void;
@@ -38,6 +44,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
     getAudioOutput(): AudioOutputTarget {
         return configuredOutput;
+    },
+    isAudioProbe(): boolean {
+        return audioProbe;
+    },
+    reportAudioOutputDevices: (devices: AudioDevice[]) => {
+        ipcRenderer.send('ipcAudioOutputDevices', devices);
     },
     ipcRequestAudioDevices: (callback: () => Promise<AudioDevice[]>) => {
         ipcRenderer.on('audio:get-devices', async (_event: IpcRendererEvent, req: M2RIPC<void>) => {
