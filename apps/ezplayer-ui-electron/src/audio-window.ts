@@ -1,9 +1,11 @@
 // Runs in the hidden audio window (renderer) to avoid long renders causing audio disruptions
-import type { AudioChunk, AudioOutputTarget } from '@ezplayer/ezplayer-core';
+import type { AudioChunk, AudioDevice, AudioOutputTarget } from '@ezplayer/ezplayer-core';
 import { resolveAudioOutputDevice } from '@ezplayer/ezplayer-core';
 
 interface AudioWindowAPI {
     getAudioOutput?: () => AudioOutputTarget;
+    isAudioProbe?: () => boolean;
+    reportAudioOutputDevices?: (devices: AudioDevice[]) => void;
     onAudioChunk?: (callback: (data: AudioChunk) => void) => void;
     onAudioGain?: (callback: (gain: number) => void) => void;
 }
@@ -267,11 +269,50 @@ function log(msg: string) {
     }
 }
 
+/** Audio outputs in the shape the Settings screen lists. */
+export async function enumerateAudioOutputs(): Promise<AudioDevice[]> {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    return devices
+        .filter((d) => d.kind === 'audiooutput')
+        .map((d) => ({ label: d.label, deviceId: d.deviceId, kind: d.kind, groupId: d.groupId }) satisfies AudioDevice);
+}
+
+export function sameAudioDevices(a: AudioDevice[], b: AudioDevice[]): boolean {
+    return (
+        a.length === b.length &&
+        a.every((d, i) => d.deviceId === b[i].deviceId && d.label === b[i].label && d.groupId === b[i].groupId)
+    );
+}
+
+/** Reports output changes to main; polls because hidden windows may miss devicechange. */
+function runAudioDeviceProbe(api: AudioWindowAPI, pollMs = 10000): void {
+    let last: AudioDevice[] | undefined;
+    const publish = async () => {
+        try {
+            const devices = await enumerateAudioOutputs();
+            if (last && sameAudioDevices(last, devices)) return;
+            last = devices;
+            api.reportAudioOutputDevices?.(devices);
+            log(`outputs: ${devices.map((d) => d.label || d.deviceId).join(', ') || 'none'}`);
+        } catch (err) {
+            console.warn('[audio-window] enumerateDevices failed', err);
+        }
+    };
+    navigator.mediaDevices?.addEventListener?.('devicechange', () => void publish());
+    window.setInterval(() => void publish(), pollMs);
+    void publish();
+}
+
 const api = window.electronAPI;
-const target: AudioOutputTarget = api?.getAudioOutput?.() ?? { deviceId: '', label: '' };
+if (api?.isAudioProbe?.()) {
+    runAudioDeviceProbe(api);
+    log('Audio device probe ready');
+} else {
+    const target: AudioOutputTarget = api?.getAudioOutput?.() ?? { deviceId: '', label: '' };
 
-const player = new RealTimeChunkPlayer(target);
-log(`Audio engine ready (TS) output=${target.label || '(default)'}`);
+    const player = new RealTimeChunkPlayer(target);
+    log(`Audio engine ready (TS) output=${target.label || '(default)'}`);
 
-api?.onAudioChunk?.((chunk) => player.handleChunk(chunk));
-api?.onAudioGain?.((gain) => player.setGain(gain));
+    api?.onAudioChunk?.((chunk) => player.handleChunk(chunk));
+    api?.onAudioGain?.((gain) => player.setGain(gain));
+}
