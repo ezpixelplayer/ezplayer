@@ -32,11 +32,13 @@ interface AudioOutputWindow {
 let preloadPath = '';
 let htmlFilePath = '';
 let htmlBaseUrl: string | undefined;
-/** Headless / CLI runs stay silent on local speakers. */
+/** Headless runs stay silent unless started with --local-audio. */
 let audioWindowsEnabled = true;
 
 /** DEFAULT_VOLUME_TARGET_ID or AudioOutputConfig.id */
 const outputs = new Map<string, AudioOutputWindow>();
+/** Headless only: enumerates outputs for LAN clients, plays nothing. */
+let probeWindow: BrowserWindow | undefined;
 
 /** Latest linear gains from the worker, by output key. The default-sink
  *  window reads `DEFAULT_VOLUME_TARGET_ID`. Unknown keys play at unity until
@@ -58,25 +60,35 @@ function sameTarget(a: AudioOutputTarget, b: AudioOutputTarget): boolean {
     return a.deviceId === b.deviceId && a.label === b.label && a.groupId === b.groupId;
 }
 
-function createAudioWindow(key: string, target: AudioOutputTarget): BrowserWindow {
+function newHiddenWindow(logTag: string, additionalArguments: string[]): BrowserWindow {
     if (!preloadPath || (!htmlFilePath && !htmlBaseUrl)) {
         throw new Error('configureAudioWindowPaths must be called before creating audio windows');
     }
     const win = new BrowserWindow({
+        // Never shown; keep it as small as possible for headless platforms.
+        width: 1,
+        height: 1,
         show: false,
+        frame: false,
+        skipTaskbar: true,
         webPreferences: {
             preload: preloadPath,
             contextIsolation: true,
             webSecurity: false,
             // Hidden window default-throttles audio render; keep it full-priority.
             backgroundThrottling: false,
-            additionalArguments: [`--ezp-audio-output=${encodeURIComponent(JSON.stringify(target))}`],
+            additionalArguments,
         },
     });
     const url = htmlBaseUrl ? new URL(htmlBaseUrl) : pathToFileURL(htmlFilePath);
-    console.log(`[audio] create window ${key}: ${target.label || '(default)'}`);
-    captureRendererConsole(win.webContents, `audio:${key}`);
+    captureRendererConsole(win.webContents, logTag);
     win.loadURL(url.toString());
+    return win;
+}
+
+function createAudioWindow(key: string, target: AudioOutputTarget): BrowserWindow {
+    console.log(`[audio] create window ${key}: ${target.label || '(default)'}`);
+    const win = newHiddenWindow(`audio:${key}`, [`--ezp-audio-output=${encodeURIComponent(JSON.stringify(target))}`]);
 
     win.on('closed', () => {
         const cur = outputs.get(key);
@@ -151,6 +163,19 @@ export function getAudioWindows(): BrowserWindow[] {
 
 export function destroyAllAudioWindows(): void {
     for (const key of [...outputs.keys()]) destroyOutput(key);
+    if (probeWindow && !probeWindow.isDestroyed()) probeWindow.destroy();
+    probeWindow = undefined;
+}
+
+/** Headless: a hidden window that publishes the output-device list. */
+export function ensureAudioDeviceProbe(): void {
+    if (!audioWindowsEnabled) return;
+    if (probeWindow && !probeWindow.isDestroyed()) return;
+    console.log('[audio] create device probe window');
+    probeWindow = newHiddenWindow('audio:probe', ['--ezp-audio-probe']);
+    probeWindow.on('closed', () => {
+        probeWindow = undefined;
+    });
 }
 
 /**

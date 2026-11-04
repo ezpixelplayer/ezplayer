@@ -30,6 +30,7 @@ import {
     ViewerSettings,
     toRouteChildren,
     useShellSection,
+    useSettingsLinkSections,
     useFilesSection,
 } from '@ezplayer/player-ui-components';
 import type { MenuRoute, RootState, SettingsSection } from '@ezplayer/player-ui-components';
@@ -78,6 +79,7 @@ const EmbeddedSettingsPage = () => {
     const [cloudOpen, setCloudOpen] = useState(false);
     const { section: shellSection, dialog: shellDialog } = useShellSection();
     const { section: filesSection, dialog: filesDialog } = useFilesSection();
+    const linkSections = useSettingsLinkSections();
     // Availability advertised by the player in the snapshot (like remoteAccess);
     // older players never push autoUpdateOps, so the tile stays hidden for them.
     // Boolean selector: progress pushes must not re-render the whole page.
@@ -153,6 +155,8 @@ const EmbeddedSettingsPage = () => {
         // Present only when available.
         shellSection,
         filesSection,
+        // Link tiles from --settings-link, after everything built in.
+        ...linkSections,
     ];
     return (
         <>

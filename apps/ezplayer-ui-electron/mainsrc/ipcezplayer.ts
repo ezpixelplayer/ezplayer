@@ -140,6 +140,7 @@ import {
     getRemoteAccessAvailability,
     publishRemoteAccessAvailability,
 } from './server-worker-manager.js';
+import { getSettingsLinks } from './settingsLinks.js';
 
 // Polyfill for `__dirname` in ES Modules
 const __filename = fileURLToPath(import.meta.url);
@@ -1143,6 +1144,7 @@ export async function registerContentHandlers(mainWindow: BrowserWindow | null, 
             cloudStatus: getCurrentCloudStatus(),
             controllerops: getControllerOpsState(),
             remoteAccess: await getRemoteAccessAvailability(),
+            settingsLinks: getSettingsLinks(),
             appSettings: getAppSettingsState(),
             viewerStats: getViewerStatsSummary(),
         };

@@ -97,6 +97,7 @@ import {
 const PARSE_OPTS: ModelParseOptions = { warnUnusedAttrs: false };
 
 import { buildInterleavedAudioChunkFromSegments, MP3PrefetchCache } from './mp3decodecache';
+import { audioCacheSeconds, formatAudioLength, maxSongSeconds } from './audioLengthLimit';
 import { AsyncBatchLogger } from './logger';
 
 import { monitorEventLoopDelay, performance } from 'perf_hooks';
@@ -1111,7 +1112,9 @@ function interactiveAudioReady(seqId: string): boolean {
  */
 function holdInteractiveStartsForAudio(now: number): void {
     const horizon = now + playbackParams.sendAudioInAdvanceMs + playbackParams.sendAudioChunkMs;
+    const activeRequestIds = new Set<string>();
     const hold = (cmd: { seqId?: string; startTime: number; requestId: string }): boolean => {
+        activeRequestIds.add(cmd.requestId);
         if (!cmd.seqId || cmd.startTime > horizon) return false;
         if (interactiveAudioReady(cmd.seqId)) {
             interactiveAudioWaitSince.delete(cmd.requestId);
@@ -1139,6 +1142,10 @@ function holdInteractiveStartsForAudio(now: number): void {
     let moved = false;
     for (const cmd of fs.interactiveQueue) moved = hold(cmd) || moved;
     if (moved) fs.interactiveQueue.sort((a, b) => a.startTime - b.startTime);
+    // Requests that left the queue (stopped, skipped, or started without audio) never return.
+    for (const requestId of interactiveAudioWaitSince.keys()) {
+        if (!activeRequestIds.has(requestId)) interactiveAudioWaitSince.delete(requestId);
+    }
 }
 
 /////////
@@ -1435,7 +1442,11 @@ const playbackParams = {
     sendAudioInAdvanceMs: 700,
     sendAudioChunkMs: 100, // The "hop": how far each chunk advances. Multiple of 10 for 44100kHz.
     audioCrossfadeMs: 10, // Trailing overlap appended to each music chunk; ramped to crossfade seams.
-    mp3CacheSeconds: 3600, // We reuse the memory in ~5s chunks
+    mp3CacheSeconds: 3600, // Set from RAM below; memory is reused in ~5s chunks
+    audioMemFraction: 0.25, // The decoded audio cache may use this much of RAM...
+    audioCacheCeilingSeconds: 10400, // ...up to about 4 GB
+    nextSongHeadroomSeconds: 300, // Cache room kept free beyond the longest song, to prefetch the next
+    maxAudioSeconds: Number.POSITIVE_INFINITY, // Set from the cache size below
     audioPrefetchTime: 30_000, // forward-run horizon for audio; decode is fast, beyond this is margins
     fseqSpace: 1_000_000_000,
     idleSleepInterval: 200,
@@ -1664,18 +1675,30 @@ const playbackStats: PlaybackStatistics = {
     },
 };
 
-// Scale cache budgets to available RAM so we fit on smaller devices. The defaults
-// above suit 8 GB+ boards; trim on ~4 GB boards, and warn (surfaced to the UI via
-// playbackStats.lastError) on memory too small to run reliably (~2 GB and below).
+// Scale cache budgets to available RAM so we fit on smaller devices. The audio
+// cache is a fraction of RAM and the longest song must fit it with room to
+// prefetch the next; the FSEQ default suits 8 GB+ boards and is trimmed on ~4 GB
+// boards. Warn (surfaced to the UI via playbackStats.lastError) on memory too
+// small to run reliably (~2 GB and below).
 {
-    const totalMemGB = totalmem() / 1e9;
+    const totalMemBytes = totalmem();
+    const totalMemGB = totalMemBytes / 1e9;
+    playbackParams.mp3CacheSeconds = audioCacheSeconds(
+        totalMemBytes,
+        playbackParams.audioMemFraction,
+        playbackParams.audioCacheCeilingSeconds,
+    );
+    playbackParams.maxAudioSeconds = maxSongSeconds(
+        playbackParams.mp3CacheSeconds,
+        playbackParams.nextSongHeadroomSeconds,
+    );
     if (totalMemGB < 6) {
-        playbackParams.mp3CacheSeconds = 1000; // ~380 MB of 48 kHz stereo audio
         playbackParams.fseqSpace = 256_000_000; // 256 MB of decompressed frames
     }
     emitInfo(
         `System RAM ${totalMemGB.toFixed(1)} GB → mp3 cache ${playbackParams.mp3CacheSeconds}s, ` +
-            `fseq cache ${Math.round(playbackParams.fseqSpace / 1e6)} MB`,
+            `fseq cache ${Math.round(playbackParams.fseqSpace / 1e6)} MB, ` +
+            `max audio length ${formatAudioLength(playbackParams.maxAudioSeconds)}`,
     );
     if (totalMemGB < 2.5) {
         emitError(
@@ -2614,6 +2637,8 @@ async function processQueue() {
             log: emitInfo,
             now: rtcConverter.computeTime(performance.now()),
             mp3SpaceSeconds: playbackParams.mp3CacheSeconds,
+            maxAudioSeconds: playbackParams.maxAudioSeconds,
+            totalMemBytes: totalmem(),
             // Map record audio -> precomputed derived file. Never builds here; a
             // missing derivation surfaces as an audio error for the song.
             resolveFile: (audioFile, opts) => {
@@ -3166,6 +3191,7 @@ async function processQueue() {
                     if (saf && !path.isAbsolute(saf)) saf = path.join(showFolder!, saf);
                     if (saf) {
                         audioref = mp3Cache.getMp3(saf, !!curAudioSeq?.settings?.normalize);
+                        if (audioref?.ref || audioref?.err) audioPendingLoggedAt.delete(saf);
                         if (!audioref) {
                             emitError(`Audio ${saf} not ready.`);
                             break;

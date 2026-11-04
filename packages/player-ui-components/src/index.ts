@@ -17,6 +17,9 @@ export { ServerFilePickerDialog } from './components/song/ServerFilePickerDialog
 export { EditSongDetailsDialog } from './components/song/EditSongDetailsDialog';
 export { SongSaveProgress, describeSongSave, saveErrorMessage } from './components/song/SongSaveProgress';
 export { DeleteSongDialog } from './components/song/DeleteSongDialog';
+export { BulkUploadDialog } from './components/song/BulkUploadDialog';
+export { UploadProgressDialog } from './components/song/UploadProgressDialog';
+export { groupByBytes, uploadRequest } from './util/uploadRequest';
 export { ControlButton } from './components/player/ControlButton';
 export { PlaybackControls } from './components/player/PlaybackControls';
 export { PlaybackDetailDialog } from './components/player/PlaybackDetailDialog';
@@ -29,6 +32,7 @@ export { ContentDistributionCard } from './components/status/ContentDistribution
 export { ContentDistributionDialog } from './components/content-dist/ContentDistributionDialog';
 export { StatsDialog } from './components/status/StatsDialog';
 export { SettingsDrawer } from './components/playback-settings/SettingsDrawer';
+export { useSettingsLinkSections } from './components/playback-settings/useSettingsLinkSections';
 export type { SettingsSection } from './components/playback-settings/SettingsDrawer';
 export { ShellDialog } from './components/shell/ShellDialog';
 export { useShellSection } from './components/shell/useShellSection';
@@ -168,6 +172,8 @@ export { cloudConfigActions } from './store/slices/CloudConfigStore';
 export { cloudStatusActions, issueCloudCommand } from './store/slices/CloudStatusStore';
 export { controllerOpsActions, issueControllerCommand } from './store/slices/ControllerOpsStore';
 export { remoteAccessActions } from './store/slices/RemoteAccessStore';
+export { settingsLinksActions } from './store/slices/SettingsLinksStore';
+export type { SettingsLinksState } from './store/slices/SettingsLinksStore';
 export { viewerStatsActions } from './store/slices/ViewerStatsStore';
 export type { ViewerStatsSliceState } from './store/slices/ViewerStatsStore';
 export { autoUpdateActions, sendUpdateCommand } from './store/slices/AutoUpdateStore';

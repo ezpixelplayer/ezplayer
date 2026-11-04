@@ -149,11 +149,15 @@ export interface DataStorageAPI {
     /** Upload a file's bytes into the player's show folder (web/LAN backends
      *  with the file-management API). Absent on backends where files are
      *  already local (Electron renderer uses native dialogs + paths). */
-    uploadShowFile?: (fileName: string, data: Blob) => Promise<void>;
+    uploadShowFile?: (
+        fileName: string,
+        data: Blob,
+        onProgress?: (loaded: number, total: number) => void,
+    ) => Promise<void>;
 
     /** List file names already in the player's show folder, by logical
-     *  directory (sequences | music | images). Same availability as
-     *  uploadShowFile. */
+     *  directory (sequences | music | images), or the read-only `media`
+     *  listing of the media folder. Same availability as uploadShowFile. */
     listShowFiles?: (dir: string) => Promise<string[]>;
 
     /** Server-side audio/metadata autodetect for an fseq already in the show
@@ -185,11 +189,13 @@ export interface DataStorageAPI {
     ) => Promise<BatchImportSummary>;
 
     /** LAN bulk import: upload companions + fseqs and import in one HTTP request.
-     *  Optional `importFseqNames` imports existing show-folder FSEQs after an
-     *  audio-only upload (media-folder retry from the browser). */
+     *  `importFseqNames`, when given, is the exact set of show-folder FSEQs to
+     *  import afterwards; an empty list stores the files without adding songs.
+     *  When omitted, every uploaded FSEQ is imported. */
     batchUploadImportShowSequences?: (
         files: Array<{ name: string; data: Blob }>,
         companionAudioNames?: string[],
         importFseqNames?: string[],
+        onProgress?: (loaded: number, total: number) => void,
     ) => Promise<BatchImportSummary>;
 }

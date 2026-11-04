@@ -60,6 +60,7 @@ import type {
     SequenceRecord,
 } from '@ezplayer/ezplayer-core';
 import { ViewObject, LayoutSettings, type MhFixtureInfo } from './workers/playbacktypes.js';
+import { getSettingsLinks } from './settingsLinks.js';
 
 // Polyfill for `__dirname` in ES Modules
 const __filename = fileURLToPath(import.meta.url);
@@ -74,6 +75,8 @@ export interface ServerWorkerConfig {
     distDir?: string; // Optional: base directory for workers (defaults to __dirname)
     kioskPort?: number;
     kioskPortSource?: string;
+    /** Refuse file uploads relayed from the cloud (see --no-cloud-uploads). */
+    noCloudUploads?: boolean;
 }
 
 export interface ServerStatus {
@@ -91,6 +94,7 @@ let playWorkerRef: Worker | null = null;
 let getMainWindowRef: (() => BrowserWindow | null) | null = null;
 let kioskPortRef: number | undefined = undefined;
 let kioskPortSourceRef: string | undefined = undefined;
+let noCloudUploadsRef = false;
 
 export function getServerStatus(): ServerStatus | null {
     return currentServerStatus;
@@ -217,6 +221,7 @@ export async function setUpServerWorker(config: ServerWorkerConfig): Promise<voi
     getMainWindowRef = getMainWindow;
     kioskPortRef = kioskPort;
     kioskPortSourceRef = kioskPortSource;
+    noCloudUploadsRef = config.noCloudUploads === true;
 
     console.log(`🌐 Starting Koa server worker on port ${port} (source: ${portSource})`);
 
@@ -412,10 +417,14 @@ function initializeServerWorker(port: number, portSource: string, _mainWindow: B
             kioskPort: kioskPortRef,
             kioskPortSource: kioskPortSourceRef,
             appVersion: ezpVersions.version,
+            noCloudUploads: noCloudUploadsRef,
         },
     };
 
     serverWorker.postMessage(initMessage);
+    // Fixed for the life of the process; the broadcaster replays it to each new client.
+    const settingsLinks = getSettingsLinks();
+    if (settingsLinks.length) broadcastToWebSocket('settingsLinks', settingsLinks);
     if (lastCloudAudioMode) {
         serverWorker.postMessage({
             type: 'cloudAudioMode',

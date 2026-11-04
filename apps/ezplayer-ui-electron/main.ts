@@ -2,6 +2,8 @@
 // showfolder/webport/ipcautoupdate construct their electron-stores.
 import { cliUsage, getCliArgs, getResetArgs, getUnknownVerb, isHeadless, isToolVerb } from './mainsrc/earlycli.js';
 import { app, crashReporter, BrowserWindow, Menu, dialog, session } from 'electron';
+import { totalmem } from 'node:os';
+import { hasMinimumRam, insufficientRamMessage } from './mainsrc/minimumRam.js';
 import { Worker } from 'node:worker_threads';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -63,6 +65,7 @@ import {
     audioWindowHtmlPath,
     configureAudioWindowPaths,
     destroyAllAudioWindows,
+    ensureAudioDeviceProbe,
     loadsFromDevServer,
     setAudioWindowsEnabled,
     syncAudioOutputsFromSettings,
@@ -385,8 +388,8 @@ async function startPlaybackWorker(): Promise<Worker> {
     return worker;
 }
 
-/** The `headless` verb: full player, zero BrowserWindows, dialogs become
- *  fail-fast exit codes. */
+/** The `headless` verb: full player with no visible windows, dialogs become
+ *  fail-fast exit codes. `--local-audio` adds a hidden audio renderer. */
 async function startHeadless() {
     const resolved = await ensureExclusiveFolderHeadless();
     if ('error' in resolved) {
@@ -397,8 +400,20 @@ async function startHeadless() {
     }
     console.log(`EZPlayer headless: using show folder ${resolved.folder}`);
 
-    // Headless plays no local audio; decoding still feeds web/cloud clients.
-    setAudioWindowsEnabled(false);
+    // Decoding always feeds web/cloud clients. Local speakers need the hidden
+    // renderer window, which works under --ozone-platform=headless as well.
+    const localAudio = process.argv.includes('--local-audio');
+    setAudioWindowsEnabled(localAudio);
+    if (localAudio) {
+        configureAudioWindowPaths({
+            preloadPath: path.join(__dirname, 'preload-audio.js'),
+            htmlFilePath: audioWindowHtmlPath(__dirname),
+            htmlBaseUrl: audioWindowDevUrl(),
+        });
+        // Publishes this machine's output devices to LAN clients.
+        ensureAudioDeviceProbe();
+        console.log('EZPlayer headless: local audio enabled');
+    }
 
     // persist:false — never write headless CLI values into stored preferences
     const portInfo = getWebPort({ persist: false });
@@ -431,6 +446,7 @@ async function startHeadless() {
             distDir: __dirname,
             kioskPort: kioskPortInfo?.port,
             kioskPortSource: kioskPortInfo?.source,
+            noCloudUploads: process.argv.includes('--no-cloud-uploads'),
         });
     } catch (e) {
         console.error(e);
@@ -480,6 +496,16 @@ if (isToolVerb()) {
         if (unknownVerb) {
             console.error(`EZPlayer: unknown command '${unknownVerb}'\n\n${cliUsage()}`);
             app.exit(64);
+            return;
+        }
+
+        // Below the minimum the player stalls or gets OOM-killed mid-show; refuse up front.
+        const ram = totalmem();
+        if (!hasMinimumRam(ram)) {
+            const msg = insufficientRamMessage(ram);
+            console.error(`EZPlayer: ${msg}`);
+            if (!isHeadless()) dialog.showErrorBox('EZPlayer cannot start', msg);
+            exitFlushed(69); // EX_UNAVAILABLE
             return;
         }
 
