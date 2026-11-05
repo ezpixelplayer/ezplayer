@@ -153,6 +153,7 @@ export {
     effectiveMaxFps,
     needsContentDelivery,
     contentTargetFailed,
+    isPlayerOnlyRecord,
     layoutPlayerMode,
     playerModeDrift,
 } from './types/ControllerOps';

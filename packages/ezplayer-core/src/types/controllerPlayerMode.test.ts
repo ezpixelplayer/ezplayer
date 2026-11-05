@@ -1,10 +1,26 @@
 import { describe, expect, it } from 'vitest';
-import { layoutPlayerMode, playerModeDrift } from './ControllerOps';
+import { isPlayerOnlyRecord, layoutPlayerMode, playerModeDrift } from './ControllerOps';
 
 describe('the role the layout asks for', () => {
     it('reads "xLights Only" as a remote and Active as a player', () => {
         expect(layoutPlayerMode({ enableState: 'xlightsOnly' })).toBe('remote');
         expect(layoutPlayerMode({ enableState: 'enabled' })).toBe('player');
+    });
+
+    it('reads an FPP player entry as a player, not a remote', () => {
+        // xLights records a player with no outputs, so it marks it "xLights
+        // Only" to keep the show off it -- that is not a remote.
+        const player = { enableState: 'xlightsOnly' as const, protocol: 'Player Only', model: 'FPP Player Only' };
+        expect(layoutPlayerMode(player)).toBe('player');
+        expect(isPlayerOnlyRecord(player)).toBe(true);
+        expect(isPlayerOnlyRecord({ protocol: 'player only' })).toBe(true);
+        expect(isPlayerOnlyRecord({ model: 'FPP Player Only' })).toBe(true);
+    });
+
+    it('still reads a real controller marked "xLights Only" as a remote', () => {
+        expect(layoutPlayerMode({ enableState: 'xlightsOnly', protocol: 'DDP', model: 'K16A-B' })).toBe('remote');
+        expect(isPlayerOnlyRecord({ protocol: 'DDP', model: 'K16A-B' })).toBe(false);
+        expect(isPlayerOnlyRecord({})).toBe(false);
     });
 
     it('asks nothing of a controller that is not in the show', () => {

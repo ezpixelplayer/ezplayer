@@ -42,7 +42,7 @@ import type {
     VirtualMatrixConfig,
     VirtualMatrixInfo,
 } from '@ezplayer/epp-controllers';
-import { ContentSyncRun, type BaseController } from '@ezplayer/epp-controllers';
+import { ContentSyncRun, universeOutputIntentsFrom, type BaseController } from '@ezplayer/epp-controllers';
 import type { ContentSlicing, SliceWorkspace } from './content-dist.js';
 import {
     buildContentPlan,
@@ -728,13 +728,19 @@ async function setLayoutPlayerMode(
     driver: { supportsPlayerMode: boolean; setPlayerMode: BaseController['setPlayerMode'] },
     rec: KnownController,
     reported: string | undefined,
+    reportedMaster?: boolean,
 ): Promise<{ changed: boolean; warning?: string }> {
     const want = layoutPlayerMode(rec);
     if (!want || !driver.supportsPlayerMode) return { changed: false };
+    const wantMaster = want === 'player' && showHasRemotes();
+    // Sending sync is part of the role, not a detail of it: a player already in
+    // player mode still needs the write when the show gains or loses remotes,
+    // or it runs the show with its remotes sitting idle.
+    const masterAgrees = reportedMaster === undefined ? false : reportedMaster === wantMaster;
     // An unread mode counts as disagreeing: better one extra write than a
     // controller left in the previous show's role.
-    if (reported && !playerModeDrift(reported, want)) return { changed: false };
-    const r = await driver.setPlayerMode(want, { multiSyncMaster: want === 'player' && showHasRemotes() });
+    if (reported && !playerModeDrift(reported, want) && masterAgrees) return { changed: false };
+    const r = await driver.setPlayerMode(want, { multiSyncMaster: wantMaster });
     return r.success
         ? { changed: true }
         : { changed: false, warning: `could not set ${rec.name} to ${want}: ${r.message ?? 'unknown error'}` };
@@ -817,11 +823,14 @@ async function runStatus(
             actions: probe.driver?.getActions(),
             mode: probe.report.mode ?? dev.mode,
             // A device whose role disagrees with the layout has not been
-            // configured for this show.
-            modeDrift: playerModeDrift(
-                probe.report.mode ?? dev.mode,
-                layoutPlayerMode(recordFor(dev, state.known ?? []) ?? {}),
-            ),
+            // configured for this show. Only a device that plays content has a
+            // role: the other drivers report their input protocol in `mode`.
+            modeDrift: isContentTarget(dev)
+                ? playerModeDrift(
+                      probe.report.mode ?? dev.mode,
+                      layoutPlayerMode(recordFor(dev, state.known ?? []) ?? {}),
+                  )
+                : undefined,
             channelRanges: probe.report.channelRanges ?? dev.channelRanges,
             error: undefined,
             unreachable: false,
@@ -955,8 +964,14 @@ async function runUpload(
 
     const rec = (state.known ?? []).find((k) => k.address === dev.ip || (dev.hostname && k.address === dev.hostname));
     if (!rec) throw new Error(`no known controller record matches ${dev.ip} — upload needs xLights intent`);
-    const wantStrings = command.scope !== 'inputs';
-    const wantInputs = command.scope !== 'strings';
+    const wantStrings = command.scope === 'strings' || command.scope === 'full';
+    const wantInputs = command.scope === 'inputs' || command.scope === 'full';
+    // The player's send list is the whole show, not this one controller.
+    const wantOutputs = command.scope === 'outputs';
+    const outputIntents = wantOutputs ? universeOutputIntentsFrom(state.known ?? []) : [];
+    if (wantOutputs && !outputIntents.length) {
+        throw new Error('no controllers with outputs in the layout — nothing for the player to send');
+    }
     const hasIntent =
         !!rec.modelIntents?.length ||
         !!rec.serialPorts?.length ||
@@ -1005,6 +1020,16 @@ async function runUpload(
                 throw new Error(`capability check failed: ${res.errors.join('; ')}`);
             }
         };
+        if (wantOutputs) {
+            if (!probe.driver.setUniverseOutputs) {
+                throw new Error(`${rec.name} is a ${dev.driverType ?? 'controller'} — only a player sends universes`);
+            }
+            const r = await probe.driver.setUniverseOutputs(outputIntents);
+            if (!r.success) {
+                throw new Error(`output upload failed: ${r.message ?? r.errors?.join('; ') ?? 'unknown error'}`);
+            }
+            if (r.warnings) warnings.push(...r.warnings);
+        }
         if (wantInputs) {
             const cfg = (rec.outputs ?? []).map((o) => ({
                 universe: o.universe ?? 0,
@@ -1128,7 +1153,7 @@ async function runUpload(
         // The layout's role for this controller is part of its configuration.
         // It goes in before the apply step, which is the restart that a mode
         // change needs anyway.
-        const modeSet = await setLayoutPlayerMode(probe.driver, rec, probe.report?.mode);
+        const modeSet = await setLayoutPlayerMode(probe.driver, rec, probe.report?.mode, probe.report?.multiSyncMaster);
         if (modeSet.warning) warnings.push(modeSet.warning);
         try {
             const applied = await probe.driver.applyConfig();
@@ -1159,7 +1184,9 @@ async function runUpload(
                     virtualMatrices: verify.report.virtualMatrices?.map(toControllerVirtualMatrix),
                     inputs: verify.report.inputs,
                     mode: verify.report.mode ?? dev.mode,
-                    modeDrift: playerModeDrift(verify.report.mode ?? dev.mode, layoutPlayerMode(rec)),
+                    modeDrift: isContentTarget(dev)
+                        ? playerModeDrift(verify.report.mode ?? dev.mode, layoutPlayerMode(rec))
+                        : undefined,
                     error: undefined,
                     unreachable: false,
                     seenAt: nowIso(),
@@ -1371,7 +1398,7 @@ async function reconcilePlayerModes(targets: { id: string }[], checkOnly: boolea
                 notes.push(`${rec.name} did not answer, so its role was left alone`);
                 continue;
             }
-            const set = await setLayoutPlayerMode(probe.driver, rec, probe.report?.mode);
+            const set = await setLayoutPlayerMode(probe.driver, rec, probe.report?.mode, probe.report?.multiSyncMaster);
             if (set.warning) {
                 notes.push(set.warning);
                 continue;

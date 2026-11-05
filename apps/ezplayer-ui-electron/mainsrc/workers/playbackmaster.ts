@@ -2264,6 +2264,9 @@ function xlControllerToKnown(
         defaultBrightness: c.defaultBrightnessUnderFullControl,
         defaultGamma: c.defaultGammaUnderFullControl,
         protocol: c.protocol || undefined,
+        monitor: c.monitor,
+        priority: c.priority,
+        suppressDuplicates: c.suppressDuplicates,
         startChannel: c.startChannel,
         channelCount: c.maxChannels,
         ports: ports && ports.length ? ports : undefined,
@@ -2393,6 +2396,9 @@ function xlControllerOutputs(c: XlControllerInfo): ControllerOutputIntent[] | un
     return [
         {
             type,
+            // xLights keeps the output's id in the <network> BaudRate attribute
+            // for every protocol, DDP included.
+            universe: c.universeNumbers[0],
             startChannel: c.startChannel,
             channels: c.maxChannels,
             ...(type === 'ddp' ? { keepChannelNumbers: c.keepChannelNumbers } : {}),

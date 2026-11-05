@@ -56,6 +56,9 @@ export interface StartOptions {
     faults?: string[];
     /** Return once the process is spawned, for faults that take the web server down. */
     noApiWait?: boolean;
+    /** Play audio on this machine's speakers, and list its output devices in
+     *  Settings. Headless does neither without it. */
+    localAudio?: boolean;
 }
 
 export async function startEzPlayer(showFolder: string, opts: StartOptions = {}): Promise<EzPlayerProc> {
@@ -82,6 +85,7 @@ export async function startEzPlayer(showFolder: string, opts: StartOptions = {})
             ...(process.platform === 'linux' ? ['--no-sandbox', '--ozone-platform=headless'] : []),
             path.join(appDir, 'dist', 'main.js'),
             ...(opts.windowed ? [] : ['headless']),
+            ...(opts.localAudio ? ['--local-audio'] : []),
             `--show-folder=${showFolder}`,
             `--web-port=${port}`,
             '--kiosk-port=0',

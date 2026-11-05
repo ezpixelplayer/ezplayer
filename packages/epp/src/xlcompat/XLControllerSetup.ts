@@ -4,7 +4,13 @@ import { Sender, SenderJob, SendJob } from '../dataplane/SenderJob';
 import { ControllerSetup, OpenControllerReport } from '../controllers/controllertypes';
 
 import type { ControllersAndModelChannels, ModelParseOptions } from 'xllayoutcalcs';
-import { ControllerRec, controllersAndModelsFromParsed, ModelRec, readControllersAndModels } from './XLXmlUtil';
+import {
+    ControllerRec,
+    controllersAndModelsFromParsed,
+    isPlayerOnlyRecord,
+    ModelRec,
+    readControllersAndModels,
+} from './XLXmlUtil';
 
 export interface ControllerState {
     setup: ControllerSetup; // This is the name and channel map (as it pertains to xLights fseq layout)
@@ -57,6 +63,12 @@ function controllerStatesFromRecs(xcontrollers: ControllerRec[]): ControllerStat
     }
 
     for (const xc of xcontrollers) {
+        if (isPlayerOnlyRecord(xc)) {
+            // A player/proxy, not a pixel controller: no outputs to drive, so
+            // it is skipped rather than reported as a bad protocol.
+            ctrls.push(makeErrorState(xc, `Skipped ${xc.name} because it is a player, not a controller`, true));
+            continue;
+        }
         if (xc.protocol !== 'DDP' && xc.protocol !== 'E131') {
             ctrls.push(makeErrorState(xc, `Unsupported controller protocol ${xc.protocol}`, false));
             continue;
@@ -114,6 +126,10 @@ export function syncRemotesFromXlights(ctrls: ControllerState[]): SyncRemoteTarg
     for (const c of ctrls) {
         const xc = c.xlRecord;
         if (!xc || xc.activeState !== 'xLights Only' || xc.type !== 'Ethernet' || !xc.address) continue;
+        // A remote plays the show's channels on its own; a player/proxy entry
+        // carries none and must not be sent sync. maxch is -1 when unknown,
+        // so only an explicit zero rules a controller out.
+        if (isPlayerOnlyRecord(xc) || xc.maxch === 0) continue;
         out.push({ name: xc.name, address: xc.address, ...(xc.fppProxy ? { proxy: xc.fppProxy } : {}) });
     }
     return out;

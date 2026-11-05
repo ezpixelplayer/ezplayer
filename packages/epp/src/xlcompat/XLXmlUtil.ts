@@ -86,6 +86,19 @@ export class ControllerRec {
 }
 
 /**
+ * Whether an xLights controller record describes a player/proxy rather than a
+ * pixel controller: xLights gives those the "Player Only" protocol and no
+ * outputs. They carry no channels, so they are never an output target and
+ * never a sync remote, whatever their ActiveState says.
+ *
+ * Duplicated from `isPlayerOnlyRecord` in @ezplayer/ezplayer-core, which this
+ * package does not depend on.
+ */
+export function isPlayerOnlyRecord(k: { protocol?: string; model?: string }): boolean {
+    return k.protocol?.toLowerCase() === 'player only' || k.model?.toLowerCase() === 'fpp player only';
+}
+
+/**
  * Flatten an already-parsed `ControllersAndModelChannels` document into the
  * legacy `ControllerRec`/`ModelRec` view used by the data plane.
  *

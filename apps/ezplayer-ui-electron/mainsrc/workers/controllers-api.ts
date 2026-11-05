@@ -19,7 +19,7 @@ import type {
 import { hostNetworks } from '../../cli/net.js';
 
 const DEPTHS: readonly DiscoveryDepth[] = ['sweep', 'identify', 'full'];
-const UPLOAD_SCOPES = ['inputs', 'strings', 'full'] as const;
+const UPLOAD_SCOPES = ['inputs', 'strings', 'full', 'outputs'] as const;
 const COMMAND_VERBS = [
     'scan',
     'status',

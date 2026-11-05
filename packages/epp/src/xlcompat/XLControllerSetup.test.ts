@@ -78,6 +78,32 @@ describe('the show sync remotes', () => {
         ).toEqual([{ name: 'Behind', address: '10.0.0.3', proxy: 'fpp-lab' }]);
     });
 
+    it('leaves out the show player, which has no channels of its own', () => {
+        // An FPP player/proxy is "xLights Only" because nothing should send it
+        // pixels -- sending it sync would drive the wrong device.
+        expect(
+            syncRemotesFromXlights([
+                rec({
+                    name: 'fpp4-lab',
+                    address: '192.168.1.23',
+                    activeState: 'xLights Only',
+                    protocol: 'Player Only',
+                    model: 'FPP Player Only',
+                    maxch: 0,
+                }),
+                rec({ name: 'Real remote', address: '10.0.0.9', activeState: 'xLights Only', maxch: 9600 }),
+            ]),
+        ).toEqual([{ name: 'Real remote', address: '10.0.0.9' }]);
+    });
+
+    it('leaves out a controller that owns no channels', () => {
+        expect(
+            syncRemotesFromXlights([
+                rec({ name: 'Empty', address: '10.0.0.5', activeState: 'xLights Only', maxch: 0 }),
+            ]),
+        ).toEqual([]);
+    });
+
     it('leaves out anything with no address to send to', () => {
         expect(syncRemotesFromXlights([rec({ name: 'Nowhere', address: '', activeState: 'xLights Only' })])).toEqual(
             [],

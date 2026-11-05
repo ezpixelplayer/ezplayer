@@ -201,10 +201,16 @@ export type ControllerCommand =
       }
     | {
           /** Push xLights-derived config to one scanned controller: input/universe
-           *  config (`inputs`), string/port outputs (`strings`), or both (`full`). */
+           *  config (`inputs`), string/port outputs (`strings`), or both (`full`).
+           *
+           *  `outputs` is the player's side of the same coin and takes the whole
+           *  show, not one controller: it writes the universes this device
+           *  SENDS, so an FPP can drive the show itself. A controller marked
+           *  "xLights Only" lands there inactive, because it plays its own copy
+           *  and takes sync rather than pixels. */
           cmd: 'upload';
           id: string;
-          scope: 'inputs' | 'strings' | 'full';
+          scope: 'inputs' | 'strings' | 'full' | 'outputs';
           /** Full-control mode: settings a model did NOT set are stamped with
            *  controller defaults instead of inheriting the device's current values. */
           fullControl?: boolean;
@@ -399,7 +405,19 @@ export type ControllerPlayerMode = 'player' | 'remote';
  * a player must not send it pixel data. An `Inactive` controller is not in the
  * show at all, so it implies no role.
  */
-export function layoutPlayerMode(k: { enableState?: ControllerEnableState }): ControllerPlayerMode | undefined {
+export function isPlayerOnlyRecord(k: { protocol?: string; model?: string }): boolean {
+    return k.protocol?.toLowerCase() === 'player only' || k.model?.toLowerCase() === 'fpp player only';
+}
+
+export function layoutPlayerMode(k: {
+    enableState?: ControllerEnableState;
+    protocol?: string;
+    model?: string;
+}): ControllerPlayerMode | undefined {
+    // A player-only entry has no outputs, so xLights records it as "xLights
+    // Only" to keep the show off it. That means "send this no pixels", not
+    // "this is a remote" -- it is the show's player.
+    if (isPlayerOnlyRecord(k)) return 'player';
     if (k.enableState === 'xlightsOnly') return 'remote';
     if (k.enableState === 'enabled') return 'player';
     return undefined;
@@ -447,6 +465,12 @@ export interface KnownController {
     defaultGamma?: number;
     /** Output protocol, e.g. 'E131' / 'DDP'. */
     protocol?: string;
+    /** xLights' Monitor flag: whether a player should health-check this one. */
+    monitor?: boolean;
+    /** E1.31 packet priority xLights declares (upstream default 100). */
+    priority?: number;
+    /** xLights' Suppress Duplicate Frames option. */
+    suppressDuplicates?: boolean;
     /** Absolute 1-based channel span. */
     startChannel?: number;
     channelCount?: number;
