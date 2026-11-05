@@ -124,6 +124,7 @@ export type {
     ContentDistRun,
     ContentDistState,
     KnownController,
+    ControllerPlayerMode,
     EzpControllerRecord,
     EzpControllerRecordPatch,
     ControllerRecordState,
@@ -148,7 +149,13 @@ export type {
     PanelMatrixReconcile,
     VirtualMatrixReconcile,
 } from './types/ControllerOps';
-export { effectiveMaxFps, needsContentDelivery, contentTargetFailed } from './types/ControllerOps';
+export {
+    effectiveMaxFps,
+    needsContentDelivery,
+    contentTargetFailed,
+    layoutPlayerMode,
+    playerModeDrift,
+} from './types/ControllerOps';
 
 export {
     reconcileControllers,

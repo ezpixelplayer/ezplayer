@@ -25,7 +25,7 @@ import type {
     PlaybackSettings,
     SequenceRecord,
 } from '@ezplayer/ezplayer-core';
-import { applyOverrides, ipInCidr } from '@ezplayer/ezplayer-core';
+import { applyOverrides, ipInCidr, layoutPlayerMode, playerModeDrift } from '@ezplayer/ezplayer-core';
 import type {
     DiscoveryDevice,
     DiscoveryJob,
@@ -42,7 +42,7 @@ import type {
     VirtualMatrixConfig,
     VirtualMatrixInfo,
 } from '@ezplayer/epp-controllers';
-import { ContentSyncRun } from '@ezplayer/epp-controllers';
+import { ContentSyncRun, type BaseController } from '@ezplayer/epp-controllers';
 import type { ContentSlicing, SliceWorkspace } from './content-dist.js';
 import {
     buildContentPlan,
@@ -51,6 +51,7 @@ import {
     contentTargetsFor,
     createSliceWorkspace,
     isContentTarget,
+    recordFor,
     slicingFor,
     toContentDistReport,
     toContentDistRun,
@@ -709,6 +710,36 @@ function proxyFor(dev: DiscoveredController): string | undefined {
     return dev.source.via === 'fpp-proxy' ? dev.source.proxy : undefined;
 }
 
+/** The show has remotes to drive, so whatever plays it must send sync. */
+function showHasRemotes(): boolean {
+    return (state.known ?? []).some((k) => layoutPlayerMode(k) === 'remote');
+}
+
+/**
+ * Put a controller in the role its layout record asks for — a remote where the
+ * layout says "xLights Only", else a player, sending sync only when the show
+ * has remotes to drive. A device already in that role is left alone, since the
+ * write costs a daemon restart.
+ *
+ * Returns whether anything was written (the caller must then apply/restart)
+ * and a line for the operation's warnings if the write failed.
+ */
+async function setLayoutPlayerMode(
+    driver: { supportsPlayerMode: boolean; setPlayerMode: BaseController['setPlayerMode'] },
+    rec: KnownController,
+    reported: string | undefined,
+): Promise<{ changed: boolean; warning?: string }> {
+    const want = layoutPlayerMode(rec);
+    if (!want || !driver.supportsPlayerMode) return { changed: false };
+    // An unread mode counts as disagreeing: better one extra write than a
+    // controller left in the previous show's role.
+    if (reported && !playerModeDrift(reported, want)) return { changed: false };
+    const r = await driver.setPlayerMode(want, { multiSyncMaster: want === 'player' && showHasRemotes() });
+    return r.success
+        ? { changed: true }
+        : { changed: false, warning: `could not set ${rec.name} to ${want}: ${r.message ?? 'unknown error'}` };
+}
+
 /** Single-controller deep read: re-probe one known device at full depth and
  *  refresh its detail tree + identity in the shared state. */
 async function runStatus(
@@ -785,6 +816,12 @@ async function runStatus(
             inputs: probe.report.inputs,
             actions: probe.driver?.getActions(),
             mode: probe.report.mode ?? dev.mode,
+            // A device whose role disagrees with the layout has not been
+            // configured for this show.
+            modeDrift: playerModeDrift(
+                probe.report.mode ?? dev.mode,
+                layoutPlayerMode(recordFor(dev, state.known ?? []) ?? {}),
+            ),
             channelRanges: probe.report.channelRanges ?? dev.channelRanges,
             error: undefined,
             unreachable: false,
@@ -1088,6 +1125,11 @@ async function runUpload(
                 if (!r.success) throw new Error(`virtual matrix upload failed: ${r.message ?? 'unknown error'}`);
             }
         }
+        // The layout's role for this controller is part of its configuration.
+        // It goes in before the apply step, which is the restart that a mode
+        // change needs anyway.
+        const modeSet = await setLayoutPlayerMode(probe.driver, rec, probe.report?.mode);
+        if (modeSet.warning) warnings.push(modeSet.warning);
         try {
             const applied = await probe.driver.applyConfig();
             if (!applied.success) warnings.push(`apply step failed: ${applied.message ?? 'unknown error'}`);
@@ -1116,6 +1158,8 @@ async function runUpload(
                     panelMatrices: verify.report.panelMatrices?.map(toControllerPanelMatrix),
                     virtualMatrices: verify.report.virtualMatrices?.map(toControllerVirtualMatrix),
                     inputs: verify.report.inputs,
+                    mode: verify.report.mode ?? dev.mode,
+                    modeDrift: playerModeDrift(verify.report.mode ?? dev.mode, layoutPlayerMode(rec)),
                     error: undefined,
                     unreachable: false,
                     seenAt: nowIso(),
@@ -1298,6 +1342,56 @@ async function refreshContentStatus(id: string): Promise<void> {
     }
 }
 
+/**
+ * Bring each content target into the player role its layout record asks for.
+ * `checkOnly` reports the disagreements without writing anything. Returns the
+ * lines worth showing the operator: failures, and drift a check found.
+ */
+async function reconcilePlayerModes(targets: { id: string }[], checkOnly: boolean): Promise<string[]> {
+    const notes: string[] = [];
+    for (const target of targets) {
+        const dev = state.devices[target.id];
+        if (!dev) continue;
+        const rec = recordFor(dev, state.known ?? []);
+        const want = rec ? layoutPlayerMode(rec) : undefined;
+        if (!rec || !want) continue;
+        const drift = playerModeDrift(dev.mode, want);
+        // A known, agreeing mode needs nothing; an unread one is worth a write.
+        if (dev.mode && !drift) continue;
+        if (checkOnly) {
+            if (drift) notes.push(`${rec.name}: ${drift}`);
+            continue;
+        }
+        try {
+            const probe = await probeController(dev.ip, proxyFor(dev), {
+                preferDriver: dev.driverType,
+                expectController: true,
+            });
+            if (!probe.success || !probe.driver) {
+                notes.push(`${rec.name} did not answer, so its role was left alone`);
+                continue;
+            }
+            const set = await setLayoutPlayerMode(probe.driver, rec, probe.report?.mode);
+            if (set.warning) {
+                notes.push(set.warning);
+                continue;
+            }
+            if (!set.changed) continue;
+            notes.push(`${rec.name} set to ${want}`);
+            // The mode is read at daemon start, so it takes a restart to hold.
+            const applied = await probe.driver.applyConfig();
+            if (!applied.success) {
+                notes.push(`${rec.name} did not restart: ${applied.message ?? 'unknown error'}`);
+                continue;
+            }
+            state.devices[target.id] = { ...dev, mode: want, modeDrift: undefined, seenAt: nowIso() };
+        } catch (e) {
+            notes.push(`setting ${rec.name} to ${want} failed: ${(e as Error).message}`);
+        }
+    }
+    return notes;
+}
+
 /** Send show content to the chosen targets, or work out what is missing. */
 async function runDistribute(
     command: Extract<ControllerCommand, { cmd: 'distribute' }>,
@@ -1351,6 +1445,17 @@ async function runDistribute(
     try {
         slot = await started;
         if (!slot) return;
+
+        // Each target takes the role its layout record asks for, set the way a
+        // config upload would: a device left in the last show's role would play
+        // the whole show when it should follow, or the reverse. A check run only
+        // reports the disagreement.
+        const modeNotes = await reconcilePlayerModes(targets, checkOnly);
+        if (modeNotes.length) {
+            console.warn('[controller-ops] distribute role notes:', modeNotes);
+            op.label += ` (${modeNotes.join('; ')})`;
+            publish();
+        }
 
         const run = new ContentSyncRun(plan, targets, { dryRun: checkOnly });
         contentRun = run;

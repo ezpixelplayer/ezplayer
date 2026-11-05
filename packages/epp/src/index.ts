@@ -36,8 +36,10 @@ export { readControllerFpsOverrides } from './xlcompat/XLControllerRecords';
 
 export {
     ControllerState,
+    SyncRemoteTarget,
     controllersFromParsedXlights,
     readControllersFromXlights,
+    syncRemotesFromXlights,
     openControllersForDataSend,
     openControllerForDataSend,
 } from './xlcompat/XLControllerSetup';

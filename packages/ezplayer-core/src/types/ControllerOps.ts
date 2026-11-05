@@ -60,6 +60,9 @@ export interface DiscoveredController {
     actions?: ControllerDeviceAction[];
     /** Device role, e.g. an FPP's player / remote / bridge (full depth). */
     mode?: string;
+    /** Set when `mode` disagrees with the role the layout asks for — the
+     *  device has not been configured for this show. */
+    modeDrift?: string;
     /**
      * Channels this device outputs, as it reports them ("0-509,1024-2047",
      * 0-based with inclusive ends).  What a sequence is cut down to when the
@@ -382,6 +385,45 @@ export interface ContentDistState {
  *  - `xlightsOnly`  defined for xLights' own use; players don't output to it
  */
 export type ControllerEnableState = 'enabled' | 'disabled' | 'xlightsOnly';
+
+/**
+ * The role the show gives a device that can play content itself: a player runs
+ * the show from its own copy, a remote drives only its own channels and
+ * follows the master's sync.
+ */
+export type ControllerPlayerMode = 'player' | 'remote';
+
+/**
+ * The role the layout asks of a controller. "xLights Only" is how xLights
+ * records a show remote: the controller keeps its channels in the layout, but
+ * a player must not send it pixel data. An `Inactive` controller is not in the
+ * show at all, so it implies no role.
+ */
+export function layoutPlayerMode(k: { enableState?: ControllerEnableState }): ControllerPlayerMode | undefined {
+    if (k.enableState === 'xlightsOnly') return 'remote';
+    if (k.enableState === 'enabled') return 'player';
+    return undefined;
+}
+
+/** FPP's legacy 'master' is a player that also sends sync; 'bridge' plays
+ *  nothing, so it does not satisfy a layout asking for a player. */
+const PLAYER_ROLE_NAMES = new Set(['player', 'master']);
+
+/**
+ * How a device's own reported role differs from the one the layout asks for,
+ * as a sentence for the operator — undefined when they agree or when either
+ * side is unknown. The layout is the intent, so a disagreement means the
+ * device has not been configured for this show, or was changed behind our back.
+ */
+export function playerModeDrift(
+    reported: string | undefined,
+    want: ControllerPlayerMode | undefined,
+): string | undefined {
+    if (!want || !reported) return undefined;
+    const have = reported.toLowerCase();
+    const agrees = want === 'remote' ? have === 'remote' : PLAYER_ROLE_NAMES.has(have);
+    return agrees ? undefined : `the layout wants this controller as a ${want}, but it reports "${reported}"`;
+}
 
 /**
  * A controller known ahead of (or independent of) any scan: an xLights

@@ -417,6 +417,8 @@ describe('slicing for a remote', () => {
 
     const layout = (over: Partial<KnownController> & { name: string }): KnownController => ({
         source: 'xlights',
+        // xLights records a show remote as "xLights Only".
+        enableState: 'xlightsOnly',
         ...over,
     });
 
@@ -445,14 +447,47 @@ describe('slicing for a remote', () => {
         expect(slicingFor(remote({ hostname: 'fpp-far' }), known)?.source).toBe('xlights');
     });
 
-    it('does not slice for a player, which drives the whole show', () => {
-        expect(slicingFor(remote({ mode: 'player', channelRanges: '0-509' }))).toBeNull();
-        expect(slicingFor(remote({ mode: 'bridge', channelRanges: '0-509' }))).toBeNull();
-        expect(slicingFor(device({ ip: '10.0.0.5', driverType: 'FPP', channelRanges: '0-509' }))).toBeNull();
+    it('goes by the layout, not the role the device still reports', () => {
+        // Not switched over yet: the layout says remote, so it gets a slice.
+        const asRemote = [layout({ name: 'Far Side', address: '10.0.0.5', startChannel: 1, channelCount: 64 })];
+        expect(slicingFor(remote({ mode: 'player' }), asRemote)?.source).toBe('xlights');
+        // Left a remote by a previous show: the layout wants it playing it all.
+        const asPlayer = [
+            layout({
+                name: 'Far Side',
+                address: '10.0.0.5',
+                enableState: 'enabled',
+                startChannel: 1,
+                channelCount: 64,
+            }),
+        ];
+        expect(slicingFor(remote({ channelRanges: '0-509' }), asPlayer)).toBeNull();
     });
 
-    it('does not slice for a device that is not ours to fill, or says nothing', () => {
-        expect(slicingFor(device({ ip: '10.0.0.6', driverType: 'Falcon', mode: 'remote' }))).toBeNull();
+    it('does not slice for a player, which drives the whole show', () => {
+        const known = [layout({ name: 'Far Side', address: '10.0.0.5', enableState: 'enabled' })];
+        expect(slicingFor(remote({ channelRanges: '0-509' }), known)).toBeNull();
+        expect(slicingFor(device({ ip: '10.0.0.5', driverType: 'FPP', channelRanges: '0-509' }), known)).toBeNull();
+    });
+
+    it('does not slice for a controller the layout leaves out of the show', () => {
+        const known = [layout({ name: 'Far Side', address: '10.0.0.5', enableState: 'disabled' })];
+        expect(slicingFor(remote({ channelRanges: '0-509' }), known)).toBeNull();
+    });
+
+    it('takes a device the layout has never heard of at its own word', () => {
+        // No record to go on, so the device's own claim is all there is.
+        expect(slicingFor(remote({ channelRanges: '0-59' }), [])).toEqual({
+            source: 'device',
+            ranges: [{ startch: 0, chcount: 60 }],
+        });
+        expect(slicingFor(remote({ mode: 'player', channelRanges: '0-59' }), [])).toBeNull();
+    });
+
+    it('does not slice for a device that is not ours to fill, or that says nothing', () => {
+        const known = [layout({ name: 'Far Side', address: '10.0.0.6', startChannel: 1, channelCount: 64 })];
+        expect(slicingFor(device({ ip: '10.0.0.6', driverType: 'Falcon', mode: 'remote' }), known)).toBeNull();
+        // Claims to be a remote, but names no channels and has no record.
         expect(slicingFor(remote(), [])).toBeNull();
     });
 });

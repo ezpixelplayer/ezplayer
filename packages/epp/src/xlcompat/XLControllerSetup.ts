@@ -94,6 +94,31 @@ function controllerStatesFromRecs(xcontrollers: ControllerRec[]): ControllerStat
     return ctrls;
 }
 
+/** A controller the show drives by sync rather than by pixel data. */
+export interface SyncRemoteTarget {
+    name: string;
+    address: string;
+    /** Set when the layout reaches this controller only through an FPP proxy.
+     *  Sync goes UDP straight to the device, so a proxied remote cannot hear it. */
+    proxy?: string;
+}
+
+/**
+ * The show's sync remotes: the controllers the layout marks "xLights Only".
+ * Their channels stay in the layout, but the player sends them no pixel data
+ * (`controllerStatesFromRecs` skips them) because they play their own copy of
+ * the content in step with the master's sync.
+ */
+export function syncRemotesFromXlights(ctrls: ControllerState[]): SyncRemoteTarget[] {
+    const out: SyncRemoteTarget[] = [];
+    for (const c of ctrls) {
+        const xc = c.xlRecord;
+        if (!xc || xc.activeState !== 'xLights Only' || xc.type !== 'Ethernet' || !xc.address) continue;
+        out.push({ name: xc.name, address: xc.address, ...(xc.fppProxy ? { proxy: xc.fppProxy } : {}) });
+    }
+    return out;
+}
+
 export interface OpenControllersOptions {
     /** DDP destination port override (default 4048) — a testing/diagnostic knob. */
     ddpPort?: number;

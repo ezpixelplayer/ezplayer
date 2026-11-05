@@ -67,6 +67,8 @@ import {
     ModelRec,
     controllersFromParsedXlights,
     readControllersFromXlights,
+    syncRemotesFromXlights,
+    SyncRemoteTarget,
     ControllerState,
     FrameReference,
     CacheStats,
@@ -107,7 +109,7 @@ import { begin as hirezTimerBegin } from '../win-hirez-timer/winhirestimer';
 import process from 'node:process';
 import { totalmem } from 'node:os';
 import { avgFrameSendTime, FrameSender, OverallFrameSendStats, resetFrameSendStats } from './framesend';
-import { MultiSyncSender, type SyncFrameInfo } from './multisync';
+import { MultiSyncSender, type MultiSyncConfig, type SyncFrameInfo } from './multisync';
 import { fileBaseName } from './pathnames';
 
 import { decompressZlibWithWorker, decompressZStdWithWorker, getZstdStats, resetZstdStats } from './zstdparent';
@@ -1584,9 +1586,31 @@ let latestSettings: PlaybackSettings | undefined = undefined;
 let lastRfRemoteToken: string | undefined = undefined;
 let rfConfigInitialized = false;
 
+/** The show's own sync remotes, from the layout. Refreshed with the controllers. */
+let showSyncRemotes: SyncRemoteTarget[] = [];
+
+/**
+ * The multisync settings in force: the hand-kept remote list plus the show's
+ * own remotes. A remote reached only through a proxy is left out — sync is UDP
+ * straight to the device, and the warning for that is raised when the
+ * controllers load.
+ */
+function multisyncConfigFor(cfg: MultiSyncConfig | undefined): MultiSyncConfig | undefined {
+    if (!cfg?.enabled || showSyncRemotes.length === 0) return cfg;
+    const listed = (cfg.remotes ?? []).map((r) => r.trim()).filter((r) => r.length > 0);
+    const have = new Set(listed.map((r) => r.replace(/:\d+$/, '').toLowerCase()));
+    const added: string[] = [];
+    for (const r of showSyncRemotes) {
+        if (r.proxy || have.has(r.address.toLowerCase())) continue;
+        have.add(r.address.toLowerCase());
+        added.push(r.address);
+    }
+    return added.length ? { ...cfg, remotes: [...listed, ...added] } : cfg;
+}
+
 function dispatchSettings(settings: PlaybackSettings) {
     latestSettings = settings;
-    multiSync.configure(settings.sync?.multisync);
+    multiSync.configure(multisyncConfigFor(settings.sync?.multisync));
     sendIdleBlackFrames = settings.sendIdleBlackFrames !== false;
     if (curSender) curSender.blackFramesEnabled = sendIdleBlackFrames;
     foregroundPlayerRunState.repeatGuard.spacing = Math.max(
@@ -2716,6 +2740,28 @@ async function processQueue() {
         activeSendJob = sendJob;
         modelRecs = models;
         controllerStates = controllers;
+
+        // Controllers the layout marks "xLights Only" play their own copy of
+        // the show and are driven by sync, not pixel data (they were skipped
+        // above). Tell the sync sender about them.
+        showSyncRemotes = syncRemotesFromXlights(controllers);
+        if (showSyncRemotes.length) {
+            emitInfo(`Show remotes (sync, no pixel data): ${showSyncRemotes.map((r) => r.name).join(', ')}`);
+            for (const r of showSyncRemotes) {
+                if (r.proxy) {
+                    emitWarning(
+                        `${r.name} is a show remote reached only through ${r.proxy}; sync cannot be proxied, so it will not follow`,
+                    );
+                }
+            }
+            if (!latestSettings?.sync?.multisync?.enabled) {
+                emitWarning(
+                    `The layout marks ${showSyncRemotes.length} controller(s) as remotes, but sync sending is off — they will not play in step`,
+                );
+            }
+        }
+        multiSync.configure(multisyncConfigFor(latestSettings?.sync?.multisync));
+
         for (const c of controllers) {
             const xc = c.xlRecord;
             const cs = c.setup;

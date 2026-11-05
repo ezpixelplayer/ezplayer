@@ -29,7 +29,7 @@ import type {
     PlaybackSettings,
     SequenceRecord,
 } from '@ezplayer/ezplayer-core';
-import { findMatchingScheduleEntry } from '@ezplayer/ezplayer-core';
+import { findMatchingScheduleEntry, layoutPlayerMode } from '@ezplayer/ezplayer-core';
 import type {
     ContentMediaSource,
     ContentPlan,
@@ -138,10 +138,23 @@ export interface ContentSlicing {
     source: 'device' | 'xlights';
 }
 
+/** The layout record for a scanned device, matched on address or hostname. */
+export function recordFor(dev: DiscoveredController, known: KnownController[]): KnownController | undefined {
+    const host = dev.hostname?.toLowerCase();
+    return known.find((k) => !!k.address && (k.address === dev.ip || (!!host && k.address.toLowerCase() === host)));
+}
+
 /**
  * Whether this device should get a cut-down copy of each sequence, and of
- * what. Only an FPP running as a remote is sliced for: a player drives the
- * show and needs it whole. This is the rule xLights follows too.
+ * what. Only a remote is sliced for: a player drives the show and needs it
+ * whole. This is the rule xLights follows too.
+ *
+ * Where the layout has an opinion it decides, not the device's reported mode:
+ * the layout is the intent, and a device still carrying the last show's role
+ * would otherwise get the wrong cut (the disagreement is reported as drift and
+ * set right during config upload or distribution). A device the layout has
+ * never heard of is taken at its own word instead — there is no intent to go
+ * on, and the alternative is sending a remote the whole show.
  *
  * The device's own `channelRanges` is preferred over the xLights layout, since
  * it is the device describing what it actually drives; the layout is the
@@ -149,15 +162,13 @@ export interface ContentSlicing {
  */
 export function slicingFor(dev: DiscoveredController, known: KnownController[] = []): ContentSlicing | null {
     if (!isContentTarget(dev)) return null;
-    if ((dev.mode ?? '').toLowerCase() !== 'remote') return null;
+    const record = recordFor(dev, known);
+    const isRemote = record ? layoutPlayerMode(record) === 'remote' : (dev.mode ?? '').toLowerCase() === 'remote';
+    if (!isRemote) return null;
 
     const reported = parseChannelRanges(dev.channelRanges);
     if (reported.length) return { ranges: reported, source: 'device' };
 
-    const host = dev.hostname?.toLowerCase();
-    const record = known.find(
-        (k) => !!k.address && (k.address === dev.ip || (!!host && k.address.toLowerCase() === host)),
-    );
     if (record?.startChannel && record.channelCount) {
         // xLights counts channels from 1; a sequence's ranges count from 0.
         return {
