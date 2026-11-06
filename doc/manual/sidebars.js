@@ -73,6 +73,7 @@ const sidebars = {
                         'advanced/controllers/controllerlist',
                         'advanced/controllers/controlleractions',
                         'advanced/controllers/portmap',
+                        'advanced/controllers/contentdistribution',
                         'advanced/controllers/supportmatrix',
                     ],
                 },

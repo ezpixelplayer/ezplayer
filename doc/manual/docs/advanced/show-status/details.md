@@ -123,6 +123,14 @@ controllers were seen, and an overall health indicator — with expandable detai
 for each controller. This is covered on its own page:
 [Controllers](./controllers.md).
 
+## Content Distribution & Sync
+
+Whether the devices that keep their own copy of the show actually have this
+show, and what a distribution run is doing right now. The card only appears
+when such a device is known, or the feature has been set up or used. Full
+detail is on its own page:
+[Content Distribution](../controllers/contentdistribution.md).
+
 ## HTTP Listener Status
 
 Shows the port the local web server is using and whether it is **Listening**.
