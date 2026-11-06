@@ -27,6 +27,7 @@ import {
     createSliceWorkspace,
     DEFAULT_CONTENT_PLAYLIST,
     isContentTarget,
+    proxyForDevice,
     slicingFor,
     toContentDistReport,
     toContentDistRun,
@@ -65,6 +66,68 @@ function fseqBytes(opts: { channels: number; frames: number; mediaName?: string 
     head.writeBigUInt64LE(123456789n, 24);
     return Buffer.concat([head, varHeader, Buffer.alloc(opts.channels * opts.frames)]);
 }
+
+describe('how a device is reached', () => {
+    const known = (over: Partial<KnownController> & { name: string }): KnownController => ({
+        source: 'xlights',
+        ...over,
+    });
+
+    it('uses the proxy discovery found the device behind', () => {
+        const dev = device({ ip: '10.0.0.9', source: { via: 'fpp-proxy', proxy: '10.0.0.5' } });
+        expect(proxyForDevice(dev, [])).toBe('10.0.0.5');
+    });
+
+    it('uses the proxy the layout names for a device we learned by address', () => {
+        // The case that matters: nothing but the layout knows the controller
+        // sits on a network only the player can see.
+        const dev = device({ ip: '192.168.101.72' });
+        const recs = [known({ name: 'wled digquad', address: '192.168.101.72', proxy: '192.168.1.23' })];
+        expect(proxyForDevice(dev, recs)).toBe('192.168.1.23');
+    });
+
+    it('prefers what discovery saw over what the layout says', () => {
+        const dev = device({ ip: '10.0.0.9', source: { via: 'fpp-proxy', proxy: '10.0.0.5' } });
+        const recs = [known({ name: 'stale', address: '10.0.0.9', proxy: '10.0.0.77' })];
+        expect(proxyForDevice(dev, recs)).toBe('10.0.0.5');
+    });
+
+    it('goes direct when the layout names no proxy', () => {
+        const dev = device({ ip: '10.0.0.9' });
+        expect(proxyForDevice(dev, [known({ name: 'plain', address: '10.0.0.9' })])).toBeUndefined();
+    });
+
+    it('refuses to proxy a device through itself', () => {
+        const dev = device({ ip: '192.168.1.23', hostname: 'fpp4-lab' });
+        const recs = [known({ name: 'fpp4-lab', address: '192.168.1.23', proxy: '192.168.1.23' })];
+        expect(proxyForDevice(dev, recs)).toBeUndefined();
+    });
+
+    it('refuses a proxy naming the device by its own hostname', () => {
+        const dev = device({ ip: '192.168.1.23', hostname: 'fpp4-lab' });
+        const recs = [known({ name: 'fpp4-lab', address: '192.168.1.23', proxy: 'FPP4-Lab' })];
+        expect(proxyForDevice(dev, recs)).toBeUndefined();
+    });
+
+    it('addresses content for a proxied controller through that proxy', async () => {
+        const dev = device({ ip: '192.168.101.60', driverType: 'FPP' });
+        const recs = [known({ name: 'k16max-lab', address: '192.168.101.60', proxy: '192.168.1.23' })];
+        const target = contentTargetsFor([dev], undefined, recs)[0];
+        // The endpoint keeps its base URL private, so watch where it goes.
+        const seen: string[] = [];
+        const original = globalThis.fetch;
+        globalThis.fetch = (async (url: string | URL) => {
+            seen.push(String(url));
+            return new Response('{}', { status: 200 });
+        }) as typeof fetch;
+        try {
+            await target.endpoint.contentGetJson('/api/system/info');
+        } finally {
+            globalThis.fetch = original;
+        }
+        expect(seen).toEqual(['http://192.168.1.23/proxy/192.168.101.60/api/system/info']);
+    });
+});
 
 describe('content distribution targets', () => {
     it('counts FPP as holding content and other drivers as not', () => {

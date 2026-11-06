@@ -465,6 +465,15 @@ export interface KnownController {
     defaultGamma?: number;
     /** Output protocol, e.g. 'E131' / 'DDP'. */
     protocol?: string;
+    /**
+     * The FPP this controller is reached through, from xLights' `FPPProxy`
+     * attribute (or the networks root's `GlobalFPPProxy`). It is how a layout
+     * records a controller on a network we cannot see ourselves: every request
+     * for it has to go `http://<proxy>/proxy/<address>`. A device discovery
+     * found behind a proxy already knows its own; this is the only place a
+     * device we learned by address can learn it.
+     */
+    proxy?: string;
     /** xLights' Monitor flag: whether a player should health-check this one. */
     monitor?: boolean;
     /** E1.31 packet priority xLights declares (upstream default 100). */

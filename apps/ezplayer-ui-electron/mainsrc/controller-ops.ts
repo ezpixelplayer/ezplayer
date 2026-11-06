@@ -25,7 +25,7 @@ import type {
     PlaybackSettings,
     SequenceRecord,
 } from '@ezplayer/ezplayer-core';
-import { applyOverrides, ipInCidr, layoutPlayerMode, playerModeDrift } from '@ezplayer/ezplayer-core';
+import { applyOverrides, ipInCidr, isPlayerOnlyRecord, layoutPlayerMode, playerModeDrift } from '@ezplayer/ezplayer-core';
 import type {
     DiscoveryDevice,
     DiscoveryJob,
@@ -49,6 +49,7 @@ import {
     contentAutoDecision,
     contentStatusFor,
     contentTargetsFor,
+    proxyForDevice,
     createSliceWorkspace,
     isContentTarget,
     recordFor,
@@ -707,7 +708,86 @@ async function runRecord(command: Extract<ControllerCommand, { cmd: 'record' }>)
 }
 
 function proxyFor(dev: DiscoveredController): string | undefined {
-    return dev.source.via === 'fpp-proxy' ? dev.source.proxy : undefined;
+    return proxyForDevice(dev, state.known ?? []);
+}
+
+/** One top-up of one proxy's list: the work, and what to say about it. */
+interface ProxyTopUp {
+    ok: boolean;
+    notes: string[];
+    /** Set once the notes have been reported, so only one operation says it. */
+    reported?: boolean;
+}
+
+/**
+ * Top-ups in flight or already done, keyed by proxy and wanted hosts, so the
+ * usual case costs nothing after the first call while a layout change still
+ * takes effect. Keeping the *promise* rather than a done-flag is what makes it
+ * safe: controller reads run several at a time, and a flag set only on
+ * completion lets them all read the proxy's list before any of them has
+ * written it, and then each write the same thing.
+ */
+const proxyListWork = new Map<string, Promise<ProxyTopUp>>();
+
+/**
+ * Make each FPP the layout names as a proxy actually carry the controllers
+ * routed through it.
+ *
+ * FPP's proxy list is an allowlist: for a host that is not on it, the proxy's
+ * Apache answers `/proxy/<ip>` with its own 404. So a controller on a network
+ * only the player can see is unreachable until the player lists it, however
+ * carefully the layout records the proxy. Nothing is ever removed -- see
+ * {@link FPPController.addProxies}.
+ *
+ * Returns lines for the caller's operation; failures are reported, never
+ * thrown, since a proxy we cannot reach is one unreachable path among many.
+ */
+async function ensureProxyLists(): Promise<string[]> {
+    const notes: string[] = [];
+    const byProxy = new Map<string, { host: string; description: string }[]>();
+    for (const k of state.known ?? []) {
+        if (!k.proxy || !k.address || k.address === k.proxy) continue;
+        const list = byProxy.get(k.proxy) ?? [];
+        list.push({ host: k.address, description: k.name });
+        byProxy.set(k.proxy, list);
+    }
+    for (const [proxy, wanted] of byProxy) {
+        const key = `${proxy}|${wanted
+            .map((w) => w.host)
+            .sort()
+            .join(',')}`;
+        let work = proxyListWork.get(key);
+        if (!work) {
+            work = topUpProxyList(proxy, wanted);
+            proxyListWork.set(key, work);
+        }
+        const done = await work;
+        // A failure is worth retrying on the next read; a success is not.
+        if (!done.ok) proxyListWork.delete(key);
+        if (!done.reported) {
+            done.reported = true;
+            notes.push(...done.notes);
+        }
+    }
+    return notes;
+}
+
+/** Add whatever one proxy is missing. See {@link ensureProxyLists}. */
+async function topUpProxyList(proxy: string, wanted: { host: string; description: string }[]): Promise<ProxyTopUp> {
+    try {
+        const probe = await probeController(proxy, undefined, { preferDriver: 'FPP', expectController: true });
+        if (!probe.success || !probe.driver?.addProxies) {
+            return {
+                ok: false,
+                notes: [`${proxy} cannot hold a proxy list, so ${wanted.length} controller(s) behind it stay unreachable`],
+            };
+        }
+        const r = await probe.driver.addProxies(wanted);
+        if (!r.success) return { ok: false, notes: [`${proxy}: ${r.message ?? 'proxy list write failed'}`] };
+        return { ok: true, notes: r.changed ? [`${proxy}: ${r.message}`] : [] };
+    } catch (e) {
+        return { ok: false, notes: [`${proxy}: ${(e as Error).message}`] };
+    }
 }
 
 /** The show has remotes to drive, so whatever plays it must send sync. */
@@ -778,6 +858,7 @@ async function runStatus(
         slot = await started;
         if (!slot) return;
         release = holdData?.(dev.ip);
+        for (const note of await ensureProxyLists()) console.warn('[controller-ops] proxy list:', note);
         const probe = await probeController(dev.ip, proxyFor(dev), {
             detail: true,
             preferDriver: dev.driverType,
@@ -1000,6 +1081,7 @@ async function runUpload(
         // and an interrupted upload leaves it worse off, so its data stays held
         // for the whole operation.
         release = holdData?.(dev.ip);
+        const proxyNotes = await ensureProxyLists();
         // Upload needs xLights intent, so a controller is expected here.
         const probe = await probeController(dev.ip, proxyFor(dev), {
             preferDriver: dev.driverType,
@@ -1008,7 +1090,7 @@ async function runUpload(
         if (!probe.success || !probe.driver) {
             throw new Error(probe.error ?? 'no controller responded');
         }
-        const warnings: string[] = [];
+        const warnings: string[] = [...proxyNotes];
         // Pre-upload capability gate: errors abort before anything is written;
         // warnings ride along.
         const caps = rec.vendor && rec.model ? getCapabilities(rec.vendor, rec.model, rec.variant ?? '') : undefined;
@@ -1148,6 +1230,25 @@ async function runUpload(
                 const r = await probe.driver.setVirtualMatrices(virtualMatrices);
                 if (r.warnings) warnings.push(...r.warnings);
                 if (!r.success) throw new Error(`virtual matrix upload failed: ${r.message ?? 'unknown error'}`);
+            }
+        }
+        // A send list outlives the show that wanted it, and an FPP that both
+        // receives channel data and has outputs configured re-transmits what it
+        // receives -- so every controller in a stale list gets each frame
+        // twice, from a box nobody thinks is sending. Configuring a device for
+        // this show is the moment to drop that; the show's own sender gets its
+        // list written afterwards, by an `outputs` upload. A player-only record
+        // exists in order to send, so its list is left alone.
+        if (command.scope === 'full' && !isPlayerOnlyRecord(rec) && probe.driver.clearUniverseOutputs) {
+            try {
+                const cleared = await probe.driver.clearUniverseOutputs();
+                if (!cleared.success) {
+                    warnings.push(`could not clear stale output universes: ${cleared.message ?? 'unknown error'}`);
+                } else if (cleared.changed) {
+                    warnings.push(cleared.message ?? 'cleared stale output universes');
+                }
+            } catch (e) {
+                warnings.push(`could not clear stale output universes: ${(e as Error).message}`);
             }
         }
         // The layout's role for this controller is part of its configuration.
@@ -1350,7 +1451,7 @@ async function refreshContentStatus(id: string): Promise<void> {
             ...(showFolder ? { showFolder } : {}),
         });
         if (!plan.sequences.length) return;
-        const targets = contentTargetsFor([dev], [dev.id]);
+        const targets = contentTargetsFor([dev], [dev.id], state.known ?? []);
         if (!targets.length) return;
 
         // Check only: this reads the device's own file list and sends nothing.
@@ -1430,7 +1531,7 @@ async function runDistribute(
     const checkOnly = !!command.checkOnly;
     const { sequences, settings, showFolder } = contentSource();
 
-    const targets = contentTargetsFor(Object.values(state.devices), command.ids);
+    const targets = contentTargetsFor(Object.values(state.devices), command.ids, state.known ?? []);
     if (!targets.length) {
         throw new Error('no FPP targets known — scan for controllers first');
     }
@@ -1472,6 +1573,15 @@ async function runDistribute(
     try {
         slot = await started;
         if (!slot) return;
+
+        // Content for a proxied controller travels the same path a status
+        // read does, so the proxy has to list it first.
+        const proxyNotes = checkOnly ? [] : await ensureProxyLists();
+        if (proxyNotes.length) {
+            console.warn('[controller-ops] proxy list:', proxyNotes);
+            op.label += ` (${proxyNotes.join('; ')})`;
+            publish();
+        }
 
         // Each target takes the role its layout record asks for, set the way a
         // config upload would: a device left in the last show's role would play

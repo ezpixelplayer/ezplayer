@@ -91,9 +91,14 @@ function versionParts(version: string | undefined): [number, number, number] {
  * One transfer target per device, in the order the devices were given.
  * `ids` selects devices by id; without it every content target is included.
  * A device reached through an FPP proxy is addressed through that proxy, the
- * same way a status read reaches it.
+ * same way a status read reaches it -- so `known` is wanted whenever the
+ * layout, rather than discovery, is what knows about the proxy.
  */
-export function contentTargetsFor(devices: DiscoveredController[], ids?: string[]): ContentSyncTargetSpec[] {
+export function contentTargetsFor(
+    devices: DiscoveredController[],
+    ids?: string[],
+    known: KnownController[] = [],
+): ContentSyncTargetSpec[] {
     const wanted = ids?.length ? new Set(ids) : undefined;
     const out: ContentSyncTargetSpec[] = [];
     for (const dev of devices) {
@@ -101,7 +106,7 @@ export function contentTargetsFor(devices: DiscoveredController[], ids?: string[
         // An explicitly named device that is not a content target is reported
         // rather than silently dropped, so asking has a visible answer.
         const supported = isContentTarget(dev);
-        const proxy = dev.source.via === 'fpp-proxy' ? dev.source.proxy : undefined;
+        const proxy = proxyForDevice(dev, known);
         const baseUrl = proxy ? `http://${proxy}/proxy/${dev.ip}` : `http://${dev.ip}`;
         const hostName = dev.hostname ?? dev.ip;
         const [major, minor, patch] = versionParts(dev.firmwareVersion);
@@ -142,6 +147,21 @@ export interface ContentSlicing {
 export function recordFor(dev: DiscoveredController, known: KnownController[]): KnownController | undefined {
     const host = dev.hostname?.toLowerCase();
     return known.find((k) => !!k.address && (k.address === dev.ip || (!!host && k.address.toLowerCase() === host)));
+}
+
+/**
+ * How to reach a device: through the FPP discovery found it behind, or through
+ * the one its layout record names. A device we learned by address carries no
+ * proxy of its own, so the record is the only place that knows -- which is
+ * what makes a controller on a network only the player can see reachable at
+ * all. A record naming the device itself is ignored rather than proxied into a
+ * loop.
+ */
+export function proxyForDevice(dev: DiscoveredController, known: KnownController[]): string | undefined {
+    if (dev.source.via === 'fpp-proxy') return dev.source.proxy;
+    const viaLayout = recordFor(dev, known)?.proxy;
+    if (!viaLayout || viaLayout === dev.ip) return undefined;
+    return viaLayout.toLowerCase() === dev.hostname?.toLowerCase() ? undefined : viaLayout;
 }
 
 /**

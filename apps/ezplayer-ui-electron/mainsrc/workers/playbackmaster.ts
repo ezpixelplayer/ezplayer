@@ -2264,6 +2264,7 @@ function xlControllerToKnown(
         defaultBrightness: c.defaultBrightnessUnderFullControl,
         defaultGamma: c.defaultGammaUnderFullControl,
         protocol: c.protocol || undefined,
+        proxy: c.fppProxy || undefined,
         monitor: c.monitor,
         priority: c.priority,
         suppressDuplicates: c.suppressDuplicates,
