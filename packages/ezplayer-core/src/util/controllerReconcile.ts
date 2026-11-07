@@ -26,7 +26,8 @@ import type {
     ControllerNetwork,
     EzpControllerRecord,
 } from '../types/ControllerOps';
-import type { PortDriftKind } from '../types/ControllerOps';
+import type { ControllerRecordState, PortDriftKind, PortDriftSeverity } from '../types/ControllerOps';
+import { activeStateFrom } from '../types/ControllerOps';
 import type { ControllerStatus } from '../types/DataTypes';
 
 /**
@@ -48,12 +49,18 @@ export function applyOverrides(xlights: KnownController[], records: EzpControlle
             out.push(k);
             continue;
         }
+        const role = activeStateFrom(r.active);
         out.push({
             ...k,
             address: r.address ?? k.address,
-            active: r.active ?? k.active,
-            // A record's enable/disable override collapses the three-way state.
-            enableState: r.active !== undefined ? (r.active ? 'enabled' : 'disabled') : k.enableState,
+            // The boolean stays a boolean: "is this controller in the show".
+            active: role ? role !== 'disabled' : k.active,
+            // The layout's own word is kept as it was. The record's role sits
+            // beside it rather than overwriting it, so resolving the two is
+            // one function's job and drift still has a baseline to compare.
+            enableState: k.enableState,
+            ...(role ? { role } : {}),
+            ...(r.presumeUp ? { presumeUp: true } : {}),
             vendor: r.vendor ?? k.vendor,
             model: r.model ?? k.model,
             variant: r.variant ?? k.variant,
@@ -65,11 +72,16 @@ export function applyOverrides(xlights: KnownController[], records: EzpControlle
     // Records with no xLights backing (own records / promoted ghosts).
     for (const r of records) {
         if (seen.has(r.name) || r.deleted) continue;
+        const role = activeStateFrom(r.active);
         out.push({
             name: r.name,
             address: r.address,
-            active: r.active ?? true,
-            enableState: r.active === false ? 'disabled' : 'enabled',
+            active: role !== 'disabled',
+            // No layout entry, so there is nothing for the record to defer to:
+            // an own record with no role of its own is a plain controller.
+            enableState: role === 'disabled' ? 'disabled' : 'enabled',
+            ...(role ? { role } : {}),
+            ...(r.presumeUp ? { presumeUp: true } : {}),
             vendor: r.vendor,
             model: r.model,
             variant: r.variant,
@@ -110,9 +122,13 @@ export function reconcileControllers(known: KnownController[], devices: Discover
         if (device) claimedIps.add(device.ip);
         // A device we once saw but that no longer answers keeps its last-known
         // detail on the row, yet the record is absent until it answers again.
+        // A controller told to presume up is never reported absent: it is
+        // known to serve while dropping pings, which is the whole point of
+        // the flag. Distinguishing "absent" from "never looked" needs the
+        // liveness the scan does not carry, so `overlayHealth` does that.
         rows.push({
             key: k.name,
-            state: device && !device.unreachable ? 'present' : 'absent',
+            state: device && !device.unreachable ? 'present' : k.presumeUp ? 'presumed' : 'absent',
             name: k.name,
             address: k.address,
             device,
@@ -120,6 +136,8 @@ export function reconcileControllers(known: KnownController[], devices: Discover
             model: k.model,
             active: k.active,
             enableState: k.enableState,
+            role: k.role,
+            presumeUp: k.presumeUp,
             source: k.source,
             intent: k.ports,
             modelIntents: k.modelIntents,
@@ -167,11 +185,31 @@ export function reconcileControllers(known: KnownController[], devices: Discover
  *  against the intent's bare model names. */
 const modelCompareKey = (name: string): string => name.toLowerCase().replace(/-str-\d+$/, '');
 
+/**
+ * Drivers where an output the show does not describe still changes what the
+ * described outputs do.
+ *
+ * WLED maps incoming channels onto LEDs by each bus's own range, so a bus left
+ * over from another configuration overlaps the ranges of the buses we do set,
+ * and the board lights the wrong pixels. Everywhere else an output on a port
+ * the show does not use is inert: nothing is sent to it.
+ */
+const EXTRAS_CONFLICT_DRIVERS = new Set(['WLED']);
+
+/** The weight of a drift kind on its own, with no driver to qualify it. */
+export function portDriftSeverity(drift: PortDriftKind): PortDriftSeverity {
+    if (drift === 'ok') return 'ok';
+    return drift === 'unexpected' ? 'extra' : 'conflict';
+}
+
 export function reconcilePorts(
     intent: ControllerPortIntent[],
     actual: ControllerPort[],
     controllerStart?: number,
+    driverType?: string,
 ): PortReconcile[] {
+    const extraSeverity: PortDriftSeverity =
+        driverType && EXTRAS_CONFLICT_DRIVERS.has(driverType) ? 'conflict' : 'extra';
     const byPort = new Map<number, PortReconcile>();
     const intendedStarts = new Map(intent.map((i) => [i.port, i.startChannel]));
     const startOk = (intended: number, actualStart: number): boolean =>
@@ -231,7 +269,9 @@ export function reconcilePorts(
         }
     }
 
-    return [...byPort.values()].sort((x, y) => x.port - y.port);
+    return [...byPort.values()]
+        .sort((x, y) => x.port - y.port)
+        .map((r) => ({ ...r, severity: r.drift === 'unexpected' ? extraSeverity : portDriftSeverity(r.drift) }));
 }
 
 /**
@@ -276,7 +316,9 @@ export function reconcileSerialPorts(
             });
         }
     }
-    return [...byPort.values()].sort((x, y) => x.port - y.port);
+    return [...byPort.values()]
+        .sort((x, y) => x.port - y.port)
+        .map((r) => ({ ...r, severity: portDriftSeverity(r.drift) }));
 }
 
 /** FPP drivers for HUB75 panels on a hat or cape. */
@@ -363,7 +405,9 @@ export function reconcilePanelMatrices(
         row.drift = notes.length ? 'count' : 'ok';
         row.notes = notes;
     }
-    return [...byPort.values()].sort((x, y) => x.port - y.port);
+    return [...byPort.values()]
+        .sort((x, y) => x.port - y.port)
+        .map((r) => ({ ...r, severity: portDriftSeverity(r.drift) }));
 }
 
 /**
@@ -437,19 +481,35 @@ export function reconcileVirtualMatrices(
         row.notes = notes;
     });
     const start = (r: VirtualMatrixReconcile): number => r.intendedStartChannel ?? r.actualStartChannel ?? 0;
-    return [...byName.values(), ...unclaimed].sort((x, y) => (x.port ?? 0) - (y.port ?? 0) || start(x) - start(y));
+    return [...byName.values(), ...unclaimed]
+        .sort((x, y) => (x.port ?? 0) - (y.port ?? 0) || start(x) - start(y))
+        .map((r) => ({ ...r, severity: portDriftSeverity(r.drift) }));
 }
 
-/** True when any port is out of sync — the row-level "needs attention" flag. */
-export function hasPortDrift(rows: { drift: PortDriftKind }[]): boolean {
-    return rows.some((r) => r.drift !== 'ok');
+/**
+ * True when any port contradicts the show — the row-level "needs attention"
+ * flag, and so the one that must not cry wolf. A port carrying config this
+ * show does not describe is not a contradiction; see {@link hasExtraConfig}.
+ */
+export function hasPortDrift(rows: { drift: PortDriftKind; severity?: PortDriftSeverity }[]): boolean {
+    return rows.some((r) => (r.severity ?? portDriftSeverity(r.drift)) === 'conflict');
+}
+
+/** True when any port carries config this show does not describe: a leftover
+ *  string or DMX port on a port the show does not use. */
+export function hasExtraConfig(rows: { drift: PortDriftKind; severity?: PortDriftSeverity }[]): boolean {
+    return rows.some((r) => (r.severity ?? portDriftSeverity(r.drift)) === 'extra');
 }
 
 /** Input-config intent-vs-actual reconciliation result. */
 export interface InputReconcile {
+    /** True only for a contradiction — see {@link PortDriftSeverity}. */
     drift: boolean;
     /** Human-readable mismatch notes; empty when in sync. */
     notes: string[];
+    /** Input config this show does not describe, which nothing is sent to:
+     *  reported, but not as drift. */
+    extraNotes: string[];
     intentSummary: string;
     actualSummary: string;
 }
@@ -492,6 +552,9 @@ export function reconcileInputs(
     actual: ControllerInputInfo | undefined,
 ): InputReconcile {
     const notes: string[] = [];
+    // Kept apart from `notes` so a device listening wider than the show needs
+    // does not read as a misconfiguration.
+    const extraNotes: string[] = [];
     const intentList = intent ?? [];
     const intentProto = normalizeProtocol(intentList[0]?.type);
     const intentUniverses = intentList.filter((o) => o.universe !== undefined);
@@ -502,7 +565,7 @@ export function reconcileInputs(
           : `${(intentProto ?? '').toUpperCase()} ${summarizeUniverses(intentUniverses.map((o) => ({ universe: o.universe!, channels: o.channels })))}`;
 
     if (!actual || !intentList.length) {
-        return { drift: false, notes, intentSummary, actualSummary: actual ? '' : 'not read' };
+        return { drift: false, notes, extraNotes, intentSummary, actualSummary: actual ? '' : 'not read' };
     }
 
     const actualProto = normalizeProtocol(actual.protocol);
@@ -518,7 +581,7 @@ export function reconcileInputs(
     if (intentProto && actualProto && intentProto !== actualProto) {
         notes.push(`protocol: xLights ${intentProto.toUpperCase()} vs device ${actualProto.toUpperCase()}`);
         // Protocol wrong ⇒ finer comparisons are meaningless.
-        return { drift: true, notes, intentSummary, actualSummary };
+        return { drift: true, notes, extraNotes, intentSummary, actualSummary };
     }
 
     if ((intentProto === 'e131' || intentProto === 'artnet') && intentUniverses.length && actual.universes) {
@@ -544,7 +607,9 @@ export function reconcileInputs(
                     `universes missing on device: ${missing.slice(0, 8).join(', ')}${missing.length > 8 ? '…' : ''}`,
                 );
             if (extra.length)
-                notes.push(`universes not in xLights: ${extra.slice(0, 8).join(', ')}${extra.length > 8 ? '…' : ''}`);
+                extraNotes.push(
+                    `universes not in xLights: ${extra.slice(0, 8).join(', ')}${extra.length > 8 ? '…' : ''}`,
+                );
             for (const u of resized.slice(0, 4)) {
                 notes.push(`universe ${u} size: xLights ${iMap.get(u)} vs device ${aMap.get(u)}`);
             }
@@ -562,7 +627,7 @@ export function reconcileInputs(
         }
     }
 
-    return { drift: notes.length > 0, notes, intentSummary, actualSummary };
+    return { drift: notes.length > 0, notes, extraNotes, intentSummary, actualSummary };
 }
 
 /**
@@ -580,7 +645,12 @@ export function overlayHealth(rows: ControllerGridRow[], statuses: ControllerSta
     return rows.map((r) => {
         const addr = (r.device?.ip ?? r.address)?.toLowerCase();
         const match = (addr ? byAddr.get(addr) : undefined) ?? (r.name ? byName.get(r.name.toLowerCase()) : undefined);
-        if (!match) return r;
+        if (!match) {
+            // No liveness for this address, and no scan found it either, so
+            // nobody has actually looked -- which is a weaker claim than
+            // "we looked and it is gone" and should not read like one.
+            return r.state === 'absent' && !r.device ? { ...r, state: 'unknown' } : r;
+        }
         // A live "Up" ping proves the device is on-network even if the scan
         // missed it.  A "Down" ping is just as live a signal the other way.
         const state =

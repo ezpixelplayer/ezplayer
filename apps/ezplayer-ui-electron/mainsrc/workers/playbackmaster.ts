@@ -458,9 +458,7 @@ function sendPlayerStateUpdate() {
  * through the proxy's own path; others are pinged, with their web service as a
  * fallback for controllers that drop ICMP.
  */
-function pingTargetFor(c: ControllerState): PingTarget {
-    const address = c.setup.address;
-    const proxy = c.xlRecord?.fppProxy;
+function pingTargetFor(address: string, proxy?: string): PingTarget {
     const host = (h: string) => (h.includes(':') ? `[${h}]` : h);
     if (proxy) return { address, icmp: false, webUrl: `http://${host(proxy)}/proxy/${address}/` };
     return { address, icmp: true, webUrl: `http://${host(address)}/` };
@@ -1595,8 +1593,17 @@ let showSyncRemotes: SyncRemoteTarget[] = [];
  * straight to the device, and the warning for that is raised when the
  * controllers load.
  */
+/**
+ * Work out whether sync goes out, and to whom.
+ *
+ * The layout's remotes are added to whatever the operator listed by hand, and a
+ * proxied remote is left out because sync is UDP straight to the device and a
+ * proxy forwards HTTP only. `auto` then decides by the result: if there is
+ * nobody to sync, sending it is pointless, and if there is anybody, not
+ * sending it means they sit idle through the show.
+ */
 function multisyncConfigFor(cfg: MultiSyncConfig | undefined): MultiSyncConfig | undefined {
-    if (!cfg?.enabled || showSyncRemotes.length === 0) return cfg;
+    if (!cfg) return cfg;
     const listed = (cfg.remotes ?? []).map((r) => r.trim()).filter((r) => r.length > 0);
     const have = new Set(listed.map((r) => r.replace(/:\d+$/, '').toLowerCase()));
     const added: string[] = [];
@@ -1605,7 +1612,12 @@ function multisyncConfigFor(cfg: MultiSyncConfig | undefined): MultiSyncConfig |
         have.add(r.address.toLowerCase());
         added.push(r.address);
     }
-    return added.length ? { ...cfg, remotes: [...listed, ...added] } : cfg;
+    const remotes = added.length ? [...listed, ...added] : listed;
+    // An explicit list is reason enough on its own: an xSchedule remote the
+    // operator typed in is someone to sync, whatever the layout says.
+    const mode = cfg.mode ?? (cfg.enabled ? 'on' : 'off');
+    const enabled = mode === 'on' ? true : mode === 'off' ? false : remotes.length > 0;
+    return { ...cfg, enabled, ...(added.length ? { remotes } : {}) };
 }
 
 function dispatchSettings(settings: PlaybackSettings) {
@@ -2736,8 +2748,22 @@ async function processQueue() {
             fpsOverrides,
         };
         const sendJob = await openControllersForDataSend(controllers, openForDataSendOpts);
+        showSyncRemotes = syncRemotesFromXlights(controllers);
+        // Watched: every controller the layout gives an address, except one it
+        // marks Inactive. Being unusable as a *sender* is not the same as
+        // being uninteresting -- a remote takes sync instead of pixel data and
+        // a second player runs the show itself, yet both drive part of the
+        // display, and one that is down costs that part with nothing else to
+        // say so. An Inactive controller is out of the show by instruction.
+        const watched = new Map<string, PingTarget>();
+        for (const c of controllers) {
+            const xc = c.xlRecord;
+            const address = c.setup.address?.trim();
+            if (!address || !xc || xc.activeState === 'Inactive' || xc.type !== 'Ethernet') continue;
+            if (!watched.has(address)) watched.set(address, pingTargetFor(address, xc.fppProxy));
+        }
         setPingConfig({
-            targets: controllers.filter((c) => c.setup.usable).map(pingTargetFor),
+            targets: [...watched.values()],
             // Pings are cheap; a whole show's controllers go out in one burst.
             concurrency: 64,
             maxSamples: 10,
@@ -2751,7 +2777,6 @@ async function processQueue() {
         // Controllers the layout marks "xLights Only" play their own copy of
         // the show and are driven by sync, not pixel data (they were skipped
         // above). Tell the sync sender about them.
-        showSyncRemotes = syncRemotesFromXlights(controllers);
         if (showSyncRemotes.length) {
             emitInfo(`Show remotes (sync, no pixel data): ${showSyncRemotes.map((r) => r.name).join(', ')}`);
             for (const r of showSyncRemotes) {
@@ -2761,7 +2786,9 @@ async function processQueue() {
                     );
                 }
             }
-            if (!latestSettings?.sync?.multisync?.enabled) {
+            // Read the resolved config, not the stored flag: under `auto` the
+            // stored `enabled` is false and sync still goes out.
+            if (!multisyncConfigFor(latestSettings?.sync?.multisync)?.enabled) {
                 emitWarning(
                     `The layout marks ${showSyncRemotes.length} controller(s) as remotes, but sync sending is off — they will not play in step`,
                 );

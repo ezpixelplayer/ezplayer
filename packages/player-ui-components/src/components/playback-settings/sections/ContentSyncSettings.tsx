@@ -338,20 +338,29 @@ export const ContentSyncSettings: React.FC = () => {
             <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
                 Let other players follow this one. FPP and xSchedule remotes understand FPP MultiSync.
             </Typography>
-            <FormControlLabel
-                control={
-                    <Switch
-                        checked={!!multisync?.enabled}
-                        onChange={(e) => dispatch(playbackSettingsActions.setMultisyncEnabled(e.target.checked))}
-                    />
-                }
-                label="FPP MultiSync master"
-            />
+            <FormControl sx={{ mb: 1 }}>
+                <RadioGroup
+                    row
+                    value={multisync?.mode ?? (multisync?.enabled ? 'on' : 'off')}
+                    onChange={(e) =>
+                        dispatch(playbackSettingsActions.setMultisyncMode(e.target.value as 'auto' | 'on' | 'off'))
+                    }
+                >
+                    <FormControlLabel value="auto" control={<Radio />} label="Automatic" />
+                    <FormControlLabel value="on" control={<Radio />} label="On" />
+                    <FormControlLabel value="off" control={<Radio />} label="Off" />
+                </RadioGroup>
+            </FormControl>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                Automatic sends sync whenever there is anyone to send it to — a controller the layout marks as a remote,
+                or an address listed below. A layout with remotes and sync switched off is a show that plays with part
+                of the display sitting idle.
+            </Typography>
             <FormControlLabel
                 control={
                     <Switch
                         checked={multisync?.mediaSync !== false}
-                        disabled={!multisync?.enabled}
+                        disabled={(multisync?.mode ?? (multisync?.enabled ? 'on' : 'off')) === 'off'}
                         onChange={(e) => dispatch(playbackSettingsActions.setMultisyncMediaSync(e.target.checked))}
                     />
                 }

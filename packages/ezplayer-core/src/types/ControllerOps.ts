@@ -400,6 +400,123 @@ export type ControllerEnableState = 'enabled' | 'disabled' | 'xlightsOnly';
 export type ControllerPlayerMode = 'player' | 'remote';
 
 /**
+ * What we have been told a controller's part in the show is -- the final word,
+ * which is why it lives on our own record rather than being re-derived.
+ *
+ *  - `enabled`   in the show and sent pixel data (xLights "Active")
+ *  - `disabled`  not in the show at all (xLights "Inactive")
+ *  - `player`    plays the show itself, from its own copy of the content
+ *  - `remote`    plays its own channels from its own copy, following sync
+ *
+ * `enabled` and `player` resolve to the same role. The distinction is for the
+ * operator: on a device that cannot hold content the role is meaningless, and
+ * calling that state "player" in the UI would invite the question.
+ */
+export type ControllerActiveState = 'enabled' | 'disabled' | 'player' | 'remote';
+
+/** Whether this state keeps the controller out of the show entirely. */
+export function isDisabledState(a: ControllerActiveState | undefined): boolean {
+    return a === 'disabled';
+}
+
+/**
+ * Read a stored `active`, which was a boolean before it carried a role.
+ *
+ * A stored `true` becomes "no opinion" rather than `enabled`: it was the
+ * default every record was written with, never something an operator chose,
+ * and treating it as a choice would let it override the layout -- which is
+ * exactly the bug that made a controller the layout marks "xLights Only" come
+ * out as a player. A stored `false` was a deliberate Disable, so it survives.
+ */
+export function activeStateFrom(value: unknown): ControllerActiveState | undefined {
+    if (value === false) return 'disabled';
+    if (value === true) return undefined;
+    return value === 'enabled' || value === 'disabled' || value === 'player' || value === 'remote' ? value : undefined;
+}
+
+/** The resolved part a controller plays, with what the device itself said. */
+export interface ResolvedControllerRole {
+    /** The part it plays; `none` when it is not in the show. */
+    role: ControllerPlayerMode | 'none';
+    /** Which stage of the pipeline decided. */
+    source: 'record' | 'layout' | 'device' | 'default';
+    /** The device's own word, kept rather than replaced -- see below. */
+    reported?: string;
+    /** The disagreement between the two, as a sentence, when there is one. */
+    drift?: string;
+}
+
+/**
+ * Resolve what part a controller plays.
+ *
+ * A pipeline, not a lookup: discovery seeds what the device says, the layout
+ * overrides that, and our own record is the final word. Each stage speaks only
+ * when it has something to say, so an unedited record defers to the layout and
+ * a layout with no opinion defers to the device.
+ *
+ * `reported` is carried beside the answer instead of being replaced by it. The
+ * disagreement between what we want and what the device says IS the drift the
+ * operator acts on, so a resolver that overwrote it would leave drift
+ * detection with nothing to compare.
+ */
+export function resolveControllerRole(k: {
+    role?: ControllerActiveState;
+    enableState?: ControllerEnableState;
+    protocol?: string;
+    model?: string;
+    reportedMode?: string;
+}): ResolvedControllerRole {
+    const reported = k.reportedMode;
+    const answer = (role: ResolvedControllerRole['role'], source: ResolvedControllerRole['source']) => {
+        const want = role === 'none' ? undefined : role;
+        const drift = playerModeDrift(reported, want);
+        return { role, source, ...(reported ? { reported } : {}), ...(drift ? { drift } : {}) };
+    };
+
+    // 1. What we were told.
+    if (k.role === 'disabled') return answer('none', 'record');
+    if (k.role === 'remote') return answer('remote', 'record');
+    if (k.role === 'player' || k.role === 'enabled') return answer('player', 'record');
+
+    // 2. A player-only entry owns no channels, so xLights records it as
+    //    "xLights Only" to keep the show's pixels off it. That means "send
+    //    this nothing", not "this is a remote" -- it is the show's player.
+    if (isPlayerOnlyRecord(k)) return answer('player', 'layout');
+
+    // 3. What the layout asks.
+    if (k.enableState === 'xlightsOnly') return answer('remote', 'layout');
+    if (k.enableState === 'disabled') return answer('none', 'layout');
+    if (k.enableState === 'enabled') return answer('player', 'layout');
+
+    // 4. What the device says of itself, when nothing above has an opinion.
+    if (reported) {
+        const have = reported.toLowerCase();
+        if (have === 'remote') return answer('remote', 'device');
+        if (PLAYER_ROLE_NAMES.has(have)) return answer('player', 'device');
+    }
+    return answer('none', 'default');
+}
+
+/**
+ * Whether to watch this controller: ping it, identify it, and let content and
+ * config reach it. Everything the layout or an operator names is watched --
+ * a remote that is down costs its whole share of the display, and nothing
+ * else in the product would say so. Only a disabled controller is ignored.
+ */
+export function shouldWatchController(k: {
+    address?: string;
+    role?: ControllerActiveState;
+    enableState?: ControllerEnableState;
+    protocol?: string;
+    model?: string;
+}): boolean {
+    if (!k.address?.trim()) return false;
+    if (k.role === 'disabled') return false;
+    if (k.role) return true;
+    return k.enableState !== 'disabled';
+}
+
+/**
  * The role the layout asks of a controller. "xLights Only" is how xLights
  * records a show remote: the controller keeps its channels in the layout, but
  * a player must not send it pixel data. An `Inactive` controller is not in the
@@ -410,17 +527,44 @@ export function isPlayerOnlyRecord(k: { protocol?: string; model?: string }): bo
 }
 
 export function layoutPlayerMode(k: {
+    role?: ControllerActiveState;
     enableState?: ControllerEnableState;
     protocol?: string;
     model?: string;
 }): ControllerPlayerMode | undefined {
-    // A player-only entry has no outputs, so xLights records it as "xLights
-    // Only" to keep the show off it. That means "send this no pixels", not
-    // "this is a remote" -- it is the show's player.
+    const resolved = resolveControllerRole(k);
+    return resolved.role === 'none' ? undefined : resolved.role;
+}
+
+/** What part a controller plays in content distribution. */
+export type ContentRole = 'player' | 'remote' | 'none';
+
+/**
+ * Whether a controller plays from its own copy of the show's files, and as
+ * what. A narrower question than {@link resolveControllerRole}.
+ *
+ * A remote plays its own channels from its own copy, and the show's player
+ * plays the whole show from its copy, so both need files. An Active controller
+ * also *resolves* to the role 'player' -- the layout has it in the show, and a
+ * player is what drives it -- but its pixels arrive live over the wire, so it
+ * needs no files at all. Only a controller named as the player plays from its
+ * own copy: an xLights "Player Only" entry, or a record set to Player.
+ *
+ * `enabled` on a record is the operator saying "an ordinary controller in the
+ * show", which is the one answer that rules both roles out.
+ */
+export function contentRoleOf(k: {
+    role?: ControllerActiveState;
+    enableState?: ControllerEnableState;
+    protocol?: string;
+    model?: string;
+}): ContentRole {
+    if (k.role === 'remote') return 'remote';
+    if (k.role === 'player') return 'player';
+    if (k.role === 'disabled' || k.role === 'enabled') return 'none';
     if (isPlayerOnlyRecord(k)) return 'player';
     if (k.enableState === 'xlightsOnly') return 'remote';
-    if (k.enableState === 'enabled') return 'player';
-    return undefined;
+    return 'none';
 }
 
 /** FPP's legacy 'master' is a player that also sends sync; 'bridge' plays
@@ -456,7 +600,16 @@ export interface KnownController {
     address?: string;
     /** Boolean collapse of `enableState` (`xlightsOnly` counts as true). */
     active?: boolean;
+    /** What the layout asks, untouched by our record, so drift has a baseline. */
     enableState?: ControllerEnableState;
+    /**
+     * What our own record says the controller's part is, which outranks the
+     * layout. Absent means the record has no opinion -- not that it is a
+     * plain controller. See {@link resolveControllerRole}.
+     */
+    role?: ControllerActiveState;
+    /** Reachable even when it will not answer a ping. */
+    presumeUp?: boolean;
     vendor?: string;
     model?: string;
     variant?: string;
@@ -678,8 +831,22 @@ export interface EzpControllerRecord {
     /** Override the xLights address; also how `associate`/`promote` bind a
      *  record to a discovered IP. */
     address?: string;
-    /** Override active state (Enable / Disable). */
-    active?: boolean;
+    /**
+     * The controller's part in the show: Enable / Disable, or Player / Remote
+     * for a device that holds its own copy. Absent means "no opinion" and the
+     * layout decides. Stored as a boolean by older builds -- read it through
+     * {@link activeStateFrom}.
+     */
+    active?: ControllerActiveState;
+    /**
+     * Treat as reachable even when it does not answer a ping.
+     *
+     * Some controllers are up and serving while silently dropping ICMP, and
+     * there is no rule that predicts which. Without this they are reported
+     * absent and -- worse -- skipped by content distribution, which refuses an
+     * unreachable target so a run cannot hang on it.
+     */
+    presumeUp?: boolean;
     /** Override controller identity for capability resolution, matching the
      *  vendor/model/variant keys of the bundled .xcontroller definitions. */
     vendor?: string;
@@ -700,10 +867,15 @@ export type EzpControllerRecordPatch = Partial<Omit<EzpControllerRecord, 'name'>
 /**
  * How a grid row relates our known records to the live scan:
  *  - `present`      a known record we also found on the network
- *  - `absent`       a known record we did NOT find
+ *  - `absent`       we looked for it and it was not there
+ *  - `unknown`      we have not looked yet, so nothing is claimed either way
+ *  - `presumed`     it did not answer, but its record says to presume it up
  *  - `unregistered` a network find matching no record (a "ghost")
+ *
+ * `absent` and `unknown` were one state once, which read as "we pinged and it
+ * is gone" when the truth was often "we never pinged it".
  */
-export type ControllerRecordState = 'present' | 'absent' | 'unregistered';
+export type ControllerRecordState = 'present' | 'absent' | 'unknown' | 'presumed' | 'unregistered';
 
 /** One row of the reconciliation grid. */
 export interface ControllerGridRow {
@@ -719,6 +891,10 @@ export interface ControllerGridRow {
     vendor?: string;
     model?: string;
     active?: boolean;
+    /** What our record says this controller's part is; absent = no opinion. */
+    role?: ControllerActiveState;
+    /** Reachable even when it will not answer a ping. */
+    presumeUp?: boolean;
     /** Three-way enable state (`active` is its boolean collapse). */
     enableState?: ControllerEnableState;
     source?: KnownController['source'];
@@ -849,6 +1025,22 @@ export interface ControllerPort {
  *                 shows another part of the show */
 export type PortDriftKind = 'ok' | 'missing' | 'unexpected' | 'count' | 'start';
 
+/**
+ * How much a drift matters, which is a different question from what it is.
+ *
+ * `conflict` is config that contradicts what this show needs: the display is
+ * wrong until a config upload puts it right. `extra` is config the show simply
+ * does not describe — a string or a DMX port left over from another season,
+ * sitting on a port this show does not use. Nothing is sent to it, so it
+ * changes nothing we do: worth seeing, not worth a warning.
+ *
+ * The exception is a controller that maps incoming channels by each output's
+ * own declared range rather than by port order, where a leftover output moves
+ * the outputs we *do* configure. There `extra` is a conflict, and
+ * {@link reconcilePorts} is told the driver so it can say so.
+ */
+export type PortDriftSeverity = 'ok' | 'conflict' | 'extra';
+
 /** One port's intent-vs-actual reconciliation. */
 export interface PortReconcile {
     port: number;
@@ -871,6 +1063,9 @@ export interface PortReconcile {
     intendedStart?: number;
     actualStart?: number;
     drift: PortDriftKind;
+    /** How much it matters. Absent on a row built by hand in a test;
+     *  {@link portDriftSeverity} is the fallback. */
+    severity?: PortDriftSeverity;
 }
 
 /** One serial port's intent-vs-actual reconciliation (channels, not pixels). */
@@ -884,6 +1079,9 @@ export interface SerialPortReconcile {
     actualProtocol?: string;
     /** Same vocabulary as pixel ports; `count` means the channel counts differ. */
     drift: PortDriftKind;
+    /** How much it matters. Absent on a row built by hand in a test;
+     *  {@link portDriftSeverity} is the fallback. */
+    severity?: PortDriftSeverity;
 }
 
 /** One LED panel matrix's intent-vs-actual reconciliation. */
@@ -903,6 +1101,9 @@ export interface PanelMatrixReconcile {
     actualHeight?: number;
     actualName?: string;
     drift: PortDriftKind;
+    /** How much it matters. Absent on a row built by hand in a test;
+     *  {@link portDriftSeverity} is the fallback. */
+    severity?: PortDriftSeverity;
     /** One line per difference; empty when in sync. */
     notes: string[];
 }
@@ -923,6 +1124,9 @@ export interface VirtualMatrixReconcile {
     actualHeight?: number;
     actualDevice?: string;
     drift: PortDriftKind;
+    /** How much it matters. Absent on a row built by hand in a test;
+     *  {@link portDriftSeverity} is the fallback. */
+    severity?: PortDriftSeverity;
     /** One line per difference; empty when in sync. */
     notes: string[];
 }

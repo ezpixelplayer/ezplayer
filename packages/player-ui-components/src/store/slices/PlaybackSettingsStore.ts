@@ -260,6 +260,14 @@ const playbackSettingsSlice = createSlice({
             const sync = (state.settings.sync ??= {});
             (sync.multisync ??= { enabled: false, remotes: [] }).enabled = action.payload;
         },
+        setMultisyncMode(state, action: PayloadAction<'auto' | 'on' | 'off'>) {
+            const sync = (state.settings.sync ??= {});
+            const ms = (sync.multisync ??= { enabled: false, remotes: [] });
+            ms.mode = action.payload;
+            // `enabled` is kept in step for anything still reading the old
+            // flag; under `auto` the player works it out from who there is.
+            ms.enabled = action.payload !== 'off';
+        },
         setMultisyncRemotes(state, action: PayloadAction<string[]>) {
             const sync = (state.settings.sync ??= {});
             (sync.multisync ??= { enabled: false, remotes: [] }).remotes = action.payload;
@@ -407,6 +415,7 @@ export const {
     setControllerRefresh,
     setNormalizeNewSongs,
     setMultisyncEnabled,
+    setMultisyncMode,
     setMultisyncRemotes,
     setMultisyncPort,
     setMultisyncMulticastAddress,

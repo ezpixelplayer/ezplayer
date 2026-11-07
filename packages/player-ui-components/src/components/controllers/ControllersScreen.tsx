@@ -45,6 +45,7 @@ import SyncProblemIcon from '@mui/icons-material/SyncProblem';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import HourglassEmptyIcon from '@mui/icons-material/HourglassEmpty';
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
 import FiberManualRecordOutlinedIcon from '@mui/icons-material/FiberManualRecordOutlined';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
@@ -74,6 +75,8 @@ import {
     reconcilePanelMatrices,
     reconcileVirtualMatrices,
     hasPortDrift,
+    hasExtraConfig,
+    portDriftSeverity,
     reconcileInputs,
     overlayHealth,
     findOffNetworkControllers,
@@ -93,8 +96,10 @@ import type {
     ControllerRecordState,
     DiscoveredController,
     EzpControllerRecordPatch,
+    ControllerActiveState,
     PortReconcile,
     PortDriftKind,
+    PortDriftSeverity,
     SerialPortReconcile,
     PanelMatrixReconcile,
     VirtualMatrixReconcile,
@@ -104,7 +109,13 @@ type Depth = 'sweep' | 'identify' | 'full';
 type SortKey = 'state' | 'enabled' | 'name' | 'ip' | 'type';
 
 /** Sort order for the State column: what you're most likely acting on first. */
-const STATE_RANK: Record<ControllerRecordState, number> = { present: 0, unregistered: 1, absent: 2 };
+const STATE_RANK: Record<ControllerRecordState, number> = {
+    present: 0,
+    presumed: 1,
+    unregistered: 2,
+    absent: 3,
+    unknown: 4,
+};
 
 const ipKey = (ip: string): number => ip.split('.').reduce((acc, o) => acc * 256 + (Number(o) || 0), 0);
 const sourceRank = (d: DiscoveredController): number => (d.source.via === 'direct' ? 0 : 1);
@@ -271,9 +282,18 @@ const DetailSections: React.FC<{ nodes: ControllerDetailNode[] }> = ({ nodes }) 
     </Box>
 );
 
-const STATE_META: Record<ControllerRecordState, { label: string; color: 'success' | 'default' | 'warning' }> = {
+const STATE_META: Record<
+    ControllerRecordState,
+    { label: string; color: 'success' | 'default' | 'warning'; title?: string }
+> = {
     present: { label: 'Present', color: 'success' },
-    absent: { label: 'Absent', color: 'default' },
+    presumed: {
+        label: 'Presumed',
+        color: 'success',
+        title: 'Did not answer, but its record says to presume it is up',
+    },
+    absent: { label: 'Absent', color: 'default', title: 'Looked for and not found' },
+    unknown: { label: 'Unknown', color: 'default', title: 'Not looked for yet' },
     unregistered: { label: 'Unregistered', color: 'warning' },
 };
 
@@ -316,6 +336,22 @@ const PORT_DRIFT_LABEL: Record<PortDriftKind, string> = {
     count: 'count differs',
     start: 'start channel differs',
 };
+
+/** How a row reads: a contradiction is amber and filled, config this show
+ *  simply does not describe is quiet. */
+const severityChip = (severity: PortDriftSeverity | undefined, drift: PortDriftKind) => {
+    const s = severity ?? portDriftSeverity(drift);
+    if (s === 'conflict') return { color: 'warning' as const, variant: 'filled' as const };
+    if (s === 'extra') return { color: 'default' as const, variant: 'outlined' as const };
+    return { color: 'success' as const, variant: 'outlined' as const };
+};
+
+const EXTRA_TITLE =
+    'Configured on the controller but not used by this show — nothing is sent to it, so it changes nothing';
+
+/** Title text for a row's status chip. */
+const severityTitle = (severity: PortDriftSeverity | undefined, drift: PortDriftKind): string | undefined =>
+    (severity ?? portDriftSeverity(drift)) === 'extra' ? EXTRA_TITLE : undefined;
 
 /** One model name per line; names in `flagged` render amber. `labels` is the
  *  optional annotated display form parallel to `names` ("Tree [2/4]"). */
@@ -362,7 +398,7 @@ const PortReconcileTable: React.FC<{ rows: PortReconcile[] }> = ({ rows }) => (
                     <TableCell
                         sx={{
                             borderLeft: '3px solid',
-                            borderLeftColor: r.drift !== 'ok' ? 'warning.main' : 'transparent',
+                            borderLeftColor: hasPortDrift([r]) ? 'warning.main' : 'transparent',
                         }}
                     >
                         {r.port}
@@ -407,8 +443,8 @@ const PortReconcileTable: React.FC<{ rows: PortReconcile[] }> = ({ rows }) => (
                     <TableCell>
                         <Chip
                             size="small"
-                            color={r.drift === 'ok' ? 'success' : 'warning'}
-                            variant={r.drift === 'ok' ? 'outlined' : 'filled'}
+                            {...severityChip(r.severity, r.drift)}
+                            title={severityTitle(r.severity, r.drift)}
                             label={PORT_DRIFT_LABEL[r.drift]}
                         />
                     </TableCell>
@@ -435,7 +471,7 @@ const SerialReconcileTable: React.FC<{ rows: SerialPortReconcile[] }> = ({ rows 
                     <TableCell
                         sx={{
                             borderLeft: '3px solid',
-                            borderLeftColor: r.drift !== 'ok' ? 'warning.main' : 'transparent',
+                            borderLeftColor: hasPortDrift([r]) ? 'warning.main' : 'transparent',
                         }}
                     >
                         {r.port}
@@ -471,8 +507,8 @@ const SerialReconcileTable: React.FC<{ rows: SerialPortReconcile[] }> = ({ rows 
                     <TableCell>
                         <Chip
                             size="small"
-                            color={r.drift === 'ok' ? 'success' : 'warning'}
-                            variant={r.drift === 'ok' ? 'outlined' : 'filled'}
+                            {...severityChip(r.severity, r.drift)}
+                            title={severityTitle(r.severity, r.drift)}
                             label={r.drift === 'count' ? 'channels short' : PORT_DRIFT_LABEL[r.drift]}
                         />
                     </TableCell>
@@ -486,12 +522,15 @@ const SerialReconcileTable: React.FC<{ rows: SerialPortReconcile[] }> = ({ rows 
 const sizeLabel = (w?: number, h?: number): string | undefined => (w && h ? `${w}×${h}` : undefined);
 
 /** Status chip for a matrix row; the differences ride along as text. */
-const MatrixStatus: React.FC<{ drift: PortDriftKind; notes: string[] }> = ({ drift, notes }) => (
+const MatrixStatus: React.FC<{ drift: PortDriftKind; severity?: PortDriftSeverity; notes: string[] }> = ({
+    drift,
+    severity,
+    notes,
+}) => (
     <>
         <Chip
             size="small"
-            color={drift === 'ok' ? 'success' : 'warning'}
-            variant={drift === 'ok' ? 'outlined' : 'filled'}
+            {...severityChip(severity, drift)}
             label={drift === 'count' ? 'differs' : PORT_DRIFT_LABEL[drift]}
         />
         {notes.map((n, i) => (
@@ -502,9 +541,9 @@ const MatrixStatus: React.FC<{ drift: PortDriftKind; notes: string[] }> = ({ dri
     </>
 );
 
-const driftBorder = (drift: PortDriftKind) => ({
+const driftBorder = (drift: PortDriftKind, severity?: PortDriftSeverity) => ({
     borderLeft: '3px solid',
-    borderLeftColor: drift !== 'ok' ? 'warning.main' : 'transparent',
+    borderLeftColor: hasPortDrift([{ drift, ...(severity ? { severity } : {}) }]) ? 'warning.main' : 'transparent',
 });
 
 /** LED panel matrices: xLights-intent vs. controller-actual, by matrix number. */
@@ -521,7 +560,7 @@ const PanelMatrixReconcileTable: React.FC<{ rows: PanelMatrixReconcile[] }> = ({
         <TableBody>
             {rows.map((r) => (
                 <TableRow key={r.port}>
-                    <TableCell sx={driftBorder(r.drift)}>{r.port}</TableCell>
+                    <TableCell sx={driftBorder(r.drift, r.severity)}>{r.port}</TableCell>
                     <TableCell>
                         {r.intendedModels.length ? (
                             <>
@@ -560,7 +599,7 @@ const PanelMatrixReconcileTable: React.FC<{ rows: PanelMatrixReconcile[] }> = ({
                         )}
                     </TableCell>
                     <TableCell>
-                        <MatrixStatus drift={r.drift} notes={r.notes} />
+                        <MatrixStatus drift={r.drift} severity={r.severity} notes={r.notes} />
                     </TableCell>
                 </TableRow>
             ))}
@@ -582,7 +621,7 @@ const VirtualMatrixReconcileTable: React.FC<{ rows: VirtualMatrixReconcile[] }> 
         <TableBody>
             {rows.map((r) => (
                 <TableRow key={r.name}>
-                    <TableCell sx={driftBorder(r.drift)}>{r.name}</TableCell>
+                    <TableCell sx={driftBorder(r.drift, r.severity)}>{r.name}</TableCell>
                     <TableCell>
                         {r.intendedStartChannel !== undefined ? (
                             <Typography variant="caption" sx={{ color: 'text.secondary' }}>
@@ -615,7 +654,7 @@ const VirtualMatrixReconcileTable: React.FC<{ rows: VirtualMatrixReconcile[] }> 
                         )}
                     </TableCell>
                     <TableCell>
-                        <MatrixStatus drift={r.drift} notes={r.notes} />
+                        <MatrixStatus drift={r.drift} severity={r.severity} notes={r.notes} />
                     </TableCell>
                 </TableRow>
             ))}
@@ -689,7 +728,9 @@ const GridRow: React.FC<{
     // Drift is only meaningful once the device's port config has actually been
     // read (depth=full); before that every intended port would read "missing".
     const portsRead = d?.pixelPorts !== undefined;
-    const portRows = reconcilePorts(row.intent ?? [], d?.pixelPorts ?? [], row.startChannel);
+    // The driver matters: on a controller that maps channels by each output's
+    // own range, an output we did not configure moves the ones we did.
+    const portRows = reconcilePorts(row.intent ?? [], d?.pixelPorts ?? [], row.startChannel, d?.driverType);
     // Serial (DMX/…) ports are compared in channels, apart from the pixels.
     const serialRead = d?.serialPorts !== undefined;
     const serialRows = reconcileSerialPorts(row.serialIntent, d?.serialPorts);
@@ -703,6 +744,15 @@ const GridRow: React.FC<{
         (serialRead && hasPortDrift(serialRows)) ||
         (panelsRead && hasPortDrift(panelRows)) ||
         (virtualsRead && hasPortDrift(virtualRows));
+    // Config this show does not describe. Worth saying, but it needs no action,
+    // so it never takes the warning slot -- a Falcon carrying last year's
+    // strings and a HinksPix with a spare DMX port are both in sync for
+    // everything this show actually uses.
+    const extraConfig =
+        (portsRead && hasExtraConfig(portRows)) ||
+        (serialRead && hasExtraConfig(serialRows)) ||
+        (panelsRead && hasExtraConfig(panelRows)) ||
+        (virtualsRead && hasExtraConfig(virtualRows));
     const anyPortRows = portRows.length > 0 || serialRows.length > 0 || panelRows.length > 0 || virtualRows.length > 0;
     const anyPortsRead = portsRead || serialRead || panelsRead || virtualsRead;
     // Same gating for the data-input side (protocol / universe map / DDP window).
@@ -710,6 +760,7 @@ const GridRow: React.FC<{
     const inputRec = reconcileInputs(row.outputs, d?.inputs);
     const inputDrift = inputsRead && inputRec.drift;
     const anyDrift = portDrift || inputDrift;
+    const anyExtra = extraConfig || (inputsRead && inputRec.extraNotes.length > 0);
     // Port knowledge on either side is enough for the port-map visualizer.
     // An empty map is still a map: a device whose ports were read (even if
     // none is configured) or whose port count is known gets the visualizer.
@@ -875,7 +926,7 @@ const GridRow: React.FC<{
                         title={
                             d?.unreachable
                                 ? `${d.error ?? 'not responding'} — last answered ${new Date(d.seenAt).toLocaleString()}`
-                                : undefined
+                                : meta.title
                         }
                     />
                     {/* One status slot: work in progress, a failure, drift, then unread. */}
@@ -948,6 +999,15 @@ const GridRow: React.FC<{
                             sx={{ ml: 0.25, p: 0.25, verticalAlign: 'middle' }}
                         >
                             <SyncProblemIcon color="warning" fontSize="small" />
+                        </IconButton>
+                    ) : anyExtra ? (
+                        <IconButton
+                            size="small"
+                            onClick={() => setPortDialog('compare')}
+                            title="Everything this show uses is in sync. The controller also carries config this show does not describe — nothing is sent to it (click to compare)"
+                            sx={{ ml: 0.25, p: 0.25, verticalAlign: 'middle' }}
+                        >
+                            <InfoOutlinedIcon color="disabled" fontSize="small" />
                         </IconButton>
                     ) : (
                         known &&
@@ -1159,7 +1219,11 @@ const GridRow: React.FC<{
                                                 <CheckCircleOutlineIcon
                                                     color="success"
                                                     fontSize="small"
-                                                    titleAccess="ports match xLights"
+                                                    titleAccess={
+                                                        extraConfig
+                                                            ? 'every port this show uses matches xLights; the controller also carries config this show does not describe'
+                                                            : 'ports match xLights'
+                                                    }
                                                 />
                                             ))}
                                         {anyPortRows && (
@@ -1195,7 +1259,11 @@ const GridRow: React.FC<{
                                             <CheckCircleOutlineIcon
                                                 color="success"
                                                 fontSize="small"
-                                                titleAccess="input config matches xLights"
+                                                titleAccess={
+                                                    inputRec.extraNotes.length
+                                                        ? `input config matches xLights; ${inputRec.extraNotes.join('; ')}`
+                                                        : 'input config matches xLights'
+                                                }
                                             />
                                         )}
                                         <Typography variant="caption" sx={{ color: 'text.secondary' }}>
@@ -1280,6 +1348,13 @@ const GridRow: React.FC<{
                             {inputRec.notes.map((n, i) => (
                                 <Typography key={i} variant="body2" sx={{ color: 'warning.main' }}>
                                     {n}
+                                </Typography>
+                            ))}
+                            {/* A device listening wider than this show needs is
+                                not a misconfiguration; nobody sends to it. */}
+                            {inputRec.extraNotes.map((n, i) => (
+                                <Typography key={`x${i}`} variant="body2" sx={{ color: 'text.secondary' }}>
+                                    {n} <span title={EXTRA_TITLE}>(unused by this show)</span>
                                 </Typography>
                             ))}
                             {inputsRead && !inputDrift && (
@@ -1411,6 +1486,9 @@ const RecordDialog: React.FC<{
     initialFpsOverride?: number;
     /** What xLights declares, shown as the fallback when no override is set. */
     xlightsMaxFps?: number;
+    /** The record's own role, or undefined when it defers to the layout. */
+    initialRole?: ControllerActiveState;
+    initialPresumeUp?: boolean;
     onClose: () => void;
     onSubmit: (name: string, patch: EzpControllerRecordPatch) => void;
 }> = ({
@@ -1422,6 +1500,8 @@ const RecordDialog: React.FC<{
     initialVariant,
     initialFpsOverride,
     xlightsMaxFps,
+    initialRole,
+    initialPresumeUp,
     onClose,
     onSubmit,
 }) => {
@@ -1431,6 +1511,10 @@ const RecordDialog: React.FC<{
     const [model, setModel] = useState(initialModel ?? '');
     const [variant, setVariant] = useState(initialVariant ?? '');
     const [fps, setFps] = useState(initialFpsOverride !== undefined ? String(initialFpsOverride) : '');
+    // '' is "no opinion": the layout decides, which is not the same choice as
+    // Enabled and must stay distinguishable from it.
+    const [role, setRole] = useState<ControllerActiveState | ''>(initialRole ?? '');
+    const [presumeUp, setPresumeUp] = useState(!!initialPresumeUp);
     const nameLocked = mode === 'edit';
     const fpsNum = fps.trim() === '' ? undefined : Number(fps);
     const fpsValid = fpsNum === undefined || (Number.isFinite(fpsNum) && fpsNum > 0 && fpsNum <= 1000);
@@ -1443,6 +1527,8 @@ const RecordDialog: React.FC<{
         // A record patch is merged, so an absent key keeps the old value; 0
         // is the explicit "no override" (the store drops it).
         patch.fpsOverride = fpsNum ?? 0;
+        patch.active = role === '' ? undefined : role;
+        patch.presumeUp = presumeUp;
         onSubmit(name.trim(), patch);
     };
     return (
@@ -1464,6 +1550,31 @@ const RecordDialog: React.FC<{
                                 : 'Must match the xLights controller name to bind to it.'
                         }
                     />
+                    <TextField
+                        select
+                        label="Part in the show"
+                        value={role}
+                        onChange={(e) => setRole(e.target.value as ControllerActiveState | '')}
+                        fullWidth
+                        size="small"
+                        SelectProps={{ native: true }}
+                        InputLabelProps={{ shrink: true }}
+                        helperText="Player and Remote are the parts that play from the controller's own copy of the show; the others are sent pixels live."
+                    >
+                        <option value="">From xLights</option>
+                        <option value="enabled">Enabled — an ordinary controller</option>
+                        <option value="disabled">Disabled</option>
+                        <option value="player">Player — plays the whole show itself</option>
+                        <option value="remote">Remote — plays its own channels, follows sync</option>
+                    </TextField>
+                    <FormControlLabel
+                        control={<Checkbox checked={presumeUp} onChange={(e) => setPresumeUp(e.target.checked)} />}
+                        label="Presume up"
+                    />
+                    <Typography variant="caption" color="text.secondary" sx={{ mt: -1.5 }}>
+                        For a controller that serves normally but will not answer a ping. Without this it reads as
+                        absent and content distribution skips it.
+                    </Typography>
                     <TextField
                         label="IP / hostname"
                         value={address}
@@ -1564,6 +1675,8 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
         variant?: string;
         fpsOverride?: number;
         maxFps?: number;
+        role?: ControllerActiveState;
+        presumeUp?: boolean;
     } | null>(null);
 
     const policyFor = (cidr: string) => (networkPolicies ?? []).find((p) => p.cidr === cidr);
@@ -1809,7 +1922,12 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
     // Record actions — write name-keyed overrides in the show folder.
     const setRecord = (name: string, patch: EzpControllerRecordPatch) =>
         dispatch(issueControllerCommand({ cmd: 'record', name, patch }));
-    const setActive = (name: string, active: boolean) => setRecord(name, { active });
+    // Re-enabling clears the override rather than writing 'enabled': this
+    // toggle means "in the show or not", while 'enabled' is the stronger claim
+    // that this is an ordinary controller -- which would quietly stop an
+    // "xLights Only" remote being a remote. That choice belongs in the dialog,
+    // where it is made deliberately.
+    const setActive = (name: string, active: boolean) => setRecord(name, { active: active ? undefined : 'disabled' });
     const deleteRecord = (name: string) => {
         if (
             window.confirm(
@@ -1827,6 +1945,8 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
             model: row.model,
             fpsOverride: row.fpsOverride,
             maxFps: row.maxFps,
+            role: row.role,
+            presumeUp: row.presumeUp,
         });
     const openPromote = (row: ControllerGridRow) =>
         setDialog({ mode: 'promote', name: row.device?.hostname ?? '', address: row.device?.ip ?? '' });
@@ -1889,7 +2009,26 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
                             Controllers
                         </Typography>
                         <Chip size="small" color="success" variant="outlined" label={`${count('present')} present`} />
+                        {/* Presumed and unknown are shown only when there are
+                            any, so the usual case keeps a short header -- but
+                            without them the counts would not add up to the
+                            rows on screen. */}
+                        {count('presumed') > 0 && (
+                            <Tooltip title={STATE_META.presumed.title ?? ''}>
+                                <Chip
+                                    size="small"
+                                    color="success"
+                                    variant="outlined"
+                                    label={`${count('presumed')} presumed`}
+                                />
+                            </Tooltip>
+                        )}
                         <Chip size="small" label={`${count('absent')} absent`} />
+                        {count('unknown') > 0 && (
+                            <Tooltip title={STATE_META.unknown.title ?? ''}>
+                                <Chip size="small" label={`${count('unknown')} unknown`} />
+                            </Tooltip>
+                        )}
                         <Chip
                             size="small"
                             color="warning"
@@ -2212,6 +2351,8 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
                     initialVariant={dialog.variant}
                     initialFpsOverride={dialog.fpsOverride}
                     xlightsMaxFps={dialog.maxFps}
+                    initialRole={dialog.role}
+                    initialPresumeUp={dialog.presumeUp}
                     onClose={() => setDialog(null)}
                     onSubmit={submitDialog}
                 />

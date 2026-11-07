@@ -900,6 +900,18 @@ export interface SyncOutputSettings {
 /** FPP MultiSync master: send sequence open/start/frame/stop packets so FPP
  *  or xSchedule remotes follow playback. */
 export interface MultisyncSettings {
+    /**
+     * Whether to send sync at all.
+     *  - `auto`  send when there is anyone to send to: a remote in the layout,
+     *            or an address in `remotes`. The default, because a layout with
+     *            remotes and sync switched off is a show that plays with part
+     *            of the display sitting idle.
+     *  - `on`    always send
+     *  - `off`   never send
+     *
+     * Absent falls back to `enabled`, which older settings carry alone.
+     */
+    mode?: 'auto' | 'on' | 'off';
     enabled: boolean;
     /** Unicast remotes as host[:port]; an empty list means multicast. */
     remotes: string[];

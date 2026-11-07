@@ -25,7 +25,14 @@ import type {
     PlaybackSettings,
     SequenceRecord,
 } from '@ezplayer/ezplayer-core';
-import { applyOverrides, ipInCidr, isPlayerOnlyRecord, layoutPlayerMode, playerModeDrift } from '@ezplayer/ezplayer-core';
+import {
+    activeStateFrom,
+    applyOverrides,
+    ipInCidr,
+    isPlayerOnlyRecord,
+    layoutPlayerMode,
+    playerModeDrift,
+} from '@ezplayer/ezplayer-core';
 import type {
     DiscoveryDevice,
     DiscoveryJob,
@@ -47,13 +54,16 @@ import type { ContentSlicing, SliceWorkspace } from './content-dist.js';
 import {
     buildContentPlan,
     contentAutoDecision,
+    contentHostsForShow,
     contentStatusFor,
     contentTargetsFor,
+    contentTargetsForHosts,
     proxyForDevice,
     createSliceWorkspace,
     isContentTarget,
     recordFor,
-    slicingFor,
+    slicingPlanFor,
+    slicingPlanForHosts,
     toContentDistReport,
     toContentDistRun,
 } from './content-dist.js';
@@ -156,7 +166,12 @@ function parseRecord(data: unknown): EzpControllerRecord | null {
     if (typeof o.name !== 'string' || !o.name) return null;
     const r: EzpControllerRecord = { name: o.name };
     if (typeof o.address === 'string') r.address = o.address;
-    if (typeof o.active === 'boolean') r.active = o.active;
+    // Older records stored a boolean here; activeStateFrom reads both, and
+    // deliberately drops a stored `true` rather than letting the default every
+    // record was written with override the layout.
+    const active = activeStateFrom(o.active);
+    if (active) r.active = active;
+    if (o.presumeUp === true) r.presumeUp = true;
     if (typeof o.deleted === 'boolean') r.deleted = o.deleted;
     if (typeof o.own === 'boolean') r.own = o.own;
     if (typeof o.vendor === 'string') r.vendor = o.vendor;
@@ -779,7 +794,9 @@ async function topUpProxyList(proxy: string, wanted: { host: string; description
         if (!probe.success || !probe.driver?.addProxies) {
             return {
                 ok: false,
-                notes: [`${proxy} cannot hold a proxy list, so ${wanted.length} controller(s) behind it stay unreachable`],
+                notes: [
+                    `${proxy} cannot hold a proxy list, so ${wanted.length} controller(s) behind it stay unreachable`,
+                ],
             };
         }
         const r = await probe.driver.addProxies(wanted);
@@ -1360,6 +1377,11 @@ function publishQueue(): void {
  * is `contentAutoDecision`'s call.
  */
 export function queueContentForDistribution(fseqNames: string[]): void {
+    // With automatic distribution off, no tick will ever drain this, so a
+    // queued name would sit in the UI claiming to be waiting for something
+    // that is never going to happen. A later switch to automatic loses
+    // nothing: the poll finds whatever the devices are missing.
+    if ((contentSource?.().settings?.contentDistribution?.mode ?? 'off') === 'off') return;
     let added = false;
     for (const name of fseqNames) {
         if (!name) continue;
@@ -1435,12 +1457,17 @@ async function refreshContentStatus(id: string): Promise<void> {
     if (!contentSource) return;
     if (state.contentDist?.run) return; // a run is already reading these
     const dev = state.devices[id];
-    if (!dev || !isContentTarget(dev) || dev.unreachable) return;
+    if (!dev || !isContentTarget(dev)) return;
+    // A box whose record says to presume it up is read even though it will not
+    // answer a ping -- that is what the setting is for.
+    if (dev.unreachable && !recordFor(dev, state.known ?? [])?.presumeUp) return;
     const checkedAt = dev.contentStatus?.checkedAt;
     if (checkedAt && Date.now() - Date.parse(checkedAt) < CONTENT_CHECK_FRESH_MS) return;
 
     const { sequences, settings, showFolder } = contentSource();
-    const cut = slicingFor(dev, state.known ?? []);
+    // The same cut a real run would send, so a check measures the truth --
+    // which for a player means the remainder, not the whole show.
+    const cut = slicingPlanFor([{ id: dev.id }], state.devices, state.known ?? []).get(dev.id);
     // A check reports exact byte counts, so a slice it finds missing is still
     // written to measure it: that needs a real directory to write into.
     const workspace = cut ? await createSliceWorkspace() : undefined;
@@ -1505,7 +1532,10 @@ async function reconcilePlayerModes(targets: { id: string }[], checkOnly: boolea
                 continue;
             }
             if (!set.changed) continue;
-            notes.push(`${rec.name} set to ${want}`);
+            // Said with the old value: this is a change made to the operator's
+            // controller, and "set to remote" alone does not convey that
+            // something was wrong and is now different.
+            notes.push(drift ? `${rec.name}: was "${dev.mode}", set to ${want}` : `${rec.name} set to ${want}`);
             // The mode is read at daemon start, so it takes a restart to hold.
             const applied = await probe.driver.applyConfig();
             if (!applied.success) {
@@ -1520,30 +1550,56 @@ async function reconcilePlayerModes(targets: { id: string }[], checkOnly: boolea
     return notes;
 }
 
+/**
+ * Record a distribution that cannot start as a finished, failed operation.
+ *
+ * Nothing is wrong with the request in these cases -- there is simply nothing
+ * to send, or nowhere to send it -- and throwing reaches the user as an
+ * unhandled error in the main process log instead of a message on the card.
+ */
+function reportDistributeRefusal(targetKey: string, why: string, origin: ControllerOpOrigin): void {
+    const op = newOp('distribute', targetKey, why, origin);
+    op.status = 'error';
+    op.error = why;
+    op.finishedAt = nowIso();
+    state.operations[op.id] = op;
+    publish();
+    retireOlderOps(op);
+}
+
 /** Send show content to the chosen targets, or work out what is missing. */
 async function runDistribute(
     command: Extract<ControllerCommand, { cmd: 'distribute' }>,
     origin: ControllerOpOrigin,
     trigger: ContentDistTrigger = 'manual',
 ): Promise<void> {
-    if (!contentSource) throw new Error('no show is open to distribute');
+    if (!contentSource) {
+        reportDistributeRefusal('distribute:none', 'No show is open, so there is nothing to distribute', origin);
+        return;
+    }
     if (state.contentDist?.run) return; // one at a time; the running op is the answer
     const checkOnly = !!command.checkOnly;
     const { sequences, settings, showFolder } = contentSource();
 
-    const targets = contentTargetsFor(Object.values(state.devices), command.ids, state.known ?? []);
+    // Who is in the show comes from the records, so this works before a scan;
+    // a scan only fills in each box's firmware and current contents.
+    const known = state.known ?? [];
+    const hosts = contentHostsForShow(known, state.devices, command.ids);
+    const targets = contentTargetsForHosts(hosts, known);
     if (!targets.length) {
-        throw new Error('no FPP targets known — scan for controllers first');
+        reportDistributeRefusal(
+            'distribute:none',
+            known.length
+                ? 'No controller in this show plays its own copy — mark a player or a remote first'
+                : 'No controllers are known yet — open a show with an xLights layout, or scan',
+            origin,
+        );
+        return;
     }
 
     // An FPP running as a remote only drives its own channels, so it is sent a
     // slice rather than the whole show.
-    const slicing = new Map<string, ContentSlicing>();
-    for (const target of targets) {
-        const dev = state.devices[target.id];
-        const cut = dev ? slicingFor(dev, state.known ?? []) : null;
-        if (cut) slicing.set(target.id, cut);
-    }
+    const slicing = slicingPlanForHosts(hosts, state.devices, known);
     const workspace: SliceWorkspace | undefined = slicing.size ? await createSliceWorkspace() : undefined;
 
     const { plan, skipped } = await buildContentPlan(sequences, settings, {
@@ -1554,9 +1610,14 @@ async function runDistribute(
     });
     if (!plan.sequences.length) {
         await workspace?.dispose();
-        throw new Error(
-            command.sequences?.length ? 'none of those sequences have a file on disk' : 'this show has no sequences',
+        reportDistributeRefusal(
+            `distribute:${targets.map((t) => t.id).join(',')}`,
+            command.sequences?.length
+                ? 'None of those sequences have a file on disk'
+                : 'This show has no sequences to distribute — add songs first',
+            origin,
         );
+        return;
     }
     for (const s of skipped) console.warn(`[controller-ops] not distributing ${s.name}: ${s.reason}`);
 
@@ -1605,6 +1666,22 @@ async function runDistribute(
 
         const report = await run.run();
         lastContentRunMs = Date.now();
+
+        // The queue names songs still waiting to be delivered, so anything
+        // this run delivered to every target has stopped waiting -- however
+        // the run was started. A run narrowed to some devices says nothing
+        // about the rest, and a failed item is still outstanding.
+        if (!checkOnly && !report.cancelled && !command.ids?.length) {
+            const failed = new Set<string>();
+            for (const t of report.targets) {
+                for (const item of t.items) if (item.action === 'failed') failed.add(item.name);
+            }
+            let drained = false;
+            for (const seq of plan.sequences) {
+                if (!failed.has(seq.name) && contentQueue.delete(seq.name)) drained = true;
+            }
+            if (drained) publishQueue();
+        }
 
         const cd = contentDistState();
         delete cd.run;

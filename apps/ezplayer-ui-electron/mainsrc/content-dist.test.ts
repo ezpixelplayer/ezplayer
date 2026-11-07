@@ -22,13 +22,17 @@ import { derivedAudioPathFor } from './data/derived-audio.js';
 import {
     buildContentPlan,
     contentAutoDecision,
+    contentHostsForShow,
     contentStatusFor,
     contentTargetsFor,
+    contentTargetsForHosts,
     createSliceWorkspace,
     DEFAULT_CONTENT_PLAYLIST,
     isContentTarget,
     proxyForDevice,
     slicingFor,
+    recordHoldsContent,
+    slicingPlanFor,
     toContentDistReport,
     toContentDistRun,
 } from './content-dist.js';
@@ -177,6 +181,208 @@ describe('content distribution targets', () => {
     ])('reads %s as FPP 7 or later: %s', (version, atLeast7) => {
         const dev = device({ ip: '10.0.0.5', driverType: 'FPP', ...(version ? { firmwareVersion: version } : {}) });
         expect(contentTargetsFor([dev])[0].endpoint.isVersionAtLeast(7, 0)).toBe(atLeast7);
+    });
+});
+
+describe('who is in the show for content', () => {
+    const known = (over: Partial<KnownController> & { name: string }): KnownController => ({
+        source: 'xlights',
+        ...over,
+    });
+
+    it('reads FPP-ness out of the capability file, not the vendor name', () => {
+        // A Kulp cape and a Wally's board are FPP boards sold under their own
+        // names; nothing but the capability file's Base chain says so.
+        expect(recordHoldsContent(known({ name: 'k32', vendor: 'KulpLights', model: 'K32', variant: 'K32-Pro' }))).toBe(
+            true,
+        );
+        expect(recordHoldsContent(known({ name: 'wb', vendor: 'Wallys Lights', model: 'WB1616' }))).toBe(true);
+        expect(recordHoldsContent(known({ name: 'p', vendor: 'FPP', model: 'FPP Player Only' }))).toBe(true);
+        expect(recordHoldsContent(known({ name: 'f', vendor: 'Falcon', model: 'F16V3' }))).toBe(false);
+        expect(
+            recordHoldsContent(known({ name: 'w', vendor: 'WLED', model: 'QuinLED-Dig-Quad', variant: 'ESP32' })),
+        ).toBe(false);
+        expect(recordHoldsContent(known({ name: 'bare' }))).toBe(false);
+    });
+
+    it('builds the run from records, before anything has been scanned', () => {
+        const recs = [
+            known({
+                name: 'fpp4-lab',
+                address: '192.168.1.23',
+                enableState: 'xlightsOnly',
+                protocol: 'Player Only',
+                vendor: 'FPP',
+                model: 'FPP Player Only',
+            }),
+            known({
+                name: 'wb1616-lab',
+                address: '10.0.0.58',
+                enableState: 'xlightsOnly',
+                vendor: 'Wallys Lights',
+                model: 'WB1616',
+            }),
+        ];
+        const hosts = contentHostsForShow(recs, {});
+        expect(hosts.map((h) => [h.id, h.role])).toEqual([
+            ['192.168.1.23|record', 'player'],
+            ['10.0.0.58|record', 'remote'],
+        ]);
+        // Reachable by address alone; the version is what a scan would add, and
+        // without it the route every FPP answers is the one taken.
+        const targets = contentTargetsForHosts(hosts, recs);
+        expect(targets.map((t) => t.label)).toEqual(['fpp4-lab (192.168.1.23)', 'wb1616-lab (10.0.0.58)']);
+        expect(targets[0].endpoint.isVersionAtLeast(7, 0)).toBe(false);
+        expect(targets.every((t) => t.supported === undefined)).toBe(true);
+    });
+
+    it('leaves out an Active FPP, which is sent pixels rather than files', () => {
+        // The resolver calls this one a "player" -- the layout has it in the
+        // show and a player drives it -- but it holds no copy of anything.
+        const recs = [
+            known({
+                name: 'k32pro-lab',
+                address: '10.0.0.61',
+                enableState: 'enabled',
+                vendor: 'KulpLights',
+                model: 'K32',
+                variant: 'K32-Pro',
+            }),
+        ];
+        expect(contentHostsForShow(recs, {})).toEqual([]);
+    });
+
+    it('answers for a controller named by hand, rather than returning nothing', () => {
+        const recs = [
+            known({
+                name: 'k32pro-lab',
+                address: '10.0.0.61',
+                enableState: 'enabled',
+                vendor: 'KulpLights',
+                model: 'K32',
+                variant: 'K32-Pro',
+            }),
+        ];
+        const hosts = contentHostsForShow(recs, {}, ['10.0.0.61|record']);
+        expect(hosts).toHaveLength(1);
+        const target = contentTargetsForHosts(hosts, recs)[0];
+        expect(target.supported).toBe(false);
+        expect(target.unsupportedReason).toMatch(/neither the show player nor a remote/);
+    });
+
+    it('prefers the scanned device, and keeps a record-only host beside it', () => {
+        const recs = [
+            known({
+                name: 'wb1616-lab',
+                address: '10.0.0.58',
+                enableState: 'xlightsOnly',
+                vendor: 'Wallys Lights',
+                model: 'WB1616',
+            }),
+            known({
+                name: 'k16max-lab',
+                address: '10.0.0.59',
+                enableState: 'xlightsOnly',
+                vendor: 'KulpLights',
+                model: 'K16',
+                variant: 'K16-Max',
+            }),
+        ];
+        const devices = {
+            '10.0.0.58|direct': device({ ip: '10.0.0.58', driverType: 'FPP', firmwareVersion: '8.4.2' }),
+        };
+        const hosts = contentHostsForShow(recs, devices);
+        expect(hosts.map((h) => h.id)).toEqual(['10.0.0.58|direct', '10.0.0.59|record']);
+        expect(contentTargetsForHosts(hosts, recs)[0].endpoint.isVersionAtLeast(7, 0)).toBe(true);
+    });
+
+    it('does not skip a box whose record says to presume it up', () => {
+        const recs = [
+            known({ name: 'quiet', address: '10.0.0.70', enableState: 'xlightsOnly', presumeUp: true }),
+            known({ name: 'gone', address: '10.0.0.71', enableState: 'xlightsOnly' }),
+        ];
+        const devices = {
+            '10.0.0.70|direct': device({ ip: '10.0.0.70', driverType: 'FPP', unreachable: true }),
+            '10.0.0.71|direct': device({ ip: '10.0.0.71', driverType: 'FPP', unreachable: true }),
+        };
+        const targets = contentTargetsForHosts(contentHostsForShow(recs, devices), recs);
+        expect(targets[0].supported).toBeUndefined();
+        expect(targets[1]).toMatchObject({ supported: false, unsupportedReason: 'not responding' });
+    });
+});
+
+describe('who is sent which channels', () => {
+    const known = (over: Partial<KnownController> & { name: string }): KnownController => ({
+        source: 'xlights',
+        ...over,
+    });
+
+    // A show of 900 channels: the player owns 0-299 and 600-899, the remote
+    // 300-599. Channel numbers in a layout count from 1.
+    const recs = [
+        known({ name: 'player', address: '10.0.0.1', enableState: 'xlightsOnly', protocol: 'Player Only' }),
+        known({
+            name: 'remote',
+            address: '10.0.0.2',
+            enableState: 'xlightsOnly',
+            startChannel: 301,
+            channelCount: 300,
+        }),
+        known({ name: 'falcon', address: '10.0.0.3', enableState: 'enabled', startChannel: 1, channelCount: 300 }),
+        known({ name: 'falcon2', address: '10.0.0.4', enableState: 'enabled', startChannel: 601, channelCount: 300 }),
+    ];
+    const devices = {
+        'player|direct': device({ ip: '10.0.0.1', driverType: 'FPP' }),
+        'remote|direct': device({ ip: '10.0.0.2', driverType: 'FPP' }),
+    };
+    const ids = [{ id: 'player|direct' }, { id: 'remote|direct' }];
+
+    it('gives a remote its own channels and the player what is left', () => {
+        const plan = slicingPlanFor(ids, devices, recs);
+        expect(plan.get('remote|direct')).toEqual({
+            ranges: [{ startch: 300, chcount: 300 }],
+            source: 'xlights',
+        });
+        // Exactly the complement, so the two together are the whole show with
+        // no gap and nothing sent twice.
+        expect(plan.get('player|direct')).toEqual({
+            ranges: [
+                { startch: 0, chcount: 300 },
+                { startch: 600, chcount: 300 },
+            ],
+            source: 'remainder',
+        });
+    });
+
+    it('prefers what the remote says it drives over what the layout says', () => {
+        const reported = {
+            ...devices,
+            'remote|direct': device({ ip: '10.0.0.2', driverType: 'FPP', channelRanges: '350-499' }),
+        };
+        const plan = slicingPlanFor(ids, reported, recs);
+        // A reported pair is inclusive: 350-499 is 150 channels from 350.
+        expect(plan.get('remote|direct')).toEqual({
+            ranges: [{ startch: 350, chcount: 150 }],
+            source: 'device',
+        });
+        // The player's remainder is cut from the same source, so it covers
+        // what the remote is not actually taking -- including the 50 channels
+        // the layout gave the remote that it turns out not to drive.
+        expect(plan.get('player|direct')?.ranges).toEqual([
+            { startch: 0, chcount: 350 },
+            { startch: 500, chcount: 400 },
+        ]);
+    });
+
+    it('sends the player the show unsliced when there are no remotes', () => {
+        const noRemotes = recs.map((r) => (r.name === 'remote' ? { ...r, enableState: 'enabled' as const } : r));
+        const plan = slicingPlanFor([{ id: 'player|direct' }], devices, noRemotes);
+        expect(plan.get('player|direct')).toBeUndefined();
+    });
+
+    it('does not slice for a device that holds no content', () => {
+        const falcon = { 'falcon|direct': device({ ip: '10.0.0.3', driverType: 'Falcon' }) };
+        expect(slicingPlanFor([{ id: 'falcon|direct' }], falcon, recs).size).toBe(0);
     });
 });
 

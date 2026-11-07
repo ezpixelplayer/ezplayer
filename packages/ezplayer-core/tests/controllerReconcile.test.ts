@@ -3,7 +3,9 @@ import {
     reconcileControllers,
     reconcilePorts,
     reconcileSerialPorts,
+    hasExtraConfig,
     hasPortDrift,
+    portDriftSeverity,
     reconcileInputs,
     overlayHealth,
     healthNeedsAttention,
@@ -122,6 +124,7 @@ describe('reconcilePorts', () => {
                 extraModels: [],
                 actualPixels: 50,
                 drift: 'ok',
+                severity: 'ok',
             },
         ]);
     });
@@ -208,7 +211,7 @@ describe('reconcilePorts', () => {
         expect(rows[0].drift).toBe('count');
     });
 
-    it('sorts by port and hasPortDrift flags any non-ok', () => {
+    it('sorts by port and hasPortDrift flags a conflict', () => {
         const rows = reconcilePorts(
             [
                 { port: 2, models: ['B'], pixels: 20 },
@@ -337,6 +340,79 @@ describe('applyOverrides', () => {
     });
 });
 
+describe('how much a drift matters', () => {
+    // The false alarms from the lab: a Falcon carrying strings on ports this
+    // show does not use, and a HinksPix with a DMX port xLights never mentions.
+    // Nothing is sent to either, so neither is a reason to warn.
+    it('does not call leftover Falcon strings a conflict', () => {
+        const rows = reconcilePorts(
+            [{ port: 1, models: ['Tree'], pixels: 50 }],
+            [
+                { port: 1, model: 'Tree', pixels: 50 },
+                { port: 9, model: 'LastYear', pixels: 100 },
+                { port: 10, model: 'AlsoLastYear', pixels: 100 },
+            ],
+        );
+        expect(rows.map((r) => [r.port, r.drift, r.severity])).toEqual([
+            [1, 'ok', 'ok'],
+            [9, 'unexpected', 'extra'],
+            [10, 'unexpected', 'extra'],
+        ]);
+        expect(hasPortDrift(rows)).toBe(false);
+        // Still reported -- quietly, on its own channel.
+        expect(hasExtraConfig(rows)).toBe(true);
+    });
+
+    it('does not call a HinksPix serial port xLights omits a conflict', () => {
+        const rows = reconcileSerialPorts(
+            [{ port: 1, models: ['PAR'], channels: 20, protocol: 'dmx' }],
+            [
+                { port: 1, protocol: 'dmx', channels: 512 },
+                { port: 2, protocol: 'dmx', channels: 512 },
+            ],
+        );
+        expect(rows.map((r) => [r.port, r.severity])).toEqual([
+            [1, 'ok'],
+            [2, 'extra'],
+        ]);
+        expect(hasPortDrift(rows)).toBe(false);
+        expect(hasExtraConfig(rows)).toBe(true);
+    });
+
+    it('still conflicts on config that contradicts the show', () => {
+        const short = reconcilePorts([{ port: 1, models: ['Tree'], pixels: 50 }], [{ port: 1, pixels: 20 }]);
+        expect(short[0].severity).toBe('conflict');
+        const absent = reconcilePorts([{ port: 3, models: ['Arch'], pixels: 30 }], []);
+        expect(absent[0].severity).toBe('conflict');
+        expect(hasPortDrift(short) && hasPortDrift(absent)).toBe(true);
+    });
+
+    it('treats a leftover WLED bus as a conflict, because it moves the others', () => {
+        // WLED maps channels onto LEDs by each bus's own range, so a bus we did
+        // not configure overlaps the ones we did and the board lights the wrong
+        // pixels. Everywhere else an unused output is inert.
+        const actual = [
+            { port: 1, model: 'Tree', pixels: 50 },
+            { port: 4, model: 'stale', pixels: 100 },
+        ];
+        const intent = [{ port: 1, models: ['Tree'], pixels: 50 }];
+        expect(reconcilePorts(intent, actual, undefined, 'WLED')[1].severity).toBe('conflict');
+        expect(reconcilePorts(intent, actual, undefined, 'Falcon')[1].severity).toBe('extra');
+        expect(hasPortDrift(reconcilePorts(intent, actual, undefined, 'WLED'))).toBe(true);
+    });
+
+    it('weighs a kind on its own when no row carries a severity', () => {
+        expect(portDriftSeverity('ok')).toBe('ok');
+        expect(portDriftSeverity('unexpected')).toBe('extra');
+        expect(portDriftSeverity('missing')).toBe('conflict');
+        expect(portDriftSeverity('count')).toBe('conflict');
+        expect(portDriftSeverity('start')).toBe('conflict');
+        // A row built by hand (a test, an older payload) falls back to the kind.
+        expect(hasPortDrift([{ drift: 'count' }])).toBe(true);
+        expect(hasPortDrift([{ drift: 'unexpected' }])).toBe(false);
+    });
+});
+
 describe('reconcileInputs', () => {
     const e131 = (universe: number, channels = 510, startChannel = 1) => ({
         type: 'e131',
@@ -358,7 +434,7 @@ describe('reconcileInputs', () => {
         expect(r.notes).toEqual([]);
     });
 
-    it('flags missing, extra, and resized universes', () => {
+    it('flags missing and resized universes, and reports extra ones apart', () => {
         const r = reconcileInputs([e131(100), e131(101)], {
             protocol: 'e131',
             universes: [
@@ -368,8 +444,24 @@ describe('reconcileInputs', () => {
         });
         expect(r.drift).toBe(true);
         expect(r.notes.join(' | ')).toContain('missing on device: 101');
-        expect(r.notes.join(' | ')).toContain('not in xLights: 7');
         expect(r.notes.join(' | ')).toContain('universe 100 size: xLights 510 vs device 512');
+        // A universe nobody sends to is not a misconfiguration, so it is
+        // reported without counting as drift.
+        expect(r.notes.join(' | ')).not.toContain('not in xLights');
+        expect(r.extraNotes.join(' | ')).toContain('not in xLights: 7');
+    });
+
+    it('does not call a device listening wider than the show drift', () => {
+        const r = reconcileInputs([e131(100)], {
+            protocol: 'e131',
+            universes: [
+                { universe: 100, channels: 510 },
+                { universe: 7, channels: 510 },
+            ],
+        });
+        expect(r.drift).toBe(false);
+        expect(r.notes).toEqual([]);
+        expect(r.extraNotes).toEqual(['universes not in xLights: 7']);
     });
 
     it('protocol mismatch short-circuits the finer checks', () => {
@@ -560,6 +652,7 @@ describe('reconcileSerialPorts', () => {
                 actualChannels: 64,
                 actualProtocol: 'dmx',
                 drift: 'ok',
+                severity: 'ok',
             },
         ]);
     });

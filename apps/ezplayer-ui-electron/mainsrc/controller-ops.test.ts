@@ -24,6 +24,7 @@ const {
     getControllerOpsState,
     hasRunningControllerOps,
     resetControllerOps,
+    setContentSource,
     setKnownControllers,
 } = await import('./controller-ops.js');
 
@@ -205,6 +206,30 @@ describe('queue', () => {
         // The cancelled and reset reads never reached the controller.
         expect(probe.options.length).toBe(8);
         expect(hasRunningControllerOps()).toBe(false);
+    });
+});
+
+describe('a distribution that cannot start', () => {
+    // Pressing the button when the show or the devices are not there is an
+    // ordinary outcome, not a fault: it has to arrive as a failed operation
+    // the card can show, never as an exception out of the IPC handler.
+    const distribute = () => dispatchControllerCommand({ cmd: 'distribute' }, 'lan');
+    const distributeOps = () =>
+        Object.values(getControllerOpsState().operations).filter((o) => o.kind === 'distribute');
+
+    it('reports having no show rather than throwing', async () => {
+        await expect(distribute()).resolves.toBeUndefined();
+        expect(distributeOps().map((o) => o.status)).toEqual(['error']);
+        expect(distributeOps()[0].error).toMatch(/No show is open/);
+    });
+
+    it('reports an empty show rather than throwing', async () => {
+        setContentSource(() => ({ sequences: [], idle: true }));
+        await expect(distribute()).resolves.toBeUndefined();
+        expect(distributeOps().map((o) => o.status)).toEqual(['error']);
+        // No layout and no scan, so there is nobody to send to -- and the
+        // message says which of the two to go and do.
+        expect(distributeOps()[0].error).toMatch(/No controllers are known yet/);
     });
 });
 
