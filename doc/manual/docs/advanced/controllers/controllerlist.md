@@ -65,7 +65,7 @@ A warning ![Controller Alert](/img/ctrlalert.png) indicator is presented when a 
 
 Several things can require attention:
 
-- **Ports or input config differ from expected** — **Reconfigure** the controller.
+- **Ports or input config differ from expected** — **Reconfigure** the controller.  A universe in the layout past the last channel any model on the controller uses is not part of the comparison: xLights leaves one behind now and then, and neither upload writes it.
 - **The controller is in the wrong mode** — it reports itself as a player or a remote while the show wants it to take live data, or the other way round.  Also fixed by **Reconfigure**.
 - **The player's send list differs from expected** — only on an FPP player: a controller is missing from the list, switched off in it, or sent the wrong channels or address.  Fixed by **Send output universes**.
 - **Content delivery needed** ![Content delivery needed](/img/ctrlcontent.png) — the device holds its own copy of the show and that copy is not current; see [Content Distribution](contentdistribution.md).

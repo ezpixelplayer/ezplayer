@@ -580,6 +580,28 @@ const summarizeUniverses = (u: { universe: number; channels: number }[]): string
 };
 
 /**
+ * The outputs without the universes past the last channel any model on the
+ * controller uses. xLights can leave such a universe in networks.xml (since
+ * 2026.04 a single-colour string of over 510 lights is counted by lights but
+ * sized by its one channel, so one extra 510 universe is created and never
+ * sized), and neither its upload nor ours writes a universe no string maps
+ * into. Nothing is dropped when no model says where the channels end.
+ */
+export function dropUnusedTrailingOutputs(
+    outputs: ControllerOutputIntent[] | undefined,
+    used: { startChannel?: number; channels?: number }[],
+): ControllerOutputIntent[] | undefined {
+    if (!outputs?.length) return outputs;
+    let last = 0;
+    for (const u of used) {
+        if (u.startChannel !== undefined && u.channels) last = Math.max(last, u.startChannel + u.channels - 1);
+    }
+    if (last === 0) return outputs;
+    const kept = outputs.filter((o) => o.universe === undefined || o.startChannel <= last);
+    return kept.length ? kept : outputs.slice(0, 1);
+}
+
+/**
  * Compare the xLights output/universe intent against the device's actual
  * data-input config. Deliberately tolerant — it only flags what it can
  * positively contradict, so an unreported field never alarms:

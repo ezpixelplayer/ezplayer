@@ -43,6 +43,7 @@ import type {
 } from '@ezplayer/ezplayer-core';
 import {
     AudioChunkRingBuffer,
+    dropUnusedTrailingOutputs,
     getActiveViewerControlSchedule,
     getScheduleTimes,
     getSeqTimesMS,
@@ -2314,7 +2315,12 @@ function xlControllerToKnown(
         serialPorts: serialPorts && serialPorts.length ? serialPorts : undefined,
         panelMatrices: panelMatrices && panelMatrices.length ? panelMatrices : undefined,
         virtualMatrices: virtualMatrices && virtualMatrices.length ? virtualMatrices : undefined,
-        outputs: xlControllerOutputs(c),
+        outputs: dropUnusedTrailingOutputs(xlControllerOutputs(c), [
+            ...(modelIntents ?? []),
+            ...(serialPorts ?? []),
+            ...(panelMatrices ?? []),
+            ...(virtualMatrices ?? []),
+        ]),
         maxFps,
         source: 'xlights',
     };

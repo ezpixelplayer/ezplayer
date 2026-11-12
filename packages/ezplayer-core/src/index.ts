@@ -187,6 +187,7 @@ export {
     devicePortChannels,
     portCountAgrees,
     reconcileInputs,
+    dropUnusedTrailingOutputs,
     overlayHealth,
     healthNeedsAttention,
     applyOverrides,
