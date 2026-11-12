@@ -46,6 +46,8 @@ There are three ways to access content distribution:
 - **Playback Settings → Content Sync** has the same actions beside the settings.
 - The [controller actions](controlleractions.md) offer **Send content** / **Distribute content** and **Check content**.  Per-device action menus can be used to target operations to a single controller.
 
+For scripting, the same run is available from the command line as [`controller distribute`](../../reference/cli.md#controller-distribute) and over the LAN API as the [`distribute` command](../../reference/api.md#post-apiezpcontrollerscommand).
+
 ![Content Distribution & Sync card](/img/contentdist-card.png)
 
 **Check what's needed** reads each device's own file list and reports what a send *would* transfer, without transferring anything.
