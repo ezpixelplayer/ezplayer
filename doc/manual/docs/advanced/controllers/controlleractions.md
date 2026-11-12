@@ -11,14 +11,29 @@ The controller actions available depend on the driver for the selected item, but
 - **Port map**: Opens the [Port Map](portmap.md), showing the expected configuration for the controller.
 - **Refresh Details**: Populates or refreshes the controller details.
 - **Open**: Opens the controller web page.  For this to work, the controller must be reachable via the network or via proxy through EZPlayer.
+- **Test pattern on** / **off**: Starts or stops the controller's own hardware test pattern, on controllers that have one.  While it runs, the outputs show the pattern instead of the show's data.
 - **Reboot**: Allows soft and/or hard reboot of the controller, depending on the model.
-- **Reconfigure**: Configure the controller according to its input settings and Port Map.  It also puts the controller back into the part the show asks of it, which matters after a controller has been a player or a remote: a board left in one of those modes takes no live data at all, and its share of the display stays dark however correct its ports are.
-- **Send output universes**: Offered on the show's player instead of **Reconfigure**, which a player has no ports for.  It writes the player's send list — which controller is sent which channels — from the layout.  A player still pointing at a previous show's channels is how a show comes up with one controller lit.
-- **Send content**: Sends this show's sequences and their audio to a controller that keeps its own copy of the show; see [Content Distribution](contentdistribution.md).  The item reads **Distribute content** when the device is not behind the show, and is offered only for a device that holds content at all.
+- **Reset counters**: Zeroes the controller's packet and error counters, so the Show stats details start fresh.
+- **Reconfigure**: Configure the controller according to its input settings, Port Map, and mode.
+- **Send output universes**: Offered on the FPP players instead of **Reconfigure**.  It rewrites the player's send list (which controller is sent which channels).
+- **Send content**: Sends this show's sequences and audio to the controller / player; see [Content Distribution](contentdistribution.md).
 - **Check content**: Reads the device's own file list and reports what a send would transfer, without transferring anything.
 - **Enable**/**Disable**: Enable/Disable the controller from use by EZPlayer.
 
 The actions also provide options for EZPlayer recordkeeping:
 - **Promote...**: Save a record for a discovered controller that was not yet configured.
-- **Edit record**: Edit EZPlayer controller-specific information.
+- **Edit record**: Edit EZPlayer controller-specific information (below).
 - **Delete record**: Delete the controller's record from EZPlayer.
+
+## Edit record
+
+![Edit controller record](/img/ctrledit.png)
+
+The record is EZPlayer's own information about a controller.  This supersedes any information taken from the xLights layout.:
+
+- **Part in the show**: enabled, disabled, player or remote, or left to the layout.  See [Player / Remote / xLights Only](controllerlist.md#player--remote--xlights-only).
+- **Presume up**: for controllers that are "up" but do not answer pings.
+- **IP / hostname**: where to reach the controller.
+- **Vendor / Model / Variant**: the identity used to look up the controller's capabilities.
+- **Max FPS override**: caps the frame rate sent to this controller; see [Max FPS](controllerlist.md#max-fps).
+- **Send from**: the interface this controller's data leaves from, if it cannot be established automatically.

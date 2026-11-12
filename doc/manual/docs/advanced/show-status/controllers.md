@@ -17,10 +17,8 @@ can drill into each controller.
 At the top of the card you see:
 
 - **Models** and **Channels** — totals from your show layout.
-- **Controllers in this show** — and, when there are any, how many are not in
-  it (Inactive in the layout). A player or a remote is in the show: it takes
-  sync instead of pixel data, and its being down costs part of the display just
-  the same.
+- **Controllers in this show** — how many controllers, players, and remotes
+  EZPlayer knows about.
 - A **health chip** — for example _All controllers online_, _No controllers
   online_, or _N controller(s) offline_.
 
@@ -29,9 +27,8 @@ At the top of the card you see:
 Below the summary, each controller appears as an expandable row with its name
 and a status chip. The chip names the part the controller plays: **open** for
 one being sent the show's live data, **plays its own copy** for a player or a
-remote (which has no data sender of its own, and so is reported by its ping),
-and **not in this show** for one the layout has taken out. Use **Expand All** /
-**Collapse All** to open or close every row at once.
+remote, and **not in this show** for controllers not in use.  Use **Expand All** /
+**Collapse All** to open or close all rows at once.
 
 ![Controller details](/img/status-2.png)
 

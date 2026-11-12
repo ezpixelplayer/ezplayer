@@ -125,11 +125,13 @@ for each controller. This is covered on its own page:
 
 ## Content Distribution & Sync
 
-Whether the devices that keep their own copy of the show actually have this
-show, and what a distribution run is doing right now. The card only appears
-when such a device is known, or the feature has been set up or used. Full
-detail is on its own page:
-[Content Distribution](../controllers/contentdistribution.md).
+The card only appears when the show contains a player or remote, and
+indicates if content distribution is needed, in progress, or complete.
+
+Full detail is available on the
+[Content Distribution](../controllers/contentdistribution.md) page.
+
+![Content Distribution & Sync card](/img/contentdist-card.png)
 
 ## HTTP Listener Status
 
