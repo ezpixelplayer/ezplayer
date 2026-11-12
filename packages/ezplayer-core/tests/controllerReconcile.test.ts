@@ -13,7 +13,7 @@ import {
     ipInCidr,
     findOffNetworkControllers,
 } from '../src/util/controllerReconcile';
-import { contentRoleOf } from '../src/types/ControllerOps';
+import { contentRoleOf, effectiveForceLocalIP } from '../src/types/ControllerOps';
 import type {
     KnownController,
     DiscoveredController,
@@ -136,6 +136,7 @@ describe('reconcilePorts', () => {
                 missingModels: [],
                 extraModels: [],
                 actualPixels: 50,
+                actualChannels: 150,
                 drift: 'ok',
                 severity: 'ok',
             },
@@ -321,6 +322,15 @@ describe('applyOverrides', () => {
         const out = applyOverrides([known({ name: 'Roof' })], [rec({ name: 'Roof', address: '192.168.1.70' })]);
         expect(out[0].address).toBe('192.168.1.70');
         expect(out[0].source).toBe('both');
+    });
+
+    it('lets the record choose the address the data is sent from', () => {
+        const xl = [known({ name: 'Roof', address: '10.0.0.50', forceLocalIP: '10.0.0.42' })];
+        expect(effectiveForceLocalIP(applyOverrides(xl, [])[0])).toBe('10.0.0.42');
+        const out = applyOverrides(xl, [rec({ name: 'Roof', forceLocalIP: '10.0.0.7' })]);
+        expect(out[0]).toMatchObject({ forceLocalIP: '10.0.0.42', forceLocalIPOverride: '10.0.0.7' });
+        expect(effectiveForceLocalIP(out[0])).toBe('10.0.0.7');
+        expect(effectiveForceLocalIP({})).toBeUndefined();
     });
 
     it('soft-deletes: a record with deleted drops the controller from the set', () => {

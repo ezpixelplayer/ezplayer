@@ -1,10 +1,10 @@
 /**
  * Read-only access to EZPlayer's per-controller records — the JSON files the
  * Controllers screen writes under `<showFolder>/.ezplayer/controllers/` (one
- * per controller, keyed by name). The data plane needs two things from them:
- * the frame-rate override, and the part a record gives a controller, which the
- * layout cannot say. Everything else stays with the controller-ops module that
- * owns the records.
+ * per controller, keyed by name). The data plane needs three things from them:
+ * the frame-rate override, the address to send from, and the part a record
+ * gives a controller, which the layout cannot say. Everything else stays with
+ * the controller-ops module that owns the records.
  */
 
 import * as fsp from 'fs/promises';
@@ -18,6 +18,8 @@ export interface ControllerRecordOverrides {
     fpsOverrides: Record<string, number>;
     /** The part each record asks of its controller, by name, where it says one. */
     roles: Record<string, ControllerRecordRole>;
+    /** This computer's address to send from, by name, where a record names one. */
+    forceLocalIPs: Record<string, string>;
 }
 
 /** A record's `active` the way the Controllers screen writes it: a role, or a plain on/off. */
@@ -31,7 +33,7 @@ function roleOf(value: unknown): ControllerRecordRole | undefined {
  * file, or a record that says nothing simply contributes nothing.
  */
 export async function readControllerRecordOverrides(showFolder: string): Promise<ControllerRecordOverrides> {
-    const out: ControllerRecordOverrides = { fpsOverrides: {}, roles: {} };
+    const out: ControllerRecordOverrides = { fpsOverrides: {}, roles: {}, forceLocalIPs: {} };
     const dir = path.join(showFolder, '.ezplayer', 'controllers');
     let files: string[];
     try {
@@ -44,9 +46,10 @@ export async function readControllerRecordOverrides(showFolder: string): Promise
         try {
             const rec: unknown = JSON.parse(await fsp.readFile(path.join(dir, f), 'utf-8'));
             if (!rec || typeof rec !== 'object') continue;
-            const { name, fpsOverride, active, deleted } = rec as {
+            const { name, fpsOverride, forceLocalIP, active, deleted } = rec as {
                 name?: unknown;
                 fpsOverride?: unknown;
+                forceLocalIP?: unknown;
                 active?: unknown;
                 deleted?: unknown;
             };
@@ -54,6 +57,7 @@ export async function readControllerRecordOverrides(showFolder: string): Promise
             if (typeof fpsOverride === 'number' && Number.isFinite(fpsOverride) && fpsOverride > 0) {
                 out.fpsOverrides[name] = fpsOverride;
             }
+            if (typeof forceLocalIP === 'string' && forceLocalIP.trim()) out.forceLocalIPs[name] = forceLocalIP.trim();
             const role = roleOf(active);
             if (role) out.roles[name] = role;
         } catch {

@@ -76,6 +76,9 @@ The ![Informational](/img/ctrlinfo.png) mark indicates there is something that m
 ### Max FPS
 Some controllers cannot keep up with the show's frame rate.  The **Max FPS** column shows the frame-rate cap in effect for the controller.  Use **Edit record** to set or clear the override; it takes effect the next time the show output is (re)started.
 
+### Send-from address
+xLights can pin a controller to one of the computer's network interfaces (**Force Local IP** on the controller, or **Global Force Local IP** on the Controllers tab).  EZPlayer sends from that address and shows it in the controller's details.  An address that is not assigned to any network interface on this computer — after a network change, say, or on a different computer than the layout was made on — is ignored, as xLights ignores it: the show goes out the default interface, and the row carries an informational mark saying so.  **Edit record** can set a different address for this player; it takes effect the next time the show output is (re)started.
+
 ## Controller Details
 
 ![Controller Details](/img/ctrldetails.png)

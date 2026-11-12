@@ -329,6 +329,30 @@ describe('a record edit', () => {
     });
 });
 
+describe('the send-from address on a record', () => {
+    it("sits beside the layout's, and an empty one clears it", async () => {
+        await loadControllerRecords(await fsp.mkdtemp(path.join(os.tmpdir(), 'ezp-ops-')));
+        setKnownControllers([
+            {
+                name: 'K',
+                address: '10.0.0.9',
+                active: true,
+                enableState: 'enabled',
+                forceLocalIP: '10.0.0.42',
+                source: 'xlights',
+            },
+        ]);
+        await dispatchControllerCommand({ cmd: 'record', name: 'K', patch: { forceLocalIP: ' 10.0.0.7 ' } }, 'lan');
+        expect(getControllerOpsState().known?.[0]).toMatchObject({
+            forceLocalIP: '10.0.0.42',
+            forceLocalIPOverride: '10.0.0.7',
+        });
+        await dispatchControllerCommand({ cmd: 'record', name: 'K', patch: { forceLocalIP: '' } }, 'lan');
+        expect(getControllerOpsState().known?.[0].forceLocalIPOverride).toBeUndefined();
+        expect(getControllerOpsState().known?.[0].forceLocalIP).toBe('10.0.0.42');
+    });
+});
+
 describe('holding data while a controller is read', () => {
     /** Records hold/release pairs the way the playback worker would see them. */
     function recordHolds() {

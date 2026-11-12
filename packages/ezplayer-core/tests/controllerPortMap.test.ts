@@ -1,11 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import {
     buildPortMap,
+    nodeCountLabel,
     portIntentFromModelIntents,
     expandIntentStrings,
     getPortSR,
 } from '../src/util/controllerPortMap';
-import type { ControllerModelIntent } from '../src/types/ControllerOps';
+import { reconcilePorts } from '../src/util/controllerReconcile';
+import type { ControllerModelIntent, ControllerPort } from '../src/types/ControllerOps';
 
 /** Minimal rich model intent. */
 function mi(partial: Partial<ControllerModelIntent> & { name: string; controllerPort: number }): ControllerModelIntent {
@@ -189,5 +191,59 @@ describe('buildPortMap rows and serial ports', () => {
                 serialActual: [{ port: 1, channels: 16 }],
             }).serial[0].drift,
         ).toBe(false);
+    });
+});
+
+describe('single-channel nodes', () => {
+    // An AC receiver port of thirteen one-channel nodes, then an ordinary
+    // string. The controller holds the thirteen as five three-channel pixels.
+    const layout = [
+        mi({ name: 'Star', controllerPort: 1, startChannel: 1, nodeCount: 1, channels: 1, channelsPerPixel: 1 }),
+        mi({ name: 'Outlets', controllerPort: 1, startChannel: 2, nodeCount: 4, channels: 4, channelsPerPixel: 1 }),
+        mi({ name: 'Windows', controllerPort: 1, startChannel: 6, nodeCount: 8, channels: 8, channelsPerPixel: 1 }),
+        mi({ name: 'Globes', controllerPort: 5, startChannel: 14, nodeCount: 50, channels: 150, channelsPerPixel: 3 }),
+    ];
+    const device: ControllerPort[] = [
+        { port: 1, pixels: 5, startChannel: 1, endChannel: 15, colorOrder: 'RGB' },
+        { port: 5, pixels: 50, startChannel: 14, endChannel: 163, colorOrder: 'RGB' },
+    ];
+
+    it('are counted in channels beside pixels', () => {
+        const intent = portIntentFromModelIntents(layout);
+        expect(intent.map((p) => [p.port, p.pixels, p.channels])).toEqual([
+            [1, 13, 13],
+            [5, 50, 150],
+        ]);
+    });
+
+    it('agree with a controller that holds them as three-channel pixels', () => {
+        const rows = reconcilePorts(portIntentFromModelIntents(layout), device);
+        expect(rows.map((r) => [r.port, r.drift, r.actualChannels])).toEqual([
+            [1, 'ok', 15],
+            [5, 'ok', 150],
+        ]);
+        const map = buildPortMap(layout, undefined, device);
+        expect(map.rows.filter((r) => r.drift)).toEqual([]);
+        expect(map.rows[0]).toMatchObject({
+            intendedPixels: 13,
+            intendedChannels: 13,
+            actualPixels: 5,
+            actualChannels: 15,
+        });
+        expect(map.boxes.find((b) => b.model === 'Outlets')).toMatchObject({ totalPixels: 4, totalChannels: 4 });
+    });
+
+    it('still show a port holding the wrong count', () => {
+        const short = [{ ...device[0], pixels: 4 }, device[1]];
+        expect(reconcilePorts(portIntentFromModelIntents(layout), short)[0].drift).toBe('count');
+        expect(buildPortMap(layout, undefined, short).rows[0].drift).toBe(true);
+    });
+
+    it('read as nodes, while three- and four-channel lights read as pixels', () => {
+        expect(nodeCountLabel(13, 13)).toBe('13 nodes · 13 ch');
+        expect(nodeCountLabel(1, 1)).toBe('1 node · 1 ch');
+        expect(nodeCountLabel(50, 150)).toBe('50 px · 150 ch');
+        expect(nodeCountLabel(10, 40)).toBe('10 px · 40 ch');
+        expect(nodeCountLabel(50)).toBe('50 px');
     });
 });
