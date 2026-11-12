@@ -702,6 +702,8 @@ export interface UIConnectSnapshot {
     remoteAccess?: RemoteAccessAvailability;
     appSettings?: AppSettingsState;
     viewerStats?: ViewerStatsSummary;
+    /** Extra link tiles for the Settings screen (--settings-link). */
+    settingsLinks?: SettingsLink[];
 }
 
 export type ScheduleDays =
@@ -1127,6 +1129,8 @@ export type FullPlayerState = {
     /** Owner viewer-activity summary (requests / votes / audience), computed by
      *  the player from events pulled off its player_server. */
     viewerStats?: ViewerStatsSummary;
+    /** Extra link tiles for the Settings screen (--settings-link). */
+    settingsLinks?: SettingsLink[];
 };
 
 /**
@@ -1137,6 +1141,15 @@ export interface RemoteAccessAvailability {
     shell: boolean;
     /** Show-folder files. */
     files: boolean;
+}
+
+/** A link tile on the Settings screen, from a --settings-link launch flag. */
+export interface SettingsLink {
+    label: string;
+    /** Absolute http(s) URL, or a path resolved against the page the UI was loaded from. */
+    url: string;
+    /** Icon name; the UI falls back to a generic link icon for names it does not know. */
+    icon: string;
 }
 
 /** What a support bundle holds; each level adds to the one before. */

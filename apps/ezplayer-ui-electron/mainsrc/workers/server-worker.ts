@@ -1119,6 +1119,8 @@ function sendProxyResponse(
 /** Non-GET proxied bodies are chunk-sized by the client (≤1MB); anything
  *  bigger than this is a protocol violation, not a big upload. */
 const PROXY_MAX_BODY_BYTES = 2 * 1024 * 1024;
+/** Set by --no-cloud-uploads: files reach this player over the LAN only. */
+let noCloudUploads = false;
 
 function proxyJson(res: { status: number; body: unknown }): {
     status: number;
@@ -1146,6 +1148,12 @@ async function dispatchProxyWrite(
     if (method === 'PATCH') {
         const m = pathStr.match(/^\/api\/file\/([^/?]+)$/);
         if (!m) return { status: 404 };
+        if (noCloudUploads) {
+            return proxyJson({
+                status: 403,
+                body: { error: 'This player does not accept file uploads from the cloud' },
+            });
+        }
         return proxyJson(await chunkUploadCore(showFolder, decodeURIComponent(m[1]), req?.headers ?? {}, body));
     }
 
@@ -1350,7 +1358,8 @@ async function dispatchHttpProxy(
     const filesMatch = pathStr.match(/^\/api\/files\/([^/?]+)$/);
     if (filesMatch) {
         const showFolder = wsBroadcaster.get('showFolder') as string | undefined;
-        return proxyJson(await listFileNamesCore(showFolder, decodeURIComponent(filesMatch[1])));
+        const mediaFolder = (wsBroadcaster.get('playbackSettings') as PlaybackSettings | undefined)?.mediaFolder;
+        return proxyJson(await listFileNamesCore(showFolder, decodeURIComponent(filesMatch[1]), mediaFolder));
     }
 
     // Cloud endpoints deployed before the /api/ezp move still forward bare
@@ -1522,6 +1531,8 @@ async function listenWithFallback(
 
 async function startServer(config: ServerWorkerData) {
     const { port, portSource, kioskPort, kioskPortSource } = config;
+    noCloudUploads = config.noCloudUploads === true;
+    if (noCloudUploads) console.log('[server-worker] Cloud file uploads disabled (--no-cloud-uploads)');
 
     // Initialize ZSTD codec for frame compression (non-blocking, best-effort)
     try {

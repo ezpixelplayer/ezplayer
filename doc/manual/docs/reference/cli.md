@@ -472,6 +472,7 @@ packages, `executableArgs` may include `--no-sandbox` automatically — see
 | `--kiosk-port=0`       | Disable the kiosk server                                        |
 | `--user-data-dir=<p>`  | Isolate all persisted app state to the given directory          |
 | `--no-update-check`    | Skip automatic update checks (startup and idle pre-download)    |
+| `--settings-link=<l>\|<url>[\|<icon>]` | Add a link tile to the Settings screen ([details](#settings-links)) |
 
 ## Show folder
 
@@ -497,13 +498,33 @@ offers to pick another folder.
 Only **one EZPlayer instance** can lock a given show folder at a time. A second
 instance using the same folder is prompted to choose a different path or quit.
 
+## Settings links
+
+`--settings-link=<label>|<url>[|<icon>]` adds a tile to the Settings screen that
+opens the URL in a new browser tab. Repeat the flag for more tiles; they appear
+after the built-in tiles in the order given, in both the desktop app and the
+LAN web UI. The URL is `http://` or `https://`, or a path such as `/setup` that
+resolves against the address the UI was opened from. The optional icon is one
+of `link` (default), `wifi`, `router`, `lan`, `settings`, `power` or `memory`.
+Quote the value when the label has spaces. An appliance that fronts the player
+with its own setup page can point at it this way:
+
+```bash
+./EZPlayer headless --show-folder=/home/user/show "--settings-link=Pi Setup|/setup|wifi"
+```
+
 ## Headless mode
 
 The `headless` verb runs the **full player with no windows**: scheduled and
 API-driven playback, light output, the LAN web/API server, kiosk server, and
 cloud connectivity all behave exactly as in the windowed app. Audio is still
-decoded and streamed to the web UI and cloud listeners; it is simply not played
-out on the machine's local speakers (no hidden audio window is created).
+decoded and streamed to the web UI and cloud listeners; by default it is not
+played out on the machine's local speakers (no hidden audio window is created).
+Add `--local-audio` to play it on the local speakers as the windowed app does;
+the Settings screen in the LAN web UI then lists this machine's output devices.
+`--no-cloud-uploads` refuses file uploads relayed through the cloud service, for
+players whose files should only arrive over the LAN web API. Cloud sequence
+downloads and LAN uploads are unaffected.
 
 ```bash
 EZPlayer.exe headless --show-folder=D:\Shows\2025 --web-port=3000
@@ -540,6 +561,13 @@ command line (it must come before EZPlayer's own arguments):
 
 ```bash
 ./EZPlayer --ozone-platform=headless headless --show-folder=/home/user/show
+```
+
+`--local-audio` works there too; the hidden audio renderer does not need a
+display server, only a working audio device:
+
+```bash
+./EZPlayer --ozone-platform=headless headless --show-folder=/home/user/show --local-audio
 ```
 
 ## LAN and kiosk ports

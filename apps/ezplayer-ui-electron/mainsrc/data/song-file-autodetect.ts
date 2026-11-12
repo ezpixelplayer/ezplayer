@@ -69,14 +69,15 @@ async function fileExists(filePath: string): Promise<boolean> {
     }
 }
 
-function getAudioNameFromFseqHeader(headers: Record<string, string> | undefined): string | undefined {
+/** Audio file name from the FSEQ media headers; xLights on Windows writes a full backslash path. */
+export function getAudioNameFromFseqHeader(headers: Record<string, string> | undefined): string | undefined {
     if (!headers) return undefined;
     for (const key of ['mf', 'mu', 'md']) {
         const val = headers[key]?.trim();
         if (!val) continue;
         const ext = path.extname(val).toLowerCase();
         if (AUDIO_EXTENSIONS.includes(ext)) {
-            return path.basename(val);
+            return path.posix.basename(val.replace(/\\/g, '/'));
         }
     }
     return undefined;

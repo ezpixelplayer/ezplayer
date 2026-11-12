@@ -41,6 +41,7 @@ import {
     cloudStatusActions,
     controllerOpsActions,
     remoteAccessActions,
+    settingsLinksActions,
     viewerStatsActions,
     autoUpdateActions,
     audioDevicesActions,
@@ -297,6 +298,7 @@ export class ElectronDataStorageAPI implements DataStorageAPI {
             if (snapshot.cloudStatus) dispatch(cloudStatusActions.setCloudStatus(snapshot.cloudStatus));
             if (snapshot.controllerops) dispatch(controllerOpsActions.setControllerOps(snapshot.controllerops));
             dispatch(remoteAccessActions.setRemoteAccess(snapshot.remoteAccess ?? { shell: false, files: false }));
+            dispatch(settingsLinksActions.setSettingsLinks(snapshot.settingsLinks));
             if (snapshot.appSettings) dispatch(appSettingsActions.setAppSettings(snapshot.appSettings));
             if (snapshot.viewerStats) dispatch(viewerStatsActions.setViewerStats(snapshot.viewerStats));
         }
