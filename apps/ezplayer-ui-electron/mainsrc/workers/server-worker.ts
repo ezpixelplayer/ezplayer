@@ -155,19 +155,6 @@ class MainThreadRPC {
 
     // Most RPCs are quick (30s). A network scan runs the discovery engine to its
     // own cap (~120s), so it gets a longer leash.
-    /**
-     * Per-method ceilings. A controller command is a device operation, not a
-     * question: it waits for a slot in the op queue and then for hardware, so
-     * its budget has to cover both.
-     *
-     * 130 s was not enough and failed in the worst way. A HinksPix writes its
-     * config over a slow channel, and a Falcon V4 reboots when its board mode
-     * is written and the driver waits for it to come back -- either can pass
-     * two minutes. When this timer fired the work carried on and finished, but
-     * the reply arrived with nobody listening ("No pending request for id"),
-     * so a controller that had just been configured correctly was reported as
-     * a failed upload, indistinguishable from a dead one.
-     */
     private static readonly TIMEOUT_MS: Partial<Record<keyof ServerWorkerRPCAPI, number>> = {
         controllerCommand: 900_000,
         buildSupportBundle: 120_000,
