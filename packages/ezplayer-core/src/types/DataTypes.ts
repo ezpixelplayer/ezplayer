@@ -872,6 +872,8 @@ export interface PlaybackSettings {
     sendIdleBlackFrames?: boolean;
     /** Outbound sync strategies for followers of this player. */
     sync?: SyncOutputSettings;
+    /** Whether and when the player sends show content to the devices that play it. */
+    contentDistribution?: ContentDistributionSettings;
     /** When the player may read controller configuration by itself. */
     controllerRefresh?: ControllerRefreshSettings;
     /** Diagnostic/testing overrides; leave unset for normal operation. */
@@ -898,6 +900,19 @@ export interface SyncOutputSettings {
 /** FPP MultiSync master: send sequence open/start/frame/stop packets so FPP
  *  or xSchedule remotes follow playback. */
 export interface MultisyncSettings {
+    /**
+     * Whether to send sync at all.
+     *  - `auto`  send when there is anyone to send to: a remote in the layout,
+     *            or an address in `remotes`. The default, because a layout with
+     *            remotes and sync switched off is a show that plays with part
+     *            of the display sitting idle.
+     *  - `on`    always send
+     *  - `off`   never send
+     *
+     * Absent reads as `auto`, except that `enabled: true` from an older build
+     * reads as `on`.
+     */
+    mode?: 'auto' | 'on' | 'off';
     enabled: boolean;
     /** Unicast remotes as host[:port]; an empty list means multicast. */
     remotes: string[];
@@ -909,6 +924,31 @@ export interface MultisyncSettings {
      *  position, as FPP and xSchedule masters do. Default on; turn off when remotes
      *  hold copies of the audio and must stay silent. */
     mediaSync?: boolean;
+}
+
+/**
+ * Show-content distribution: putting this show's sequences and media onto the
+ * players that need their own copy (FPP, today). `mode` follows the shape cloud
+ * polling already uses, so "scheduled" means the same thing in both places.
+ */
+export interface ContentDistributionSettings {
+    /**
+     *  - `off`        only ever when asked, by the button
+     *  - `scheduled`  automatically inside any window in `schedule`
+     *  - `always`     automatically whenever there is something to send
+     */
+    mode?: 'off' | 'scheduled' | 'always';
+    /** Windows automatic distribution may act in, under `'scheduled'`. */
+    schedule?: CloudPollScheduleEntry[];
+    /** How often to look for work while automatic distribution is allowed
+     *  (default 60). A run with nothing to send costs a few metadata reads. */
+    pollMinutes?: number;
+    /** Also send content a song add queues, without waiting for the next poll.
+     *  Default on: a song added during the window is the common case. */
+    followSongAdds?: boolean;
+    /** Inventory playlist created on each target, an "everything we put here"
+     *  list rather than a schedule (default "EZPlayer Content"). Empty to skip. */
+    playlistName?: string;
 }
 
 export interface AdvancedPlaybackSettings {

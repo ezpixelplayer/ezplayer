@@ -7,6 +7,8 @@ title: Player
 
 The **Player** tile holds playback-engine behaviors.
 
+![Player Settings](/img/player-settings.png)
+
 ## Start EZPlayer at sign-in
 
 _(Desktop app — Windows and Mac)_
@@ -68,24 +70,6 @@ player. **Read controller details automatically** sets when this happens:
 | **When nothing is playing (recommended)**      | Reads only while the player is idle.                                                                              |
 | **Also when a controller comes back mid-show** | Also reads a controller that just came back up; it joins the show once the read finishes.                         |
 | **Never**                                      | No automatic reads.                                                                                               |
-
-## Sync Output
-
-Enable **FPP MultiSync master** to have FPP or xSchedule remotes follow this
-player's sequence playback. List remotes as comma-separated `host[:port]`, or
-leave the list empty to send to the FPP multicast group so every listening
-remote follows. Off by default — only one sync master should exist on a
-network. **Send audio sync too** (on by default) adds the media packets that
-name the song's audio file and its playback position, which audio-following
-listeners use; an FPP remote holding the same audio file will play it, so turn
-this off to keep such remotes silent. Details and limits:
-[FPP compatibility](../reference/fpp-compat.md#multisync-master).
-
-The **Remotes**, **MultiSync port** and **MultiSync multicast address** fields
-are available only while the master is enabled:
-
-- **MultiSync port** — default 32320.
-- **MultiSync multicast address** — default 239.70.80.80.
 
 ## Test Sequences
 

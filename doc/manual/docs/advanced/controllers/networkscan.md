@@ -13,7 +13,7 @@ This card also enables/disables proxy access to the networks listed.
 
 ## Network Scanning
 
-Select the networks to be scanned by checking their boxes under the "Scan" column.
+Select the networks to be scanned by checking their boxes under the "Scan" column.  The **Controllers expected** column marks the networks the show's controllers live on; those are the networks checked for scanning when the screen opens.
 
 The network scan can proceed at three levels of detail:
 - **Sweep**: Find responsive IP addresses and collect IP-level details

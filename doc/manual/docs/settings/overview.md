@@ -37,8 +37,11 @@ its own password, and neither can be turned on from any UI — see
 Some of these tiles map to Advanced Features pages:
 [Viewer Control](../advanced/viewer-control.md) and
 [Volume](../advanced/volume.md). The **Player** tile (start at sign-in,
-prevent sleeping, background blend mode, idle blackout, sync output, advanced overrides) has
-[its own page](./player.md). The **Diagnostics** tile (crash reports, support
+prevent sleeping, background blend mode, idle blackout, controller reads, test
+sequences, advanced overrides) has [its own page](./player.md), as does the
+**Content Sync** tile (when the show is sent to devices that keep their own
+copy, and whether this player sends sync): [Content Sync](./content-sync.md).
+The **Diagnostics** tile (crash reports, support
 bundle) and the **Software Update** tile (check, download, install, skip) each
 have their own page: [Diagnostics](./diagnostics.md),
 [Software Update](./software-update.md).

@@ -47,14 +47,20 @@ export async function getOpsState(host: string): Promise<ControllerOpsState> {
 }
 
 /** POST a ControllerCommand to the running app's generic command endpoint.
- *  Synchronous like the route itself: resolves when the op has finished. */
-export async function postCommand(host: string, command: ControllerCommand): Promise<unknown> {
+ *  Synchronous like the route itself: resolves when the op has finished.
+ *  `timeoutMs` 0 waits for however long the op takes. */
+export async function postCommand(
+    host: string,
+    command: ControllerCommand,
+    opts: { timeoutMs?: number } = {},
+): Promise<unknown> {
+    // Scans run to the engine's ~120s cap; uploads probe + write + verify.
+    const timeoutMs = opts.timeoutMs ?? 150_000;
     const res = await fetch(`http://${host}/api/ezp/controllers/command`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(command),
-        // Scans run to the engine's ~120s cap; uploads probe + write + verify.
-        signal: AbortSignal.timeout(150_000),
+        ...(timeoutMs > 0 ? { signal: AbortSignal.timeout(timeoutMs) } : {}),
     });
     const body: unknown = await res.json().catch(() => undefined);
     if (!res.ok) {

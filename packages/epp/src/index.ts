@@ -25,14 +25,23 @@ export {
     summarizeFSEQHeader,
 } from './formats/FSeqUtil';
 
+export { FseqV2Writer, limitRanges, fseqStride, MAX_SPARSE_RANGES } from './formats/FSeqWriter';
+export type { FseqRange, FseqCompression, FseqWriteOptions } from './formats/FSeqWriter';
+export { planFseqSlice, planFseqGather, sliceFseqFile, parseChannelRanges, fseqUniqueId } from './formats/FSeqSlicer';
+export type { SlicePlan, SliceResult, GatherPlan, GatherSegment } from './formats/FSeqSlicer';
+
 export { ControllerRec, ModelRec, controllersAndModelsFromParsed, readControllersAndModels } from './xlcompat/XLXmlUtil';
 export { ExplicitControllerDesc } from './xlcompat/XLControllerDesc';
-export { readControllerFpsOverrides } from './xlcompat/XLControllerRecords';
+export { readControllerRecordOverrides } from './xlcompat/XLControllerRecords';
+export type { ControllerRecordOverrides, ControllerRecordRole } from './xlcompat/XLControllerRecords';
 
 export {
     ControllerState,
+    SyncRemoteTarget,
+    applyControllerRoles,
     controllersFromParsedXlights,
     readControllersFromXlights,
+    syncRemotesFromXlights,
     openControllersForDataSend,
     openControllerForDataSend,
 } from './xlcompat/XLControllerSetup';

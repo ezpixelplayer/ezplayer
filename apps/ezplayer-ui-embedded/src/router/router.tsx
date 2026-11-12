@@ -11,6 +11,8 @@ import {
     MediaFolderSettings,
     PlayerCloudRegistrationDialog,
     PlayerSettings,
+    ContentSyncSettings,
+    CONTENT_SYNC_SETTINGS_SECTION_KEY,
     ShowStatusScreen,
     SidebarLayout,
     Routes as ROUTES,
@@ -47,9 +49,10 @@ import VisibilityIcon from '@mui/icons-material/Visibility';
 import LibraryMusicIcon from '@mui/icons-material/LibraryMusic';
 import VolumeUpIcon from '@mui/icons-material/VolumeUp';
 import TuneIcon from '@mui/icons-material/Tune';
+import TroubleshootIcon from '@mui/icons-material/Troubleshoot';
+import SyncAltIcon from '@mui/icons-material/SyncAlt';
 import FolderIcon from '@mui/icons-material/Folder';
 import SystemUpdateAltIcon from '@mui/icons-material/SystemUpdateAlt';
-import TroubleshootIcon from '@mui/icons-material/Troubleshoot';
 
 declare global {
     interface Window {
@@ -127,6 +130,13 @@ const EmbeddedSettingsPage = () => {
             icon: <TuneIcon sx={{ fontSize: 56 }} />,
             title: 'Player Settings',
             content: <PlayerSettings />,
+        },
+        {
+            key: CONTENT_SYNC_SETTINGS_SECTION_KEY,
+            label: 'Content Sync',
+            icon: <SyncAltIcon sx={{ fontSize: 56 }} />,
+            title: 'Content Distribution & Sync',
+            content: <ContentSyncSettings />,
         },
         {
             key: DIAGNOSTICS_SETTINGS_SECTION_KEY,

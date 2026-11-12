@@ -59,16 +59,17 @@ the show. They are useful for setup, network diagnostics, and scripting.
 | `stats`                | Print a running player's playback statistics.               |
 | `discover`             | Scan LAN networks for lighting controllers.                 |
 | `interfaces`           | List this host's networks (the CIDRs to feed `discover`).   |
-| `controller`           | Inspect and manage lighting controllers — see its four subcommands below. |
+| `controller`           | Inspect and manage lighting controllers — see its five subcommands below. |
 | `shell`                | Set the password that enables the [remote terminal](#remote-access-terminal-and-file-manager-setup). |
 | `files`                | Set the password that enables the [file manager](#remote-access-terminal-and-file-manager-setup). |
 | `help`                 | Print the command list, or `help <command>` for one command's options. Also `--help`, `-h`. |
 
 `discover`, `interfaces`, `controller status`, and `controller action` talk to
-devices directly and need no running player. `play`, `stats`, `controller list`
-and `controller upload` query/drive a **running EZPlayer** over its LAN API
-(`--host`, default `127.0.0.1:3000`, honoring `EZPLAYER_WEB_PORT`) — playback,
-the reconcile state and the xLights upload intent only exist inside the app.
+devices directly and need no running player. `play`, `stats`, `controller list`,
+`controller upload` and `controller distribute` query/drive a **running
+EZPlayer** over its LAN API (`--host`, default `127.0.0.1:3000`, honoring
+`EZPLAYER_WEB_PORT`) — playback, the reconcile state, the xLights upload intent
+and the show's content only exist inside the app.
 
 Everything that acts on a lighting controller is a **subcommand of
 `controller`**, which keeps the plain names free for what they sound like — the
@@ -80,6 +81,7 @@ player's own status, or uploading show content:
 | `controller status`   | Deep-read one controller and print its detail report.       |
 | `controller action`   | Run a management action (e.g. reboot) on a controller.      |
 | `controller upload`   | Upload xLights-derived config to a controller (via the app).|
+| `controller distribute` | Send show content to the devices that hold their own copy (via the app). |
 
 Get top-level help or per-command help:
 
@@ -277,8 +279,13 @@ A bare name (instead of an IP) is resolved through the running player's known
 controllers.
 
 ```bash
-EZPlayer controller status <ip-or-name> [--host <host[:port]>] [--json]
+EZPlayer controller status <ip-or-name> [--host <host[:port]>] [--fpp-proxy <ip>] [--json]
 ```
+
+| Option              | Description                                                             |
+| ------------------- | ----------------------------------------------------------------------- |
+| `--fpp-proxy <ip>`  | Reach the device through an FPP-style `/proxy` bridge at `<ip>`.        |
+| `--json`            | Emit the raw detail report as JSON.                                     |
 
 ```bash
 EZPlayer controller status 192.168.11.61
@@ -291,13 +298,15 @@ Run a management action against one controller, or list the actions its driver
 offers. Talks to the device directly.
 
 ```bash
-EZPlayer controller action <ip-or-name> <actionId> [--host <host[:port]>]
+EZPlayer controller action <ip-or-name> <actionId> [--host <host[:port]>] [--fpp-proxy <ip>]
 EZPlayer controller action <ip-or-name> --list
 ```
 
 Action ids are driver-specific — `--list` shows them (e.g. FPP offers
 `restart` for a quick daemon restart and `reboot` for a full OS reboot; most
-pixel controllers offer `reboot` only).
+pixel controllers offer `reboot`, and some add `test-on` / `test-off` and
+`reset-counters`).  `--fpp-proxy <ip>` reaches the device through an FPP-style
+`/proxy` bridge.
 
 ```bash
 EZPlayer controller action 192.168.11.63 --list
@@ -329,6 +338,43 @@ EZPlayer controller upload GarageF16 --full-control
 Uploads rewrite the controller's port configuration. There is no undo beyond
 uploading again.
 :::
+
+### `controller distribute`
+
+Send the show's sequences and audio to the devices that hold their own copy of
+the show — the players and remotes — or check what they are missing.  Runs
+**through the running player**, which builds each device the file its firmware
+plays and keeps the report; see
+[Content Distribution](../advanced/controllers/contentdistribution.md) for what
+is sent and why a file is re-sent.
+
+```bash
+EZPlayer controller distribute [<name-or-ip> ...] [--check | --force] [--sequence <file.fseq>]... [--host <host[:port]>] [--json]
+```
+
+| Option                    | Description                                                                    |
+| ------------------------- | ------------------------------------------------------------------------------ |
+| `<name-or-ip> ...`        | Known controller names (quote one with spaces) or addresses.  Without any, every device that should hold content is sent to. |
+| `--check`                 | Report what a send would transfer, without transferring anything (**Check what's needed**). |
+| `--force`                 | Send every file, whether or not the device already holds it (**Send everything again**). |
+| `--sequence <file.fseq>`  | Only this sequence file, by its name in the show folder; repeat for several.  Default: the whole show. |
+| `--json`                  | The report as JSON on stdout (the `ContentDistReport` in the app's state).     |
+
+The command waits for the run to end, then prints the report: one block per
+device, one line per file marked `sent`, `current`, `to send` (a check) or
+`FAILED`, with the device's own reason.  Exit code `1` when a device was skipped,
+stopped part way, or refused a file; what a check finds to send is not a
+failure, and a run with nothing to do prints why and exits `0`.
+
+```bash
+EZPlayer controller distribute --check                 # where does the show stand?
+EZPlayer controller distribute                         # send what is missing, everywhere
+EZPlayer controller distribute "Front Yard K16" --force
+EZPlayer controller distribute --sequence "Carol of the Bells.fseq"
+```
+
+Only one distribution runs at a time; the command refuses to start while one
+is in flight, including an automatic one.
 
 ### Remote access: terminal and file manager setup
 

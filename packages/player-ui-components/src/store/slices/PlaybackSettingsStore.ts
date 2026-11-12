@@ -1,4 +1,9 @@
-import type { ControllerRefreshMode, ViewerControlBackend, ViewerControlScheduleList } from '@ezplayer/ezplayer-core';
+import type {
+    CloudPollScheduleEntry,
+    ControllerRefreshMode,
+    ViewerControlBackend,
+    ViewerControlScheduleList,
+} from '@ezplayer/ezplayer-core';
 import { controllerRefreshSettingsFor } from '@ezplayer/ezplayer-core';
 import { createAsyncThunk, createSlice, PayloadAction } from '@reduxjs/toolkit';
 import {
@@ -255,6 +260,14 @@ const playbackSettingsSlice = createSlice({
             const sync = (state.settings.sync ??= {});
             (sync.multisync ??= { enabled: false, remotes: [] }).enabled = action.payload;
         },
+        setMultisyncMode(state, action: PayloadAction<'auto' | 'on' | 'off'>) {
+            const sync = (state.settings.sync ??= {});
+            const ms = (sync.multisync ??= { enabled: false, remotes: [] });
+            ms.mode = action.payload;
+            // `enabled` is kept in step for anything still reading the old
+            // flag; under `auto` the player works it out from who there is.
+            ms.enabled = action.payload !== 'off';
+        },
         setMultisyncRemotes(state, action: PayloadAction<string[]>) {
             const sync = (state.settings.sync ??= {});
             (sync.multisync ??= { enabled: false, remotes: [] }).remotes = action.payload;
@@ -270,6 +283,24 @@ const playbackSettingsSlice = createSlice({
         setMultisyncMediaSync(state, action: PayloadAction<boolean>) {
             const sync = (state.settings.sync ??= {});
             (sync.multisync ??= { enabled: false, remotes: [] }).mediaSync = action.payload;
+        },
+
+        // Content distribution — whether and when the player sends this show's
+        // sequences and media to the devices that hold their own copy.
+        setContentDistributionMode(state, action: PayloadAction<'off' | 'scheduled' | 'always'>) {
+            (state.settings.contentDistribution ??= {}).mode = action.payload;
+        },
+        setContentDistributionSchedule(state, action: PayloadAction<CloudPollScheduleEntry[]>) {
+            (state.settings.contentDistribution ??= {}).schedule = action.payload;
+        },
+        setContentDistributionPollMinutes(state, action: PayloadAction<number | undefined>) {
+            (state.settings.contentDistribution ??= {}).pollMinutes = action.payload;
+        },
+        setContentDistributionFollowSongAdds(state, action: PayloadAction<boolean>) {
+            (state.settings.contentDistribution ??= {}).followSongAdds = action.payload;
+        },
+        setContentDistributionPlaylistName(state, action: PayloadAction<string | undefined>) {
+            (state.settings.contentDistribution ??= {}).playlistName = action.payload;
         },
 
         // Advanced diagnostic overrides
@@ -384,10 +415,16 @@ export const {
     setControllerRefresh,
     setNormalizeNewSongs,
     setMultisyncEnabled,
+    setMultisyncMode,
     setMultisyncRemotes,
     setMultisyncPort,
     setMultisyncMulticastAddress,
     setMultisyncMediaSync,
+    setContentDistributionMode,
+    setContentDistributionSchedule,
+    setContentDistributionPollMinutes,
+    setContentDistributionFollowSongAdds,
+    setContentDistributionPlaylistName,
     setAdvancedDdpPort,
     setMediaFolder,
     setDefaultVolume,

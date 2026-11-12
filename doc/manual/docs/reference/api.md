@@ -563,7 +563,8 @@ The full controller-ops state in one snapshot:
   "devices":         { "<ip>|direct": { "id": "…", "ip": "…", "driverType": "Falcon", "…": "…" } },
   "operations":      { "op_…": { "kind": "status", "status": "done", "…": "…" } },
   "known":           [ { "name": "Mega Tree", "address": "…", "ports": [], "…": "…" } ],
-  "networkPolicies": [ { "cidr": "192.168.1.0/24", "allow": false } ]
+  "networkPolicies": [ { "cidr": "192.168.1.0/24", "allow": false } ],
+  "contentDist":     { "run": { "…": "…" }, "lastReport": { "…": "…" }, "queued": [], "autoHold": "idle" }
 }
 ```
 
@@ -586,14 +587,19 @@ to what the desktop/LAN/cloud UIs issue. One endpoint covers every verb:
 | `status`            | Deep-read one controller: `{ "cmd": "status", "id": "<ip>\|direct", "address": "<ip>" }`. `address` lets it work with no prior scan. |
 | `action`            | Run a driver action: `{ "cmd": "action", "id": "…", "action": "reboot" }`. Action ids are driver-enumerated (see each device's `actions`). |
 | `upload`            | Push xLights config: `{ "cmd": "upload", "id": "…", "scope": "inputs"\|"strings"\|"full", "fullControl": true\|false }`. |
+| `distribute`        | Send show content to the devices that hold their own copy: `{ "cmd": "distribute", "ids": ["…"], "sequences": ["<file.fseq>"], "checkOnly": true\|false, "force": true\|false }`. Omit `ids` for every device that should hold content, `sequences` for the whole show; `checkOnly` reports what a send would transfer, `force` sends every file. The report lands in `contentDist.lastReport`; see [Content Distribution](../advanced/controllers/contentdistribution.md). |
 | `record`            | Create/update a persisted controller record: `{ "cmd": "record", "name": "…", "patch": { … } }`. |
 | `network`           | Update a per-network policy: `{ "cmd": "network", "cidr": "…", "patch": { "allow": false } }`. |
 | `refreshInterfaces` | Re-enumerate this host's networks.                                 |
 | `cancel`            | Stop a running operation: `{ "cmd": "cancel", "opId": "op_…" }`. Partial results are kept and the op ends as `cancelled`. |
 | `dismiss`           | Clear a finished operation (and its error) from the shared state: `{ "cmd": "dismiss", "opId": "op_…" }`. Dismissal is shared, so every UI stops showing it. |
 
-Verbs other than `scan` return `{"ok":true}` immediately; results and progress
-ride the shared `controllerops` state (WebSocket broadcast, or re-poll the GET).
+The request is synchronous: it answers when the operation has finished, which
+for a `distribute` can be minutes.  Verbs other than `scan` answer `{"ok":true}`;
+results and progress ride the shared `controllerops` state (WebSocket
+broadcast, or re-poll the GET) — a device's detail under `devices`, an
+operation's outcome under `operations`, a distribution's report under
+`contentDist.lastReport`.
 Errors map to HTTP status: unknown `cmd` or missing fields `400`, network
 disallowed by policy `403`, unknown controller id `404`, scan limit `409`,
 anything else `500`.
@@ -608,6 +614,12 @@ curl -X POST http://player.local:3000/api/ezp/controllers/command \
 curl -X POST http://player.local:3000/api/ezp/controllers/command \
   -H 'Content-Type: application/json' \
   -d '{"cmd":"upload","id":"192.168.11.61|direct","scope":"full","fullControl":true}'
+
+# Check what every content-holding device is missing, then read the report
+curl -X POST http://player.local:3000/api/ezp/controllers/command \
+  -H 'Content-Type: application/json' \
+  -d '{"cmd":"distribute","checkOnly":true}'
+curl http://player.local:3000/api/ezp/controllers | jq .contentDist.lastReport
 ```
 
 #### GET /api/proxies (FPP-compatible)

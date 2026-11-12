@@ -69,7 +69,7 @@ describe('app-only verbs (headless, reset)', () => {
 });
 
 describe('help <verb>', () => {
-    it('prints the named command\'s detail rather than the top-level list', async () => {
+    it("prints the named command's detail rather than the top-level list", async () => {
         const { code, out } = await runCaptured(['help', 'discover']);
         expect(code).toBe(0);
         expect(out).toContain('EZPlayer discover');
@@ -138,7 +138,7 @@ describe('CLI verb registry', () => {
 
     it('treats the controller-only names as unknown at the top level', async () => {
         // They live under `controller` now; a bare one must not silently work.
-        for (const stale of ['controllers', 'status', 'action', 'upload']) {
+        for (const stale of ['controllers', 'status', 'action', 'upload', 'distribute']) {
             const out: string[] = [];
             const log = vi.spyOn(console, 'log').mockImplementation((...a: unknown[]) => void out.push(a.join(' ')));
             const err = vi.spyOn(console, 'error').mockImplementation((...a: unknown[]) => void out.push(a.join(' ')));

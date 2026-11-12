@@ -156,7 +156,7 @@ class MainThreadRPC {
     // Most RPCs are quick (30s). A network scan runs the discovery engine to its
     // own cap (~120s), so it gets a longer leash.
     private static readonly TIMEOUT_MS: Partial<Record<keyof ServerWorkerRPCAPI, number>> = {
-        controllerCommand: 130_000,
+        controllerCommand: 900_000,
         buildSupportBundle: 120_000,
     };
 
