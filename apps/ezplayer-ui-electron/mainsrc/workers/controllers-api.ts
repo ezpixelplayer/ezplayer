@@ -99,8 +99,10 @@ function validateCommand(body: unknown): { command?: ControllerCommand; error?: 
             // Everything is optional: no ids means every target that holds
             // content, no sequences means the whole show.
             error = optStrings('ids') ?? optStrings('sequences');
-            if (!error && o.checkOnly !== undefined && typeof o.checkOnly !== 'boolean') {
-                error = `'distribute' needs 'checkOnly' to be a boolean`;
+            for (const flag of ['checkOnly', 'force'] as const) {
+                if (!error && o[flag] !== undefined && typeof o[flag] !== 'boolean') {
+                    error = `'distribute' needs '${flag}' to be a boolean`;
+                }
             }
             break;
         case 'record':

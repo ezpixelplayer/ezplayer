@@ -3,10 +3,46 @@ import type { ChipProps } from '@mui/material';
 
 export type ControllerStatusSeverity = 'error' | 'warning' | 'pending' | 'success' | 'disabled' | 'neutral';
 
+/**
+ * Whether this controller is part of this show: not Inactive, and watched.
+ *
+ * "Skipped" on a row means two things. An Inactive or Null controller is out
+ * of the show. A player or a remote is skipped only by the data sender: it
+ * plays its own copy and follows sync, and the player pings it because its
+ * being down costs part of the display. Being watched separates the two.
+ */
+export function controllerInShow(ctrl: ControllerStatus): boolean {
+    if (ctrl.state === 'Inactive') return false;
+    return !!ctrl.connectivity && ctrl.connectivity !== 'N/A';
+}
+
+/** In the show, and playing from its own copy rather than being sent pixels. */
+export function controllerPlaysOwnCopy(ctrl: ControllerStatus): boolean {
+    return ctrl.status === 'skipped' && controllerInShow(ctrl);
+}
+
+/**
+ * Up, down, or not yet known: one verdict per controller, so card counts add
+ * up. The ping is the common answer, since a remote has no data sender and
+ * never reports `open`; a failed sender is down whatever its ping says.
+ */
+export function controllerLiveness(ctrl: ControllerStatus): 'up' | 'down' | 'pending' {
+    if (ctrl.connectivity === 'Down' || ctrl.status === 'error' || ctrl.status === 'unusable') return 'down';
+    return ctrl.connectivity === 'Up' ? 'up' : 'pending';
+}
+
+/** The word for this controller's part, for the status chip. */
+export function controllerStatusLabel(ctrl: ControllerStatus): string {
+    if (!controllerInShow(ctrl)) return 'not in this show';
+    if (controllerPlaysOwnCopy(ctrl)) return 'plays its own copy';
+    return ctrl.status ?? 'unknown';
+}
+
 export function getControllerSeverity(ctrl: ControllerStatus): ControllerStatusSeverity {
     const hasErrors = (ctrl.errors?.length ?? 0) > 0;
 
-    if (ctrl.state === 'Inactive' || ctrl.state === 'xLights Only' || ctrl.status === 'skipped') {
+    // Out of the show.
+    if (!controllerInShow(ctrl)) {
         return 'disabled';
     }
 
@@ -42,39 +78,30 @@ export function getControllersSeverity(controllers?: ControllerStatus[]): Contro
     return 'neutral';
 }
 
-// Helper function to calculate controller statistics
+/**
+ * The counts a status card shows, taken over the controllers in this show so
+ * `online + offline + pending === total`; rows not in the show are counted
+ * once, in `outOfShow`.
+ */
 export const getControllerStats = (controllers?: ControllerStatus[]) => {
-    if (!controllers || controllers.length === 0) {
-        return {
-            total: 0,
-            online: 0,
-            offline: 0,
-            withErrors: 0,
-            errorCount: 0,
-        };
-    }
-
-    const relevant = controllers.filter((c) => c.status !== 'skipped').length;
-    const online = controllers.filter((c) => c.status === 'open' && c.connectivity === 'Up').length;
-    const offline = controllers.filter(
-        (c) => c.status === 'error' || c.status === 'unusable' || c.connectivity === 'Down',
-    ).length;
-    const withErrors = controllers.filter(
-        (c) =>
-            c.status !== 'skipped' &&
-            ((c.errors && c.errors.length > 0) || c.status === 'error' || c.status === 'unusable'),
-    ).length;
-    const errorCount = controllers.reduce(
-        (total, c) => total + (c.status === 'skipped' ? 0 : c.errors?.length || 0),
-        0,
-    );
+    const all = controllers ?? [];
+    const inShow = all.filter(controllerInShow);
+    const liveness = inShow.map(controllerLiveness);
 
     return {
-        total: relevant,
-        online,
-        offline,
-        withErrors,
-        errorCount,
+        total: inShow.length,
+        online: liveness.filter((l) => l === 'up').length,
+        offline: liveness.filter((l) => l === 'down').length,
+        /** Watched, with no ping round finished yet. */
+        pending: liveness.filter((l) => l === 'pending').length,
+        /** Of the ones in the show, how many play from their own copy. */
+        playsOwnCopy: inShow.filter(controllerPlaysOwnCopy).length,
+        /** Inactive, Null, or otherwise not part of this show at all. */
+        outOfShow: all.length - inShow.length,
+        withErrors: inShow.filter(
+            (c) => (c.errors && c.errors.length > 0) || c.status === 'error' || c.status === 'unusable',
+        ).length,
+        errorCount: inShow.reduce((total, c) => total + (c.errors?.length || 0), 0),
     };
 };
 

@@ -7,8 +7,9 @@
  * "do it now" live in one place; the Show Status card deep-links here.
  */
 
-import { Add, Delete, Edit, FactCheck, ListAlt, Send } from '@mui/icons-material';
+import { Add, Delete, Edit, FactCheck, ListAlt, Replay, Send } from '@mui/icons-material';
 import {
+    Alert,
     Button,
     Chip,
     Dialog,
@@ -30,13 +31,20 @@ import {
     TextField,
     Typography,
 } from '@mui/material';
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { Select } from '@ezplayer/shared-ui-components';
 import type { CloudPollScheduleEntry } from '@ezplayer/ezplayer-core';
 import { Box } from '../../box/Box';
 import { ContentDistributionDialog } from '../../content-dist/ContentDistributionDialog';
-import { contentDistSummary, contentTargets, formatBytes } from '../../content-dist/contentDistHelpers';
+import { ResendEverythingDialog } from '../../content-dist/ResendEverythingDialog';
+import {
+    contentDistSummary,
+    contentTargets,
+    formatBytes,
+    multisyncMode,
+    syncOffWarning,
+} from '../../content-dist/contentDistHelpers';
 import { playbackSettingsActions } from '../../../store/slices/PlaybackSettingsStore';
 import { issueControllerCommand } from '../../../store/slices/ControllerOpsStore';
 import type { AppDispatch, RootState } from '../../../store/Store';
@@ -91,13 +99,18 @@ export const ContentSyncSettings: React.FC = () => {
     const dispatch = useDispatch<AppDispatch>();
     const settings = useSelector((s: RootState) => s.playbackSettings.settings);
     const devices = useSelector((s: RootState) => s.controllerOps.devices);
+    const known = useSelector((s: RootState) => s.controllerOps.known);
     const contentDist = useSelector((s: RootState) => s.controllerOps.contentDist);
     const multisync = settings.sync?.multisync;
+    // Resolve off / on / automatic the way the player does: `enabled` is the
+    // old flag and is not kept in step with `mode`.
+    const syncMode = multisyncMode(multisync);
     const distribution = settings.contentDistribution;
     const mode = distribution?.mode ?? 'off';
     const schedule = distribution?.schedule ?? [];
 
     const [detailsOpen, setDetailsOpen] = useState(false);
+    const [resendOpen, setResendOpen] = useState(false);
     const [windowOpen, setWindowOpen] = useState(false);
     const [editingId, setEditingId] = useState<string | null>(null);
     const [draft, setDraft] = useState<Partial<CloudPollScheduleEntry>>(FRESH_WINDOW);
@@ -105,6 +118,9 @@ export const ContentSyncSettings: React.FC = () => {
     const targets = useMemo(() => contentTargets(devices), [devices]);
     const summary = useMemo(() => contentDistSummary(contentDist, targets), [contentDist, targets]);
     const run = contentDist?.run;
+    // Remotes get their content from this screen, so a sync setting that
+    // leaves it unplayed is flagged here.
+    const syncOff = syncOffWarning(known, multisync);
 
     const setSchedule = (next: CloudPollScheduleEntry[]) =>
         dispatch(playbackSettingsActions.setContentDistributionSchedule(next));
@@ -130,8 +146,26 @@ export const ContentSyncSettings: React.FC = () => {
         setWindowOpen(false);
     };
 
-    const distribute = (checkOnly: boolean) =>
-        void dispatch(issueControllerCommand({ cmd: 'distribute', ...(checkOnly ? { checkOnly: true } : {}) }));
+    // A run with nothing to do answers with an empty report carrying a note;
+    // open it here, where it was asked for.
+    const askedFrom = useRef<string | null>(null);
+    const distribute = (opts: { checkOnly?: boolean; force?: boolean } = {}) => {
+        askedFrom.current = contentDist?.lastReport?.finishedAt ?? '';
+        void dispatch(
+            issueControllerCommand({
+                cmd: 'distribute',
+                ...(opts.checkOnly ? { checkOnly: true } : {}),
+                ...(opts.force ? { force: true } : {}),
+            }),
+        );
+    };
+
+    useEffect(() => {
+        const report = contentDist?.lastReport;
+        if (askedFrom.current === null || !report || report.finishedAt === askedFrom.current) return;
+        askedFrom.current = null;
+        if (report.note) setDetailsOpen(true);
+    }, [contentDist?.lastReport]);
 
     return (
         <Box>
@@ -139,8 +173,8 @@ export const ContentSyncSettings: React.FC = () => {
                 Content Distribution
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-                Some players keep their own copy of the show. The player can put this show’s sequences and their audio
-                onto each one, and list what it left there in an inventory playlist. FPP players are found by a
+                Some players and controllers keep their own copy of the show. The player can put this show’s sequences
+                and their audio onto each one, and list what it left there in an inventory playlist. They are found by a
                 controller scan.
             </Typography>
 
@@ -155,7 +189,7 @@ export const ContentSyncSettings: React.FC = () => {
                         variant="contained"
                         size="small"
                         startIcon={<Send />}
-                        onClick={() => distribute(false)}
+                        onClick={() => distribute()}
                         disabled={!!run || targets.length === 0}
                     >
                         Distribute now
@@ -164,10 +198,19 @@ export const ContentSyncSettings: React.FC = () => {
                         variant="outlined"
                         size="small"
                         startIcon={<FactCheck />}
-                        onClick={() => distribute(true)}
+                        onClick={() => distribute({ checkOnly: true })}
                         disabled={!!run || targets.length === 0}
                     >
                         Check what’s needed
+                    </Button>
+                    <Button
+                        variant="outlined"
+                        size="small"
+                        startIcon={<Replay />}
+                        onClick={() => setResendOpen(true)}
+                        disabled={!!run || targets.length === 0}
+                    >
+                        Send everything again
                     </Button>
                     <Button
                         variant="outlined"
@@ -180,7 +223,7 @@ export const ContentSyncSettings: React.FC = () => {
                 </Box>
                 {targets.length === 0 && (
                     <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
-                        No FPP players known yet — scan for controllers first.
+                        No devices that hold content known yet — scan for controllers first.
                     </Typography>
                 )}
             </Box>
@@ -341,7 +384,7 @@ export const ContentSyncSettings: React.FC = () => {
             <FormControl sx={{ mb: 1 }}>
                 <RadioGroup
                     row
-                    value={multisync?.mode ?? (multisync?.enabled ? 'on' : 'off')}
+                    value={syncMode}
                     onChange={(e) =>
                         dispatch(playbackSettingsActions.setMultisyncMode(e.target.value as 'auto' | 'on' | 'off'))
                     }
@@ -353,14 +396,19 @@ export const ContentSyncSettings: React.FC = () => {
             </FormControl>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
                 Automatic sends sync whenever there is anyone to send it to — a controller the layout marks as a remote,
-                or an address listed below. A layout with remotes and sync switched off is a show that plays with part
-                of the display sitting idle.
+                or an address listed below. It is what a show gets until this is set, because a layout with remotes and
+                sync switched off is a show that plays with part of the display sitting idle.
             </Typography>
+            {syncOff && (
+                <Alert severity="warning" sx={{ mb: 1 }}>
+                    {syncOff}
+                </Alert>
+            )}
             <FormControlLabel
                 control={
                     <Switch
                         checked={multisync?.mediaSync !== false}
-                        disabled={(multisync?.mode ?? (multisync?.enabled ? 'on' : 'off')) === 'off'}
+                        disabled={syncMode === 'off'}
                         onChange={(e) => dispatch(playbackSettingsActions.setMultisyncMediaSync(e.target.checked))}
                     />
                 }
@@ -375,7 +423,7 @@ export const ContentSyncSettings: React.FC = () => {
                 fullWidth
                 sx={{ mt: 1 }}
                 label="Remotes"
-                disabled={!multisync?.enabled}
+                disabled={syncMode === 'off'}
                 value={(multisync?.remotes ?? []).join(', ')}
                 placeholder="host[:port], host[:port], …"
                 helperText="Comma-separated host[:port]. Empty sends to the FPP multicast group so all listening remotes follow."
@@ -396,7 +444,7 @@ export const ContentSyncSettings: React.FC = () => {
                     label="MultiSync port"
                     value={multisync?.port}
                     placeholder="32320"
-                    disabled={!multisync?.enabled}
+                    disabled={syncMode === 'off'}
                     onCommit={(v) => dispatch(playbackSettingsActions.setMultisyncPort(v))}
                 />
                 <TextField
@@ -404,7 +452,7 @@ export const ContentSyncSettings: React.FC = () => {
                     label="MultiSync multicast address"
                     value={multisync?.multicastAddress ?? ''}
                     placeholder="239.70.80.80"
-                    disabled={!multisync?.enabled}
+                    disabled={syncMode === 'off'}
                     InputLabelProps={{ shrink: true }}
                     onChange={(e) =>
                         dispatch(playbackSettingsActions.setMultisyncMulticastAddress(e.target.value.trim()))
@@ -451,6 +499,12 @@ export const ContentSyncSettings: React.FC = () => {
             </Dialog>
 
             <ContentDistributionDialog open={detailsOpen} onClose={() => setDetailsOpen(false)} />
+            <ResendEverythingDialog
+                open={resendOpen}
+                deviceCount={targets.length}
+                onClose={() => setResendOpen(false)}
+                onConfirm={() => distribute({ force: true })}
+            />
         </Box>
     );
 };

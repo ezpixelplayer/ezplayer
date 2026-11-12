@@ -35,6 +35,7 @@ import { PlaybackDetailDialog } from '../player/PlaybackDetailDialog';
 import type { ControllerStatus } from '@ezplayer/ezplayer-core';
 import {
     type ControllerStatusSeverity,
+    controllerStatusLabel,
     getControllerSeverity,
     getControllersSeverity,
     getControllerStats,
@@ -213,6 +214,7 @@ export const ShowStatusScreen = ({ title, statusArea, allowTestControls = true }
     const player = runtime.combined.player;
     const content = runtime.combined.content;
     const controller = runtime.combined.controller;
+    const controllerStats = getControllerStats(controller?.controllers);
     const show = runtime.combined.show;
     const showName = show?.show_name || 'Unknown Show';
 
@@ -549,7 +551,8 @@ export const ShowStatusScreen = ({ title, statusArea, allowTestControls = true }
                                     <Typography variant="body1">Models: {controller.n_models ?? '—'}</Typography>
                                     <Typography variant="body1">Channels: {controller.n_channels ?? '—'}</Typography>
                                     <Typography variant="body1">
-                                        Controllers Seen: {controller.controllers?.length ?? 0}
+                                        Controllers in this show: {controllerStats.total}
+                                        {controllerStats.outOfShow > 0 && ` (${controllerStats.outOfShow} not in it)`}
                                     </Typography>
                                     <Chip
                                         label={getControllerStatusLabel(controller.controllers)}
@@ -656,7 +659,7 @@ export const ShowStatusScreen = ({ title, statusArea, allowTestControls = true }
                                                                 {ctrl.name || `Controller ${index + 1}`}
                                                             </Typography>
                                                             <Chip
-                                                                label={ctrl.status || 'unknown'}
+                                                                label={controllerStatusLabel(ctrl)}
                                                                 color={severityToChipColor(ctrlSeverity)}
                                                                 variant={
                                                                     ctrlSeverity === 'disabled' ? 'outlined' : 'filled'

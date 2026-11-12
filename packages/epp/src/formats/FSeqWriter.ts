@@ -1,5 +1,5 @@
 /**
- * FSEQ v2 writer — dense or sparse, uncompressed or zstd blocks.
+ * FSEQ v2 writer — dense or sparse, uncompressed or zstd/zlib blocks.
  *
  * The layout matches what FSeqUtil's reader expects, and what FPP's own
  * V2FSEQFile reads:
@@ -27,7 +27,7 @@
  */
 
 import * as fs from 'fs';
-import { zstdCompressSync } from 'zlib';
+import { deflateSync, zstdCompressSync } from 'zlib';
 
 /** A run of channels stored in the file, named as the reader names them. */
 export interface FseqRange {
@@ -36,7 +36,22 @@ export interface FseqRange {
     chcount: number;
 }
 
-export type FseqCompression = 'none' | 'zstd';
+/**
+ * Block compression. FPP reads all three; the controllers that play from their
+ * own card do not — Falcon V4/V5 and Genius take `zlib` or `none` and have no
+ * zstd decoder, which is why this is a choice and not a default.
+ */
+export type FseqCompression = 'none' | 'zstd' | 'zlib';
+
+/** The byte the header's low nibble carries, as FPP's own enum orders them. */
+const COMPRESSION_CODE: Record<FseqCompression, number> = { none: 0, zstd: 1, zlib: 2 };
+
+/**
+ * zlib level, matching FPP's and xLights' own default for this format. Higher
+ * levels cost real time on an hour-long sequence for a few percent of size,
+ * and the point of a card copy is that it is written once and read forever.
+ */
+const ZLIB_LEVEL = 3;
 
 /** FPP's own limit: the block count is 12 bits. */
 const MAX_BLOCKS = 4095;
@@ -149,6 +164,7 @@ export class FseqV2Writer {
     private readonly chunk: Uint8Array | null;
     /** Channels stored per frame. */
     readonly stride: number;
+    private readonly compression: FseqCompression;
     readonly ranges: FseqRange[];
     private inBlock = 0;
     private block = 0;
@@ -167,8 +183,9 @@ export class FseqV2Writer {
         this.numFrames = opts.numFrames;
 
         const compression = opts.compression ?? 'zstd';
+        this.compression = compression;
         let framesPerBlock = 0;
-        if (compression === 'zstd' && opts.numFrames > 0) {
+        if (compression !== 'none' && opts.numFrames > 0) {
             framesPerBlock =
                 opts.framesPerBlock ??
                 Math.max(1, Math.ceil(opts.numFrames / MAX_BLOCKS), Math.ceil((1 << 20) / this.stride));
@@ -203,7 +220,7 @@ export class FseqV2Writer {
         header.writeUInt32LE(opts.numFrames, 14);
         header.writeUInt8(opts.stepTimeMs, 18);
         header.writeUInt8(0, 19);
-        header.writeUInt8((compression === 'zstd' ? 1 : 0) | ((this.nBlocks >> 8) << 4), 20);
+        header.writeUInt8(COMPRESSION_CODE[compression] | ((this.nBlocks >> 8) << 4), 20);
         header.writeUInt8(this.nBlocks & 0xff, 21);
         header.writeUInt8(ranges.length, 22);
         header.writeUInt8(0, 23);
@@ -248,7 +265,8 @@ export class FseqV2Writer {
 
     private flushBlock(): void {
         if (!this.chunk || this.inBlock === 0) return;
-        const comp = zstdCompressSync(this.chunk.subarray(0, this.inBlock * this.stride));
+        const raw = this.chunk.subarray(0, this.inBlock * this.stride);
+        const comp = this.compression === 'zlib' ? deflateSync(raw, { level: ZLIB_LEVEL }) : zstdCompressSync(raw);
         fs.writeSync(this.fd, comp);
         this.header.writeUInt32LE(this.block * this.framesPerBlock, STANDARD_HEADER_LEN + this.block * 8);
         this.header.writeUInt32LE(comp.length, STANDARD_HEADER_LEN + this.block * 8 + 4);

@@ -26,13 +26,22 @@ import {
 import CloseIcon from '@mui/icons-material/Close';
 import SendIcon from '@mui/icons-material/Send';
 import FactCheckIcon from '@mui/icons-material/FactCheck';
+import ReplayIcon from '@mui/icons-material/Replay';
 import React from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import type { ContentDistItem } from '@ezplayer/ezplayer-core';
 import { Box } from '../box/Box';
 import { issueControllerCommand } from '../../store/slices/ControllerOpsStore';
 import type { AppDispatch, RootState } from '../../store/Store';
-import { contentTargets, failedTargets, formatBytes, formatDuration, itemRows } from './contentDistHelpers';
+import {
+    contentTargets,
+    failedTargets,
+    formatBytes,
+    formatDuration,
+    itemRows,
+    syncOffWarning,
+} from './contentDistHelpers';
+import { ResendEverythingDialog } from './ResendEverythingDialog';
 
 const ACTION_CHIP: Record<
     ContentDistItem['action'],
@@ -49,6 +58,11 @@ export const ContentDistributionDialog: React.FC<{ open: boolean; onClose: () =>
     const devices = useSelector((s: RootState) => s.controllerOps.devices);
     const contentDist = useSelector((s: RootState) => s.controllerOps.contentDist);
     const operations = useSelector((s: RootState) => s.controllerOps.operations);
+    const known = useSelector((s: RootState) => s.controllerOps.known);
+    const multisync = useSelector((s: RootState) => s.playbackSettings.settings.sync?.multisync);
+    // A remote with sync off holds the show and is never told to play it;
+    // this is the screen somebody opens when a remote is not working.
+    const syncOff = syncOffWarning(known, multisync);
 
     const run = contentDist?.run;
     const report = contentDist?.lastReport;
@@ -59,9 +73,16 @@ export const ContentDistributionDialog: React.FC<{ open: boolean; onClose: () =>
     const columns = report?.targets ?? [];
     const failed = failedTargets(report);
     const runningOp = Object.values(operations).find((o) => o.kind === 'distribute' && o.status === 'running');
+    const [resendOpen, setResendOpen] = React.useState(false);
 
-    const distribute = (checkOnly: boolean) =>
-        void dispatch(issueControllerCommand({ cmd: 'distribute', ...(checkOnly ? { checkOnly: true } : {}) }));
+    const distribute = (opts: { checkOnly?: boolean; force?: boolean } = {}) =>
+        void dispatch(
+            issueControllerCommand({
+                cmd: 'distribute',
+                ...(opts.checkOnly ? { checkOnly: true } : {}),
+                ...(opts.force ? { force: true } : {}),
+            }),
+        );
 
     return (
         <Dialog open={open} onClose={onClose} maxWidth="lg" fullWidth PaperProps={{ sx: { maxHeight: '90vh' } }}>
@@ -86,7 +107,18 @@ export const ContentDistributionDialog: React.FC<{ open: boolean; onClose: () =>
                             <TableBody>
                                 {run.targets.map((t) => (
                                     <TableRow key={t.id}>
-                                        <TableCell sx={{ width: '30%' }}>{t.label}</TableCell>
+                                        <TableCell sx={{ width: '30%' }}>
+                                            {t.name ?? t.label}
+                                            {t.address && t.address !== (t.name ?? t.label) && (
+                                                <Typography
+                                                    variant="caption"
+                                                    color="text.secondary"
+                                                    sx={{ display: 'block', fontFamily: 'monospace' }}
+                                                >
+                                                    {t.address}
+                                                </Typography>
+                                            )}
+                                        </TableCell>
                                         <TableCell sx={{ width: 110 }}>
                                             <Chip size="small" label={t.phase} variant="outlined" />
                                         </TableCell>
@@ -108,6 +140,12 @@ export const ContentDistributionDialog: React.FC<{ open: boolean; onClose: () =>
                             </TableBody>
                         </Table>
                     </Box>
+                )}
+
+                {syncOff && (
+                    <Alert severity="warning" sx={{ mb: 2 }}>
+                        {syncOff}
+                    </Alert>
                 )}
 
                 {!run && !report && (
@@ -145,6 +183,12 @@ export const ContentDistributionDialog: React.FC<{ open: boolean; onClose: () =>
                                 ` · started ${report.trigger === 'songs' ? 'by a song being added' : 'on schedule'}`}
                         </Typography>
 
+                        {report.note && (
+                            <Alert severity="info" sx={{ mb: 2 }}>
+                                {report.note}
+                            </Alert>
+                        )}
+
                         {failed.length > 0 && (
                             <Alert severity="warning" sx={{ mb: 2 }}>
                                 Behind the show: {failed.join(', ')}. Running again sends only what is still missing.
@@ -170,9 +214,25 @@ export const ContentDistributionDialog: React.FC<{ open: boolean; onClose: () =>
                                     <TableHead>
                                         <TableRow>
                                             <TableCell>File</TableCell>
+                                            {/* Name over address: the file grid is read
+                                                by column, and the show's name for a
+                                                controller is not always its hostname.
+                                                These wrap rather than widen the table. */}
                                             {columns.map((c) => (
-                                                <TableCell key={c.id} sx={{ whiteSpace: 'nowrap' }}>
-                                                    {c.hostName}
+                                                <TableCell
+                                                    key={c.id}
+                                                    sx={{ verticalAlign: 'bottom', minWidth: 96, maxWidth: 160 }}
+                                                >
+                                                    {c.name ?? c.hostName}
+                                                    {c.address && c.address !== (c.name ?? c.hostName) && (
+                                                        <Typography
+                                                            variant="caption"
+                                                            color="text.secondary"
+                                                            sx={{ display: 'block', fontFamily: 'monospace' }}
+                                                        >
+                                                            {c.address}
+                                                        </Typography>
+                                                    )}
                                                     {c.version && (
                                                         <Typography
                                                             variant="caption"
@@ -242,7 +302,7 @@ export const ContentDistributionDialog: React.FC<{ open: boolean; onClose: () =>
             <DialogActions>
                 <Button
                     startIcon={<FactCheckIcon />}
-                    onClick={() => distribute(true)}
+                    onClick={() => distribute({ checkOnly: true })}
                     disabled={!!run || !targets.length}
                 >
                     Check what’s needed
@@ -250,10 +310,20 @@ export const ContentDistributionDialog: React.FC<{ open: boolean; onClose: () =>
                 <Button
                     variant="contained"
                     startIcon={<SendIcon />}
-                    onClick={() => distribute(false)}
+                    onClick={() => distribute()}
                     disabled={!!run || !targets.length}
                 >
                     Distribute now
+                </Button>
+                {/* Here as well as in the settings: this is the screen that
+                    says every file is current, so it is where somebody whose
+                    lights disagree with it is standing. */}
+                <Button
+                    startIcon={<ReplayIcon />}
+                    onClick={() => setResendOpen(true)}
+                    disabled={!!run || !targets.length}
+                >
+                    Send everything again
                 </Button>
                 {run && runningOp && (
                     <Button
@@ -265,6 +335,12 @@ export const ContentDistributionDialog: React.FC<{ open: boolean; onClose: () =>
                 )}
                 <Button onClick={onClose}>Close</Button>
             </DialogActions>
+            <ResendEverythingDialog
+                open={resendOpen}
+                deviceCount={targets.length}
+                onClose={() => setResendOpen(false)}
+                onConfirm={() => distribute({ force: true })}
+            />
         </Dialog>
     );
 };

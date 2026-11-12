@@ -1,4 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import * as fsp from 'fs/promises';
+import * as os from 'os';
+import * as path from 'path';
 
 // Controller reads resolve when a test says so, and never touch the network.
 const probe = vi.hoisted(() => ({
@@ -23,6 +26,7 @@ const {
     setControllerDataHold,
     getControllerOpsState,
     hasRunningControllerOps,
+    loadControllerRecords,
     resetControllerOps,
     setContentSource,
     setKnownControllers,
@@ -210,26 +214,40 @@ describe('queue', () => {
 });
 
 describe('a distribution that cannot start', () => {
-    // Pressing the button when the show or the devices are not there is an
-    // ordinary outcome, not a fault: it has to arrive as a failed operation
-    // the card can show, never as an exception out of the IPC handler.
-    const distribute = () => dispatchControllerCommand({ cmd: 'distribute' }, 'lan');
+    // Nothing to send is an ordinary outcome: it arrives as an empty report
+    // with a note, not as an error.
+    const distribute = (checkOnly = false) =>
+        dispatchControllerCommand({ cmd: 'distribute', ...(checkOnly ? { checkOnly: true } : {}) }, 'lan');
     const distributeOps = () =>
         Object.values(getControllerOpsState().operations).filter((o) => o.kind === 'distribute');
+    const lastReport = () => getControllerOpsState().contentDist?.lastReport;
 
     it('reports having no show rather than throwing', async () => {
         await expect(distribute()).resolves.toBeUndefined();
-        expect(distributeOps().map((o) => o.status)).toEqual(['error']);
-        expect(distributeOps()[0].error).toMatch(/No show is open/);
+        expect(distributeOps().map((o) => o.status)).toEqual(['done']);
+        expect(distributeOps()[0].error).toBeUndefined();
+        expect(lastReport()?.note).toMatch(/No show is open/);
+        expect(lastReport()?.targets).toEqual([]);
+        expect(lastReport()?.totals.planned).toBe(0);
     });
 
     it('reports an empty show rather than throwing', async () => {
         setContentSource(() => ({ sequences: [], idle: true }));
+        await expect(distribute(true)).resolves.toBeUndefined();
+        expect(distributeOps().map((o) => o.status)).toEqual(['done']);
+        // No layout and no scan: the note says there is nobody to send to.
+        expect(lastReport()?.note).toMatch(/No controllers are known yet/);
+        // A check says so, so the dialog it opens reads as a check.
+        expect(lastReport()?.checkOnly).toBe(true);
+    });
+
+    it('keeps the last real report when an automatic look finds nothing to do', async () => {
+        // An automatic run with nothing to do leaves the last real report alone.
         await expect(distribute()).resolves.toBeUndefined();
-        expect(distributeOps().map((o) => o.status)).toEqual(['error']);
-        // No layout and no scan, so there is nobody to send to -- and the
-        // message says which of the two to go and do.
-        expect(distributeOps()[0].error).toMatch(/No controllers are known yet/);
+        const first = lastReport();
+        expect(first?.note).toBeTruthy();
+        await expect(dispatchControllerCommand({ cmd: 'distribute' }, 'auto')).resolves.toBeUndefined();
+        expect(lastReport()).toEqual(first);
     });
 });
 
@@ -279,6 +297,35 @@ describe('automatic reads', () => {
 
         for (let i = 0; i < 9; i++) await settleRead({ success: false, error: 'done' });
         await Promise.all([...auto, mine]);
+    });
+});
+
+describe('a record edit', () => {
+    it('re-judges the mode at once and reads the controller again', async () => {
+        await loadControllerRecords(await fsp.mkdtemp(path.join(os.tmpdir(), 'ezp-ops-')));
+        setKnownControllers([
+            {
+                name: 'K',
+                address: '10.0.0.9',
+                active: true,
+                enableState: 'enabled',
+                vendor: 'KulpLights',
+                source: 'xlights',
+            },
+        ]);
+        const read = startRead('10.0.0.9');
+        await vi.waitFor(() => expect(probe.pending.length).toBeGreaterThan(0));
+        // An FPP in player mode is taking the show's data, as the layout wants.
+        probe.pending.shift()!({ success: true, report: { ip: '10.0.0.9', driverType: 'FPP', mode: 'player' } });
+        await read;
+        const id = '10.0.0.9|direct';
+        expect(getControllerOpsState().devices[id].modeDrift).toBeUndefined();
+
+        await dispatchControllerCommand({ cmd: 'record', name: 'K', patch: { active: 'remote' } }, 'lan');
+        expect(getControllerOpsState().devices[id].modeDrift).toMatch(/as a remote, but it reports "player"/);
+        // The device is read again, as the player does on its own.
+        await probeCalled(2);
+        expect(opsFor(id).some((o) => o.kind === 'status' && o.origin === 'auto')).toBe(true);
     });
 });
 

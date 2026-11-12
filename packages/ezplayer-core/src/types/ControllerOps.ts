@@ -64,6 +64,12 @@ export interface DiscoveredController {
      *  device has not been configured for this show. */
     modeDrift?: string;
     /**
+     * Set on the show's player when the send list it holds -- which
+     * controller is sent which channels -- differs from the layout. No
+     * controller can report this; only the player holds the list.
+     */
+    sendListDrift?: string;
+    /**
      * Channels this device outputs, as it reports them ("0-509,1024-2047",
      * 0-based with inclusive ends).  What a sequence is cut down to when the
      * device only needs its own part of the show.
@@ -225,6 +231,14 @@ export type ControllerCommand =
           sequences?: string[];
           /** Work out what each target is missing and report it, send nothing. */
           checkOnly?: boolean;
+          /**
+           * Send every file instead of asking each device whether it already
+           * has it. For when the show's files have been rebuilt: a re-render
+           * that moves models inside a controller's channel range produces a
+           * cut with the same start, count, frames and size as the one on the
+           * card, which no check a firmware supports can tell apart.
+           */
+          force?: boolean;
       }
     | {
           /** Create/update/soft-delete/associate/promote a persisted controller
@@ -244,6 +258,27 @@ export type ControllerCommand =
 
 /** How a file was sent: FPP 7+ chunked PATCH, or FPP 6's upload-then-move. */
 export type ContentUploadMethod = 'patch' | 'jqupload';
+
+/** 'fpp' takes the show's own files; 'card' needs a file built for it. */
+export type ContentFamily = 'fpp' | 'card';
+
+/** The families that play from a card of their own rather than FPP's store. */
+export const CARD_DRIVER_TYPES: ReadonlySet<string> = new Set(['Falcon', 'Genius', 'HinksPix']);
+
+/**
+ * Which family of content holder this driver belongs to, or undefined for a
+ * device that keeps nothing.
+ *
+ * Membership is per family, not per device: whether *this* box can really take
+ * content depends on its model and firmware (a Falcon V3 has no card, a Genius
+ * on 1.x has no upload endpoint, an EasyLights has no slot), and only the
+ * connected driver's content profile knows. So this answers who is worth
+ * asking -- which is also what a UI needs in order to offer the action at all.
+ */
+export function contentFamilyOf(driverType: string | undefined): ContentFamily | undefined {
+    if (driverType === 'FPP') return 'fpp';
+    return driverType && CARD_DRIVER_TYPES.has(driverType) ? 'card' : undefined;
+}
 
 /** What this device holds, as of the last distribution or check. */
 export interface ControllerContentStatus {
@@ -269,7 +304,13 @@ export function needsContentDelivery(status: ControllerContentStatus | undefined
 
 export type ContentDistPhase = 'waiting' | 'checking' | 'uploading' | 'registering' | 'done' | 'failed';
 
-export type ContentItemKind = 'sequence' | 'media' | 'playlist';
+/**
+ * What one line of a distribution report is about. `playlist` and `mode` are
+ * the two halves of setting a device up to play what it was sent: what it
+ * should play, and the role it plays it in. Only a controller that plays from
+ * its own card needs telling either; an FPP keeps its own.
+ */
+export type ContentItemKind = 'sequence' | 'media' | 'playlist' | 'mode';
 
 /** `planned` is a check-only result: what a real run would have sent. */
 export type ContentItemAction = 'uploaded' | 'skipped' | 'failed' | 'planned';
@@ -289,7 +330,13 @@ export interface ContentDistItem {
 export interface ContentDistTargetReport {
     /** Device id, matching `ControllerOpsState.devices`. */
     id: string;
+    /** One line naming the device: the name and the address together. */
     label: string;
+    /** What the show calls this controller -- its record name, which is the
+     *  name on the controllers grid. Absent on a report from an older run. */
+    name?: string;
+    /** Where it was reached, for a report that has to identify it on its own. */
+    address?: string;
     hostName: string;
     version?: string;
     platform?: string;
@@ -331,6 +378,11 @@ export interface ContentDistReport {
     trigger: ContentDistTrigger;
     targets: ContentDistTargetReport[];
     totals: ContentDistTotals;
+    /**
+     * Why a run did nothing: no songs yet, or nobody in the layout plays their
+     * own copy. Reported as an empty report rather than as a failure.
+     */
+    note?: string;
 }
 
 /** What started a run. `songs` is the automatic follow-up to content the user
@@ -340,6 +392,10 @@ export type ContentDistTrigger = 'manual' | 'schedule' | 'songs';
 export interface ContentDistTargetProgress {
     id: string;
     label: string;
+    /** See {@link ContentDistTargetReport.name}. */
+    name?: string;
+    /** See {@link ContentDistTargetReport.address}. */
+    address?: string;
     phase: ContentDistPhase;
     /** The file in flight. */
     item?: string;
@@ -393,11 +449,19 @@ export interface ContentDistState {
 export type ControllerEnableState = 'enabled' | 'disabled' | 'xlightsOnly';
 
 /**
- * The role the show gives a device that can play content itself: a player runs
- * the show from its own copy, a remote drives only its own channels and
- * follows the master's sync.
+ * The mode the show needs a controller's own player to be in.
+ *
+ *  - `player`  runs the show from its own copy of the content
+ *  - `remote`  drives its own channels from its own copy, following sync
+ *  - `show`    plays nothing of its own and takes the show's live pixel data
+ *
+ * `show` is the one every ordinary controller wants, and it exists because the
+ * other two have to be reversible: a box that was experimented on, bought
+ * second-hand, or reconfigured can be sitting in `player` with no way back, and
+ * a controller in `player` mode takes no pixel data at all -- so its share of
+ * the display goes dark.
  */
-export type ControllerPlayerMode = 'player' | 'remote';
+export type ControllerPlayerMode = 'player' | 'remote' | 'show';
 
 /**
  * What we have been told a controller's part in the show is -- the final word,
@@ -422,11 +486,10 @@ export function isDisabledState(a: ControllerActiveState | undefined): boolean {
 /**
  * Read a stored `active`, which was a boolean before it carried a role.
  *
- * A stored `true` becomes "no opinion" rather than `enabled`: it was the
- * default every record was written with, never something an operator chose,
- * and treating it as a choice would let it override the layout -- which is
- * exactly the bug that made a controller the layout marks "xLights Only" come
- * out as a player. A stored `false` was a deliberate Disable, so it survives.
+ * A stored `true` becomes "no opinion" rather than `enabled`: it is the default
+ * every record was written with, never something an operator chose, so treating
+ * it as a choice would let it override the layout. A stored `false` was a
+ * deliberate Disable, so it survives.
  */
 export function activeStateFrom(value: unknown): ControllerActiveState | undefined {
     if (value === false) return 'disabled';
@@ -437,7 +500,7 @@ export function activeStateFrom(value: unknown): ControllerActiveState | undefin
 /** The resolved part a controller plays, with what the device itself said. */
 export interface ResolvedControllerRole {
     /** The part it plays; `none` when it is not in the show. */
-    role: ControllerPlayerMode | 'none';
+    role: 'player' | 'remote' | 'none';
     /** Which stage of the pipeline decided. */
     source: 'record' | 'layout' | 'device' | 'default';
     /** The device's own word, kept rather than replaced -- see below. */
@@ -464,6 +527,7 @@ export function resolveControllerRole(k: {
     enableState?: ControllerEnableState;
     protocol?: string;
     model?: string;
+    vendor?: string;
     reportedMode?: string;
 }): ResolvedControllerRole {
     const reported = k.reportedMode;
@@ -483,16 +547,17 @@ export function resolveControllerRole(k: {
     //    this nothing", not "this is a remote" -- it is the show's player.
     if (isPlayerOnlyRecord(k)) return answer('player', 'layout');
 
-    // 3. What the layout asks.
-    if (k.enableState === 'xlightsOnly') return answer('remote', 'layout');
+    // 3. What the layout asks. A family that cannot follow our sync is no
+    //    remote however the layout marks it -- it plays its own content.
+    if (k.enableState === 'xlightsOnly') return answer(canFollowShowSync(k) ? 'remote' : 'player', 'layout');
     if (k.enableState === 'disabled') return answer('none', 'layout');
     if (k.enableState === 'enabled') return answer('player', 'layout');
 
     // 4. What the device says of itself, when nothing above has an opinion.
     if (reported) {
-        const have = reported.toLowerCase();
+        const have = reportedPlayerRole(reported);
         if (have === 'remote') return answer('remote', 'device');
-        if (PLAYER_ROLE_NAMES.has(have)) return answer('player', 'device');
+        if (have === 'player') return answer('player', 'device');
     }
     return answer('none', 'default');
 }
@@ -526,18 +591,55 @@ export function isPlayerOnlyRecord(k: { protocol?: string; model?: string }): bo
     return k.protocol?.toLowerCase() === 'player only' || k.model?.toLowerCase() === 'fpp player only';
 }
 
+/**
+ * The mode the layout wants this controller's own player in, or undefined when
+ * the show has no opinion -- a disabled controller, or a record that says
+ * nothing at all.
+ *
+ * Built on {@link contentRoleOf} rather than {@link resolveControllerRole},
+ * because the two answer different questions. The resolver says *who plays the
+ * show*, and an ordinary Active controller resolves to `player` on the strength
+ * of a player driving it. That is not the mode the box itself should be in: an
+ * ordinary controller must be in `show`, taking live pixel data. Only a
+ * controller that holds its own copy belongs in `player` or `remote`.
+ */
 export function layoutPlayerMode(k: {
     role?: ControllerActiveState;
     enableState?: ControllerEnableState;
     protocol?: string;
     model?: string;
+    vendor?: string;
 }): ControllerPlayerMode | undefined {
-    const resolved = resolveControllerRole(k);
-    return resolved.role === 'none' ? undefined : resolved.role;
+    // Out of the show entirely: not ours to touch.
+    if (k.role === 'disabled') return undefined;
+    if (!k.role && k.enableState === 'disabled') return undefined;
+    const content = contentRoleOf(k);
+    if (content !== 'none') return content;
+    // In the show and holding no copy of its own, so it has to be taking the
+    // show's data. A record with no opinion at all stays undefined.
+    return k.role === 'enabled' || k.enableState === 'enabled' ? 'show' : undefined;
 }
 
 /** What part a controller plays in content distribution. */
 export type ContentRole = 'player' | 'remote' | 'none';
+
+/**
+ * Whether this controller can play its own content in step with the show's
+ * sync, which is what being a remote means.
+ *
+ * A HinksPix cannot. Its SLAVE role follows another HinksPix master over that
+ * family's own sync, not the multisync the show sends, and nothing we know of
+ * takes a box back out of that role -- so arming one as a remote would leave
+ * it waiting for a master that does not exist, with no way back. A HinksPix
+ * gets content and nothing else.
+ *
+ * An unknown vendor is assumed able: this decides how to read a layout, and
+ * {@link ControllerPlayerMode} writes are refused by the driver that cannot
+ * honour them, which is the check that does not depend on knowing the family.
+ */
+export function canFollowShowSync(k: { vendor?: string }): boolean {
+    return k.vendor?.toLowerCase() !== 'hinkspix';
+}
 
 /**
  * Whether a controller plays from its own copy of the show's files, and as
@@ -558,18 +660,56 @@ export function contentRoleOf(k: {
     enableState?: ControllerEnableState;
     protocol?: string;
     model?: string;
+    vendor?: string;
 }): ContentRole {
     if (k.role === 'remote') return 'remote';
     if (k.role === 'player') return 'player';
     if (k.role === 'disabled' || k.role === 'enabled') return 'none';
     if (isPlayerOnlyRecord(k)) return 'player';
-    if (k.enableState === 'xlightsOnly') return 'remote';
+    // "xLights Only" says the player sends this one no pixel data. For a
+    // family that can follow our sync that makes it a remote; one that cannot
+    // still holds its own copy, so it is given content as a player.
+    if (k.enableState === 'xlightsOnly') return canFollowShowSync(k) ? 'remote' : 'player';
     return 'none';
 }
 
 /** FPP's legacy 'master' is a player that also sends sync; 'bridge' plays
  *  nothing, so it does not satisfy a layout asking for a player. */
 const PLAYER_ROLE_NAMES = new Set(['player', 'master']);
+
+/**
+ * Read a device's own word for its mode as one of the three modes we ask for.
+ *
+ * Every family names these differently and none of them uses ours: a Falcon
+ * says "FPP Player", "FPP Master", "FPP Remote", "DDP" or "E1.31/ArtNet", a
+ * HinksPix says "MASTER", "SLAVE" or "ETHERNET", an FPP says "player",
+ * "master", "remote" or "bridge", and a Genius says "standalone", "remote",
+ * "ddp", "e131" or "artnet". Matching the bare words is what made a Falcon in
+ * FPP Player mode read as drifted from a layout that wanted exactly that.
+ *
+ * Anything that is not a content-playing role is a live-data mode. That is the
+ * default on purpose: a protocol name we have never seen should read as "this
+ * controller is taking the show's data", not as drift.
+ */
+export function reportedPlayerRole(reported: string): ControllerPlayerMode {
+    const have = reported.toLowerCase();
+    // 'slave' is the HinksPix word; 'remote' covers FPP and "FPP Remote".
+    if (have.includes('remote') || have.includes('slave')) return 'remote';
+    // A master is a player that also sends sync, so it satisfies 'player'.
+    if (have.includes('player') || have.includes('master') || have.includes('standalone')) return 'player';
+    return 'show';
+}
+
+/**
+ * Whether a box in this mode takes the show's live pixel data. An FPP in
+ * player mode does whenever nothing is playing: it has no separate live-data
+ * mode, and a write of the old "bridge" comes back as player. Any other
+ * family's player plays from its own card and takes none.
+ */
+export function takesLiveData(reported: string, driverType?: string): boolean {
+    const role = reportedPlayerRole(reported);
+    return role === 'show' || (role === 'player' && driverType === 'FPP');
+}
 
 /**
  * How a device's own reported role differs from the one the layout asks for,
@@ -580,11 +720,14 @@ const PLAYER_ROLE_NAMES = new Set(['player', 'master']);
 export function playerModeDrift(
     reported: string | undefined,
     want: ControllerPlayerMode | undefined,
+    driverType?: string,
 ): string | undefined {
     if (!want || !reported) return undefined;
-    const have = reported.toLowerCase();
-    const agrees = want === 'remote' ? have === 'remote' : PLAYER_ROLE_NAMES.has(have);
-    return agrees ? undefined : `the layout wants this controller as a ${want}, but it reports "${reported}"`;
+    if (reportedPlayerRole(reported) === want) return undefined;
+    if (want === 'show' && takesLiveData(reported, driverType)) return undefined;
+    return want === 'show'
+        ? `the layout wants this controller taking the show's data, but it reports "${reported}"`
+        : `the layout wants this controller as a ${want}, but it reports "${reported}"`;
 }
 
 /**
@@ -872,8 +1015,8 @@ export type EzpControllerRecordPatch = Partial<Omit<EzpControllerRecord, 'name'>
  *  - `presumed`     it did not answer, but its record says to presume it up
  *  - `unregistered` a network find matching no record (a "ghost")
  *
- * `absent` and `unknown` were one state once, which read as "we pinged and it
- * is gone" when the truth was often "we never pinged it".
+ * `absent` and `unknown` are kept apart because "we pinged and it is gone" is a
+ * much stronger claim than "we never pinged it".
  */
 export type ControllerRecordState = 'present' | 'absent' | 'unknown' | 'presumed' | 'unregistered';
 
@@ -890,6 +1033,8 @@ export interface ControllerGridRow {
     device?: DiscoveredController;
     vendor?: string;
     model?: string;
+    /** The layout's output protocol; "Player Only" is how it names a player. */
+    protocol?: string;
     active?: boolean;
     /** What our record says this controller's part is; absent = no opinion. */
     role?: ControllerActiveState;

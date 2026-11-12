@@ -78,11 +78,15 @@ import {
     hasExtraConfig,
     portDriftSeverity,
     reconcileInputs,
+    contentRoleOf,
+    contentFamilyOf,
     overlayHealth,
     findOffNetworkControllers,
     effectiveMaxFps,
     isPlaybackActive,
+    isPlayerOnlyRecord,
     needsContentDelivery,
+    takesLiveData,
 } from '@ezplayer/ezplayer-core';
 import { ContentDistributionDialog } from '../content-dist/ContentDistributionDialog';
 import { contentStatusLines, contentTargets } from '../content-dist/contentDistHelpers';
@@ -295,6 +299,59 @@ const STATE_META: Record<
     absent: { label: 'Absent', color: 'default', title: 'Looked for and not found' },
     unknown: { label: 'Unknown', color: 'default', title: 'Not looked for yet' },
     unregistered: { label: 'Unregistered', color: 'warning' },
+};
+
+/** What the Enabled column says about one row, and how that column sorts. */
+type EnableKind = 'enabled' | 'player' | 'remote' | 'xlightsOnly' | 'disabled';
+
+const ENABLE_META: Record<
+    EnableKind,
+    { label: string; color: 'success' | 'default' | 'info' | 'primary'; title?: string }
+> = {
+    enabled: { label: 'enabled', color: 'success' },
+    player: {
+        label: 'player',
+        color: 'primary',
+        title: 'Plays the whole show from its own copy of the files',
+    },
+    remote: {
+        label: 'remote',
+        color: 'primary',
+        title: 'Plays its own channels from its own copy and follows the player’s sync',
+    },
+    xlightsOnly: {
+        label: 'xLights only',
+        color: 'info',
+        title: 'Defined for xLights’ own use; players don’t output to it',
+    },
+    disabled: { label: 'disabled', color: 'default' },
+};
+
+/**
+ * The part a controller plays, in one word.
+ *
+ * "xLights Only" is not an answer an operator can act on — it is how xLights
+ * records a controller the show must not send pixels to, which is to say a
+ * player or a remote. So the pill names the part instead, and the record's own
+ * role outranks the layout, because that is the order {@link contentRoleOf}
+ * resolves them in.
+ */
+function enableKind(row: ControllerGridRow): EnableKind {
+    const content = contentRoleOf(row);
+    if (content !== 'none') return content;
+    // `contentRoleOf` collapses both of these to "plays no copy of its own";
+    // here they are still the record overriding what the layout said.
+    if (row.role === 'enabled') return 'enabled';
+    if (row.role === 'disabled') return 'disabled';
+    return row.enableState ?? (row.active === false ? 'disabled' : 'enabled');
+}
+
+const ENABLE_RANK: Record<EnableKind, number> = {
+    enabled: 0,
+    player: 1,
+    remote: 2,
+    xlightsOnly: 3,
+    disabled: 4,
 };
 
 /** Live connectivity → dot color (theme tokens). */
@@ -695,6 +752,8 @@ const GridRow: React.FC<{
     onDistribute: (id: string, checkOnly: boolean) => void;
     onAction: (id: string, action: ControllerDeviceAction) => void;
     onUpload: (id: string, fullControl: boolean) => void;
+    /** Write the show player's own send list (which controller gets which channels). */
+    onUploadOutputs: (id: string) => void;
     onActivate: (name: string, active: boolean) => void;
     onEdit: (row: ControllerGridRow) => void;
     onPromote: (row: ControllerGridRow) => void;
@@ -710,6 +769,7 @@ const GridRow: React.FC<{
     onDistribute,
     onAction,
     onUpload,
+    onUploadOutputs,
     onActivate,
     onEdit,
     onPromote,
@@ -757,6 +817,9 @@ const GridRow: React.FC<{
     const anyPortsRead = portsRead || serialRead || panelsRead || virtualsRead;
     // Same gating for the data-input side (protocol / universe map / DDP window).
     const inputsRead = d?.inputs !== undefined;
+    // A board in player or remote mode plays from its own card and takes no
+    // live data, so there is no input config to read.
+    const playingOwnCopy = d?.mode ? !takesLiveData(d.mode, d.driverType) : false;
     const inputRec = reconcileInputs(row.outputs, d?.inputs);
     const inputDrift = inputsRead && inputRec.drift;
     const anyDrift = portDrift || inputDrift;
@@ -804,8 +867,9 @@ const GridRow: React.FC<{
             onClick: () => onStatus(statusId, d ? undefined : row.address),
             disabled: busy,
         });
-    // Devices that keep their own copy of the show can be sent it.
-    const holdsContent = d?.driverType === 'FPP' && !d.unreachable;
+    // Devices that keep their own copy of the show can be sent it -- an FPP
+    // from its file store, a Falcon, Genius or HinksPix from its own card.
+    const holdsContent = contentFamilyOf(d?.driverType) !== undefined && !d?.unreachable;
     if (holdsContent && d) {
         const behind = needsContentDelivery(d.contentStatus);
         actions.push({
@@ -845,12 +909,18 @@ const GridRow: React.FC<{
                 onClick: () => onAction(d.id, da),
                 disabled: busy,
             });
-    // Upload needs a live identified non-player device plus xLights intent.
+    // Reconfigure needs a live identified device with xLights intent. An
+    // xLights "Player Only" record has no ports or input universes, so a full
+    // upload has nothing to write; it gets the send-list action below instead
+    // (a cape-based FPP player gets both).
+    const playerOnly = isPlayerOnlyRecord(row);
+    const sendsTheShow = contentRoleOf(row) === 'player' && d?.driverType === 'FPP' && !d.unreachable;
     if (
         known &&
         d?.driverType &&
         d.driverType !== 'EZPlayer' &&
         !d.unreachable &&
+        !playerOnly &&
         (row.source === 'xlights' ||
             row.source === 'both' ||
             (row.intent?.length ?? 0) > 0 ||
@@ -860,11 +930,34 @@ const GridRow: React.FC<{
     ) {
         actions.push({
             key: 'upload',
-            label: 'Upload config…',
+            label: 'Reconfigure…',
             icon: <PublishIcon fontSize="small" />,
             color: 'warning',
             onClick: () => setUploadOpen(true),
             disabled: busy,
+            title: 'Send this show’s port and input configuration to the controller',
+        });
+    }
+    // The show's player holds the send list (which controller gets which
+    // channels), built from every controller in the layout. FPP only.
+    if (known && sendsTheShow && d) {
+        actions.push({
+            key: 'player-outputs',
+            label: 'Send output universes…',
+            icon: <PublishIcon fontSize="small" />,
+            color: 'warning',
+            onClick: () => {
+                if (
+                    window.confirm(
+                        `Write ${row.name}’s send list — which controller gets which channels — from ` +
+                            'this show’s layout? It replaces the list the player is using now.',
+                    )
+                ) {
+                    onUploadOutputs(d.id);
+                }
+            },
+            disabled: busy,
+            title: 'Which controller this player sends which channels to, from the xLights layout',
         });
     }
     if (known) {
@@ -1021,6 +1114,31 @@ const GridRow: React.FC<{
                             </MuiBox>
                         )
                     )}
+                    {/* The board is in player or remote mode while the show wants to
+                        send it live data, or the reverse: every port can read as
+                        correct while it sits dark. Reconfigure sets the mode back. */}
+                    {d?.modeDrift && (
+                        <IconButton
+                            size="small"
+                            onClick={() => setPortDialog('compare')}
+                            title={`${d.modeDrift} — Reconfigure to set it back (click to compare)`}
+                            sx={{ ml: 0.25, p: 0.25, verticalAlign: 'middle' }}
+                        >
+                            <SyncProblemIcon color="warning" fontSize="small" />
+                        </IconButton>
+                    )}
+                    {/* The player's send list differs from the layout; no controller
+                        can report this, since only the player holds the list. */}
+                    {d?.sendListDrift && (
+                        <IconButton
+                            size="small"
+                            onClick={() => setPortDialog('compare')}
+                            title={`This player’s send list differs from the layout: ${d.sendListDrift} — Send output universes to rewrite it (click to compare)`}
+                            sx={{ ml: 0.25, p: 0.25, verticalAlign: 'middle' }}
+                        >
+                            <SyncProblemIcon color="warning" fontSize="small" />
+                        </IconButton>
+                    )}
                     {/* Content is a separate axis from configuration drift: a device
                         can be configured correctly and still be missing the show,
                         so this badge stands outside the status slot above. */}
@@ -1040,25 +1158,25 @@ const GridRow: React.FC<{
                 <TableCell sx={{ whiteSpace: 'nowrap' }}>
                     {known &&
                         (() => {
-                            const es = row.enableState ?? (row.active === false ? 'disabled' : 'enabled');
-                            const meta: Record<string, { label: string; color: 'success' | 'default' | 'info' }> = {
-                                enabled: { label: 'enabled', color: 'success' },
-                                disabled: { label: 'disabled', color: 'default' },
-                                xlightsOnly: { label: 'xLights only', color: 'info' },
-                            };
-                            const m = meta[es];
+                            const kind = enableKind(row);
+                            const m = ENABLE_META[kind];
+                            // The layout's own word is not lost by naming the
+                            // part: it is the reason for the answer, so it
+                            // belongs in the explanation.
+                            const from =
+                                row.role && kind !== row.enableState
+                                    ? 'set on this player’s record'
+                                    : row.enableState === 'xlightsOnly' && kind !== 'xlightsOnly'
+                                      ? 'xLights has it as “xLights Only”'
+                                      : undefined;
                             return (
                                 <Chip
                                     size="small"
                                     variant="outlined"
                                     color={m.color}
                                     label={m.label}
-                                    title={
-                                        es === 'xlightsOnly'
-                                            ? 'Defined for xLights’ own use; players don’t output to it'
-                                            : undefined
-                                    }
-                                    sx={{ opacity: es === 'enabled' ? 0.8 : 1 }}
+                                    title={[m.title, from].filter(Boolean).join(' — ') || undefined}
+                                    sx={{ opacity: kind === 'enabled' ? 0.8 : 1 }}
                                 />
                             );
                         })()}
@@ -1316,7 +1434,7 @@ const GridRow: React.FC<{
             )}
             {portDialog === 'compare' && (
                 <CompactDialog
-                    title={`Ports — xLights vs controller${row.name ? ` · ${row.name}` : ''}`}
+                    title={`xLights vs controller${row.name ? ` · ${row.name}` : ''}`}
                     onClose={() => setPortDialog(null)}
                     fullScreen
                 >
@@ -1343,7 +1461,12 @@ const GridRow: React.FC<{
                             </Typography>
                             <Typography variant="body2">xLights: {inputRec.intentSummary}</Typography>
                             <Typography variant="body2">
-                                Controller: {inputsRead ? inputRec.actualSummary || '—' : 'not read yet'}
+                                Controller:{' '}
+                                {inputsRead
+                                    ? inputRec.actualSummary || '—'
+                                    : playingOwnCopy
+                                      ? `none — the board is in ${d?.mode} mode and plays its own copy`
+                                      : 'not read yet'}
                             </Typography>
                             {inputRec.notes.map((n, i) => (
                                 <Typography key={i} variant="body2" sx={{ color: 'warning.main' }}>
@@ -1362,6 +1485,26 @@ const GridRow: React.FC<{
                                     in sync
                                 </Typography>
                             )}
+                        </Box>
+                    )}
+                    {d?.modeDrift && (
+                        <Box sx={{ mt: 2 }}>
+                            <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
+                                Mode
+                            </Typography>
+                            <Typography variant="body2" sx={{ color: 'warning.main' }}>
+                                {d.modeDrift} — Reconfigure to set it back
+                            </Typography>
+                        </Box>
+                    )}
+                    {d?.sendListDrift && (
+                        <Box sx={{ mt: 2 }}>
+                            <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
+                                Send list
+                            </Typography>
+                            <Typography variant="body2" sx={{ color: 'warning.main' }}>
+                                {d.sendListDrift} — Send output universes to rewrite it
+                            </Typography>
                         </Box>
                     )}
                 </CompactDialog>
@@ -1431,7 +1574,7 @@ const OpProgress: React.FC<{ op: ControllerOp; onCancel?: (opId: string) => void
  *  otherwise the controller keeps whatever it already has for these. */
 const SETTABLE_SETTINGS = 'brightness, gamma, colour order, start/end null pixels, grouping, zig-zag and direction';
 
-/** Upload confirmation. The checkbox is xLights' FullxLightsControl. */
+/** Reconfigure confirmation. The checkbox is xLights' FullxLightsControl. */
 const UploadDialog: React.FC<{
     name: string;
     onClose: () => void;
@@ -1440,7 +1583,7 @@ const UploadDialog: React.FC<{
     const [setAll, setSetAll] = useState(false);
     return (
         <Dialog open onClose={onClose} maxWidth="sm" fullWidth>
-            <DialogTitle>Upload configuration to {name}?</DialogTitle>
+            <DialogTitle>Reconfigure {name}?</DialogTitle>
             <DialogContent>
                 <Typography variant="body2" sx={{ mb: 2 }}>
                     Sends this show&rsquo;s xLights port configuration to the controller. The controller stops
@@ -1459,7 +1602,7 @@ const UploadDialog: React.FC<{
             <DialogActions>
                 <Button onClick={onClose}>Cancel</Button>
                 <Button color="warning" variant="contained" onClick={() => onSubmit(setAll)}>
-                    Upload
+                    Reconfigure
                 </Button>
             </DialogActions>
         </Dialog>
@@ -1559,10 +1702,10 @@ const RecordDialog: React.FC<{
                         size="small"
                         SelectProps={{ native: true }}
                         InputLabelProps={{ shrink: true }}
-                        helperText="Player and Remote are the parts that play from the controller's own copy of the show; the others are sent pixels live."
+                        helperText="Player and Remote are the parts that play from the controller's own copy of the show; the others are sent the show's live data."
                     >
-                        <option value="">From xLights</option>
-                        <option value="enabled">Enabled — an ordinary controller</option>
+                        <option value="">Whatever the xLights layout says</option>
+                        <option value="enabled">Enabled — takes the show's live data</option>
                         <option value="disabled">Disabled</option>
                         <option value="player">Player — plays the whole show itself</option>
                         <option value="remote">Remote — plays its own channels, follows sync</option>
@@ -1648,6 +1791,9 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
         (s: RootState) => s.controllerOps,
     );
     const [contentDialogOpen, setContentDialogOpen] = useState(false);
+    // Stamp of the report on screen when a send or check was asked for here,
+    // so a new report (one with a note) can be told from it.
+    const askedFrom = useRef<string | null>(null);
     // Devices that hold their own copy of the show, and how many are behind it.
     const contentTargetCount = useMemo(() => contentTargets(devices).length, [devices]);
     const contentBehindCount = useMemo(
@@ -1754,12 +1900,9 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
             case 'state':
                 return STATE_RANK[r.state];
             case 'enabled':
-                // enabled first, then xLights-only, disabled, and ghosts last.
-                return r.name
-                    ? { enabled: 0, xlightsOnly: 1, disabled: 2 }[
-                          r.enableState ?? (r.active === false ? 'disabled' : 'enabled')
-                      ]
-                    : 3;
+                // The order the pills read in, so the column sorts by what it
+                // shows; ghosts have no pill and go last.
+                return r.name ? ENABLE_RANK[enableKind(r)] : 5;
             case 'ip':
                 return ipKey(r.device?.ip ?? r.address ?? '');
             case 'type':
@@ -1809,14 +1952,25 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
     const loadDetail = (id: string, address?: string) =>
         dispatch(issueControllerCommand({ cmd: 'status', id, address, depth: 'full' }));
     /** Send (or price) this show's content, to one device or to all of them. */
-    const distribute = (ids: string[] | undefined, checkOnly: boolean) =>
-        dispatch(
+    const distribute = (ids: string[] | undefined, checkOnly: boolean) => {
+        askedFrom.current = contentDist?.lastReport?.finishedAt ?? '';
+        return dispatch(
             issueControllerCommand({
                 cmd: 'distribute',
                 ...(ids?.length ? { ids } : {}),
                 ...(checkOnly ? { checkOnly: true } : {}),
             }),
         );
+    };
+    // Only a run that did nothing opens the dialog by itself; a real run shows
+    // its progress on the card and the rows.
+    useEffect(() => {
+        const report = contentDist?.lastReport;
+        if (askedFrom.current === null || !report || report.finishedAt === askedFrom.current) return;
+        askedFrom.current = null;
+        if (report.note) setContentDialogOpen(true);
+    }, [contentDist?.lastReport]);
+
     const runDeviceAction = (id: string, a: ControllerDeviceAction) => {
         const blurb = a.description ? ` ${a.description}.` : '';
         if (!a.dangerous || window.confirm(`${a.label} now?${blurb}`)) {
@@ -1826,6 +1980,10 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
     // Confirmation lives in the row's UploadDialog.
     const upload = (id: string, fullControl: boolean) => {
         dispatch(issueControllerCommand({ cmd: 'upload', id, scope: 'full', fullControl }));
+    };
+    // The player's send list: every controller's channels, not this one row's.
+    const uploadOutputs = (id: string) => {
+        dispatch(issueControllerCommand({ cmd: 'upload', id, scope: 'outputs' }));
     };
 
     // Bulk actions — fan the per-row commands out over reachable known rows.
@@ -1842,12 +2000,14 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
     // materializes the device from the probe), so it needs no prior scan; a
     // pinging record counts even before one has matched it.
     const refreshAllRows = rows.filter((r) => enabledRow(r) && answering(r) && (r.device?.id ?? r.address));
-    // Mirror the per-row Upload gate: identified non-player device + xLights intent.
+    // Same gate as the per-row Reconfigure: identified device, xLights intent,
+    // and not an xLights "Player Only" record (nothing to write).
     const uploadAllRows = bulkRows.filter(
         (r) =>
             !!r.name &&
             !!r.device!.driverType &&
             r.device!.driverType !== 'EZPlayer' &&
+            !isPlayerOnlyRecord(r) &&
             (r.source === 'xlights' ||
                 r.source === 'both' ||
                 (r.intent?.length ?? 0) > 0 ||
@@ -1855,6 +2015,13 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
                 (r.panelMatrixIntent?.length ?? 0) > 0 ||
                 (r.virtualMatrixIntent?.length ?? 0) > 0),
     );
+    // The player goes in the same run with its own upload, the send list.
+    // A cape-based FPP player is in both lists. FPP only.
+    const playerSendListRows = bulkRows.filter(
+        (r) => !!r.name && contentRoleOf(r) === 'player' && r.device!.driverType === 'FPP',
+    );
+    // Count controllers, not uploads: a cape-based FPP player is in both lists.
+    const reconfigureAllCount = new Set([...uploadAllRows, ...playerSendListRows].map((r) => r.key)).size;
     // Mirror the per-row reboot gate: the actions list (when present) must offer reboot/restart.
     const rebootAllRows = bulkRows.filter((r) => {
         const d = r.device!;
@@ -1891,16 +2058,24 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
             }),
         );
     const uploadAll = () => {
+        const players = playerSendListRows.length
+            ? ` Also writes the send list of ${playerSendListRows.map((r) => r.name).join(', ')}.`
+            : '';
         if (
             window.confirm(
-                `Upload the xLights configuration (universes + string outputs) to ${uploadAllRows.length} ` +
-                    'reachable controller(s)? This rewrites their port config; current device settings are replaced.',
+                `Send the xLights configuration (universes + string outputs) to ${uploadAllRows.length} ` +
+                    `reachable controller(s)? This rewrites their port config; current device settings are ` +
+                    `replaced.${players}`,
             )
         ) {
-            void runBulk(
-                'upload',
-                uploadAllRows.map((r) => ({ command: { cmd: 'upload', id: r.device!.id, scope: 'full' } })),
-            );
+            void runBulk('upload', [
+                ...uploadAllRows.map((r) => ({
+                    command: { cmd: 'upload', id: r.device!.id, scope: 'full' } as ControllerCommand,
+                })),
+                ...playerSendListRows.map((r) => ({
+                    command: { cmd: 'upload', id: r.device!.id, scope: 'outputs' } as ControllerCommand,
+                })),
+            ]);
         }
     };
     const rebootAll = () => {
@@ -2106,10 +2281,10 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
                             color="warning"
                             startIcon={<PublishIcon />}
                             onClick={uploadAll}
-                            disabled={bulkBusy !== null || uploadAllRows.length === 0}
-                            title="Upload the xLights configuration to every reachable controller with intent"
+                            disabled={bulkBusy !== null || reconfigureAllCount === 0}
+                            title="Send the xLights configuration to every reachable controller with intent, and the show player its send list"
                         >
-                            {bulkBusy === 'upload' ? 'Uploading…' : `Upload all (${uploadAllRows.length})`}
+                            {bulkBusy === 'upload' ? 'Reconfiguring…' : `Reconfigure all (${reconfigureAllCount})`}
                         </Button>
                         <Button
                             size="small"
@@ -2197,6 +2372,7 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
                                             onDistribute={(id, checkOnly) => distribute([id], checkOnly)}
                                             onAction={runDeviceAction}
                                             onUpload={upload}
+                                            onUploadOutputs={uploadOutputs}
                                             onActivate={setActive}
                                             onEdit={openEdit}
                                             onPromote={openPromote}

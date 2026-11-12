@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { DDPSender } from '../dataplane/protocols/DDP';
-import { ControllerState, openControllerForDataSend, syncRemotesFromXlights } from './XLControllerSetup';
+import {
+    ControllerState,
+    applyControllerRoles,
+    openControllerForDataSend,
+    syncRemotesFromXlights,
+} from './XLControllerSetup';
 import { ControllerRec } from './XLXmlUtil';
 
 async function openDdp(channelsPerPacket?: number) {
@@ -60,6 +65,26 @@ describe('the show sync remotes', () => {
         };
     }
 
+    it('takes the part from our own record over the layout', () => {
+        const [remote, player, back] = applyControllerRoles(
+            [
+                rec({ name: 'R' }).xlRecord!,
+                rec({ name: 'P' }).xlRecord!,
+                rec({ name: 'Back', activeState: 'xLights Only' }).xlRecord!,
+            ],
+            { R: 'remote', P: 'player', Back: 'enabled' },
+        );
+        expect(remote.activeState).toBe('xLights Only');
+        expect(player.activeState).toBe('xLights Only');
+        expect(back.activeState).toBe('Active');
+        // A player holds its own copy and runs it itself; only the remote follows sync.
+        const remotes = syncRemotesFromXlights([
+            { ...rec({ name: 'R' }), xlRecord: remote },
+            { ...rec({ name: 'P' }), xlRecord: player },
+        ]);
+        expect(remotes.map((r) => r.name)).toEqual(['R']);
+    });
+
     it('is the controllers the layout marks "xLights Only"', () => {
         expect(
             syncRemotesFromXlights([
@@ -90,6 +115,24 @@ describe('the show sync remotes', () => {
                     protocol: 'Player Only',
                     model: 'FPP Player Only',
                     maxch: 0,
+                }),
+                rec({ name: 'Real remote', address: '10.0.0.9', activeState: 'xLights Only', maxch: 9600 }),
+            ]),
+        ).toEqual([{ name: 'Real remote', address: '10.0.0.9' }]);
+    });
+
+    it('leaves out a family that cannot follow our sync', () => {
+        // A HinksPix SLAVE follows a HinksPix master, not the show's sync, so
+        // it is given content and left to play it rather than sent sync it
+        // will never hear.
+        expect(
+            syncRemotesFromXlights([
+                rec({
+                    name: 'hinks pro v3',
+                    address: '10.0.0.57',
+                    activeState: 'xLights Only',
+                    vendor: 'HinksPix',
+                    maxch: 2550,
                 }),
                 rec({ name: 'Real remote', address: '10.0.0.9', activeState: 'xLights Only', maxch: 9600 }),
             ]),

@@ -11,8 +11,10 @@ import type {
     ContentDistState,
     ControllerContentStatus,
     DiscoveredController,
+    KnownController,
+    MultisyncSettings,
 } from '@ezplayer/ezplayer-core';
-import { contentTargetFailed, needsContentDelivery } from '@ezplayer/ezplayer-core';
+import { contentFamilyOf, contentRoleOf, contentTargetFailed, needsContentDelivery } from '@ezplayer/ezplayer-core';
 
 export function formatBytes(bytes: number): string {
     if (bytes <= 0) return '0 B';
@@ -34,11 +36,42 @@ export function formatDuration(ms: number): string {
     return `${m}m ${s}s`;
 }
 
-/** Devices that hold their own copy of the show — the rows a run covers. */
+/**
+ * Devices that hold their own copy of the show — the rows a run covers.
+ *
+ * Any family that holds content, not just FPP: a Falcon, Genius or HinksPix
+ * plays from a card of its own and is distributed to the same way.
+ */
 export function contentTargets(devices: Record<string, DiscoveredController>): DiscoveredController[] {
     return Object.values(devices)
-        .filter((d) => d.driverType === 'FPP')
+        .filter((d) => contentFamilyOf(d.driverType) !== undefined)
         .sort((a, b) => (a.hostname ?? a.ip).localeCompare(b.hostname ?? b.ip));
+}
+
+/**
+ * Which of off / on / automatic is in force, however the setting was saved:
+ * no `mode` reads as automatic, except that `enabled: true` from an older
+ * build reads as on.
+ */
+export function multisyncMode(multisync: MultisyncSettings | undefined): 'auto' | 'on' | 'off' {
+    return multisync?.mode ?? (multisync?.enabled ? 'on' : 'auto');
+}
+
+/**
+ * A warning that the show has remotes and sync is off, or undefined. A remote
+ * holds its own copy of the show and is only told to play it by sync.
+ */
+export function syncOffWarning(
+    known: KnownController[] | undefined,
+    multisync: MultisyncSettings | undefined,
+): string | undefined {
+    if (multisyncMode(multisync) !== 'off') return undefined;
+    const remotes = (known ?? []).filter((k) => contentRoleOf(k) === 'remote');
+    if (!remotes.length) return undefined;
+    const names = remotes.map((k) => k.name).join(', ');
+    return `Sync output is off, so ${
+        remotes.length === 1 ? 'the remote' : `all ${remotes.length} remotes`
+    } (${names}) will hold this show and never be told to play it. Turn sync on, or to Automatic, in Content Sync settings.`;
 }
 
 /**
@@ -102,7 +135,7 @@ export function contentDistSummary(
 
     const queued = contentDist?.queued?.length ?? 0;
     if (!targets.length) {
-        return { text: 'No FPP devices found yet', severity: 'idle', behind, current, unknown };
+        return { text: 'No devices that hold content found yet', severity: 'idle', behind, current, unknown };
     }
     if (behind > 0) {
         const bytes = targets.reduce((n, d) => n + (d.contentStatus?.missingBytes ?? 0), 0);
@@ -165,13 +198,14 @@ export interface ContentItemRow {
 
 /**
  * Pivot a report into one row per file. Sequences first, then the media they
- * name, then the inventory playlist — reading order rather than alphabetical,
- * since a sequence and its audio belong together.
+ * name, then the inventory playlist, then the player role — reading order
+ * rather than alphabetical, since a sequence and its audio belong together,
+ * and setting a device up comes after filling it.
  */
 export function itemRows(report: ContentDistReport | undefined): ContentItemRow[] {
     if (!report) return [];
     const rows = new Map<string, ContentItemRow>();
-    const order: ContentDistItem['kind'][] = ['sequence', 'media', 'playlist'];
+    const order: ContentDistItem['kind'][] = ['sequence', 'media', 'playlist', 'mode'];
     for (const target of report.targets) {
         for (const item of target.items) {
             const key = `${item.kind}\u0000${item.name}`;

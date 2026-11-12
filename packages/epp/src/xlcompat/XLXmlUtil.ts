@@ -54,6 +54,8 @@ export class ControllerRec {
     description: string = '';
     desc?: ExplicitControllerDesc = undefined;
     activeState?: ActiveStateChoice;
+    /** The part EZPlayer's own record gives this controller, when it gives one. */
+    role?: 'enabled' | 'disabled' | 'player' | 'remote';
     monitor?: boolean; // This is 0/1
     type: ControllerTypeChoice = 'Unknown';
 
@@ -96,6 +98,18 @@ export class ControllerRec {
  */
 export function isPlayerOnlyRecord(k: { protocol?: string; model?: string }): boolean {
     return k.protocol?.toLowerCase() === 'player only' || k.model?.toLowerCase() === 'fpp player only';
+}
+
+/**
+ * Whether this controller can play its own content in step with the show's
+ * sync. A HinksPix cannot -- its SLAVE role follows another HinksPix master
+ * over that family's own sync, not the multisync the show sends.
+ *
+ * Duplicated from `canFollowShowSync` in @ezplayer/ezplayer-core, which this
+ * package does not depend on.
+ */
+export function canFollowShowSync(k: { vendor?: string }): boolean {
+    return k.vendor?.toLowerCase() !== 'hinkspix';
 }
 
 /**

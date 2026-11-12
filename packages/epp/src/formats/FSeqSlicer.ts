@@ -22,10 +22,18 @@ import { FSEQReaderSync, type FSEQHeader } from './FSeqUtil';
 import { FseqV2Writer, limitRanges, MAX_SPARSE_RANGES, type FseqCompression, type FseqRange } from './FSeqWriter';
 
 /** One copy from the source frame into the output frame. */
-interface GatherSegment {
+export interface GatherSegment {
     srcOffset: number;
     dstOffset: number;
     len: number;
+}
+
+export interface GatherPlan {
+    gather: GatherSegment[];
+    /** Channels in one output frame: the sum of what was asked for. */
+    stride: number;
+    /** Requested channels the source does not hold, which stay zero. */
+    missingChannels: number;
 }
 
 export interface SlicePlan {
@@ -167,6 +175,47 @@ export function planFseqSlice(
         droppedChannels: Math.max(0, askedChannels - keptChannels),
         addedChannels: Math.max(0, stride - keptChannels),
     };
+}
+
+/**
+ * Plan a per-frame gather into an output laid out in the **caller's** order.
+ *
+ * {@link planFseqSlice} keeps channels in show order, which is what a sliced
+ * FSEQ must do. A controller that stores the show in an order of its own needs
+ * the other thing: a HinksPix HSEQ frame is its ports' channels packed in port
+ * order, so run 500-999 can legitimately come before run 0-499, and the same
+ * run can appear twice. So `wanted` is taken in destination order, not sorted,
+ * and each entry gets the next slot in the output frame.
+ *
+ * Channels the source does not hold are left out of the gather rather than
+ * refused: a layout routinely reaches past a sequence rendered against an
+ * older one, and those channels being dark is the same answer xLights gives.
+ * `missingChannels` counts them so a caller can say so.
+ */
+export function planFseqGather(header: FSEQHeader, wanted: FseqRange[]): GatherPlan {
+    const coverage = sourceCoverage(header);
+    const gather: GatherSegment[] = [];
+    let dstOffset = 0;
+    let missing = 0;
+    for (const want of wanted) {
+        const wantEnd = want.startch + want.chcount;
+        let covered = 0;
+        for (const have of coverage) {
+            const haveEnd = have.startch + have.chcount;
+            const start = Math.max(want.startch, have.startch);
+            const end = Math.min(wantEnd, haveEnd);
+            if (end <= start) continue;
+            gather.push({
+                srcOffset: have.offset + (start - have.startch),
+                dstOffset: dstOffset + (start - want.startch),
+                len: end - start,
+            });
+            covered += end - start;
+        }
+        missing += want.chcount - covered;
+        dstOffset += want.chcount;
+    }
+    return { gather, stride: dstOffset, missingChannels: missing };
 }
 
 export interface SliceResult extends SlicePlan {

@@ -75,7 +75,7 @@ import {
     loadXmlFile,
     resolveShowAssetPath,
     ExplicitControllerDesc,
-    readControllerFpsOverrides,
+    readControllerRecordOverrides,
 } from '@ezplayer/epp';
 
 import {
@@ -493,7 +493,7 @@ async function openOrReopenSenders(): Promise<void> {
     for (const c of controllerStates) {
         if (!c.setup.usable) continue;
 
-        const key = c.setup.address;
+        const key = c.setup.address?.trim() ?? '';
         const failed = c.report?.status === 'error';
         const recovered = recoveredAddresses.has(key);
         if (!failed && !recovered) continue;
@@ -571,6 +571,15 @@ function releaseControllerData(address: string): void {
 /** Connectivity per controller on the previous pass, to spot a recovery. */
 const lastSeenConnectivity = new Map<string, string>();
 
+/**
+ * Addresses this show checks for reachability, which is a wider set than the
+ * controllers it sends pixel data to: a player or a remote plays from its own
+ * copy and takes only sync, yet it is still up or down and still drives its
+ * part of the display. Kept here so the status pass can tell "not watched"
+ * from "watched and silent" -- the first is N/A, the second is Down.
+ */
+const watchedAddresses = new Set<string>();
+
 function sendControllerStateUpdate() {
     const stats = getLatestPingStats();
     const cstatus: PlayerNStatusContent = {
@@ -581,16 +590,29 @@ function sendControllerStateUpdate() {
         ...(controllerStates ?? []).map((e: ControllerState) => e.setup.startCh + e.setup.nCh),
     );
     for (const c of controllerStates ?? []) {
-        const pstat = stats.stats?.[c.setup.address];
+        // The key the ping targets were registered under, so a stored address
+        // with stray whitespace still finds its own stats.
+        const address = c.setup.address?.trim() ?? '';
+        const pstat = stats.stats?.[address];
         const checks = pstat?.via === 'web' ? 'web checks' : 'pings';
         const pss = pstat ? `${pstat.nReplies} out of ${pstat.outOf} ${checks}` : '';
-        const connectivity = !c.setup.usable ? 'N/A' : !pstat?.outOf ? 'Pending' : pstat.nReplies > 0 ? 'Up' : 'Down';
+        // Watched, not usable: a player or a remote has no data sender and is
+        // still pinged, so reading liveness off `usable` reported every one of
+        // them N/A -- a grey dot and a record that never left "absent".
+        const connectivity = !watchedAddresses.has(address)
+            ? 'N/A'
+            : !pstat?.outOf
+              ? 'Pending'
+              : pstat.nReplies > 0
+                ? 'Up'
+                : 'Down';
         // Coming back from Down is the moment to give this controller a fresh
-        // sender; Pending is just the state before the first ping round.
-        if (connectivity === 'Up' && lastSeenConnectivity.get(c.setup.address) === 'Down') {
-            recoveredAddresses.add(c.setup.address);
+        // sender; Pending is just the state before the first ping round. Only a
+        // controller that has a sender, since that is all this set reopens.
+        if (c.setup.usable && connectivity === 'Up' && lastSeenConnectivity.get(address) === 'Down') {
+            recoveredAddresses.add(address);
         }
-        lastSeenConnectivity.set(c.setup.address, connectivity);
+        lastSeenConnectivity.set(address, connectivity);
         cstatus.controllers?.push({
             name: c.setup.name,
             description: c.xlRecord?.description,
@@ -1601,9 +1623,12 @@ let showSyncRemotes: SyncRemoteTarget[] = [];
  * proxy forwards HTTP only. `auto` then decides by the result: if there is
  * nobody to sync, sending it is pointless, and if there is anybody, not
  * sending it means they sit idle through the show.
+ *
+ * No setting, or a saved setting with no `mode`, also means `auto`; `enabled`
+ * alone is honoured only when true, as an older build's "on".
  */
 function multisyncConfigFor(cfg: MultiSyncConfig | undefined): MultiSyncConfig | undefined {
-    if (!cfg) return cfg;
+    cfg ??= { remotes: [] };
     const listed = (cfg.remotes ?? []).map((r) => r.trim()).filter((r) => r.length > 0);
     const have = new Set(listed.map((r) => r.replace(/:\d+$/, '').toLowerCase()));
     const added: string[] = [];
@@ -1615,7 +1640,7 @@ function multisyncConfigFor(cfg: MultiSyncConfig | undefined): MultiSyncConfig |
     const remotes = added.length ? [...listed, ...added] : listed;
     // An explicit list is reason enough on its own: an xSchedule remote the
     // operator typed in is someone to sync, whatever the layout says.
-    const mode = cfg.mode ?? (cfg.enabled ? 'on' : 'off');
+    const mode = cfg.mode ?? (cfg.enabled ? 'on' : 'auto');
     const enabled = mode === 'on' ? true : mode === 'off' ? false : remotes.length > 0;
     return { ...cfg, enabled, ...(added.length ? { remotes } : {}) };
 }
@@ -2730,17 +2755,21 @@ async function processQueue() {
             await loadXmlCoordinates();
         }
 
+        // What our own records in the show folder add to the layout: frame-rate
+        // overrides, and the part a controller plays, which xLights cannot say.
+        const { fpsOverrides, roles } = await readControllerRecordOverrides(showFolder!);
         // Fall back to a disk read only when no parsed doc is available.
         const { controllers, models } = parsedControllerDoc
-            ? controllersFromParsedXlights(parsedControllerDoc)
-            : await readControllersFromXlights(showFolder!, {
-                  warnUnusedAttrs: false,
-                  // Surface library-side skips in the warning log, not console.
-                  logger: (msg) => emitWarning(msg),
-              });
-
-        // Per-controller max-FPS overrides from our records in the show folder
-        const fpsOverrides = await readControllerFpsOverrides(showFolder!);
+            ? controllersFromParsedXlights(parsedControllerDoc, roles)
+            : await readControllersFromXlights(
+                  showFolder!,
+                  {
+                      warnUnusedAttrs: false,
+                      // Surface library-side skips in the warning log, not console.
+                      logger: (msg) => emitWarning(msg),
+                  },
+                  roles,
+              );
         // Kept so a controller that failed to open can be retried on the same
         // terms as the rest of the show.
         openForDataSendOpts = {
@@ -2762,6 +2791,8 @@ async function processQueue() {
             if (!address || !xc || xc.activeState === 'Inactive' || xc.type !== 'Ethernet') continue;
             if (!watched.has(address)) watched.set(address, pingTargetFor(address, xc.fppProxy));
         }
+        watchedAddresses.clear();
+        for (const address of watched.keys()) watchedAddresses.add(address);
         setPingConfig({
             targets: [...watched.values()],
             // Pings are cheap; a whole show's controllers go out in one burst.

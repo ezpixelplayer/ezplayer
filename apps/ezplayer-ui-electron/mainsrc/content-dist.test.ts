@@ -15,13 +15,19 @@ import type {
     KnownController,
     SequenceRecord,
 } from '@ezplayer/ezplayer-core';
-import type { ContentSyncReport, ContentSyncSnapshot, ContentSyncTargetSpec } from '@ezplayer/epp-controllers';
+import type {
+    ContentSyncReport,
+    ContentSyncSnapshot,
+    ContentSyncTargetSpec,
+    ResolvedSequence,
+} from '@ezplayer/epp-controllers';
 import { readFseqIdentity } from '@ezplayer/epp-controllers';
 import { FseqV2Writer } from '@ezplayer/epp';
 import { derivedAudioPathFor } from './data/derived-audio.js';
 import {
     buildContentPlan,
     contentAutoDecision,
+    contentHostNames,
     contentHostsForShow,
     contentStatusFor,
     contentTargetsFor,
@@ -125,7 +131,7 @@ describe('how a device is reached', () => {
             return new Response('{}', { status: 200 });
         }) as typeof fetch;
         try {
-            await target.endpoint.contentGetJson('/api/system/info');
+            await target.endpoint!.contentGetJson('/api/system/info');
         } finally {
             globalThis.fetch = original;
         }
@@ -134,16 +140,24 @@ describe('how a device is reached', () => {
 });
 
 describe('content distribution targets', () => {
-    it('counts FPP as holding content and other drivers as not', () => {
+    it('counts the families that hold their own copy, and no others', () => {
         expect(isContentTarget(device({ ip: '10.0.0.5', driverType: 'FPP' }))).toBe(true);
-        expect(isContentTarget(device({ ip: '10.0.0.6', driverType: 'Falcon' }))).toBe(false);
-        expect(isContentTarget(device({ ip: '10.0.0.7' }))).toBe(false);
+        // These three play from a card of their own. Whether a particular box
+        // can is a question for its firmware, which the run asks when it gets
+        // there; this is the family.
+        expect(isContentTarget(device({ ip: '10.0.0.6', driverType: 'Falcon' }))).toBe(true);
+        expect(isContentTarget(device({ ip: '10.0.0.7', driverType: 'Genius' }))).toBe(true);
+        expect(isContentTarget(device({ ip: '10.0.0.8', driverType: 'HinksPix' }))).toBe(true);
+        // A pixel controller with no storage at all, and an unidentified box.
+        expect(isContentTarget(device({ ip: '10.0.0.9', driverType: 'WLED' }))).toBe(false);
+        expect(isContentTarget(device({ ip: '10.0.0.10', driverType: 'ILightThat' }))).toBe(false);
+        expect(isContentTarget(device({ ip: '10.0.0.11' }))).toBe(false);
     });
 
-    it('selects every FPP when no ids are given', () => {
+    it('selects every content target when no ids are given, and leaves the rest out', () => {
         const targets = contentTargetsFor([
             device({ ip: '10.0.0.5', driverType: 'FPP', hostname: 'fpp-a', firmwareVersion: '8.4.2' }),
-            device({ ip: '10.0.0.6', driverType: 'Falcon' }),
+            device({ ip: '10.0.0.6', driverType: 'WLED', hostname: 'wled' }),
             device({ ip: '10.0.0.7', driverType: 'FPP', hostname: 'fpp-b', firmwareVersion: '6.3' }),
         ]);
         expect(targets.map((t) => t.hostName)).toEqual(['fpp-a', 'fpp-b']);
@@ -151,11 +165,25 @@ describe('content distribution targets', () => {
     });
 
     it('reports a named non-content device rather than dropping it', () => {
-        const dev = device({ ip: '10.0.0.6', driverType: 'Falcon' });
+        const dev = device({ ip: '10.0.0.6', driverType: 'WLED' });
         const targets = contentTargetsFor([dev], [dev.id]);
         expect(targets).toHaveLength(1);
         expect(targets[0].supported).toBe(false);
-        expect(targets[0].unsupportedReason).toMatch(/Falcon/);
+        expect(targets[0].unsupportedReason).toMatch(/WLED/);
+    });
+
+    /**
+     * A card controller has to be connected to before anything can be sent to
+     * it -- its own firmware is what says which compression, which container
+     * and whether it can take uploads at all -- so one that was not set up is
+     * reported rather than being sent an FPP-shaped request it cannot answer.
+     */
+    it('will not send to a card controller that was not set up first', () => {
+        const dev = device({ ip: '10.0.0.6', driverType: 'Falcon' });
+        const targets = contentTargetsFor([dev], [dev.id]);
+        expect(targets[0]).toMatchObject({ supported: false });
+        expect(targets[0].unsupportedReason).toMatch(/not set up/);
+        expect(targets[0].endpoint).toBeUndefined();
     });
 
     it('marks an unreachable device unsupported, so a run does not hang on it', () => {
@@ -166,7 +194,7 @@ describe('content distribution targets', () => {
     it('addresses a proxied device through its proxy', () => {
         const dev = device({ ip: '192.168.7.9', driverType: 'FPP', source: { via: 'fpp-proxy', proxy: '10.0.0.5' } });
         // The endpoint keeps the device's own ip; only the base url goes via the proxy.
-        expect(contentTargetsFor([dev])[0].endpoint.ip).toBe('192.168.7.9');
+        expect(contentTargetsFor([dev])[0].endpoint!.ip).toBe('192.168.7.9');
     });
 
     // A version we cannot read must not claim the chunked path a v6 device
@@ -180,7 +208,7 @@ describe('content distribution targets', () => {
         [undefined, false],
     ])('reads %s as FPP 7 or later: %s', (version, atLeast7) => {
         const dev = device({ ip: '10.0.0.5', driverType: 'FPP', ...(version ? { firmwareVersion: version } : {}) });
-        expect(contentTargetsFor([dev])[0].endpoint.isVersionAtLeast(7, 0)).toBe(atLeast7);
+        expect(contentTargetsFor([dev])[0].endpoint!.isVersionAtLeast(7, 0)).toBe(atLeast7);
     });
 });
 
@@ -232,7 +260,7 @@ describe('who is in the show for content', () => {
         // without it the route every FPP answers is the one taken.
         const targets = contentTargetsForHosts(hosts, recs);
         expect(targets.map((t) => t.label)).toEqual(['fpp4-lab (192.168.1.23)', 'wb1616-lab (10.0.0.58)']);
-        expect(targets[0].endpoint.isVersionAtLeast(7, 0)).toBe(false);
+        expect(targets[0].endpoint!.isVersionAtLeast(7, 0)).toBe(false);
         expect(targets.every((t) => t.supported === undefined)).toBe(true);
     });
 
@@ -293,7 +321,33 @@ describe('who is in the show for content', () => {
         };
         const hosts = contentHostsForShow(recs, devices);
         expect(hosts.map((h) => h.id)).toEqual(['10.0.0.58|direct', '10.0.0.59|record']);
-        expect(contentTargetsForHosts(hosts, recs)[0].endpoint.isVersionAtLeast(7, 0)).toBe(true);
+        expect(contentTargetsForHosts(hosts, recs)[0].endpoint!.isVersionAtLeast(7, 0)).toBe(true);
+    });
+
+    it('names each host by the show’s own name for it, with its address beside', () => {
+        // The report table lays a device out over two lines, and a scanned
+        // FPP's hostname is often nothing like the name on the grid.
+        const recs = [
+            known({
+                name: 'wb1616-lab',
+                address: '10.0.0.58',
+                enableState: 'xlightsOnly',
+                vendor: 'Wallys Lights',
+                model: 'WB1616',
+            }),
+        ];
+        const devices = {
+            '10.0.0.58|direct': device({ ip: '10.0.0.58', driverType: 'FPP', hostname: 'FPP-WB1616' }),
+        };
+        const hosts = contentHostsForShow(recs, devices);
+        expect(contentTargetsForHosts(hosts, recs)[0].label).toBe('wb1616-lab (10.0.0.58)');
+        expect([...contentHostNames(hosts)]).toEqual([
+            ['10.0.0.58|direct', { name: 'wb1616-lab', address: '10.0.0.58' }],
+        ]);
+        // No record, so the box's own hostname is the best name there is.
+        const ghost = device({ ip: '10.0.0.9', driverType: 'FPP', hostname: 'fpp-spare' });
+        const named = contentHostsForShow([], { [ghost.id]: ghost }, [ghost.id]);
+        expect(contentHostNames(named).get(ghost.id)).toEqual({ name: 'fpp-spare', address: '10.0.0.9' });
     });
 
     it('does not skip a box whose record says to presume it up', () => {
@@ -381,8 +435,24 @@ describe('who is sent which channels', () => {
     });
 
     it('does not slice for a device that holds no content', () => {
-        const falcon = { 'falcon|direct': device({ ip: '10.0.0.3', driverType: 'Falcon' }) };
-        expect(slicingPlanFor([{ id: 'falcon|direct' }], falcon, recs).size).toBe(0);
+        const wled = { 'wled|direct': device({ ip: '10.0.0.3', driverType: 'WLED' }) };
+        expect(slicingPlanFor([{ id: 'wled|direct' }], wled, recs).size).toBe(0);
+    });
+
+    /**
+     * A card controller drives nothing but its own ports, so it gets its own
+     * channels whichever role it has -- a standalone Falcon forwards to no
+     * one, so the player's "show minus the remotes" share is not its share.
+     */
+    it('gives a card controller its own channels even as the show’s player', () => {
+        const falcon = {
+            'falcon|direct': device({ ip: '10.0.0.4', driverType: 'Falcon', channelRanges: '500-1011' }),
+        };
+        const asPlayer = [
+            known({ name: 'Falcon', address: '10.0.0.4', role: 'player', startChannel: 501, channelCount: 512 }),
+        ];
+        const plan = slicingPlanFor([{ id: 'falcon|direct' }], falcon, asPlayer);
+        expect(plan.get('falcon|direct')).toEqual({ source: 'device', ranges: [{ startch: 500, chcount: 512 }] });
     });
 });
 
@@ -467,6 +537,9 @@ describe('the plan', () => {
         expect(plan.sequences).toHaveLength(1);
     });
 
+    /** A target the per-host media question can read: it only wants the name. */
+    const hostTarget = (hostName: string): ContentSyncTargetSpec => ({ id: hostName, label: hostName, hostName });
+
     it('limits the plan to the named sequences', async () => {
         const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'ezp-dist-'));
         const one = path.join(dir, 'One.fseq');
@@ -493,12 +566,12 @@ describe('the plan', () => {
             undefined,
         );
         const seq = plan.sequences[0];
-        await expect(plan.resolveMedia!(seq, 'matrix-pi')).resolves.toMatchObject({
+        await expect(plan.resolveMedia!(seq, hostTarget('matrix-pi'))).resolves.toMatchObject({
             name: 'Carol-matrix-pi.mp3',
             size: 200,
         });
         // No per-host file: the caller keeps the shared one.
-        await expect(plan.resolveMedia!(seq, 'other-pi')).resolves.toBeUndefined();
+        await expect(plan.resolveMedia!(seq, hostTarget('other-pi'))).resolves.toBeUndefined();
     });
 
     it('honours an empty playlist name as "do not register"', async () => {
@@ -755,7 +828,7 @@ describe('slicing for a remote', () => {
 
     it('does not slice for a device that is not ours to fill, or that says nothing', () => {
         const known = [layout({ name: 'Far Side', address: '10.0.0.6', startChannel: 1, channelCount: 64 })];
-        expect(slicingFor(device({ ip: '10.0.0.6', driverType: 'Falcon', mode: 'remote' }), known)).toBeNull();
+        expect(slicingFor(device({ ip: '10.0.0.6', driverType: 'WLED', mode: 'remote' }), known)).toBeNull();
         // Claims to be a remote, but names no channels and has no record.
         expect(slicingFor(remote(), [])).toBeNull();
     });
@@ -801,21 +874,22 @@ describe('a plan that slices', () => {
             const seq = plan.sequences[0];
             expect(seq.identity.channelCount).toBe(2048);
 
-            const resolved = await plan.resolveSequence!(seq, target(id));
-            expect(resolved).toBeTruthy();
+            const answer = await plan.resolveSequence!(seq, target(id));
+            expect(answer && 'identity' in answer).toBe(true);
+            const resolved = answer as ResolvedSequence;
             // The identity describes the slice without having written it.
-            expect(resolved!.identity.channelCount).toBe(64);
-            expect(resolved!.identity.ranges).toEqual([{ start: 100, length: 64 }]);
-            expect(resolved!.identity.maxChannel).toBe(164);
-            expect(resolved!.identity.numFrames).toBe(4);
+            expect(resolved.identity.channelCount).toBe(64);
+            expect(resolved.identity.ranges).toEqual([{ start: 100, length: 64 }]);
+            expect(resolved.identity.maxChannel).toBe(164);
+            expect(resolved.identity.numFrames).toBe(4);
             // Same sequence, same audio: only the channels differ.
-            expect(resolved!.identity.uniqueId).toBe('424242');
-            expect(resolved!.identity.mediaName).toBe('Song.mp3');
-            expect(resolved!.note).toMatch(/sliced to 64 of 2,048 channels/);
+            expect(resolved.identity.uniqueId).toBe('424242');
+            expect(resolved.identity.mediaName).toBe('Song.mp3');
+            expect(resolved.note).toMatch(/sliced to 64 of 2,048 channels/);
             expect(await fsp.readdir(workspace.dir)).toEqual([]);
 
             // Only now is a file written, and it holds the right bytes.
-            const bytes = await resolved!.open();
+            const bytes = await resolved.open();
             expect(bytes.size).toBeGreaterThan(0);
             expect(await fsp.readdir(workspace.dir)).toHaveLength(1);
             const written = await bytes.blob.read(0, bytes.size);

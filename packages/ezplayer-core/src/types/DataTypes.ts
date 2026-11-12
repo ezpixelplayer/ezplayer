@@ -909,7 +909,8 @@ export interface MultisyncSettings {
      *  - `on`    always send
      *  - `off`   never send
      *
-     * Absent falls back to `enabled`, which older settings carry alone.
+     * Absent reads as `auto`, except that `enabled: true` from an older build
+     * reads as `on`.
      */
     mode?: 'auto' | 'on' | 'off';
     enabled: boolean;

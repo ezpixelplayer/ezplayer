@@ -11,7 +11,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { FSEQReaderSync } from './FSeqUtil';
-import { FseqV2Writer, limitRanges } from './FSeqWriter';
+import { FseqV2Writer, limitRanges, type FseqCompression } from './FSeqWriter';
 import { parseChannelRanges, planFseqSlice, sliceFseqFile } from './FSeqSlicer';
 
 let dir = '';
@@ -29,13 +29,17 @@ const FRAMES = 9;
 const STEP_MS = 25;
 
 /** Write a dense source with our writer; the reader checks it independently. */
-async function denseSource(name: string, channels: number, opts: { zstd?: boolean; media?: string } = {}) {
+async function denseSource(
+    name: string,
+    channels: number,
+    opts: { zstd?: boolean; compression?: FseqCompression; media?: string } = {},
+) {
     const file = path.join(dir, name);
     const w = new FseqV2Writer(file, {
         numFrames: FRAMES,
         stepTimeMs: STEP_MS,
         channelCount: channels,
-        compression: opts.zstd === false ? 'none' : 'zstd',
+        compression: opts.compression ?? (opts.zstd === false ? 'none' : 'zstd'),
         framesPerBlock: 4,
         uniqueId: '1234567890123',
         ...(opts.media ? { mediaName: opts.media } : {}),
@@ -161,6 +165,42 @@ describe('FseqV2Writer', () => {
         expect(() => w.addFrame(new Uint8Array(9))).toThrow(/expected 10/);
         w.addFrame(new Uint8Array(10));
         expect(() => w.close()).toThrow(/1 of 2 frames/);
+    });
+});
+
+describe('zlib blocks — what a Falcon or a Genius will read', () => {
+    it('writes a dense zlib file the reader reads back frame for frame', async () => {
+        const file = await denseSource('dense-zlib.fseq', 600, { compression: 'zlib' });
+        const { header, frames } = await readBack(file);
+        // 2 is zlib in FPP's own enum order (none, zstd, zlib); a controller
+        // with no zstd decoder reads this and nothing else compressed.
+        expect(header.compression).toBe(2);
+        expect(header.channels).toBe(600);
+        expect(frames).toHaveLength(FRAMES);
+        for (let f = 0; f < FRAMES; f++) {
+            for (const c of [0, 1, 299, 599]) expect(frames[f][c], `frame ${f} ch ${c}`).toBe(val(c, f));
+        }
+    });
+
+    it('actually compresses — a zlib file is far smaller than an uncompressed one', async () => {
+        const zlib = await denseSource('big-zlib.fseq', 8192, { compression: 'zlib' });
+        const plain = await denseSource('big-plain.fseq', 8192, { compression: 'none' });
+        const [a, b] = await Promise.all([fsp.stat(zlib), fsp.stat(plain)]);
+        expect(a.size).toBeLessThan(b.size / 2);
+    });
+
+    it('slices to zlib, so a card copy holds only that board’s channels', async () => {
+        const src = await denseSource('zlib-src.fseq', 4096, { compression: 'none' });
+        const dest = path.join(dir, 'zlib-slice.fseq');
+        const result = await sliceFseqFile(src, dest, [{ startch: 1024, chcount: 512 }], { compression: 'zlib' });
+        expect(result).not.toBeNull();
+        const { header, frames } = await readBack(dest);
+        expect(header.compression).toBe(2);
+        expect(header.stepsize).toBe(512);
+        expect(header.nsparseranges).toBe(1);
+        for (let f = 0; f < FRAMES; f++) {
+            for (const i of [0, 1, 511]) expect(frames[f][i], `frame ${f} ch ${i}`).toBe(val(1024 + i, f));
+        }
     });
 });
 

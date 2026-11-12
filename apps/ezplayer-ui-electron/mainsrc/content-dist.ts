@@ -54,6 +54,14 @@ import {
 import type { FSEQHeader, FseqRange } from '@ezplayer/epp';
 import { FSEQReaderSync, parseChannelRanges, planFseqSlice, sliceFseqFile } from '@ezplayer/epp';
 import { playableAudioPath } from './data/derived-audio.js';
+import {
+    type CardSetupResult,
+    type CardTargetSetup,
+    contentFamilyOf,
+    resolveCardMedia,
+    resolveCardSequence,
+    setUpCardTarget,
+} from './content-dist-cards.js';
 
 /** Inventory playlist name when the setting does not say. */
 export const DEFAULT_CONTENT_PLAYLIST = 'EZPlayer Content';
@@ -69,9 +77,16 @@ const AUDIO_EXTENSIONS = new Set(['.mp3', '.wav', '.ogg', '.flac', '.m4a', '.aac
 // Targets
 // ---------------------------------------------------------------------------
 
-/** Devices that hold their own copy of a show. Only FPP today. */
+/**
+ * Devices that hold their own copy of a show: an FPP, and the three families
+ * that play from a card of their own.
+ *
+ * This is the family, not the individual box -- see {@link CARD_DRIVER_TYPES}.
+ * A box of the right family that cannot actually take content appears in the
+ * report with the reason rather than vanishing from the show.
+ */
 export function isContentTarget(dev: DiscoveredController): boolean {
-    return dev.driverType === 'FPP';
+    return contentFamilyOf(dev.driverType) !== undefined;
 }
 
 /**
@@ -89,12 +104,20 @@ export function recordHoldsContent(k: KnownController): boolean {
     // layout filled in for vendor and model.
     if (isPlayerOnlyRecord(k)) return true;
     if (!k.vendor || !k.model) return false;
-    // Guarded and idempotent, so this costs a boolean after the first call --
-    // and asking here means the answer does not depend on which other module
-    // happened to load first.
+    // Guarded and idempotent, so this costs a boolean after the first call,
+    // and the answer does not depend on which module loaded first.
     loadBundledCapabilities();
-    return getConfigDriver(k.vendor, k.model, k.variant ?? '') === 'FPP';
+    const driver = getConfigDriver(k.vendor, k.model, k.variant ?? '');
+    return driver === 'FPP' || CARD_CONFIG_DRIVERS.has(driver ?? '');
 }
+
+/**
+ * Capability-file driver names for the families that play from their own card.
+ * `Experience` is the Genius' name in the xLights capability files, which is
+ * where this answer has to come from -- it is the only place that knows a
+ * board sold under some other name is really one of these.
+ */
+const CARD_CONFIG_DRIVERS = new Set(['Falcon', 'Experience', 'HinksPix']);
 
 /**
  * One box that holds content, as the show knows it: the record that puts it in
@@ -224,6 +247,7 @@ export function contentTargetsFor(
     devices: DiscoveredController[],
     ids?: string[],
     known: KnownController[] = [],
+    cards?: Map<string, CardSetupResult>,
 ): ContentSyncTargetSpec[] {
     const wanted = ids?.length ? new Set(ids) : undefined;
     const hosts: ContentHost[] = [];
@@ -241,7 +265,60 @@ export function contentTargetsFor(
             ...(isContentTarget(dev) ? {} : { unsupportedReason: `${dev.driverType ?? 'device'} holds no content` }),
         });
     }
-    return contentTargetsForHosts(hosts, known);
+    return contentTargetsForHosts(hosts, known, cards);
+}
+
+/**
+ * The capability-file driver for a record, for a host no scan has found. The
+ * record is the only thing that knows what a box is before anything answers.
+ */
+function driverTypeOfRecord(rec: KnownController | undefined): string | undefined {
+    if (!rec?.vendor || !rec.model) return undefined;
+    loadBundledCapabilities();
+    const driver = getConfigDriver(rec.vendor, rec.model, rec.variant ?? '');
+    // The capability files call the Genius 'Experience'; our driver, and so
+    // every other part of this, calls it Genius.
+    return driver === 'Experience' ? 'Genius' : (driver ?? undefined);
+}
+
+/**
+ * Connect to every card controller in a run and work out what each can take.
+ *
+ * Done once, up front: the driver that answers here is the one the transfer,
+ * the playlist and the report all use, and these are the devices where a
+ * second probe is a second visible second.
+ */
+export async function cardSetupsFor(
+    hosts: ContentHost[],
+    known: KnownController[],
+    slicing?: Map<string, ContentSlicing>,
+): Promise<Map<string, CardSetupResult>> {
+    const out = new Map<string, CardSetupResult>();
+    for (const host of hosts) {
+        if (host.unsupportedReason) continue;
+        const driverType = host.device?.driverType ?? driverTypeOfRecord(host.record);
+        if (contentFamilyOf(driverType) !== 'card') continue;
+        const ip = host.device?.ip ?? host.address;
+        const proxy = host.device
+            ? proxyForDevice(host.device, known)
+            : host.record?.proxy && host.record.proxy !== ip
+              ? host.record.proxy
+              : undefined;
+        const cut = slicing?.get(host.id);
+        out.set(
+            host.id,
+            await setUpCardTarget({
+                id: host.id,
+                ip,
+                ...(proxy ? { proxy } : {}),
+                ...(driverType ? { driverType } : {}),
+                ...(host.record ? { record: host.record } : {}),
+                ...(host.device ? { device: host.device } : {}),
+                ...(cut ? { ranges: cut.ranges, rangeSource: cut.source } : {}),
+            }),
+        );
+    }
+    return out;
 }
 
 /**
@@ -253,7 +330,11 @@ export function contentTargetsFor(
  * takes the FPP 6 upload route — the one every version answers — and the
  * engine moves to the chunked route if the device turns out to want it.
  */
-export function contentTargetsForHosts(hosts: ContentHost[], known: KnownController[] = []): ContentSyncTargetSpec[] {
+export function contentTargetsForHosts(
+    hosts: ContentHost[],
+    known: KnownController[] = [],
+    cards?: Map<string, CardSetupResult>,
+): ContentSyncTargetSpec[] {
     const out: ContentSyncTargetSpec[] = [];
     for (const host of hosts) {
         const { device: dev, record: rec } = host;
@@ -266,27 +347,46 @@ export function contentTargetsForHosts(hosts: ContentHost[], known: KnownControl
         // unreachable. Skipping it then is the whole reason the record carries
         // "presume up", so the skip has to honour it.
         const presumed = !!rec?.presumeUp;
-        const label = dev?.hostname
-            ? `${dev.hostname} (${ip})`
-            : rec && rec.name.toLowerCase() !== ip.toLowerCase()
-              ? `${rec.name} (${ip})`
-              : ip;
+        // The name the show gives it comes first: that is the name on the
+        // controllers grid, and a scanned box's own hostname is often nothing
+        // like it. Falling back to the hostname keeps a device with no record
+        // recognisable.
+        const name = rec?.name ?? dev?.hostname ?? ip;
+        const label = name.toLowerCase() === ip.toLowerCase() ? ip : `${name} (${ip})`;
+
+        // A box that plays from its own card is reached through its driver, not
+        // through FPP's file API, and has to have been set up first: the setup
+        // is where its own firmware says what it can take.
+        const family = contentFamilyOf(host.device?.driverType ?? driverTypeOfRecord(rec));
+        const card = cards?.get(host.id);
+        const cardReason =
+            family === 'card' && !card?.setup
+                ? (card?.unsupportedReason ?? 'this controller was not set up for content in this run')
+                : undefined;
+
         out.push({
             id: host.id,
             label,
             hostName,
-            endpoint: createFppContentEndpoint({
-                baseUrl,
-                ip,
-                hostName,
-                majorVersion: major,
-                minorVersion: minor,
-                patchVersion: patch,
-            }),
+            ...(card?.setup
+                ? { adapter: card.setup.adapter }
+                : family === 'card'
+                  ? {}
+                  : {
+                        endpoint: createFppContentEndpoint({
+                            baseUrl,
+                            ip,
+                            hostName,
+                            majorVersion: major,
+                            minorVersion: minor,
+                            patchVersion: patch,
+                        }),
+                    }),
             ...(dev?.firmwareVersion ? { version: dev.firmwareVersion } : {}),
             ...((dev?.model ?? rec?.model) ? { platform: dev?.model ?? rec?.model } : {}),
             ...(host.unsupportedReason ? { supported: false, unsupportedReason: host.unsupportedReason } : {}),
             ...(dev?.unreachable && !presumed ? { supported: false, unsupportedReason: 'not responding' } : {}),
+            ...(cardReason ? { supported: false, unsupportedReason: cardReason } : {}),
         });
     }
     return out;
@@ -455,7 +555,12 @@ export function slicingPlanForHosts(
 
     for (const host of hosts) {
         if (host.unsupportedReason) continue;
-        if (host.role === 'remote') {
+        // A box that plays from its own card drives nothing but its own ports,
+        // whichever role it has: a standalone Falcon forwards to no one, so
+        // "the show minus the remotes" is not its share -- its own channels
+        // are. Only an FPP player has a send list to cover.
+        const ownChannelsOnly = contentFamilyOf(host.device?.driverType) === 'card';
+        if (host.role === 'remote' || ownChannelsOnly) {
             const own = remoteSlicing(host);
             if (own) plan.set(host.id, own);
             continue;
@@ -600,6 +705,13 @@ export interface ContentPlanOptions {
     slicing?: Map<string, ContentSlicing>;
     /** Where slices are written. Required for slicing to happen at all. */
     workspace?: SliceWorkspace;
+    /**
+     * The card controllers in this run, from {@link cardSetupsFor}. Each gets
+     * a file built for it -- its own compression, its own container, sometimes
+     * its own channel order -- so they are kept apart from the FPP path rather
+     * than being a flag within it.
+     */
+    cards?: Map<string, CardSetupResult>;
 }
 
 /**
@@ -682,16 +794,31 @@ export async function buildContentPlan(
         return header;
     };
 
+    /** The shared context the card encoders read: workspace, sources, headers. */
+    const cardContext = (workspaceDir: string) => ({
+        workspaceDir,
+        sourceFile: (name: string) => sourceFiles.get(name),
+        header: headerFor,
+    });
+
     const plan: ContentPlan = {
         sequences: out,
         ...(playlistName ? { playlistName } : {}),
         // A matrix player wants its own cut of the media; xLights names those
         // `Song-<host>.<ext>` beside the original, so look there first.
-        async resolveMedia(sequence, hostName) {
+        async resolveMedia(sequence, target) {
+            // A card controller's audio is its own question: a Genius has none
+            // at all, and a HinksPix plays a format built here.
+            const card = opts.cards?.get(target.id)?.setup;
+            if (card) {
+                const workspace = opts.workspace;
+                if (!workspace) return null;
+                return resolveCardMedia(card, sequence, sequence.media, cardContext(workspace.dir));
+            }
             if (!sequence.media) return undefined;
             const dir = mediaDirs.get(sequence.name);
             if (!dir) return undefined;
-            for (const candidate of hostSpecificMediaCandidates(sequence.media.name, hostName)) {
+            for (const candidate of hostSpecificMediaCandidates(sequence.media.name, target.hostName)) {
                 const file = path.join(dir, candidate);
                 const size = await fileSize(file);
                 if (size !== null) return { name: candidate, size, blob: blobFromFile(file, size) };
@@ -701,7 +828,15 @@ export async function buildContentPlan(
         // A remote gets only its own channels. The identity is worked out from
         // the plan, so a device that already holds the right slice costs one
         // header read and no slicing at all.
-        async resolveSequence(sequence, target): Promise<ResolvedSequence | undefined> {
+        async resolveSequence(sequence, target) {
+            const card = opts.cards?.get(target.id)?.setup;
+            if (card) {
+                const workspace = opts.workspace;
+                if (!workspace) {
+                    return { unsupported: 'no workspace to build this controller’s own file in' };
+                }
+                return resolveCardSequence(card, sequence, cardContext(workspace.dir));
+            }
             const slicing = opts.slicing?.get(target.id);
             const workspace = opts.workspace;
             if (!slicing?.ranges.length || !workspace) return undefined;
@@ -741,13 +876,32 @@ export async function buildContentPlan(
 
 const iso = (ms: number): string => new Date(ms || Date.now()).toISOString();
 
+/**
+ * Name and address per target id, for the report and progress shapes.
+ *
+ * The transfer engine carries only the one-line label, and a reader that has
+ * to lay a device out over two lines — or identify it after it has left the
+ * grid — needs the two parts separately.
+ */
+export type ContentHostNames = Map<string, { name: string; address: string }>;
+
+export function contentHostNames(hosts: ContentHost[]): ContentHostNames {
+    const out: ContentHostNames = new Map();
+    for (const host of hosts) {
+        const address = host.device?.ip ?? host.address;
+        out.set(host.id, { name: host.record?.name ?? host.device?.hostname ?? address, address });
+    }
+    return out;
+}
+
 export function toContentDistRun(
     snapshot: ContentSyncSnapshot,
-    meta: { opId: string; checkOnly: boolean; trigger: ContentDistTrigger },
+    meta: { opId: string; checkOnly: boolean; trigger: ContentDistTrigger; names?: ContentHostNames },
 ): ContentDistRun {
     const targets: ContentDistTargetProgress[] = snapshot.targets.map((t) => ({
         id: t.id,
         label: t.label,
+        ...(meta.names?.get(t.id) ?? {}),
         phase: t.phase as ContentDistPhase,
         ...(t.item ? { item: t.item } : {}),
         fraction: t.fraction,
@@ -782,10 +936,11 @@ function toItem(item: ContentSyncTargetReport['items'][number]): ContentDistItem
     };
 }
 
-function toTargetReport(t: ContentSyncTargetReport): ContentDistTargetReport {
+function toTargetReport(t: ContentSyncTargetReport, names?: ContentHostNames): ContentDistTargetReport {
     return {
         id: t.id,
         label: t.label,
+        ...(names?.get(t.id) ?? {}),
         hostName: t.hostName,
         ...(t.version ? { version: t.version } : {}),
         ...(t.platform ? { platform: t.platform } : {}),
@@ -801,7 +956,7 @@ function toTargetReport(t: ContentSyncTargetReport): ContentDistTargetReport {
 
 export function toContentDistReport(
     report: ContentSyncReport,
-    meta: { checkOnly: boolean; trigger: ContentDistTrigger },
+    meta: { checkOnly: boolean; trigger: ContentDistTrigger; names?: ContentHostNames },
 ): ContentDistReport {
     return {
         startedAt: iso(report.startedAtMs),
@@ -809,7 +964,7 @@ export function toContentDistReport(
         checkOnly: meta.checkOnly,
         cancelled: report.cancelled,
         trigger: meta.trigger,
-        targets: report.targets.map(toTargetReport),
+        targets: report.targets.map((t) => toTargetReport(t, meta.names)),
         totals: { ...report.totals },
     };
 }
@@ -825,7 +980,9 @@ export function contentStatusFor(target: ContentDistTargetReport): ControllerCon
     let missingBytes = 0;
     let failed = 0;
     for (const item of target.items) {
-        if (item.kind === 'playlist') continue;
+        // Setting up a device is not a file: counting the playlist and the
+        // mode as "current" would make a device with nothing on it look ready.
+        if (item.kind === 'playlist' || item.kind === 'mode') continue;
         switch (item.action) {
             case 'skipped':
                 current++;

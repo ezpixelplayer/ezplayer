@@ -4,7 +4,9 @@ import { Sender, SenderJob, SendJob } from '../dataplane/SenderJob';
 import { ControllerSetup, OpenControllerReport } from '../controllers/controllertypes';
 
 import type { ControllersAndModelChannels, ModelParseOptions } from 'xllayoutcalcs';
+import type { ControllerRecordRole } from './XLControllerRecords';
 import {
+    canFollowShowSync,
     ControllerRec,
     controllersAndModelsFromParsed,
     isPlayerOnlyRecord,
@@ -25,9 +27,13 @@ export interface ControllerState {
  * Callers that already hold a parsed `ControllersAndModelChannels` should
  * use `controllersFromParsedXlights` instead to avoid a second parse.
  */
-export async function readControllersFromXlights(showdir: string, options?: ModelParseOptions) {
+export async function readControllersFromXlights(
+    showdir: string,
+    options?: ModelParseOptions,
+    roles?: Record<string, ControllerRecordRole>,
+) {
     const { controllers: xcontrollers, models: osmodels } = await readControllersAndModels(showdir, options);
-    return { controllers: controllerStatesFromRecs(xcontrollers), models: osmodels };
+    return { controllers: controllerStatesFromRecs(applyControllerRoles(xcontrollers, roles)), models: osmodels };
 }
 
 /**
@@ -35,12 +41,35 @@ export async function readControllersFromXlights(showdir: string, options?: Mode
  * `ControllersAndModelChannels` document (the result of xllayoutcalcs'
  * `getControllersAndModelChannels`) — no disk access.
  */
-export function controllersFromParsedXlights(parsed: ControllersAndModelChannels): {
+export function controllersFromParsedXlights(
+    parsed: ControllersAndModelChannels,
+    roles?: Record<string, ControllerRecordRole>,
+): {
     controllers: ControllerState[];
     models: ModelRec[];
 } {
     const { controllers: xcontrollers, models: osmodels } = controllersAndModelsFromParsed(parsed);
-    return { controllers: controllerStatesFromRecs(xcontrollers), models: osmodels };
+    return { controllers: controllerStatesFromRecs(applyControllerRoles(xcontrollers, roles)), models: osmodels };
+}
+
+/**
+ * Give each controller the part EZPlayer's own record asks of it. The record
+ * outranks the layout, which has no word for "remote": the active state is
+ * rewritten so the data send, the sync list and the watch list all read the
+ * same answer, and the role is kept beside it for the one place they differ.
+ * The parsed records are left as they were.
+ */
+export function applyControllerRoles(
+    recs: ControllerRec[],
+    roles: Record<string, ControllerRecordRole> | undefined,
+): ControllerRec[] {
+    if (!roles) return recs;
+    return recs.map((xc) => {
+        const role = roles[xc.name];
+        if (!role) return xc;
+        const activeState = role === 'enabled' ? 'Active' : role === 'disabled' ? 'Inactive' : 'xLights Only';
+        return Object.assign(new ControllerRec(), xc, { role, activeState });
+    });
 }
 
 function controllerStatesFromRecs(xcontrollers: ControllerRec[]): ControllerState[] {
@@ -66,7 +95,13 @@ function controllerStatesFromRecs(xcontrollers: ControllerRec[]): ControllerStat
         if (isPlayerOnlyRecord(xc)) {
             // A player/proxy, not a pixel controller: no outputs to drive, so
             // it is skipped rather than reported as a bad protocol.
-            ctrls.push(makeErrorState(xc, `Skipped ${xc.name} because it is a player, not a controller`, true));
+            ctrls.push(
+                makeErrorState(
+                    xc,
+                    `${xc.name} is a player: it plays its own copy of the show and is not sent pixel data`,
+                    true,
+                ),
+            );
             continue;
         }
         if (xc.protocol !== 'DDP' && xc.protocol !== 'E131') {
@@ -74,7 +109,13 @@ function controllerStatesFromRecs(xcontrollers: ControllerRec[]): ControllerStat
             continue;
         }
         if (xc.activeState !== 'Active') {
-            ctrls.push(makeErrorState(xc, `Skipped controller ${xc.name} because it is ${xc.activeState}`, true));
+            const why =
+                xc.role === 'disabled'
+                    ? 'its record disables it'
+                    : xc.role
+                      ? `its record makes it a ${xc.role}`
+                      : `it is ${xc.activeState}`;
+            ctrls.push(makeErrorState(xc, `Skipped controller ${xc.name} because ${why}`, true));
             continue;
         } else if (xc.type !== 'Ethernet') {
             if (xc.type === 'Null') {
@@ -126,10 +167,16 @@ export function syncRemotesFromXlights(ctrls: ControllerState[]): SyncRemoteTarg
     for (const c of ctrls) {
         const xc = c.xlRecord;
         if (!xc || xc.activeState !== 'xLights Only' || xc.type !== 'Ethernet' || !xc.address) continue;
+        // A player holds its own copy and runs it itself; only a remote follows.
+        if (xc.role === 'player') continue;
         // A remote plays the show's channels on its own; a player/proxy entry
         // carries none and must not be sent sync. maxch is -1 when unknown,
         // so only an explicit zero rules a controller out.
         if (isPlayerOnlyRecord(xc) || xc.maxch === 0) continue;
+        // A family that cannot follow our sync is given content and left to
+        // play it; sending it sync it will never hear would only claim a
+        // remote the show does not have.
+        if (!canFollowShowSync(xc)) continue;
         out.push({ name: xc.name, address: xc.address, ...(xc.fppProxy ? { proxy: xc.fppProxy } : {}) });
     }
     return out;
@@ -177,10 +224,11 @@ export async function openControllerForDataSend(
 ): Promise<SenderJob | undefined> {
     {
         if (!c.setup.usable || !c.setup.proto || !c.xlRecord) {
+            // A skipped controller's summary is its notice, not an error.
             c.report = {
                 name: c.setup.name,
                 status: 'skipped',
-                error: `${c.setup.summary}`,
+                ...(c.setup.skipped ? {} : { error: `${c.setup.summary}` }),
             };
             return undefined;
         }

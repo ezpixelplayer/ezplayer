@@ -13,6 +13,7 @@ import {
     ipInCidr,
     findOffNetworkControllers,
 } from '../src/util/controllerReconcile';
+import { contentRoleOf } from '../src/types/ControllerOps';
 import type {
     KnownController,
     DiscoveredController,
@@ -65,6 +66,18 @@ describe('reconcileControllers', () => {
         );
         expect(rows[0].state).toBe('absent');
         expect(rows[0].device).toBeUndefined();
+    });
+
+    it('carries the layout protocol, which is how a player-only entry is known', () => {
+        // "Player Only" is the protocol xLights writes for a box that plays
+        // its own copy; without it on the row, nothing downstream can tell
+        // that entry from an ordinary xLights-Only remote.
+        const rows = reconcileControllers(
+            [known({ name: 'fpp4-lab', address: '192.168.1.23', protocol: 'Player Only', enableState: 'xlightsOnly' })],
+            [],
+        );
+        expect(rows[0].protocol).toBe('Player Only');
+        expect(contentRoleOf(rows[0])).toBe('player');
     });
 
     it('marks a record with no address absent (unjoinable)', () => {

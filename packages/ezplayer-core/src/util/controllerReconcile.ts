@@ -134,6 +134,7 @@ export function reconcileControllers(known: KnownController[], devices: Discover
             device,
             vendor: k.vendor,
             model: k.model,
+            protocol: k.protocol,
             active: k.active,
             enableState: k.enableState,
             role: k.role,

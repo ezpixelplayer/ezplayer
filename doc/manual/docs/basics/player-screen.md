@@ -122,9 +122,16 @@ clears controller state.
 The Controller Status card summarizes your lighting network:
 
 - **Models** and **Channels** — totals from your show layout
-- **Controllers** — total count (with the number including skipped controllers,
-  when different) and an **Online / Offline** chip: green when all are online,
-  red when any are offline, amber otherwise
+- **Controllers** — how many are in this show, and how many are not in it at
+  all (Inactive in the layout), when there are any. A player or a remote counts
+  as being in the show: it plays from its own copy and follows sync rather than
+  being sent pixels, and it drives its part of the display either way — which
+  is why EZPlayer pings it. A line below the chip says how many of them there
+  are.
+- An **Online / Offline** chip — counted by the same reachability check for
+  every controller in the show, so the three counts (online, offline, and any
+  still waiting for their first ping round) add up to the total. Green when all
+  are online, red when any is offline, amber otherwise
 - **Health banner** — green _All Controllers Online & Healthy_ when all
   controllers are online with no errors, red with the error count when errors
   are detected, grey _No Controllers Assigned_ when no controllers are assigned

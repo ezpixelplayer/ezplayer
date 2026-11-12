@@ -119,6 +119,12 @@ describe('controllers API', () => {
             expect(issued).toEqual([command]);
         });
 
+        it('passes a forced send through, since only the dispatcher can act on it', async () => {
+            const command = { cmd: 'distribute', force: true };
+            expect((await post(command)).status).toBe(200);
+            expect(issued).toEqual([command]);
+        });
+
         it('refuses shapes the dispatcher would then have to guess at', async () => {
             for (const bad of [
                 { cmd: 'distribute', ids: 'fpp-a' },
@@ -126,6 +132,7 @@ describe('controllers API', () => {
                 { cmd: 'distribute', ids: [''] },
                 { cmd: 'distribute', sequences: {} },
                 { cmd: 'distribute', checkOnly: 'yes' },
+                { cmd: 'distribute', force: 'everything' },
             ]) {
                 const res = await post(bad);
                 expect(res.status, JSON.stringify(bad)).toBe(400);

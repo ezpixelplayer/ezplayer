@@ -73,9 +73,8 @@ describe('resolveControllerRole', () => {
 
 describe('activeStateFrom', () => {
     it('keeps a deliberate Disable but drops the default true', () => {
-        // `true` was written into every record as a default, never chosen, so
-        // honouring it would let it outrank the layout -- which is how an
-        // "xLights Only" controller used to come out a player.
+        // `true` is written into every record as a default, never chosen, so
+        // honouring it would let it outrank the layout and un-remote a remote.
         expect(activeStateFrom(false)).toBe('disabled');
         expect(activeStateFrom(true)).toBeUndefined();
     });
@@ -126,7 +125,10 @@ describe('contentRoleOf', () => {
     // files, rather than who is in the show.
     it('keeps an Active controller out, though it resolves as a player', () => {
         const active = { enableState: 'enabled' as const };
-        expect(layoutPlayerMode(active)).toBe('player');
+        // The resolver says a player drives it; the mode the box itself wants
+        // is `show`, because its pixels arrive live over the wire.
+        expect(resolveControllerRole(active).role).toBe('player');
+        expect(layoutPlayerMode(active)).toBe('show');
         // Its pixels arrive live over the wire, so it needs no files at all.
         expect(contentRoleOf(active)).toBe('none');
     });
@@ -134,6 +136,9 @@ describe('contentRoleOf', () => {
     it('counts the show player and the remotes', () => {
         expect(contentRoleOf({ enableState: 'xlightsOnly', protocol: 'Player Only' })).toBe('player');
         expect(contentRoleOf({ enableState: 'xlightsOnly' })).toBe('remote');
+        // A HinksPix cannot follow our sync, so it holds its copy as a player.
+        expect(contentRoleOf({ enableState: 'xlightsOnly', vendor: 'HinksPix' })).toBe('player');
+        expect(resolveControllerRole({ enableState: 'xlightsOnly', vendor: 'HinksPix' }).role).toBe('player');
         expect(contentRoleOf({ role: 'player' })).toBe('player');
         expect(contentRoleOf({ role: 'remote' })).toBe('remote');
     });

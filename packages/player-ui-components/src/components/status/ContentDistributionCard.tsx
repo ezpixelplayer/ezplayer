@@ -9,8 +9,9 @@ import SettingsRounded from '@mui/icons-material/SettingsRounded';
 import SendRounded from '@mui/icons-material/SendRounded';
 import FactCheckRounded from '@mui/icons-material/FactCheckRounded';
 import ListAltRounded from '@mui/icons-material/ListAltRounded';
-import { Button, Card, CardContent, Chip, LinearProgress, Typography, useTheme } from '@mui/material';
-import { useMemo, useState } from 'react';
+import ReplayRounded from '@mui/icons-material/ReplayRounded';
+import { Alert, Button, Card, CardContent, Chip, LinearProgress, Typography, useTheme } from '@mui/material';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 
@@ -20,7 +21,14 @@ import type { AppDispatch, RootState } from '../../store/Store';
 import { Box } from '../box/Box';
 import { CONTENT_SYNC_SETTINGS_SECTION_KEY } from '../playback-settings/sections/ContentSyncSettings';
 import { ContentDistributionDialog } from '../content-dist/ContentDistributionDialog';
-import { autoHoldText, contentDistSummary, contentTargets, formatBytes } from '../content-dist/contentDistHelpers';
+import { ResendEverythingDialog } from '../content-dist/ResendEverythingDialog';
+import {
+    autoHoldText,
+    contentDistSummary,
+    contentTargets,
+    formatBytes,
+    syncOffWarning,
+} from '../content-dist/contentDistHelpers';
 
 const SEVERITY_CHIP: Record<string, { label: string; color: 'success' | 'warning' | 'info' | 'default' }> = {
     ok: { label: 'Up to date', color: 'success' },
@@ -36,7 +44,13 @@ export function ContentDistributionCard() {
     const devices = useSelector((s: RootState) => s.controllerOps.devices);
     const contentDist = useSelector((s: RootState) => s.controllerOps.contentDist);
     const distribution = useSelector((s: RootState) => s.playbackSettings.settings.contentDistribution);
+    const known = useSelector((s: RootState) => s.controllerOps.known);
+    const multisync = useSelector((s: RootState) => s.playbackSettings.settings.sync?.multisync);
     const [detailsOpen, setDetailsOpen] = useState(false);
+    const [resendOpen, setResendOpen] = useState(false);
+    // Stamp of the report on screen when a send was asked for here, so a
+    // nothing-to-do run's empty report can be told from it and shown.
+    const askedFrom = useRef<string | null>(null);
 
     const targets = useMemo(() => contentTargets(devices), [devices]);
     const summary = useMemo(() => contentDistSummary(contentDist, targets), [contentDist, targets]);
@@ -45,8 +59,26 @@ export function ContentDistributionCard() {
     const report = contentDist?.lastReport;
     const hold = autoHoldText(contentDist);
 
-    const distribute = (checkOnly: boolean) =>
-        void dispatch(issueControllerCommand({ cmd: 'distribute', ...(checkOnly ? { checkOnly: true } : {}) }));
+    const distribute = (opts: { checkOnly?: boolean; force?: boolean } = {}) => {
+        askedFrom.current = contentDist?.lastReport?.finishedAt ?? '';
+        void dispatch(
+            issueControllerCommand({
+                cmd: 'distribute',
+                ...(opts.checkOnly ? { checkOnly: true } : {}),
+                ...(opts.force ? { force: true } : {}),
+            }),
+        );
+    };
+
+    useEffect(() => {
+        if (askedFrom.current === null || !report || report.finishedAt === askedFrom.current) return;
+        askedFrom.current = null;
+        if (report.note) setDetailsOpen(true);
+    }, [report]);
+
+    // A remote with sync off holds the show and never plays it; this card is
+    // where its content is reported.
+    const syncOff = syncOffWarning(known, multisync);
 
     const modeLine = (() => {
         switch (distribution?.mode) {
@@ -111,6 +143,12 @@ export function ContentDistributionCard() {
                     {hold ?? modeLine}
                 </Typography>
 
+                {syncOff && (
+                    <Alert severity="warning" sx={{ mt: 1 }}>
+                        {syncOff}
+                    </Alert>
+                )}
+
                 <Box sx={{ display: 'flex', gap: 1, mt: 1.5, flexWrap: 'wrap' }}>
                     <Button
                         size="small"
@@ -125,7 +163,7 @@ export function ContentDistributionCard() {
                         size="small"
                         variant="contained"
                         startIcon={<SendRounded />}
-                        onClick={() => distribute(false)}
+                        onClick={() => distribute()}
                         disabled={!!run || targets.length === 0}
                         sx={{ textTransform: 'none' }}
                     >
@@ -135,11 +173,21 @@ export function ContentDistributionCard() {
                         size="small"
                         variant="outlined"
                         startIcon={<FactCheckRounded />}
-                        onClick={() => distribute(true)}
+                        onClick={() => distribute({ checkOnly: true })}
                         disabled={!!run || targets.length === 0}
                         sx={{ textTransform: 'none' }}
                     >
                         Check
+                    </Button>
+                    <Button
+                        size="small"
+                        variant="outlined"
+                        startIcon={<ReplayRounded />}
+                        onClick={() => setResendOpen(true)}
+                        disabled={!!run || targets.length === 0}
+                        sx={{ textTransform: 'none' }}
+                    >
+                        Send everything again
                     </Button>
                     <Button
                         size="small"
@@ -153,6 +201,12 @@ export function ContentDistributionCard() {
                 </Box>
             </CardContent>
             <ContentDistributionDialog open={detailsOpen} onClose={() => setDetailsOpen(false)} />
+            <ResendEverythingDialog
+                open={resendOpen}
+                deviceCount={targets.length}
+                onClose={() => setResendOpen(false)}
+                onConfirm={() => distribute({ force: true })}
+            />
         </Card>
     );
 }
