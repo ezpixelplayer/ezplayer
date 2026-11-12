@@ -61,7 +61,7 @@ function sendListDriftFor(dev: DiscoveredController, driver: BaseController | un
     if (!rec || contentRoleOf(rec) !== 'player' || !driver?.describeSendListDrift) return undefined;
     return driver.describeSendListDrift(universeOutputIntentsFrom(state.known ?? []));
 }
-import type { ContentSlicing, SliceWorkspace } from './content-dist.js';
+import type { SliceWorkspace } from './content-dist.js';
 import type { CardSetupResult } from './content-dist-cards.js';
 import {
     buildContentPlan,

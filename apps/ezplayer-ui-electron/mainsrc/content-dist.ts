@@ -40,7 +40,6 @@ import type {
     ContentSyncTargetReport,
     ContentSyncTargetSpec,
     FseqIdentity,
-    ResolvedSequence,
 } from '@ezplayer/epp-controllers';
 import {
     FSEQ_COMPRESSION,
@@ -56,7 +55,6 @@ import { FSEQReaderSync, parseChannelRanges, planFseqSlice, sliceFseqFile } from
 import { playableAudioPath } from './data/derived-audio.js';
 import {
     type CardSetupResult,
-    type CardTargetSetup,
     contentFamilyOf,
     resolveCardMedia,
     resolveCardSequence,

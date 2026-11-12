@@ -673,10 +673,6 @@ export function contentRoleOf(k: {
     return 'none';
 }
 
-/** FPP's legacy 'master' is a player that also sends sync; 'bridge' plays
- *  nothing, so it does not satisfy a layout asking for a player. */
-const PLAYER_ROLE_NAMES = new Set(['player', 'master']);
-
 /**
  * Read a device's own word for its mode as one of the three modes we ask for.
  *

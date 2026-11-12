@@ -26,7 +26,7 @@ import type {
     ControllerNetwork,
     EzpControllerRecord,
 } from '../types/ControllerOps';
-import type { ControllerRecordState, PortDriftKind, PortDriftSeverity } from '../types/ControllerOps';
+import type { PortDriftKind, PortDriftSeverity } from '../types/ControllerOps';
 import { activeStateFrom } from '../types/ControllerOps';
 import type { ControllerStatus } from '../types/DataTypes';
 
