@@ -14,7 +14,6 @@ Supported controllers for Content distribution are listed in the [Support Matrix
 There are two ways devices may use the distributed content:
 - **Player**: To play back stand-alone
 - **Remote**: To play in sync with the rest of a larger show
-Two kinds of device hold content, and the difference runs through the rest of this page:
 
 ## What gets sent
 
@@ -37,7 +36,7 @@ A device playing from its own card plays its own audio, which means it needs an 
 - **HinksPix** has built-in audio.
 - **Genius** has no audio hardware at all.
 - **Falcon** controllers may require an audio board.
-- **FPP** capes may include an audio jack, or a USB device may be required
+- **FPP** capes may include an audio jack, or a USB device may be required.
 
 ## Starting a distribution
 
@@ -61,7 +60,7 @@ While a run is in flight, both the card and the dialog show overall progress and
 
 ![A distribution in flight](/img/contentdist-sending.png)
 
-After operations are complete, a report is produced.  The **Details** dialog is opened to show it.
+After operations are complete, a report is produced.  **Details** opens it; when there was nothing to do, the dialog opens by itself to say why.
 
 ## Reading the report
 
@@ -84,7 +83,7 @@ EZPlayer compares the device's file against the current data, and re-sends only 
 
 - `not on device`: The controller doesn't have an existing file.
 - `different sequence id`: The sequence ID is used to tell that it is a different render of the same sequence.
-- `4513 frames on device, 4200 here`: The controller file is incomplete.
+- `4513 frames on device, 4200 here`: The sequence has been re-rendered at a different length.
 - `50ms step on device, 25ms here`: The controller should be reloaded with data at a different frame rate.
 - `max channel 93838 on device, 94342 here`: The models handled by the controller have changed.
 - `6 sparse ranges on device, 1 here`: The models handled by the controller have changed.
@@ -118,7 +117,7 @@ Automatic sends wait for a stopped player.  A large transfer competes with the s
 
 Content files are only half of what a remote needs; the other half is being told when to play them.  That is the **Sync Output** setting on the same page, and it has three options:
 
-- **Automatic** — sync is sent whenever there is anyone to send it to: a controller the layout marks as a remote, or an address listed by explicitly.  This is the default.
+- **Automatic** — sync is sent whenever there is anyone to send it to: a controller the layout marks as a remote, or an address listed explicitly.  This is the default.
 - **On** — always send.
 - **Off** — never send.
 

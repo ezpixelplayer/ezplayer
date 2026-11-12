@@ -55,7 +55,7 @@ This column indicates the extent to which details and actions are supported.
 - 'P': Power
 - 'D': Content Distribution
 
-A controller can only be sent content if it has EZPlayer support and has storage installed.  The controllers below support [Content Distribution](contentdistribution.md):
+A controller can only be sent content if it has EZPlayer support and has storage installed.  The table below shows which controllers support [Content Distribution](contentdistribution.md):
 
 | Driver | Local storage | EZPlayer sends it | Works as Remote | Test Status | As Of |
 | - | - | - | - | - | - |

@@ -18,7 +18,7 @@ The toolbar below it holds the view options on the left ("Show unidentified": wh
 - **Reconfigure all** sends the configuration to all the show's controllers and players.
 - **Reboot all** reboots all responsive players and controllers.
 - **Distribute content** sends needed content to the show's players and remotes.
-- **Content status** opens the content status dialog
+- **Content status** opens the content status dialog.
 
 Below this is a table with records for each network device / controller:
 - Clicking the headers allows sorting of the table
@@ -67,7 +67,7 @@ Several things can require attention:
 
 - **Ports or input config differ from expected** — **Reconfigure** the controller.
 - **The controller is in the wrong mode** — it reports itself as a player or a remote while the show wants it to take live data, or the other way round.  Also fixed by **Reconfigure**.
-- **The player's send list differs ezpected** — only on an FPP player: a controller is missing from the list, switched off in it, or sent the wrong channels or address.  Fixed by **Send output universes**.
+- **The player's send list differs from expected** — only on an FPP player: a controller is missing from the list, switched off in it, or sent the wrong channels or address.  Fixed by **Send output universes**.
 - **Content delivery needed** ![Content delivery needed](/img/ctrlcontent.png) — the device holds its own copy of the show and that copy is not current; see [Content Distribution](contentdistribution.md).
 
 ### Informational Mark
@@ -85,7 +85,7 @@ The availability of details varies by controller vendor, model, and installed fi
 :::
 
 :::note
-Refreshing controller details may be disruptive, and is not done automatically.  Be sure to refresh the controller details for the latest information from your controller.
+Refreshing controller details may be disruptive, so by default it is only done automatically while nothing is playing (see [Player settings](../../settings/player.md#controllers)).  Be sure to refresh the controller details for the latest information from your controller.
 :::
 
 ### Health

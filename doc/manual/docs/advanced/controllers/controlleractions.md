@@ -29,9 +29,9 @@ The actions also provide options for EZPlayer recordkeeping:
 
 ![Edit controller record](/img/ctrledit.png)
 
-The record is EZPlayer's own information about a controller.  This supersedes any information taken from the xLights layout.:
+The record is EZPlayer's own information about a controller.  This supersedes any information taken from the xLights layout:
 
-- **Part in the show**: enabled, disabled, player or remote, or left to the layout.  See [Player / Remote / xLights Only](controllerlist.md#player--remote--xlights-only).
+- **Part in the show**: enabled, disabled, player or remote, or left to the layout.  See [Enabled / Disabled / Player / Remote / xLights Only](controllerlist.md#enabled--disabled--player--remote--xlights-only).
 - **Presume up**: for controllers that are "up" but do not answer pings.
 - **IP / hostname**: where to reach the controller.
 - **Vendor / Model / Variant**: the identity used to look up the controller's capabilities.

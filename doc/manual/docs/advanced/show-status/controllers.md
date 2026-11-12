@@ -18,7 +18,7 @@ At the top of the card you see:
 
 - **Models** and **Channels** — totals from your show layout.
 - **Controllers in this show** — how many controllers, players, and remotes
-  EZPlayer knows about.
+  are in the show.
 - A **health chip** — for example _All controllers online_, _No controllers
   online_, or _N controller(s) offline_.
 
