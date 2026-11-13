@@ -73,9 +73,10 @@ import {
 
 import os from 'os';
 
-// Linux: Ubuntu 24.04+ AppArmor blocks unprivileged user namespaces; older distros lack SUID sandbox helper.
+// Linux: --no-sandbox only works on the real command line (AppRun, the .desktop
+// files, the Pi service). Appended here, after the zygote has started sandboxed,
+// it makes every renderer crash creating shared memory.
 if (process.platform === 'linux') {
-    app.commandLine.appendSwitch('no-sandbox');
     if (isHeadless()) {
         // --ozone-platform=headless must be on the real command line (the
         // native layer consumes it before this code runs); see cli.md.
