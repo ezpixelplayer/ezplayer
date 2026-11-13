@@ -799,6 +799,15 @@ export interface KnownController {
     maxFps?: number;
     /** Our record's max-FPS override, when set; wins over `maxFps`. */
     fpsOverride?: number;
+    /**
+     * This computer's address the layout sends this controller's data from:
+     * xLights' Force Local IP on the controller, or the Controllers tab's
+     * Global Force Local IP. The sender binds to it, so one this computer no
+     * longer has would send nothing.
+     */
+    forceLocalIP?: string;
+    /** Our record's send-from address, when set; wins over `forceLocalIP`. */
+    forceLocalIPOverride?: string;
     /** Provenance of the record. */
     source: 'xlights' | 'ezp' | 'both';
 }
@@ -807,6 +816,12 @@ export interface KnownController {
  *  else the xLights declaration, else none. */
 export function effectiveMaxFps(k: { maxFps?: number; fpsOverride?: number }): number | undefined {
     return k.fpsOverride ?? k.maxFps;
+}
+
+/** The address a known controller's data is sent from: the record override,
+ *  else the xLights declaration, else none (the route picks the interface). */
+export function effectiveForceLocalIP(k: { forceLocalIP?: string; forceLocalIPOverride?: string }): string | undefined {
+    return k.forceLocalIPOverride ?? k.forceLocalIP;
 }
 
 /** xLights intent for one serial (DMX / Renard / Pixelnet / …) output port. */
@@ -997,6 +1012,8 @@ export interface EzpControllerRecord {
     own?: boolean;
     /** Max-FPS override (supersedes the xLights description). */
     fpsOverride?: number;
+    /** This computer's address to send from (supersedes the xLights Force Local IP). */
+    forceLocalIP?: string;
     notes?: string;
 }
 
@@ -1059,14 +1076,19 @@ export interface ControllerGridRow {
     /** Frame-rate cap: xLights declaration and our override (see KnownController). */
     maxFps?: number;
     fpsOverride?: number;
+    /** Send-from address: xLights declaration and our override (see KnownController). */
+    forceLocalIP?: string;
+    forceLocalIPOverride?: string;
     /** Live health overlaid from the playback pipeline, joined by address/name. */
     health?: ControllerHealth;
 }
 
 /**
- * A controller's data sender as it sees itself.  `skipped` counts frames the
- * sender dropped (suspended, or not connected); `errors` counts sends the OS
- * refused.  Cumulative since the show's output was opened.
+ * A controller's data sender as it sees itself.  Counts are UDP packets, not
+ * frames: a frame takes several per controller, plus the push or sync packet.
+ * `skipped` counts packets the sender dropped (suspended, or not connected);
+ * `errors` counts sends the OS refused.  Cumulative since the show's output
+ * was opened.
  */
 export interface ControllerSenderStats {
     connected: boolean;
@@ -1109,6 +1131,10 @@ export interface ControllerPortIntent {
     modelLabels?: string[];
     /** Pixels expected ON THIS PORT (landing strings only, not whole-model totals). */
     pixels: number;
+    /** Channels those pixels take, when known. A one-channel node is a pixel to
+     *  the layout and a third of one to a controller, so a count in channels is
+     *  what the two sides can agree on. */
+    channels?: number;
     /** Pixel protocol declared for the port, when present. */
     protocol?: string;
     /** Absolute 1-based start channel of the port's first string. */
@@ -1190,11 +1216,14 @@ export interface PortReconcile {
     /** Display labels parallel to `intendedModels`. */
     intendedModelLabels?: string[];
     intendedPixels?: number;
+    intendedChannels?: number;
     /** Joined device model string — back-compat display value. */
     actualModel?: string;
     /** Per-model device names, when the device reports any. */
     actualModels?: string[];
     actualPixels?: number;
+    /** Channels the device port covers, when it says. */
+    actualChannels?: number;
     /** Model-set comparison (case-insensitive match, case-preserving values).
      *  Absent when the device reports no model names at all. */
     missingModels?: string[];

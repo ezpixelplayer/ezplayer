@@ -2,6 +2,9 @@ export interface OpenControllerReport {
     name: string;
     status: 'open' | 'skipped' | 'error';
     error?: string;
+    /** Worth telling the operator about an open sender, such as a forced
+     *  local address it could not use. */
+    notice?: string;
 }
 export interface ControllerSetup {
     skipped: boolean;

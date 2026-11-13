@@ -191,6 +191,11 @@ export interface OpenControllersOptions {
      * [MFT:ms] tag; a value <= 0 means "no cap".
      */
     fpsOverrides?: Record<string, number>;
+    /**
+     * This computer's address to send from, keyed by controller name (the
+     * record's forceLocalIP). Wins over the xLights Force Local IP.
+     */
+    forceLocalIPs?: Record<string, string>;
 }
 
 /** Min ms between frames for a controller: record override, else the
@@ -199,6 +204,42 @@ function minFrameTimeFor(xc: ControllerRec, opts?: OpenControllersOptions): numb
     const fps = opts?.fpsOverrides?.[xc.name];
     if (fps !== undefined && fps > 0) return Math.round(1000 / fps);
     return xc.desc?.minFrameTime ?? 0;
+}
+
+/** The local address to send from: record override, else the xLights Force
+ *  Local IP, else none (the route picks the interface). */
+function forceLocalIPFor(xc: ControllerRec, opts?: OpenControllersOptions): string | undefined {
+    return opts?.forceLocalIPs?.[xc.name] || xc.forceLocalIP || undefined;
+}
+
+/** Whether a connect failed at binding the local address, which means this
+ *  computer does not have it (or has it no longer). */
+function isBindFailure(e: unknown): boolean {
+    const err = e as NodeJS.ErrnoException | undefined;
+    return err?.code === 'EADDRNOTAVAIL' || /^bind\b/.test(err?.message ?? '');
+}
+
+/**
+ * Connect a sender from the forced local address. When that address cannot be
+ * bound, connect again from whatever interface the route picks, which is what
+ * xLights does with a Force Local IP the computer does not have (it keeps the
+ * setting but ignores it). Returns the notice to report when that happened.
+ */
+async function connectFromLocalAddress(
+    sender: { localAddress?: string; client?: unknown; connect(): Promise<void> },
+    forced: string | undefined,
+): Promise<string | undefined> {
+    sender.localAddress = forced;
+    try {
+        await sender.connect();
+        return undefined;
+    } catch (e) {
+        if (!forced || !isBindFailure(e)) throw e;
+    }
+    sender.client = undefined;
+    sender.localAddress = undefined;
+    await sender.connect();
+    return `Force Local IP ${forced} is not assigned to any network interface on this computer; sending from the default interface instead.`;
 }
 
 export async function openControllersForDataSend(ctrls: ControllerState[], opts?: OpenControllersOptions) {
@@ -249,12 +290,12 @@ export async function openControllerForDataSend(
             if (xc.channelsPerPacket && xc.channelsPerPacket > 0) {
                 dsender.channelsPerPacket = Math.min(xc.channelsPerPacket, DDP_MAX_PAYLOAD);
             }
-            dsender.localAddress = xc.forceLocalIP;
             dsender.minTimeBetweenFrames = minFrameTimeFor(xc, opts);
             dsender.sendBufSize = Math.max(256_000, c.setup.nCh * 2);
 
+            let notice: string | undefined;
             try {
-                await dsender.connect();
+                notice = await connectFromLocalAddress(dsender, forceLocalIPFor(xc, opts));
             } catch (e) {
                 const err = e as Error;
                 c.report = {
@@ -271,6 +312,7 @@ export async function openControllerForDataSend(
                 name: xc.name,
                 status: 'open',
                 error: '',
+                notice,
             };
             dsender.controller = c;
             c.sender = dsender;
@@ -278,13 +320,13 @@ export async function openControllerForDataSend(
         } else if (c.setup.proto === 'E131') {
             const esender = new E131Sender();
             esender.address = c.setup.address;
-            esender.localAddress = xc.forceLocalIP;
             esender.sendBufSize = Math.max(256_000, c.setup.nCh * 2);
             esender.pushAtEnd = false; // TODO try variety
             esender.universes = e131Universes(xc.universeNumbers, xc.universeSizes);
             esender.minTimeBetweenFrames = minFrameTimeFor(xc, opts);
+            let notice: string | undefined;
             try {
-                await esender.connect();
+                notice = await connectFromLocalAddress(esender, forceLocalIPFor(xc, opts));
             } catch (e) {
                 const err = e as Error;
                 c.report = {
@@ -301,6 +343,7 @@ export async function openControllerForDataSend(
                 name: xc.name,
                 status: 'open',
                 error: '',
+                notice,
             };
             esender.controller = c;
             c.sender = esender;

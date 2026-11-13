@@ -192,6 +192,7 @@ function parseRecord(data: unknown): EzpControllerRecord | null {
     if (typeof o.model === 'string') r.model = o.model;
     if (typeof o.variant === 'string') r.variant = o.variant;
     if (typeof o.fpsOverride === 'number') r.fpsOverride = o.fpsOverride;
+    if (typeof o.forceLocalIP === 'string' && o.forceLocalIP.trim()) r.forceLocalIP = o.forceLocalIP.trim();
     if (typeof o.notes === 'string') r.notes = o.notes;
     return r;
 }
@@ -770,13 +771,21 @@ async function runRecord(command: Extract<ControllerCommand, { cmd: 'record' }>)
     const existing = records.find((r) => r.name === name);
     const merged: EzpControllerRecord = { ...(existing ?? { name }), ...patch, name };
     // A patch is a merge, so "clear the override" arrives as an explicit 0
+    // (or an empty address).
     if (merged.fpsOverride !== undefined && !(merged.fpsOverride > 0)) delete merged.fpsOverride;
+    if (merged.forceLocalIP !== undefined) {
+        const addr = merged.forceLocalIP.trim();
+        if (addr) merged.forceLocalIP = addr;
+        else delete merged.forceLocalIP;
+    }
 
     const dir = recordsDir(recordsShowFolder);
     await fsp.mkdir(dir, { recursive: true });
     await fsp.writeFile(recordFile(recordsShowFolder, name), JSON.stringify(merged, null, 2), 'utf-8');
 
-    if (existing) Object.assign(existing, merged);
+    // Replace, not assign over: a cleared override is a key that is gone.
+    const at = records.findIndex((r) => r.name === name);
+    if (at >= 0) records[at] = merged;
     else records.push(merged);
     deriveKnown();
     refreshModeDrift();

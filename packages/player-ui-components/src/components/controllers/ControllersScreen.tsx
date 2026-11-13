@@ -71,6 +71,7 @@ import { useFrameServerUrl } from '../../hooks/useFrameServerUrl';
 import {
     reconcileControllers,
     reconcilePorts,
+    nodeCountLabel,
     reconcileSerialPorts,
     reconcilePanelMatrices,
     reconcileVirtualMatrices,
@@ -83,6 +84,7 @@ import {
     overlayHealth,
     findOffNetworkControllers,
     effectiveMaxFps,
+    effectiveForceLocalIP,
     isPlaybackActive,
     isPlayerOnlyRecord,
     needsContentDelivery,
@@ -470,7 +472,7 @@ const PortReconcileTable: React.FC<{ rows: PortReconcile[] }> = ({ rows }) => (
                                     flagTitle="not on controller"
                                 />
                                 <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                                    {r.intendedPixels ?? 0} px
+                                    {nodeCountLabel(r.intendedPixels ?? 0, r.intendedChannels)}
                                     {r.drift === 'start' && ` @ ch ${r.intendedStart}`}
                                 </Typography>
                             </>
@@ -489,7 +491,7 @@ const PortReconcileTable: React.FC<{ rows: PortReconcile[] }> = ({ rows }) => (
                                     />
                                 )}
                                 <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                                    {r.actualPixels} px
+                                    {nodeCountLabel(r.actualPixels, r.actualChannels)}
                                     {r.drift === 'start' && ` @ ch ${r.actualStart}`}
                                 </Typography>
                             </>
@@ -748,6 +750,8 @@ const GridRow: React.FC<{
     failedOp?: ControllerOp;
     onDismiss: (opId: string) => void;
     serverBase: string | undefined;
+    /** This computer's own addresses, to judge a forced send-from address against. */
+    hostAddresses: string[];
     onStatus: (id: string, address?: string) => void;
     onDistribute: (id: string, checkOnly: boolean) => void;
     onAction: (id: string, action: ControllerDeviceAction) => void;
@@ -765,6 +769,7 @@ const GridRow: React.FC<{
     failedOp,
     onDismiss,
     serverBase,
+    hostAddresses,
     onStatus,
     onDistribute,
     onAction,
@@ -839,7 +844,20 @@ const GridRow: React.FC<{
         health &&
         (health.pingSummary || health.errors?.length || health.notices?.length || health.status || health.senderStats)
     );
-    const expandable = hasDetail || hasPortData || hasInputData || hasHealthDetail;
+    // The address the show's data leaves this computer from, when the layout or
+    // our record forces one. One this computer does not have is ignored, as
+    // xLights ignores it: the show goes out the default interface. Worth a
+    // word, since the setting is still there, but it asks nothing of anyone.
+    const sendFrom = known ? effectiveForceLocalIP(row) : undefined;
+    const sendFromMissing = !!sendFrom && hostAddresses.length > 0 && !hostAddresses.includes(sendFrom);
+    const sendFromSetting =
+        row.forceLocalIPOverride !== undefined
+            ? 'It is set on this player’s record.'
+            : 'It is the controller’s Force Local IP in xLights (or the Controllers tab’s Global Force Local IP).';
+    const sendFromNote = sendFromMissing
+        ? `Force Local IP ${sendFrom} is not assigned to any network interface on this computer; the show is sent from the default interface instead, as xLights would. ${sendFromSetting}`
+        : `Sends from ${sendFrom}. ${sendFromSetting}`;
+    const expandable = hasDetail || hasPortData || hasInputData || hasHealthDetail || !!sendFrom;
     // Fall back to the record's address so an unscanned row still gets Open.
     const url = (d ? controllerUrl(d, serverBase) : undefined) ?? addressUrl(row.address ?? '', serverBase);
     const canReboot = !!d?.driverType && d.driverType !== 'EZPlayer';
@@ -1139,6 +1157,17 @@ const GridRow: React.FC<{
                             <SyncProblemIcon color="warning" fontSize="small" />
                         </IconButton>
                     )}
+                    {/* A forced send-from address this computer does not have.
+                        Informational: it is ignored, as xLights ignores it. */}
+                    {sendFromMissing && (
+                        <MuiBox
+                            component="span"
+                            title={sendFromNote}
+                            sx={{ display: 'inline-flex', ml: 0.25, verticalAlign: 'middle' }}
+                        >
+                            <InfoOutlinedIcon color="disabled" fontSize="small" />
+                        </MuiBox>
+                    )}
                     {/* Content is a separate axis from configuration drift: a device
                         can be configured correctly and still be missing the show,
                         so this badge stands outside the status slot above. */}
@@ -1261,6 +1290,14 @@ const GridRow: React.FC<{
                     <TableCell colSpan={8} sx={{ p: 0, border: 0 }}>
                         <Collapse in={open} timeout="auto" unmountOnExit>
                             <Box sx={{ p: 2, pl: 6, borderBottom: '1px solid', borderColor: 'divider' }}>
+                                {sendFrom && (
+                                    <Typography
+                                        variant="body2"
+                                        sx={{ mb: hasHealthDetail ? 1 : 2, color: 'text.secondary' }}
+                                    >
+                                        {sendFromNote}
+                                    </Typography>
+                                )}
                                 {hasHealthDetail && health && (
                                     <Box sx={{ mb: 2 }}>
                                         <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
@@ -1280,7 +1317,7 @@ const GridRow: React.FC<{
                                             <Typography variant="body2" sx={{ color: 'text.secondary' }}>
                                                 {[
                                                     `sender ${health.senderStats.connected ? 'connected' : 'closed'}`,
-                                                    `${health.senderStats.sent.toLocaleString()} frames sent`,
+                                                    `${health.senderStats.sent.toLocaleString()} packets sent`,
                                                     health.senderStats.skipped > 0 &&
                                                         `${health.senderStats.skipped.toLocaleString()} skipped`,
                                                     health.senderStats.errors > 0 &&
@@ -1632,6 +1669,12 @@ const RecordDialog: React.FC<{
     /** The record's own role, or undefined when it defers to the layout. */
     initialRole?: ControllerActiveState;
     initialPresumeUp?: boolean;
+    /** The record's send-from address, if any. */
+    initialForceLocalIP?: string;
+    /** xLights' Force Local IP, the fallback when the record says nothing. */
+    xlightsForceLocalIP?: string;
+    /** This computer's addresses, offered as choices. */
+    hostAddresses?: string[];
     onClose: () => void;
     onSubmit: (name: string, patch: EzpControllerRecordPatch) => void;
 }> = ({
@@ -1645,6 +1688,9 @@ const RecordDialog: React.FC<{
     xlightsMaxFps,
     initialRole,
     initialPresumeUp,
+    initialForceLocalIP,
+    xlightsForceLocalIP,
+    hostAddresses,
     onClose,
     onSubmit,
 }) => {
@@ -1658,10 +1704,12 @@ const RecordDialog: React.FC<{
     // Enabled and must stay distinguishable from it.
     const [role, setRole] = useState<ControllerActiveState | ''>(initialRole ?? '');
     const [presumeUp, setPresumeUp] = useState(!!initialPresumeUp);
+    const [sendFrom, setSendFrom] = useState(initialForceLocalIP ?? '');
     const nameLocked = mode === 'edit';
     const fpsNum = fps.trim() === '' ? undefined : Number(fps);
     const fpsValid = fpsNum === undefined || (Number.isFinite(fpsNum) && fpsNum > 0 && fpsNum <= 1000);
-    const canSave = name.trim().length > 0 && fpsValid;
+    const sendFromValid = sendFrom.trim() === '' || /^\d{1,3}(\.\d{1,3}){3}$/.test(sendFrom.trim());
+    const canSave = name.trim().length > 0 && fpsValid && sendFromValid;
     const submit = () => {
         const patch: EzpControllerRecordPatch = { address: address.trim() || undefined };
         patch.vendor = vendor.trim() || undefined;
@@ -1670,6 +1718,7 @@ const RecordDialog: React.FC<{
         // A record patch is merged, so an absent key keeps the old value; 0
         // is the explicit "no override" (the store drops it).
         patch.fpsOverride = fpsNum ?? 0;
+        patch.forceLocalIP = sendFrom.trim();
         patch.active = role === '' ? undefined : role;
         patch.presumeUp = presumeUp;
         onSubmit(name.trim(), patch);
@@ -1768,6 +1817,27 @@ const RecordDialog: React.FC<{
                                   : 'Caps the frame rate sent to this controller. Blank means no cap (the show rate).'
                         }
                     />
+                    <TextField
+                        label="Send from (this computer’s address)"
+                        value={sendFrom}
+                        onChange={(e) => setSendFrom(e.target.value)}
+                        size="small"
+                        error={!sendFromValid}
+                        placeholder={xlightsForceLocalIP ?? 'the route decides'}
+                        inputProps={{ list: 'ezp-host-addresses' }}
+                        helperText={
+                            !sendFromValid
+                                ? 'Enter one of this computer’s IPv4 addresses, or leave blank.'
+                                : xlightsForceLocalIP
+                                  ? `The interface this controller’s data leaves from. Blank keeps xLights’ Force Local IP, ${xlightsForceLocalIP}.`
+                                  : 'The interface this controller’s data leaves from. Blank lets the route to the controller decide.'
+                        }
+                    />
+                    <datalist id="ezp-host-addresses">
+                        {(hostAddresses ?? []).map((a) => (
+                            <option key={a} value={a} />
+                        ))}
+                    </datalist>
                 </Stack>
             </DialogContent>
             <DialogActions>
@@ -1823,6 +1893,8 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
         maxFps?: number;
         role?: ControllerActiveState;
         presumeUp?: boolean;
+        forceLocalIP?: string;
+        xlightsForceLocalIP?: string;
     } | null>(null);
 
     const policyFor = (cidr: string) => (networkPolicies ?? []).find((p) => p.cidr === cidr);
@@ -1895,6 +1967,7 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
     // Enabled-but-unreachable controllers on networks this player has no interface on.
     const offNetwork = findOffNetworkControllers(rows, interfaces);
     const hostNetworkList = interfaces.map((i) => i.network).join(', ');
+    const hostAddresses = interfaces.map((i) => i.address);
     const sortVal = (r: ControllerGridRow): string | number => {
         switch (sortKey) {
             case 'state':
@@ -2122,6 +2195,8 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
             maxFps: row.maxFps,
             role: row.role,
             presumeUp: row.presumeUp,
+            forceLocalIP: row.forceLocalIPOverride,
+            xlightsForceLocalIP: row.forceLocalIP,
         });
     const openPromote = (row: ControllerGridRow) =>
         setDialog({ mode: 'promote', name: row.device?.hostname ?? '', address: row.device?.ip ?? '' });
@@ -2368,6 +2443,7 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
                                             failedOp={failedByTarget.get(rowTarget(row))}
                                             onDismiss={dismissError}
                                             serverBase={serverBase}
+                                            hostAddresses={hostAddresses}
                                             onStatus={loadDetail}
                                             onDistribute={(id, checkOnly) => distribute([id], checkOnly)}
                                             onAction={runDeviceAction}
@@ -2529,6 +2605,9 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
                     xlightsMaxFps={dialog.maxFps}
                     initialRole={dialog.role}
                     initialPresumeUp={dialog.presumeUp}
+                    initialForceLocalIP={dialog.forceLocalIP}
+                    xlightsForceLocalIP={dialog.xlightsForceLocalIP}
+                    hostAddresses={hostAddresses}
                     onClose={() => setDialog(null)}
                     onSubmit={submitDialog}
                 />
