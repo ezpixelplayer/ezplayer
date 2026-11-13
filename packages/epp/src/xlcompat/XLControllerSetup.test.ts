@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DDPSender } from '../dataplane/protocols/DDP';
+import { E131Sender } from '../dataplane/protocols/E131';
 import {
     ControllerState,
     applyControllerRoles,
@@ -30,6 +31,48 @@ async function openDdp(channelsPerPacket?: number) {
     await sender.client?.disconnect();
     return sender.channelsPerPacket;
 }
+
+async function openE131(forceLocalIP?: string) {
+    const xlRecord = new ControllerRec();
+    xlRecord.name = 'C';
+    xlRecord.forceLocalIP = forceLocalIP;
+    xlRecord.universeNumbers = [1];
+    xlRecord.universeSizes = [150];
+    const c: ControllerState = {
+        setup: {
+            usable: true,
+            skipped: false,
+            summary: '',
+            name: 'C',
+            address: '127.0.0.1',
+            startCh: 1,
+            nCh: 150,
+            proto: 'E131',
+        },
+        xlRecord,
+    };
+    await openControllerForDataSend(c);
+    const sender = c.sender as E131Sender;
+    await sender.client?.disconnect();
+    return { report: c.report, localAddress: sender.localAddress };
+}
+
+describe('the address a controller is sent from', () => {
+    it('is the forced local address when this computer has it', async () => {
+        const { report, localAddress } = await openE131('127.0.0.1');
+        expect(report?.status).toBe('open');
+        expect(report?.notice).toBeUndefined();
+        expect(localAddress).toBe('127.0.0.1');
+    });
+
+    it('falls back to the default interface when the forced address is not on this computer', async () => {
+        // TEST-NET-3: never an address of the machine running this.
+        const { report, localAddress } = await openE131('203.0.113.9');
+        expect(report?.status).toBe('open');
+        expect(report?.notice).toMatch(/203\.0\.113\.9 is not assigned to any network interface/);
+        expect(localAddress).toBeUndefined();
+    });
+});
 
 describe('DDP Channels Per Packet', () => {
     it('uses the size from xLights', async () => {

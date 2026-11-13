@@ -163,6 +163,14 @@ export class UdpClient {
         } catch (e) {
             const error = e as Error;
             this.lastError = error.message;
+            // A socket that failed to bind or connect is dead; drop it so a
+            // retry does not leave it behind.
+            try {
+                this.socket?.close();
+            } catch {
+                // already closed
+            }
+            this.socket = undefined;
             throw error;
         } finally {
             this._connAttemptInProgress = false;

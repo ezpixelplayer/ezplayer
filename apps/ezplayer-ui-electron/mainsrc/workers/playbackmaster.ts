@@ -43,6 +43,7 @@ import type {
 } from '@ezplayer/ezplayer-core';
 import {
     AudioChunkRingBuffer,
+    dropUnusedTrailingOutputs,
     getActiveViewerControlSchedule,
     getScheduleTimes,
     getSeqTimesMS,
@@ -465,7 +466,8 @@ function pingTargetFor(address: string, proxy?: string): PingTarget {
 }
 
 /** The options the show's data senders were opened with, for a later retry. */
-let openForDataSendOpts: { ddpPort?: number; fpsOverrides?: Record<string, number> } | undefined;
+let openForDataSendOpts:
+    { ddpPort?: number; fpsOverrides?: Record<string, number>; forceLocalIPs?: Record<string, string> } | undefined;
 /** The job the playback loop is sending, so a late sender can join it. */
 let activeSendJob: { senders: SenderJob[] } | undefined;
 const lastSenderOpen = new Map<string, number>();
@@ -623,7 +625,7 @@ function sendControllerStateUpdate() {
             address: c.setup.address,
             state: c.xlRecord?.activeState,
             status: c.setup.skipped ? 'skipped' : c.setup.usable ? c.report?.status : 'unusable',
-            notices: c.setup.summary ? [c.setup.summary] : [],
+            notices: [c.setup.summary, c.report?.notice].filter((n): n is string => !!n),
             errors: c.report?.error ? [c.report!.error!] : [],
             connectivity,
             reachedVia: pstat?.via,
@@ -2305,6 +2307,7 @@ function xlControllerToKnown(
         monitor: c.monitor,
         priority: c.priority,
         suppressDuplicates: c.suppressDuplicates,
+        forceLocalIP: c.forceLocalIP || undefined,
         startChannel: c.startChannel,
         channelCount: c.maxChannels,
         ports: ports && ports.length ? ports : undefined,
@@ -2312,7 +2315,12 @@ function xlControllerToKnown(
         serialPorts: serialPorts && serialPorts.length ? serialPorts : undefined,
         panelMatrices: panelMatrices && panelMatrices.length ? panelMatrices : undefined,
         virtualMatrices: virtualMatrices && virtualMatrices.length ? virtualMatrices : undefined,
-        outputs: xlControllerOutputs(c),
+        outputs: dropUnusedTrailingOutputs(xlControllerOutputs(c), [
+            ...(modelIntents ?? []),
+            ...(serialPorts ?? []),
+            ...(panelMatrices ?? []),
+            ...(virtualMatrices ?? []),
+        ]),
         maxFps,
         source: 'xlights',
     };
@@ -2756,8 +2764,9 @@ async function processQueue() {
         }
 
         // What our own records in the show folder add to the layout: frame-rate
-        // overrides, and the part a controller plays, which xLights cannot say.
-        const { fpsOverrides, roles } = await readControllerRecordOverrides(showFolder!);
+        // overrides, the address to send from, and the part a controller plays,
+        // which xLights cannot say.
+        const { fpsOverrides, roles, forceLocalIPs } = await readControllerRecordOverrides(showFolder!);
         // Fall back to a disk read only when no parsed doc is available.
         const { controllers, models } = parsedControllerDoc
             ? controllersFromParsedXlights(parsedControllerDoc, roles)
@@ -2775,6 +2784,7 @@ async function processQueue() {
         openForDataSendOpts = {
             ddpPort: latestSettings?.advanced?.ddpPort,
             fpsOverrides,
+            forceLocalIPs,
         };
         const sendJob = await openControllersForDataSend(controllers, openForDataSendOpts);
         showSyncRemotes = syncRemotesFromXlights(controllers);
@@ -2837,7 +2847,7 @@ async function processQueue() {
             emitInfo(
                 `Setup: ${cs.usable ? 'Usable' : 'Unusable'} ${cs.name} - ${cs.address} - ${cs?.proto} - ${cs?.nCh}@${cs?.startCh}; ${c.sender?.minFrameTime()} ms frame time`,
             );
-            emitInfo(`Status: ${r?.name}: ${r?.status}(${r?.error})`);
+            emitInfo(`Status: ${r?.name}: ${r?.status}(${r?.error})${r?.notice ? ` ${r.notice}` : ''}`);
             emitInfo('');
         }
         // Start with the channel ceiling implied by the configured DMX controllers.
