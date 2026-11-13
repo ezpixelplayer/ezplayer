@@ -40,6 +40,14 @@ export class UdpClient {
     readonly sendBufSize?: number;
     /** Local NIC address to bind before connecting (xLights ForceLocalIP). */
     readonly localAddress?: string;
+    /** Each packet names its own destination (multicast groups); the socket is
+     *  bound, not connected, and `address` is only a label. */
+    readonly destinationPerPacket: boolean;
+    /** Local port to try first (Art-Net wants packets to come from its own
+     *  port); an ephemeral one serves when it is taken. */
+    readonly preferredLocalPort?: number;
+    /** The port packets leave from, once connected. */
+    localPort?: number;
 
     private socket: dgram.Socket | undefined;
     private _isConnected = false;
@@ -74,12 +82,52 @@ export class UdpClient {
         };
     }
 
-    constructor(type: 'udp4' | 'udp6', address: string, port: number, sendBufSize?: number, localAddress?: string) {
+    constructor(
+        type: 'udp4' | 'udp6',
+        address: string,
+        port: number,
+        sendBufSize?: number,
+        localAddress?: string,
+        opts: { destinationPerPacket?: boolean; preferredLocalPort?: number } = {},
+    ) {
         this.type = type;
         this.address = address;
         this.sendBufSize = sendBufSize;
         this.port = port;
         this.localAddress = localAddress;
+        this.destinationPerPacket = !!opts.destinationPerPacket;
+        this.preferredLocalPort = opts.preferredLocalPort;
+    }
+
+    private openSocket(): dgram.Socket {
+        this.socket = dgram.createSocket(this.type);
+        // Connected sockets report port-unreachable (controller off or not
+        // listening) as 'error'; record it rather than throw. Errors while
+        // connecting are reported by connect() itself.
+        this.socket.on('error', (err) => {
+            if (this._connAttemptInProgress) return;
+            ++this.nErrors;
+            this.lastError = err.message;
+        });
+        return this.socket;
+    }
+
+    /** Binds the socket; must complete ('listening') before connect(). */
+    private bindSocket(port?: number): Promise<void> {
+        return new Promise<void>((resolve, reject) => {
+            const onError = (err: Error) => {
+                this.socket?.off('listening', onListening);
+                this.lastError = err.message;
+                reject(err);
+            };
+            const onListening = () => {
+                this.socket?.off('error', onError);
+                resolve();
+            };
+            this.socket?.once('error', onError);
+            this.socket?.once('listening', onListening);
+            this.socket?.bind({ address: this.localAddress, port });
+        });
     }
 
     isConnected() {
@@ -101,53 +149,56 @@ export class UdpClient {
         if (this._isConnected) return;
         try {
             this._connAttemptInProgress = true;
-            this.socket = dgram.createSocket(this.type);
-            // Connected sockets report port-unreachable (controller off or not
-            // listening) as 'error'; record it rather than throw.
-            this.socket.on('error', (err) => {
-                ++this.nErrors;
-                this.lastError = err.message;
-            });
+            let socket = this.openSocket();
 
-            // Bind to a specific local NIC first when requested (ForceLocalIP).
-            // Must complete ('listening') before connect() is issued.
-            if (this.localAddress) {
+            // Bind first to a specific local NIC (ForceLocalIP) or port. A
+            // per-packet-destination socket binds too, since its multicast
+            // options need a live handle.
+            if (this.preferredLocalPort) {
+                try {
+                    await this.bindSocket(this.preferredLocalPort);
+                } catch {
+                    // Another program holds it; few receivers check the source
+                    // port, so carry on from an ephemeral one.
+                    this.lastError = undefined;
+                    socket.close();
+                    socket = this.openSocket();
+                    if (this.localAddress || this.destinationPerPacket) await this.bindSocket();
+                }
+            } else if (this.localAddress || this.destinationPerPacket) {
+                await this.bindSocket();
+            }
+
+            if (this.destinationPerPacket) {
+                // Multicast stays on this LAN, and leaves by the forced NIC when
+                // there is one.
+                socket.setMulticastTTL(1);
+                if (this.localAddress) socket.setMulticastInterface(this.localAddress);
+                this._isConnected = true;
+                this.lastError = undefined;
+            } else {
                 await new Promise<void>((resolve, reject) => {
                     const onError = (err: Error) => {
-                        this.socket?.off('listening', onListening);
+                        this.socket?.off('connect', onConnect); // Cleanup listeners
                         this.lastError = err.message;
                         reject(err);
                     };
-                    const onListening = () => {
-                        this.socket?.off('error', onError);
+
+                    const onConnect = () => {
+                        this.socket?.off('error', onError); // Cleanup listeners
+                        this._isConnected = true;
+                        this.lastError = undefined;
+                        this._connAttemptInProgress = false;
                         resolve();
                     };
-                    this.socket?.once('error', onError);
-                    this.socket?.once('listening', onListening);
-                    this.socket?.bind({ address: this.localAddress });
+
+                    this.socket?.once('error', onError); // Handle errors
+                    this.socket?.once('connect', onConnect); // Handle successful connection
+
+                    this.socket?.connect(this.port, this.address);
                 });
             }
-
-            await new Promise<void>((resolve, reject) => {
-                const onError = (err: Error) => {
-                    this.socket?.off('connect', onConnect); // Cleanup listeners
-                    this.lastError = err.message;
-                    reject(err);
-                };
-
-                const onConnect = () => {
-                    this.socket?.off('error', onError); // Cleanup listeners
-                    this._isConnected = true;
-                    this.lastError = undefined;
-                    this._connAttemptInProgress = false;
-                    resolve();
-                };
-
-                this.socket?.once('error', onError); // Handle errors
-                this.socket?.once('connect', onConnect); // Handle successful connection
-
-                this.socket?.connect(this.port, this.address);
-            });
+            this.localPort = socket.address().port;
 
             // The OS socket handle only exists once bound or connected; setting
             // the buffer before that throws ENOTSOCK and silently leaves the
@@ -246,15 +297,17 @@ export class UdpClient {
     /**
      * Adds a UDP packet to the batch
      *  Note that `data` must be kept valid until batch end
+     *  `address` is the destination of a per-packet-destination socket.
      */
-    addSendToBatch(data: Uint8Array | Uint8Array[]): void {
+    addSendToBatch(data: Uint8Array | Uint8Array[], address?: string): void {
         if (this._suspended || !this.sendBatch || this._connAttemptInProgress || !this._isConnected || !this.socket) {
             ++this.nSkipped;
             return;
         }
         ++this.sendBatch.nSent;
         this.countSend(data);
-        this.socket.send(data, this.sendBatch.cb!);
+        if (this.destinationPerPacket) this.socket.send(data, this.port, address ?? this.address, this.sendBatch.cb!);
+        else this.socket.send(data, this.sendBatch.cb!);
     }
 
     private countSend(data: Uint8Array<ArrayBufferLike> | Uint8Array<ArrayBufferLike>[]) {
