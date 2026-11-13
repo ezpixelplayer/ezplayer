@@ -65,7 +65,7 @@ A warning ![Controller Alert](/img/ctrlalert.png) indicator is presented when a 
 
 Several things can require attention:
 
-- **Ports or input config differ from expected** — **Reconfigure** the controller.  A universe in the layout past the last channel any model on the controller uses is not part of the comparison: xLights leaves one behind now and then, and neither upload writes it.
+- **Ports or input config differ from expected** — **Reconfigure** the controller.
 - **The controller is in the wrong mode** — it reports itself as a player or a remote while the show wants it to take live data, or the other way round.  Also fixed by **Reconfigure**.
 - **The player's send list differs from expected** — only on an FPP player: a controller is missing from the list, switched off in it, or sent the wrong channels or address.  Fixed by **Send output universes**.
 - **Content delivery needed** ![Content delivery needed](/img/ctrlcontent.png) — the device holds its own copy of the show and that copy is not current; see [Content Distribution](contentdistribution.md).
@@ -77,7 +77,7 @@ The ![Informational](/img/ctrlinfo.png) mark indicates there is something that m
 Some controllers cannot keep up with the show's frame rate.  The **Max FPS** column shows the frame-rate cap in effect for the controller.  Use **Edit record** to set or clear the override; it takes effect the next time the show output is (re)started.
 
 ### Send-from address
-xLights can pin a controller to one of the computer's network interfaces (**Force Local IP** on the controller, or **Global Force Local IP** on the Controllers tab).  EZPlayer sends from that address and shows it in the controller's details.  An address that is not assigned to any network interface on this computer — after a network change, say, or on a different computer than the layout was made on — is ignored, as xLights ignores it: the show goes out the default interface, and the row carries an informational mark saying so.  **Edit record** can set a different address for this player; it takes effect the next time the show output is (re)started.
+EZPlayer can pin a controller to one of the computer's network interfaces (**Force Local IP** on the controller, or **Global Force Local IP** on the Controllers tab).  EZPlayer sends from that address and shows it in the controller's details.  An address that is not assigned to any network interface on this computer is ignored.  **Edit record** can set a different address for this player; it takes effect the next time the show is reloaded with **Reload show and controllers**.
 
 ## Controller Details
 
