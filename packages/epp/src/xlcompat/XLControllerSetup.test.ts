@@ -1,4 +1,6 @@
+import dgram from 'dgram';
 import { describe, expect, it } from 'vitest';
+import { ARTNET_PORT, ArtNetSender } from '../dataplane/protocols/ArtNet';
 import { DDPSender } from '../dataplane/protocols/DDP';
 import { E131Sender } from '../dataplane/protocols/E131';
 import {
@@ -56,6 +58,103 @@ async function openE131(forceLocalIP?: string) {
     await sender.client?.disconnect();
     return { report: c.report, localAddress: sender.localAddress };
 }
+
+describe('the protocol a controller is sent with', () => {
+    it('opens an ArtNet sender with the layout universes for an ArtNet controller', async () => {
+        const xlRecord = new ControllerRec();
+        xlRecord.name = 'A';
+        xlRecord.universeNumbers = [0, 1];
+        xlRecord.universeSizes = [510, 90];
+        const c: ControllerState = {
+            setup: {
+                usable: true,
+                skipped: false,
+                summary: '',
+                name: 'A',
+                address: '127.0.0.1',
+                startCh: 1,
+                nCh: 600,
+                proto: 'ArtNet',
+            },
+            xlRecord,
+        };
+        await openControllerForDataSend(c);
+        const sender = c.sender as ArtNetSender;
+        await sender.client?.disconnect();
+        expect(c.report?.status).toBe('open');
+        expect(sender).toBeInstanceOf(ArtNetSender);
+        expect(sender.universes).toEqual([
+            { universe: 0, size: 510 },
+            { universe: 1, size: 90 },
+        ]);
+    });
+
+    it('says so when ArtNet cannot leave from its own port', async () => {
+        const holder = dgram.createSocket('udp4');
+        const held = await new Promise<boolean>((resolve) => {
+            holder.once('error', () => resolve(false));
+            holder.bind(ARTNET_PORT, () => resolve(true));
+        });
+        if (!held) {
+            // Some other program has the port; nothing to prove here.
+            holder.close();
+            return;
+        }
+        const xlRecord = new ControllerRec();
+        xlRecord.name = 'A';
+        xlRecord.universeNumbers = [1];
+        xlRecord.universeSizes = [10];
+        const c: ControllerState = {
+            setup: {
+                usable: true,
+                skipped: false,
+                summary: '',
+                name: 'A',
+                address: '127.0.0.1',
+                startCh: 1,
+                nCh: 10,
+                proto: 'ArtNet',
+            },
+            xlRecord,
+        };
+        try {
+            await openControllerForDataSend(c);
+            const sender = c.sender as ArtNetSender;
+            await sender.client?.disconnect();
+            expect(c.report?.status).toBe('open');
+            expect(c.report?.notice).toMatch(/in use on this computer/);
+        } finally {
+            await new Promise<void>((resolve) => holder.close(resolve));
+        }
+    });
+
+    it('multicasts an E1.31 controller whose layout address is MULTICAST', async () => {
+        const xlRecord = new ControllerRec();
+        xlRecord.name = 'M';
+        xlRecord.universeNumbers = [1];
+        xlRecord.universeSizes = [150];
+        const c: ControllerState = {
+            setup: {
+                usable: true,
+                skipped: false,
+                summary: '',
+                name: 'M',
+                address: 'MULTICAST',
+                startCh: 1,
+                nCh: 150,
+                proto: 'E131',
+            },
+            xlRecord,
+        };
+        await openControllerForDataSend(c);
+        const sender = c.sender as E131Sender;
+        await sender.client?.disconnect();
+        expect(c.report?.status).toBe('open');
+        expect(c.report?.notice).toMatch(/default network interface/);
+        expect(sender.multicast).toBe(true);
+        expect(sender.client?.destinationPerPacket).toBe(true);
+    });
+});
 
 describe('the address a controller is sent from', () => {
     it('is the forced local address when this computer has it', async () => {

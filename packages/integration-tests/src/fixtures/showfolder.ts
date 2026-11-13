@@ -19,6 +19,8 @@ export interface FixtureShowOptions {
     ddpChannelsPerPacket?: number;
     /** Make the controller E1.31 with these universes; `channels` becomes their total. */
     e131Universes?: { universe: number; size: number }[];
+    /** Send those universes as ArtNet instead of E1.31. */
+    artNet?: boolean;
 }
 
 export interface FixtureShow {
@@ -36,11 +38,11 @@ export async function createFixtureShow(opts: FixtureShowOptions = {}): Promise<
     const ip = opts.controllerIp ?? '127.0.0.1';
     const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'ezp-show-'));
 
-    const protocol = universes ? 'E131' : 'DDP';
+    const protocol = universes ? (opts.artNet ? 'ArtNet' : 'E131') : 'DDP';
     const networkLines = universes
         ? universes.map(
               (u) =>
-                  `<network ComPort="${ip}" BaudRate="${u.universe}" NetworkType="E131" MaxChannels="${u.size}" Enabled="Yes"/>`,
+                  `<network ComPort="${ip}" BaudRate="${u.universe}" NetworkType="${protocol}" MaxChannels="${u.size}" Enabled="Yes"/>`,
           )
         : [
               `<network ChannelsPerPacket="${opts.ddpChannelsPerPacket ?? 1440}" KeepChannelNumbers="1" ComPort="${ip}" BaudRate="1" NetworkType="DDP" MaxChannels="${channels}"/>`,

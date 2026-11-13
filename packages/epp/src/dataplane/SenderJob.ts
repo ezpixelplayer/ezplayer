@@ -99,6 +99,16 @@ export class SendJobSenderState implements SchedulerHeapItem {
         return rv & 0xff;
     }
 
+    curArtNetSeqNum: number = 1; // ArtNet counts 1-255; 0 would mean "no sequence".
+    getArtNetSeqNum() {
+        return this.curArtNetSeqNum;
+    }
+    nextArtNetSeqNum() {
+        const rv = this.curArtNetSeqNum;
+        this.curArtNetSeqNum = rv >= 255 ? 1 : rv + 1;
+        return rv;
+    }
+
     sendPacketNumber: number = 0;
     sendPacketNum() {
         const rv = this.sendPacketNumber;

@@ -6,6 +6,9 @@ export interface OpenControllerReport {
      *  local address it could not use. */
     notice?: string;
 }
+/** The protocols the data plane can send a controller with, as xLights names them. */
+export type SenderProtocol = 'DDP' | 'E131' | 'ArtNet';
+
 export interface ControllerSetup {
     skipped: boolean;
     usable: boolean;
@@ -14,5 +17,5 @@ export interface ControllerSetup {
     address: string;
     startCh: number;
     nCh: number;
-    proto: 'DDP' | 'E131' | undefined;
+    proto: SenderProtocol | undefined;
 }

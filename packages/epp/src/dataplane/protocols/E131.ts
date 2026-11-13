@@ -153,6 +153,17 @@ function buildE131SyncPacket(rsyncData: Uint8Array, syncUniverse: number, sequen
 
 const E131_DEFAULT_UNIVERSE_SIZE = 510;
 
+/** The multicast group E1.31 assigns a universe: 239.255.<hi>.<lo>. */
+export function e131MulticastAddress(universe: number): string {
+    return `239.255.${(universe >> 8) & 0xff}.${universe & 0xff}`;
+}
+
+/** Whether a layout address asks for multicast: xLights' "MULTICAST", or a
+ *  group address in the E1.31 range. */
+export function isE131MulticastAddress(address: string): boolean {
+    return address.trim().toUpperCase() === 'MULTICAST' || address.startsWith('239.255.');
+}
+
 /** A universe on the wire and how many channels it carries. */
 export interface E131Universe {
     universe: number;
@@ -175,6 +186,8 @@ export class E131Sender extends UDPSender {
     syncUniverse: number = 0;
     pushAtEnd: boolean = true;
     useTimecodes: boolean = false;
+    /** Send each universe to its multicast group instead of `address`. */
+    multicast: boolean = false;
 
     headers: Buffer[] = [];
     syncPacket = Buffer.alloc(E131_SYNCPACKET_LEN);
@@ -189,6 +202,7 @@ export class E131Sender extends UDPSender {
                 E131_PORT_DEFAULT,
                 this.sendBufSize ?? 625_000 /*100Mbps 50ms*/,
                 this.localAddress,
+                { destinationPerPacket: this.multicast },
             );
         }
         if (!this.client.isConnected()) {
@@ -249,7 +263,7 @@ export class E131Sender extends UDPSender {
             }
             const hdr = this.headers[this.curPacketNum];
             updateE131PacketHeader(hdr, univ, state.getE131SeqNum(), bytesThisPacket);
-            this.client!.addSendToBatch([hdr, ...packetBufs]);
+            this.client!.addSendToBatch([hdr, ...packetBufs], this.multicast ? e131MulticastAddress(univ) : undefined);
             const wire = bytesThisPacket + this.packetWireOverhead();
             state.wireBytesSent += wire;
             burstLeft -= wire;
@@ -300,7 +314,10 @@ export class E131Sender extends UDPSender {
         if (this.pushAtEnd && this.syncUniverse > 0) {
             buildE131SyncPacket(this.syncPacket, this.syncUniverse, seq);
             if (this.client?.isConnected()) {
-                this.client?.addSendToBatch(this.syncPacket);
+                this.client?.addSendToBatch(
+                    this.syncPacket,
+                    this.multicast ? e131MulticastAddress(this.syncUniverse) : undefined,
+                );
                 state.wireBytesSent += E131_SYNCPACKET_LEN + UDP_WIRE_OVERHEAD;
             }
         }

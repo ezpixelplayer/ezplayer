@@ -2,6 +2,7 @@ export { DDPSender } from './dataplane/protocols/DDP';
 export type { SenderStats } from './dataplane/protocols/UDP';
 
 export { E131Sender } from './dataplane/protocols/E131';
+export { ArtNetSender } from './dataplane/protocols/ArtNet';
 
 export { SendBatch } from './dataplane/protocols/UDP';
 
@@ -9,7 +10,7 @@ export { Sender, SenderJob, SendJob, SendJobState } from './dataplane/SenderJob'
 
 export { startFrame, endFrame, startBatch, endBatch, sendPartial, sendFull, SendFullResult } from './dataplane/SendFrame';
 
-export { ControllerSetup, OpenControllerReport } from './controllers/controllertypes';
+export { ControllerSetup, OpenControllerReport, SenderProtocol } from './controllers/controllertypes';
 
 export { lpBusySleep } from './util/Utils';
 
