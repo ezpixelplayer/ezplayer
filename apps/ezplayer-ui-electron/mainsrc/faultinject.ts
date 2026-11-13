@@ -20,6 +20,7 @@ export type FaultName =
     // main window, once the app is up
     | 'renderer-throw'
     | 'renderer-reject'
+    | 'renderer-missing-image'
     | 'renderer-hang'
     | 'renderer-crash'
     | 'gpu-crash';
