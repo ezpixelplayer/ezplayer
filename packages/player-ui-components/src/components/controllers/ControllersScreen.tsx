@@ -1317,7 +1317,7 @@ const GridRow: React.FC<{
                                             <Typography variant="body2" sx={{ color: 'text.secondary' }}>
                                                 {[
                                                     `sender ${health.senderStats.connected ? 'connected' : 'closed'}`,
-                                                    `${health.senderStats.sent.toLocaleString()} frames sent`,
+                                                    `${health.senderStats.sent.toLocaleString()} packets sent`,
                                                     health.senderStats.skipped > 0 &&
                                                         `${health.senderStats.skipped.toLocaleString()} skipped`,
                                                     health.senderStats.errors > 0 &&

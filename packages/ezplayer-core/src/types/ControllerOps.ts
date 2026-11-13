@@ -1084,9 +1084,11 @@ export interface ControllerGridRow {
 }
 
 /**
- * A controller's data sender as it sees itself.  `skipped` counts frames the
- * sender dropped (suspended, or not connected); `errors` counts sends the OS
- * refused.  Cumulative since the show's output was opened.
+ * A controller's data sender as it sees itself.  Counts are UDP packets, not
+ * frames: a frame takes several per controller, plus the push or sync packet.
+ * `skipped` counts packets the sender dropped (suspended, or not connected);
+ * `errors` counts sends the OS refused.  Cumulative since the show's output
+ * was opened.
  */
 export interface ControllerSenderStats {
     connected: boolean;
