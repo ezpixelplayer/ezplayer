@@ -123,6 +123,16 @@ controllers were seen, and an overall health indicator — with expandable detai
 for each controller. This is covered on its own page:
 [Controllers](./controllers.md).
 
+## Content Distribution & Sync
+
+The card only appears when the show contains a player or remote, and
+indicates if content distribution is needed, in progress, or complete.
+
+Full detail is available on the
+[Content Distribution](../controllers/contentdistribution.md) page.
+
+![Content Distribution & Sync card](/img/contentdist-card.png)
+
 ## HTTP Listener Status
 
 Shows the port the local web server is using and whether it is **Listening**.

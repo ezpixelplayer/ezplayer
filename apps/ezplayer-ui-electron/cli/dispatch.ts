@@ -121,7 +121,7 @@ type DispatchableVerb = Exclude<ToolVerb, 'help' | 'controller'>;
 /**
  * Everything that acts on lighting controllers lives under one verb.
  */
-export const CONTROLLER_SUBCOMMANDS = ['list', 'status', 'action', 'upload'] as const;
+export const CONTROLLER_SUBCOMMANDS = ['list', 'status', 'action', 'upload', 'distribute'] as const;
 export type ControllerSubcommand = (typeof CONTROLLER_SUBCOMMANDS)[number];
 
 const COMMANDS: Record<DispatchableVerb, () => Promise<CommandModule>> = {
@@ -139,6 +139,7 @@ const CONTROLLER_COMMANDS: Record<ControllerSubcommand, () => Promise<CommandMod
     status: () => import('./commands/status.js'),
     action: () => import('./commands/action.js'),
     upload: () => import('./commands/upload.js'),
+    distribute: () => import('./commands/distribute.js'),
 };
 
 const HELP_SUMMARY = 'Show help for a verb, e.g. `EZPlayer help discover`.';
@@ -267,13 +268,33 @@ const USAGE: Record<DispatchableVerb | ControllerSubcommand, { summary: string; 
     upload: {
         summary: 'Upload xLights-derived config to a controller (via the app).',
         detail:
-            'Usage: EZPlayer controller upload <name> [--scope inputs|strings|full] [--host <host[:port]>]\n' +
+            'Usage: EZPlayer controller upload <name> [--scope inputs|strings|full] [--full-control] [--host <host[:port]>]\n' +
             '\n' +
             "Pushes the show's xLights intent for the known controller <name> through\n" +
             'the running app (which owns the intent + does a post-upload read-back).\n' +
-            '      --scope  inputs  = input/universe config only\n' +
-            '               strings = string/port outputs only\n' +
-            '               full    = both (default)',
+            '      --scope         inputs  = input/universe config only\n' +
+            '                      strings = string/port outputs only\n' +
+            '                      full    = both (default)\n' +
+            '      --full-control  settings xLights does not specify are reset to the\n' +
+            "                      controller defaults instead of keeping the device's",
+    },
+    distribute: {
+        summary: 'Send show content to the devices that hold their own copy (via the app).',
+        detail:
+            'Usage: EZPlayer controller distribute [<name-or-ip> ...] [--check | --force] [--sequence <file.fseq>]...\n' +
+            '                                      [--host <host[:port]>] [--json]\n' +
+            '\n' +
+            "Sends the show's sequences and audio to the players and remotes through\n" +
+            'the running app, which builds each device its file and keeps the report.\n' +
+            'Without names, every device that should hold content is sent to. A name\n' +
+            'is a known controller (quote one with spaces); an address also works.\n' +
+            'Prints the report when the run ends: one block per device, one line per\n' +
+            'file. Exit code 1 when a device was skipped, stopped part way, or refused\n' +
+            'a file; what a check finds to send is not a failure.\n' +
+            '      --check     report what a send would transfer; send nothing\n' +
+            '      --force     send every file, whether or not the device holds it\n' +
+            '      --sequence  only this sequence file (repeatable); default the whole show\n' +
+            '      --json      the report as JSON on stdout',
     },
     shell: {
         summary: 'Set the password that enables the remote terminal.',

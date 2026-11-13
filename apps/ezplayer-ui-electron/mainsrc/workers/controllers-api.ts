@@ -19,12 +19,13 @@ import type {
 import { hostNetworks } from '../../cli/net.js';
 
 const DEPTHS: readonly DiscoveryDepth[] = ['sweep', 'identify', 'full'];
-const UPLOAD_SCOPES = ['inputs', 'strings', 'full'] as const;
+const UPLOAD_SCOPES = ['inputs', 'strings', 'full', 'outputs'] as const;
 const COMMAND_VERBS = [
     'scan',
     'status',
     'action',
     'upload',
+    'distribute',
     'record',
     'network',
     'refreshInterfaces',
@@ -67,6 +68,14 @@ function validateCommand(body: unknown): { command?: ControllerCommand; error?: 
         o[field] && typeof o[field] === 'object' && !Array.isArray(o[field])
             ? undefined
             : `'${cmd}' needs an object '${field}'`;
+    /** Absent is fine; present must be an array of non-empty strings. */
+    const optStrings = (field: string): string | undefined => {
+        const v = o[field];
+        if (v === undefined) return undefined;
+        return Array.isArray(v) && v.every((e) => typeof e === 'string' && e !== '')
+            ? undefined
+            : `'${cmd}' needs '${field}' to be an array of non-empty strings`;
+    };
     let error: string | undefined;
     switch (cmd) {
         case 'scan':
@@ -84,6 +93,16 @@ function validateCommand(body: unknown): { command?: ControllerCommand; error?: 
             error = needString('id');
             if (!error && !(UPLOAD_SCOPES as readonly string[]).includes(o.scope as string)) {
                 error = `'upload' needs scope (${UPLOAD_SCOPES.join(' | ')})`;
+            }
+            break;
+        case 'distribute':
+            // Everything is optional: no ids means every target that holds
+            // content, no sequences means the whole show.
+            error = optStrings('ids') ?? optStrings('sequences');
+            for (const flag of ['checkOnly', 'force'] as const) {
+                if (!error && o[flag] !== undefined && typeof o[flag] !== 'boolean') {
+                    error = `'distribute' needs '${flag}' to be a boolean`;
+                }
             }
             break;
         case 'record':

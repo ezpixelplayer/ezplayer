@@ -35,6 +35,7 @@ import { PlaybackDetailDialog } from '../player/PlaybackDetailDialog';
 import type { ControllerStatus } from '@ezplayer/ezplayer-core';
 import {
     type ControllerStatusSeverity,
+    controllerStatusLabel,
     getControllerSeverity,
     getControllersSeverity,
     getControllerStats,
@@ -43,6 +44,8 @@ import {
 } from './ControllerHelpers';
 import { QueueCard } from './QueueCard';
 import { ViewerControlCard } from './ViewerControlCard';
+import { ContentDistributionCard } from './ContentDistributionCard';
+import { hasContentDistribution } from '../content-dist/contentDistHelpers';
 import { callImmediateCommand } from '../../store/slices/RuntimeStore';
 import { normalizeTagList, songMatchesAnyTag } from '../../services/jukeboxFilter';
 import type { EZPElectronAPI } from '@ezplayer/ezplayer-core';
@@ -111,6 +114,10 @@ export const ShowStatusScreen = ({ title, statusArea, allowTestControls = true }
     const runtime = useSelector((s: RootState) => s.runtime);
     const testSequenceTags = useSelector((s: RootState) => s.playbackSettings.settings.testSequenceTags);
     const sequenceData = useSelector((s: RootState) => s.sequences.sequenceData);
+    const contentDevices = useSelector((s: RootState) => s.controllerOps.devices);
+    const contentDist = useSelector((s: RootState) => s.controllerOps.contentDist);
+    const distributionMode = useSelector((s: RootState) => s.playbackSettings.settings.contentDistribution?.mode);
+    const showContentDist = hasContentDistribution(contentDevices, distributionMode, contentDist);
     const [testSongId, setTestSongId] = useState<string | null>(null);
     /** The test request we started, so Stop can target only our own. */
     const [testRequest, setTestRequest] = useState<{ songId: string; requestId: string } | null>(null);
@@ -207,6 +214,7 @@ export const ShowStatusScreen = ({ title, statusArea, allowTestControls = true }
     const player = runtime.combined.player;
     const content = runtime.combined.content;
     const controller = runtime.combined.controller;
+    const controllerStats = getControllerStats(controller?.controllers);
     const show = runtime.combined.show;
     const showName = show?.show_name || 'Unknown Show';
 
@@ -522,6 +530,13 @@ export const ShowStatusScreen = ({ title, statusArea, allowTestControls = true }
                     <ViewerControlCard />
                 </Grid>
 
+                {/* Content Distribution & Sync — only where a player holds its own copy. */}
+                {showContentDist && (
+                    <Grid item xs={12}>
+                        <ContentDistributionCard />
+                    </Grid>
+                )}
+
                 {/* Controller Status */}
                 {controller && (
                     <Grid item xs={12}>
@@ -536,7 +551,8 @@ export const ShowStatusScreen = ({ title, statusArea, allowTestControls = true }
                                     <Typography variant="body1">Models: {controller.n_models ?? '—'}</Typography>
                                     <Typography variant="body1">Channels: {controller.n_channels ?? '—'}</Typography>
                                     <Typography variant="body1">
-                                        Controllers Seen: {controller.controllers?.length ?? 0}
+                                        Controllers in this show: {controllerStats.total}
+                                        {controllerStats.outOfShow > 0 && ` (${controllerStats.outOfShow} not in it)`}
                                     </Typography>
                                     <Chip
                                         label={getControllerStatusLabel(controller.controllers)}
@@ -643,7 +659,7 @@ export const ShowStatusScreen = ({ title, statusArea, allowTestControls = true }
                                                                 {ctrl.name || `Controller ${index + 1}`}
                                                             </Typography>
                                                             <Chip
-                                                                label={ctrl.status || 'unknown'}
+                                                                label={controllerStatusLabel(ctrl)}
                                                                 color={severityToChipColor(ctrlSeverity)}
                                                                 variant={
                                                                     ctrlSeverity === 'disabled' ? 'outlined' : 'filled'

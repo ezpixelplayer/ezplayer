@@ -122,9 +122,12 @@ clears controller state.
 The Controller Status card summarizes your lighting network:
 
 - **Models** and **Channels** — totals from your show layout
-- **Controllers** — total count (with the number including skipped controllers,
-  when different) and an **Online / Offline** chip: green when all are online,
-  red when any are offline, amber otherwise
+- **Controllers** — how many controllers / players are in this show,
+  and how many are not in it at all (Inactive in the layout), when there are
+  any.
+- An **Online / Offline** chip that counts how many controllers are pingable,
+  and how many are not.  Green when all are online, red when any is offline,
+  amber if some controllers have not yet been pinged.
 - **Health banner** — green _All Controllers Online & Healthy_ when all
   controllers are online with no errors, red with the error count when errors
   are detected, grey _No Controllers Assigned_ when no controllers are assigned

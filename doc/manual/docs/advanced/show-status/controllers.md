@@ -17,15 +17,18 @@ can drill into each controller.
 At the top of the card you see:
 
 - **Models** and **Channels** — totals from your show layout.
-- **Controllers Seen** — how many controllers EZPlayer knows about.
+- **Controllers in this show** — how many controllers, players, and remotes
+  are in the show.
 - A **health chip** — for example _All controllers online_, _No controllers
   online_, or _N controller(s) offline_.
 
 ## Controller list
 
 Below the summary, each controller appears as an expandable row with its name
-and a status chip (such as **open**). Use **Expand All** / **Collapse All** to
-open or close every row at once.
+and a status chip. The chip names the part the controller plays: **open** for
+one being sent the show's live data, **plays its own copy** for a player or a
+remote, and **not in this show** for controllers not in use.  Use **Expand All** /
+**Collapse All** to open or close all rows at once.
 
 ![Controller details](/img/status-2.png)
 

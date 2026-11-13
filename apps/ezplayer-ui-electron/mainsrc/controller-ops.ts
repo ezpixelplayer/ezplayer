@@ -8,6 +8,7 @@
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import type {
+    ContentDistTrigger,
     ControllerCommand,
     ControllerModelIntent,
     ControllerOp,
@@ -21,8 +22,18 @@ import type {
     EzpControllerRecord,
     KnownController,
     NetworkPolicy,
+    PlaybackSettings,
+    SequenceRecord,
 } from '@ezplayer/ezplayer-core';
-import { applyOverrides, ipInCidr } from '@ezplayer/ezplayer-core';
+import {
+    activeStateFrom,
+    applyOverrides,
+    ipInCidr,
+    contentRoleOf,
+    isPlayerOnlyRecord,
+    layoutPlayerMode,
+    playerModeDrift,
+} from '@ezplayer/ezplayer-core';
 import type {
     DiscoveryDevice,
     DiscoveryJob,
@@ -39,6 +50,37 @@ import type {
     VirtualMatrixConfig,
     VirtualMatrixInfo,
 } from '@ezplayer/epp-controllers';
+import { ContentSyncRun, universeOutputIntentsFrom, type BaseController } from '@ezplayer/epp-controllers';
+
+/**
+ * How the show's player's send list differs from the layout; undefined for
+ * any other device, since only the player sends.
+ */
+function sendListDriftFor(dev: DiscoveredController, driver: BaseController | undefined): string | undefined {
+    const rec = recordFor(dev, state.known ?? []);
+    if (!rec || contentRoleOf(rec) !== 'player' || !driver?.describeSendListDrift) return undefined;
+    return driver.describeSendListDrift(universeOutputIntentsFrom(state.known ?? []));
+}
+import type { SliceWorkspace } from './content-dist.js';
+import type { CardSetupResult } from './content-dist-cards.js';
+import {
+    buildContentPlan,
+    cardSetupsFor,
+    contentAutoDecision,
+    contentHostNames,
+    contentHostsForShow,
+    contentStatusFor,
+    contentTargetsFor,
+    contentTargetsForHosts,
+    proxyForDevice,
+    createSliceWorkspace,
+    isContentTarget,
+    recordFor,
+    slicingPlanFor,
+    slicingPlanForHosts,
+    toContentDistReport,
+    toContentDistRun,
+} from './content-dist.js';
 import {
     discover,
     probeController,
@@ -138,7 +180,12 @@ function parseRecord(data: unknown): EzpControllerRecord | null {
     if (typeof o.name !== 'string' || !o.name) return null;
     const r: EzpControllerRecord = { name: o.name };
     if (typeof o.address === 'string') r.address = o.address;
-    if (typeof o.active === 'boolean') r.active = o.active;
+    // Older records stored a boolean here; activeStateFrom reads both, and
+    // deliberately drops a stored `true` rather than letting the default every
+    // record was written with override the layout.
+    const active = activeStateFrom(o.active);
+    if (active) r.active = active;
+    if (o.presumeUp === true) r.presumeUp = true;
     if (typeof o.deleted === 'boolean') r.deleted = o.deleted;
     if (typeof o.own === 'boolean') r.own = o.own;
     if (typeof o.vendor === 'string') r.vendor = o.vendor;
@@ -154,7 +201,37 @@ function parseRecord(data: unknown): EzpControllerRecord | null {
 export function setKnownControllers(known: KnownController[]): void {
     xlightsKnown = known;
     deriveKnown();
+    refreshModeDrift();
     publish();
+}
+
+/**
+ * The mode a device should be in follows the layout and the records, so an
+ * edit can change the answer without the device changing. Recomputed from the
+ * last reading, so the grid answers at once.
+ */
+function refreshModeDrift(): void {
+    for (const [id, dev] of Object.entries(state.devices)) {
+        if (!isContentTarget(dev)) continue;
+        const rec = recordFor(dev, state.known ?? []);
+        const drift = playerModeDrift(dev.mode, rec ? layoutPlayerMode(rec) : undefined, dev.driverType);
+        if (drift !== dev.modeDrift) state.devices[id] = { ...dev, modeDrift: drift };
+    }
+}
+
+/**
+ * A new part changes what the controller should report and what the show's
+ * player should send, so both are read again the way the player reads on its
+ * own, rather than left as they were.
+ */
+function rereadAfterRoleChange(name: string): void {
+    for (const [id, dev] of Object.entries(state.devices)) {
+        const rec = recordFor(dev, state.known ?? []);
+        if (!rec || (rec.name !== name && contentRoleOf(rec) !== 'player')) continue;
+        void dispatchControllerCommand({ cmd: 'status', id, address: dev.ip, depth: 'full' }, 'auto').catch(
+            () => undefined,
+        );
+    }
 }
 
 /** Load persisted controller records at folder open (missing dir ⇒ none). */
@@ -196,6 +273,7 @@ function publish(): void {
         operations: { ...state.operations },
         known: [...(state.known ?? [])],
         networkPolicies: [...(state.networkPolicies ?? [])],
+        ...(state.contentDist ? { contentDist: { ...state.contentDist } } : {}),
     });
 }
 
@@ -437,9 +515,11 @@ function findActiveOp(kind: ControllerOp['kind'], target: string): ControllerOp 
 // ---------------------------------------------------------------------------
 
 type SlotKind = Exclude<ControllerOp['kind'], 'scan'>;
-const OP_CONCURRENCY: Record<SlotKind, number> = { status: 8, action: 8, upload: 6 };
-const slotsInUse: Record<SlotKind, number> = { status: 0, action: 0, upload: 0 };
-const slotWaiters: Record<SlotKind, (() => void)[]> = { status: [], action: [], upload: [] };
+// One distribution at a time: a run already covers every target it was given,
+// and two runs would race to write the same inventory playlist.
+const OP_CONCURRENCY: Record<SlotKind, number> = { status: 8, action: 8, upload: 6, distribute: 1 };
+const slotsInUse: Record<SlotKind, number> = { status: 0, action: 0, upload: 0, distribute: 0 };
+const slotWaiters: Record<SlotKind, (() => void)[]> = { status: [], action: [], upload: [], distribute: [] };
 
 /** A new op, `running` if a slot of its kind is free now, else `queued`. */
 function newOp(kind: SlotKind, target: string, label: string, origin: ControllerOpOrigin): ControllerOp {
@@ -492,6 +572,22 @@ function releaseSlot(kind: SlotKind): void {
  * keeps only its latest result per kind. A failure stays until it is dismissed
  * or a newer op of that kind replaces it.
  */
+/**
+ * An operation's failure message. Node's fetch throws `TypeError: fetch failed`
+ * with the real reason (refused, reset, timed out) on `cause`, so that is
+ * included; a thrown non-Error is stringified.
+ */
+function failureText(err: unknown): string {
+    if (!(err instanceof Error)) return String(err);
+    const cause = (err as { cause?: unknown }).cause;
+    if (cause instanceof Error || (cause && typeof cause === 'object')) {
+        const c = cause as { code?: string; message?: string };
+        const detail = [c.code, c.message].filter(Boolean).join(' ');
+        if (detail) return `${err.message} (${detail})`;
+    }
+    return err.message || err.name;
+}
+
 function retireOlderOps(finished: ControllerOp): void {
     if (finished.status === 'error') {
         console.warn(`[controller-ops] ${finished.label} failed: ${finished.error ?? 'unknown error'}`);
@@ -537,6 +633,9 @@ export async function dispatchControllerCommand(
             return undefined;
         case 'upload':
             await runUpload(command, origin);
+            return undefined;
+        case 'distribute':
+            await runDistribute(command, origin);
             return undefined;
         case 'record':
             await runRecord(command);
@@ -608,6 +707,12 @@ export function hasRunningControllerOps(opts?: { ignoreAutomatic?: boolean }): b
 export function resetControllerOps(): void {
     resetGeneration++;
     for (const job of scanJobs.values()) job.cancel();
+    contentRun?.cancel();
+    // A new show means a new set of content; what the old one needed no
+    // longer means anything.
+    contentQueue.clear();
+    lastContentRunMs = undefined;
+    delete state.contentDist;
     state.devices = {};
     for (const [id, op] of Object.entries(state.operations)) {
         // A queued op never starts: it would act on state just cleared.
@@ -647,6 +752,11 @@ function runCancel(command: Extract<ControllerCommand, { cmd: 'cancel' }>): void
         return;
     }
     if (op.status !== 'running') return; // already finished — nothing to do
+    if (op.kind === 'distribute') {
+        if (!contentRun) throw new Error(`operation ${command.opId} is not cancelable`);
+        contentRun.cancel();
+        return;
+    }
     const job = scanJobs.get(command.opId);
     if (!job) throw new Error(`operation ${command.opId} (${op.kind}) is not cancelable`);
     job.cancel();
@@ -669,11 +779,139 @@ async function runRecord(command: Extract<ControllerCommand, { cmd: 'record' }>)
     if (existing) Object.assign(existing, merged);
     else records.push(merged);
     deriveKnown();
+    refreshModeDrift();
     publish();
+    if (patch.active !== undefined) rereadAfterRoleChange(name);
 }
 
 function proxyFor(dev: DiscoveredController): string | undefined {
-    return dev.source.via === 'fpp-proxy' ? dev.source.proxy : undefined;
+    return proxyForDevice(dev, state.known ?? []);
+}
+
+/** One top-up of one proxy's list: the work, and what to say about it. */
+interface ProxyTopUp {
+    ok: boolean;
+    notes: string[];
+    /** Set once the notes have been reported, so only one operation says it. */
+    reported?: boolean;
+}
+
+/**
+ * Top-ups in flight or already done, keyed by proxy and wanted hosts, so the
+ * usual case costs nothing after the first call while a layout change still
+ * takes effect. Keeping the *promise* rather than a done-flag is what makes it
+ * safe: controller reads run several at a time, and a flag set only on
+ * completion lets them all read the proxy's list before any of them has
+ * written it, and then each write the same thing.
+ */
+const proxyListWork = new Map<string, Promise<ProxyTopUp>>();
+
+/**
+ * Make each FPP the layout names as a proxy actually carry the controllers
+ * routed through it.
+ *
+ * FPP's proxy list is an allowlist: for a host that is not on it, the proxy's
+ * Apache answers `/proxy/<ip>` with its own 404. So a controller on a network
+ * only the player can see is unreachable until the player lists it, however
+ * carefully the layout records the proxy. Nothing is ever removed -- see
+ * {@link FPPController.addProxies}.
+ *
+ * Returns lines for the caller's operation; failures are reported, never
+ * thrown, since a proxy we cannot reach is one unreachable path among many.
+ */
+async function ensureProxyLists(): Promise<string[]> {
+    const notes: string[] = [];
+    const byProxy = new Map<string, { host: string; description: string }[]>();
+    for (const k of state.known ?? []) {
+        if (!k.proxy || !k.address || k.address === k.proxy) continue;
+        const list = byProxy.get(k.proxy) ?? [];
+        list.push({ host: k.address, description: k.name });
+        byProxy.set(k.proxy, list);
+    }
+    for (const [proxy, wanted] of byProxy) {
+        const key = `${proxy}|${wanted
+            .map((w) => w.host)
+            .sort()
+            .join(',')}`;
+        let work = proxyListWork.get(key);
+        if (!work) {
+            work = topUpProxyList(proxy, wanted);
+            proxyListWork.set(key, work);
+        }
+        const done = await work;
+        // A failure is worth retrying on the next read; a success is not.
+        if (!done.ok) proxyListWork.delete(key);
+        if (!done.reported) {
+            done.reported = true;
+            notes.push(...done.notes);
+        }
+    }
+    return notes;
+}
+
+/** Add whatever one proxy is missing. See {@link ensureProxyLists}. */
+async function topUpProxyList(proxy: string, wanted: { host: string; description: string }[]): Promise<ProxyTopUp> {
+    try {
+        const probe = await probeController(proxy, undefined, { preferDriver: 'FPP', expectController: true });
+        if (!probe.success || !probe.driver?.addProxies) {
+            return {
+                ok: false,
+                notes: [
+                    `${proxy} cannot hold a proxy list, so ${wanted.length} controller(s) behind it stay unreachable`,
+                ],
+            };
+        }
+        const r = await probe.driver.addProxies(wanted);
+        if (!r.success) return { ok: false, notes: [`${proxy}: ${r.message ?? 'proxy list write failed'}`] };
+        return { ok: true, notes: r.changed ? [`${proxy}: ${r.message}`] : [] };
+    } catch (e) {
+        return { ok: false, notes: [`${proxy}: ${(e as Error).message}`] };
+    }
+}
+
+/** The show has remotes to drive, so whatever plays it must send sync. */
+function showHasRemotes(): boolean {
+    return (state.known ?? []).some((k) => layoutPlayerMode(k) === 'remote');
+}
+
+/**
+ * Put a controller in the mode its layout record asks for: a remote where the
+ * layout says "xLights Only", a player where it holds its own copy, and `show`
+ * -- taking live pixel data -- for every ordinary controller. A device already
+ * in that mode is left alone, since the write costs a daemon restart.
+ *
+ * The `show` case is the one that resets a box: a controller that was
+ * experimented on, bought second-hand or reconfigured can be sitting in player
+ * or remote mode taking no pixel data at all, and nothing else would put it
+ * back.
+ *
+ * Returns whether anything was written (the caller must then apply/restart)
+ * and a line for the operation's warnings if the write failed.
+ */
+async function setLayoutPlayerMode(
+    driver: { supportsPlayerMode: boolean; setPlayerMode: BaseController['setPlayerMode'] },
+    rec: KnownController,
+    driverType: string | undefined,
+    reported: string | undefined,
+    reportedMaster?: boolean,
+): Promise<{ changed: boolean; warning?: string }> {
+    const want = layoutPlayerMode(rec);
+    if (!want || !driver.supportsPlayerMode) return { changed: false };
+    const wantMaster = want === 'player' && showHasRemotes();
+    // Sending sync is part of a player's role, not a detail of it: a player
+    // already in player mode still needs the write when the show gains or
+    // loses remotes, or it runs the show with its remotes sitting idle. It
+    // says nothing about the other modes -- `wantMaster` is false for them by
+    // construction -- so demanding it there forced a pointless write on every
+    // controller whose family does not report the flag at all.
+    const masterAgrees = want !== 'player' || (reportedMaster !== undefined && reportedMaster === wantMaster);
+    // An unread mode counts as disagreeing: better one extra write than a
+    // controller left in the previous show's role.
+    if (reported && !playerModeDrift(reported, want, driverType) && masterAgrees) return { changed: false };
+    const r = await driver.setPlayerMode(want, { multiSyncMaster: wantMaster });
+    return r.success
+        ? { changed: true }
+        : { changed: false, warning: `could not set ${rec.name} to ${want}: ${r.message ?? 'unknown error'}` };
 }
 
 /** Single-controller deep read: re-probe one known device at full depth and
@@ -703,10 +941,12 @@ async function runStatus(
 
     let slot = false;
     let release: (() => void) | undefined;
+    let checkContentAfter = false;
     try {
         slot = await started;
         if (!slot) return;
         release = holdData?.(dev.ip);
+        for (const note of await ensureProxyLists()) console.warn('[controller-ops] proxy list:', note);
         const probe = await probeController(dev.ip, proxyFor(dev), {
             detail: true,
             preferDriver: dev.driverType,
@@ -750,15 +990,29 @@ async function runStatus(
             virtualMatrices: probe.report.virtualMatrices?.map(toControllerVirtualMatrix),
             inputs: probe.report.inputs,
             actions: probe.driver?.getActions(),
+            mode: probe.report.mode ?? dev.mode,
+            // A device whose role disagrees with the layout has not been
+            // configured for this show. Only a device that plays content has a
+            // role: the other drivers report their input protocol in `mode`.
+            modeDrift: isContentTarget(dev)
+                ? playerModeDrift(
+                      probe.report.mode ?? dev.mode,
+                      layoutPlayerMode(recordFor(dev, state.known ?? []) ?? {}),
+                      probe.report.driverType ?? dev.driverType,
+                  )
+                : undefined,
+            sendListDrift: sendListDriftFor(dev, probe.driver),
+            channelRanges: probe.report.channelRanges ?? dev.channelRanges,
             error: undefined,
             unreachable: false,
             seenAt: nowIso(),
         };
         op.status = 'done';
         op.finishedAt = nowIso();
+        checkContentAfter = true;
     } catch (err) {
         op.status = 'error';
-        op.error = (err as Error).message;
+        op.error = failureText(err);
         op.finishedAt = nowIso();
         throw err;
     } finally {
@@ -766,6 +1020,14 @@ async function runStatus(
         if (slot) releaseSlot('status');
         publish();
         retireOlderOps(op);
+        // What this device holds is part of its detail, but reading it is many
+        // small requests — so it runs after the data hold is released and
+        // outside the op, and a failure is not a failed read.
+        if (checkContentAfter) {
+            void refreshContentStatus(command.id).catch((e) =>
+                console.warn(`[controller-ops] content check for ${dev.ip} failed:`, (e as Error).message),
+            );
+        }
     }
 }
 
@@ -801,7 +1063,7 @@ async function runAction(
         op.finishedAt = nowIso();
     } catch (err) {
         op.status = 'error';
-        op.error = (err as Error).message;
+        op.error = failureText(err);
         op.finishedAt = nowIso();
         throw err;
     } finally {
@@ -873,8 +1135,14 @@ async function runUpload(
 
     const rec = (state.known ?? []).find((k) => k.address === dev.ip || (dev.hostname && k.address === dev.hostname));
     if (!rec) throw new Error(`no known controller record matches ${dev.ip} — upload needs xLights intent`);
-    const wantStrings = command.scope !== 'inputs';
-    const wantInputs = command.scope !== 'strings';
+    const wantStrings = command.scope === 'strings' || command.scope === 'full';
+    const wantInputs = command.scope === 'inputs' || command.scope === 'full';
+    // The player's send list is the whole show, not this one controller.
+    const wantOutputs = command.scope === 'outputs';
+    const outputIntents = wantOutputs ? universeOutputIntentsFrom(state.known ?? []) : [];
+    if (wantOutputs && !outputIntents.length) {
+        throw new Error('no controllers with outputs in the layout — nothing for the player to send');
+    }
     const hasIntent =
         !!rec.modelIntents?.length ||
         !!rec.serialPorts?.length ||
@@ -889,7 +1157,9 @@ async function runUpload(
         throw new Error(`"${rec.name}" has no outputs (universes) from xLights to upload`);
     }
 
-    const op = newOp('upload', command.id, `Upload ${command.scope} → ${rec.name}`, origin);
+    // Operation label, in the words the UI uses for these actions.
+    const what = wantOutputs ? 'Send output universes' : `Reconfigure (${command.scope})`;
+    const op = newOp('upload', command.id, `${what} → ${rec.name}`, origin);
     state.operations[op.id] = op;
     const started = waitForSlot(op);
     publish();
@@ -903,6 +1173,7 @@ async function runUpload(
         // and an interrupted upload leaves it worse off, so its data stays held
         // for the whole operation.
         release = holdData?.(dev.ip);
+        const proxyNotes = await ensureProxyLists();
         // Upload needs xLights intent, so a controller is expected here.
         const probe = await probeController(dev.ip, proxyFor(dev), {
             preferDriver: dev.driverType,
@@ -911,7 +1182,7 @@ async function runUpload(
         if (!probe.success || !probe.driver) {
             throw new Error(probe.error ?? 'no controller responded');
         }
-        const warnings: string[] = [];
+        const warnings: string[] = [...proxyNotes];
         // Pre-upload capability gate: errors abort before anything is written;
         // warnings ride along.
         const caps = rec.vendor && rec.model ? getCapabilities(rec.vendor, rec.model, rec.variant ?? '') : undefined;
@@ -923,6 +1194,31 @@ async function runUpload(
                 throw new Error(`capability check failed: ${res.errors.join('; ')}`);
             }
         };
+        if (wantOutputs) {
+            if (!probe.driver.setUniverseOutputs) {
+                throw new Error(`${rec.name} is a ${dev.driverType ?? 'controller'} — only a player sends universes`);
+            }
+            const r = await probe.driver.setUniverseOutputs(outputIntents);
+            if (!r.success) {
+                throw new Error(`output upload failed: ${r.message ?? r.errors?.join('; ') ?? 'unknown error'}`);
+            }
+            if (r.warnings) warnings.push(...r.warnings);
+        }
+        // The mode goes in before the input config, and the order matters both
+        // ways. A board in player or remote mode is deliberately left alone by
+        // setInputUniverses, so a controller being reset has to leave that mode
+        // first -- and then the input config is what picks the live protocol
+        // the show actually wants. Conversely a board the layout wants as a
+        // player is put there first, and the input write then leaves its role
+        // alone, as it always has.
+        const modeSet = await setLayoutPlayerMode(
+            probe.driver,
+            rec,
+            probe.report?.driverType ?? dev.driverType,
+            probe.report?.mode,
+            probe.report?.multiSyncMaster,
+        );
+        if (modeSet.warning) warnings.push(modeSet.warning);
         if (wantInputs) {
             const cfg = (rec.outputs ?? []).map((o) => ({
                 universe: o.universe ?? 0,
@@ -1043,6 +1339,25 @@ async function runUpload(
                 if (!r.success) throw new Error(`virtual matrix upload failed: ${r.message ?? 'unknown error'}`);
             }
         }
+        // A send list outlives the show that wanted it, and an FPP that both
+        // receives channel data and has outputs configured re-transmits what it
+        // receives -- so every controller in a stale list gets each frame
+        // twice, from a box nobody thinks is sending. Configuring a device for
+        // this show is the moment to drop that; the show's own sender gets its
+        // list written afterwards, by an `outputs` upload. A player-only record
+        // exists in order to send, so its list is left alone.
+        if (command.scope === 'full' && !isPlayerOnlyRecord(rec) && probe.driver.clearUniverseOutputs) {
+            try {
+                const cleared = await probe.driver.clearUniverseOutputs();
+                if (!cleared.success) {
+                    warnings.push(`could not clear stale output universes: ${cleared.message ?? 'unknown error'}`);
+                } else if (cleared.changed) {
+                    warnings.push(cleared.message ?? 'cleared stale output universes');
+                }
+            } catch (e) {
+                warnings.push(`could not clear stale output universes: ${(e as Error).message}`);
+            }
+        }
         try {
             const applied = await probe.driver.applyConfig();
             if (!applied.success) warnings.push(`apply step failed: ${applied.message ?? 'unknown error'}`);
@@ -1071,6 +1386,15 @@ async function runUpload(
                     panelMatrices: verify.report.panelMatrices?.map(toControllerPanelMatrix),
                     virtualMatrices: verify.report.virtualMatrices?.map(toControllerVirtualMatrix),
                     inputs: verify.report.inputs,
+                    mode: verify.report.mode ?? dev.mode,
+                    modeDrift: isContentTarget(dev)
+                        ? playerModeDrift(
+                              verify.report.mode ?? dev.mode,
+                              layoutPlayerMode(rec),
+                              verify.report.driverType ?? dev.driverType,
+                          )
+                        : undefined,
+                    sendListDrift: sendListDriftFor(dev, verify.driver),
                     error: undefined,
                     unreachable: false,
                     seenAt: nowIso(),
@@ -1083,12 +1407,474 @@ async function runUpload(
         op.finishedAt = nowIso();
     } catch (err) {
         op.status = 'error';
-        op.error = (err as Error).message;
+        op.error = failureText(err);
         op.finishedAt = nowIso();
         throw err;
     } finally {
         release?.();
         if (slot) releaseSlot('upload');
+        publish();
+        retireOlderOps(op);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Content distribution — this show's sequences and media onto the devices that
+// hold their own copy. One run covers every target; see content-dist.ts for
+// target selection, the plan, and the mapping to the broadcast shapes.
+// ---------------------------------------------------------------------------
+
+/** What the player is currently showing, supplied by the owner of that state. */
+export interface ContentSourceInfo {
+    sequences: SequenceRecord[];
+    settings?: PlaybackSettings;
+    /** Where derived audio lives, so a run sends what playback would decode. */
+    showFolder?: string;
+    /** False while a show is playing; automatic runs wait for a stopped player. */
+    idle: boolean;
+}
+
+let contentSource: (() => ContentSourceInfo) | undefined;
+/** Injected by the show owner (ipcezplayer), which holds songs and settings. */
+export function setContentSource(fn: () => ContentSourceInfo): void {
+    contentSource = fn;
+}
+
+/** The run in flight, for cancel and for progress. */
+let contentRun: ContentSyncRun | undefined;
+/** Sequences waiting for the next automatic run, by fseq file name. */
+const contentQueue = new Set<string>();
+let lastContentRunMs: number | undefined;
+
+/** Progress is published on a timer: a chunk-by-chunk publish would broadcast
+ *  the whole controller state hundreds of times for one file. */
+const CONTENT_PUBLISH_MS = 400;
+
+function contentDistState(): NonNullable<ControllerOpsState['contentDist']> {
+    state.contentDist ??= {};
+    return state.contentDist;
+}
+
+function publishQueue(): void {
+    const cd = contentDistState();
+    if (contentQueue.size) cd.queued = [...contentQueue].sort();
+    else delete cd.queued;
+}
+
+/**
+ * Queue content for the next automatic run — a song the user just added, or one
+ * the cloud poller installed. Nothing is sent here: whether to act, and when,
+ * is `contentAutoDecision`'s call.
+ */
+export function queueContentForDistribution(fseqNames: string[]): void {
+    // With automatic distribution off, no tick will ever drain this, so a
+    // queued name would sit in the UI claiming to be waiting for something
+    // that is never going to happen. A later switch to automatic loses
+    // nothing: the poll finds whatever the devices are missing.
+    if ((contentSource?.().settings?.contentDistribution?.mode ?? 'off') === 'off') return;
+    let added = false;
+    for (const name of fseqNames) {
+        if (!name) continue;
+        const base = path.basename(name);
+        if (!contentQueue.has(base)) {
+            contentQueue.add(base);
+            added = true;
+        }
+    }
+    if (!added) return;
+    publishQueue();
+    publish();
+}
+
+/**
+ * One tick of automatic distribution. Called on a timer by the show owner;
+ * does nothing unless the settings allow it, the player is idle, and there is
+ * either queued content or a poll due.
+ */
+export async function maybeDistributeAutomatically(): Promise<void> {
+    if (!contentSource) return;
+    if (state.contentDist?.run) return;
+    const info = contentSource();
+    const settings = info.settings?.contentDistribution;
+    const now = new Date();
+    const decision = contentAutoDecision(settings, now, {
+        queued: contentQueue.size,
+        lastRunMs: lastContentRunMs,
+        nowMs: now.getTime(),
+    });
+    if (!decision.act) {
+        const cd = contentDistState();
+        if (cd.autoHold !== decision.hold) {
+            cd.autoHold = decision.hold;
+            publish();
+        }
+        return;
+    }
+    // Sending a show competes with playing one for disk and network.
+    if (!info.idle) return;
+    const queued = [...contentQueue];
+    contentQueue.clear();
+    publishQueue();
+    try {
+        await runDistribute(
+            { cmd: 'distribute', ...(decision.trigger === 'songs' && queued.length ? { sequences: queued } : {}) },
+            'auto',
+            decision.trigger,
+        );
+    } catch (e) {
+        // The op carries its own failure; put the queue back so the next tick
+        // tries again rather than losing what was asked for.
+        for (const name of queued) contentQueue.add(name);
+        publishQueue();
+        console.warn('[controller-ops] automatic distribution failed:', (e as Error).message);
+    }
+}
+
+/**
+ * A content check costs two metadata reads per sequence, so a refresh only
+ * re-checks a device whose answer has gone stale. A "refresh all" right after
+ * a distribution therefore adds nothing.
+ */
+const CONTENT_CHECK_FRESH_MS = 10 * 60_000;
+
+/**
+ * Fill in one device's `contentStatus` after a deep read, so its row and
+ * detail show what it holds without waiting for a distribution. Quiet and
+ * best-effort: this is a detail of a status read, not the point of it, and it
+ * leaves the last run's report alone.
+ */
+async function refreshContentStatus(id: string): Promise<void> {
+    if (!contentSource) return;
+    if (state.contentDist?.run) return; // a run is already reading these
+    const dev = state.devices[id];
+    if (!dev || !isContentTarget(dev)) return;
+    // Only the hosts the show would send content to carry a content status.
+    // Asked without ids so the role filter applies.
+    if (!contentHostsForShow(state.known ?? [], state.devices).some((h) => h.id === id)) {
+        if (dev.contentStatus) {
+            const cleared = { ...dev };
+            delete cleared.contentStatus;
+            state.devices[id] = cleared;
+            publish();
+        }
+        return;
+    }
+    // A box whose record says to presume it up is read even though it will not
+    // answer a ping -- that is what the setting is for.
+    if (dev.unreachable && !recordFor(dev, state.known ?? [])?.presumeUp) return;
+    const checkedAt = dev.contentStatus?.checkedAt;
+    if (checkedAt && Date.now() - Date.parse(checkedAt) < CONTENT_CHECK_FRESH_MS) return;
+
+    const { sequences, settings, showFolder } = contentSource();
+    // The same cut a real run would send, so a check measures the truth --
+    // which for a player means the remainder, not the whole show.
+    const cut = slicingPlanFor([{ id: dev.id }], state.devices, state.known ?? []).get(dev.id);
+    // A box that plays from its own card is asked what it can take: its own
+    // firmware is what decides, and a check that skipped that step would
+    // measure a file the device would never have accepted.
+    const cards = await cardSetupsFor(
+        contentHostsForShow(state.known ?? [], state.devices, [dev.id]),
+        state.known ?? [],
+        cut ? new Map([[dev.id, cut]]) : undefined,
+    );
+    // A check reports exact byte counts, so a slice it finds missing is still
+    // written to measure it: that needs a real directory to write into. A card
+    // controller always gets a file of its own, so it always needs one.
+    const workspace = cut || cards.size ? await createSliceWorkspace() : undefined;
+    try {
+        const { plan } = await buildContentPlan(sequences, settings, {
+            ...(cut ? { slicing: new Map([[dev.id, cut]]) } : {}),
+            ...(workspace ? { workspace } : {}),
+            ...(showFolder ? { showFolder } : {}),
+            ...(cards.size ? { cards } : {}),
+        });
+        if (!plan.sequences.length) return;
+        const targets = contentTargetsFor([dev], [dev.id], state.known ?? [], cards);
+        if (!targets.length) return;
+
+        // Check only: this reads the device's own file list and sends nothing.
+        const report = toContentDistReport(await new ContentSyncRun(plan, targets, { dryRun: true }).run(), {
+            checkOnly: true,
+            trigger: 'manual',
+        });
+        const target = report.targets[0];
+        const current = state.devices[id];
+        if (target && current) {
+            state.devices[id] = { ...current, contentStatus: contentStatusFor(target) };
+            publish();
+        }
+    } finally {
+        await workspace?.dispose().catch(() => undefined);
+    }
+}
+
+/**
+ * Bring each content target into the player role its layout record asks for.
+ * `checkOnly` reports the disagreements without writing anything. Returns the
+ * lines worth showing the operator: failures, and drift a check found.
+ */
+async function reconcilePlayerModes(
+    targets: { id: string }[],
+    checkOnly: boolean,
+    cards?: Map<string, CardSetupResult>,
+): Promise<string[]> {
+    const notes: string[] = [];
+    for (const target of targets) {
+        const dev = state.devices[target.id];
+        if (!dev) continue;
+        const rec = recordFor(dev, state.known ?? []);
+        const want = rec ? layoutPlayerMode(rec) : undefined;
+        if (!rec || !want) continue;
+        const drift = playerModeDrift(dev.mode, want, dev.driverType);
+        // A known, agreeing mode needs nothing; an unread one is worth a write.
+        if (dev.mode && !drift) continue;
+        if (checkOnly) {
+            if (drift) notes.push(`${rec.name}: ${drift}`);
+            continue;
+        }
+        try {
+            // A card controller was already connected to when the run worked
+            // out what it could take; asking it again costs a second.
+            const connected = cards?.get(target.id)?.setup?.driver;
+            const probe = connected
+                ? undefined
+                : await probeController(dev.ip, proxyFor(dev), {
+                      preferDriver: dev.driverType,
+                      expectController: true,
+                  });
+            const driver = connected ?? probe?.driver;
+            if (!driver) {
+                notes.push(`${rec.name} did not answer, so its role was left alone`);
+                continue;
+            }
+            const set = await setLayoutPlayerMode(
+                driver,
+                rec,
+                dev.driverType,
+                probe?.report?.mode,
+                probe?.report?.multiSyncMaster,
+            );
+            if (set.warning) {
+                notes.push(set.warning);
+                continue;
+            }
+            if (!set.changed) continue;
+            // Said with the old value: this is a change made to the operator's
+            // controller, and "set to remote" alone does not convey that
+            // something was wrong and is now different.
+            notes.push(drift ? `${rec.name}: was "${dev.mode}", set to ${want}` : `${rec.name} set to ${want}`);
+            // The mode is read at daemon start, so it takes a restart to hold.
+            const applied = await driver.applyConfig();
+            if (!applied.success) {
+                notes.push(`${rec.name} did not restart: ${applied.message ?? 'unknown error'}`);
+                continue;
+            }
+            state.devices[target.id] = { ...dev, mode: want, modeDrift: undefined, seenAt: nowIso() };
+        } catch (e) {
+            notes.push(`setting ${rec.name} to ${want} failed: ${(e as Error).message}`);
+        }
+    }
+    return notes;
+}
+
+/**
+ * Finish a distribution that has nothing to do: the operation is done, and a
+ * manual run gets an empty report with `why` as its note.
+ */
+function reportDistributeNothingToDo(
+    targetKey: string,
+    why: string,
+    origin: ControllerOpOrigin,
+    checkOnly: boolean,
+): void {
+    const op = newOp('distribute', targetKey, why, origin);
+    op.status = 'done';
+    op.finishedAt = nowIso();
+    state.operations[op.id] = op;
+    // A manual run gets the empty report; an automatic one keeps the last real report.
+    if (origin !== 'auto') {
+        const at = nowIso();
+        contentDistState().lastReport = {
+            startedAt: at,
+            finishedAt: at,
+            checkOnly,
+            cancelled: false,
+            trigger: 'manual',
+            targets: [],
+            totals: { targets: 0, targetsFailed: 0, uploaded: 0, skipped: 0, failed: 0, planned: 0, bytes: 0 },
+            note: why,
+        };
+    }
+    publish();
+    retireOlderOps(op);
+}
+
+/** Send show content to the chosen targets, or work out what is missing. */
+async function runDistribute(
+    command: Extract<ControllerCommand, { cmd: 'distribute' }>,
+    origin: ControllerOpOrigin,
+    trigger: ContentDistTrigger = 'manual',
+): Promise<void> {
+    const checkOnly = !!command.checkOnly;
+    if (!contentSource) {
+        reportDistributeNothingToDo(
+            'distribute:none',
+            'No show is open, so there is nothing to distribute.',
+            origin,
+            checkOnly,
+        );
+        return;
+    }
+    if (state.contentDist?.run) return; // one at a time; the running op is the answer
+    const { sequences, settings, showFolder } = contentSource();
+
+    // Who is in the show comes from the records, so this works before a scan;
+    // a scan only fills in each box's firmware and current contents.
+    const known = state.known ?? [];
+    const hosts = contentHostsForShow(known, state.devices, command.ids);
+    // Membership first and cheaply, so a show with nowhere to send is refused
+    // before anything is probed; the real specs are built once the card
+    // controllers have said what they can take.
+    if (!contentTargetsForHosts(hosts, known).length) {
+        reportDistributeNothingToDo(
+            'distribute:none',
+            known.length
+                ? 'No controller in this show plays its own copy — mark a player or a remote first.'
+                : 'No controllers are known yet — open a show with an xLights layout, or scan.',
+            origin,
+            checkOnly,
+        );
+        return;
+    }
+
+    // An FPP running as a remote only drives its own channels, so it is sent a
+    // slice rather than the whole show.
+    const slicing = slicingPlanForHosts(hosts, state.devices, known);
+    // Name and address per device, which the engine's own one-line label
+    // cannot be split back into.
+    const names = contentHostNames(hosts);
+    // Each controller that plays from its own card is connected to once, here:
+    // its firmware is what says which file to build for it, and the driver
+    // that answers is the one the transfer, the playlist and the role all use.
+    const cards = await cardSetupsFor(hosts, known, slicing);
+    const targets = contentTargetsForHosts(hosts, known, cards);
+    // A card controller always gets a file built for it -- the show's own fseq
+    // is zstd, which none of them can read -- so it always needs a workspace.
+    const workspace: SliceWorkspace | undefined = slicing.size || cards.size ? await createSliceWorkspace() : undefined;
+
+    const { plan, skipped } = await buildContentPlan(sequences, settings, {
+        ...(command.sequences ? { only: command.sequences } : {}),
+        ...(slicing.size ? { slicing } : {}),
+        ...(workspace ? { workspace } : {}),
+        ...(showFolder ? { showFolder } : {}),
+        ...(cards.size ? { cards } : {}),
+    });
+    if (!plan.sequences.length) {
+        await workspace?.dispose();
+        reportDistributeNothingToDo(
+            `distribute:${targets.map((t) => t.id).join(',')}`,
+            command.sequences?.length
+                ? 'None of those songs have a sequence file on disk, so there is nothing to send.'
+                : 'This show has no songs yet, so there is nothing to send.',
+            origin,
+            checkOnly,
+        );
+        return;
+    }
+    for (const s of skipped) console.warn(`[controller-ops] not distributing ${s.name}: ${s.reason}`);
+
+    const label = `${checkOnly ? 'Check' : 'Distribute'}${command.force ? ' (forced)' : ''} ${
+        plan.sequences.length
+    } sequence${plan.sequences.length === 1 ? '' : 's'} to ${targets.length} device${targets.length === 1 ? '' : 's'}`;
+    const op = newOp('distribute', `distribute:${targets.map((t) => t.id).join(',')}`, label, origin);
+    state.operations[op.id] = op;
+    const started = waitForSlot(op);
+    publish();
+
+    let slot = false;
+    let timer: NodeJS.Timeout | undefined;
+    try {
+        slot = await started;
+        if (!slot) return;
+
+        // Content for a proxied controller travels the same path a status
+        // read does, so the proxy has to list it first.
+        const proxyNotes = checkOnly ? [] : await ensureProxyLists();
+        if (proxyNotes.length) {
+            console.warn('[controller-ops] proxy list:', proxyNotes);
+            op.label += ` (${proxyNotes.join('; ')})`;
+            publish();
+        }
+
+        // Each target takes the role its layout record asks for, set the way a
+        // config upload would: a device left in the last show's role would play
+        // the whole show when it should follow, or the reverse. A check run only
+        // reports the disagreement.
+        const modeNotes = await reconcilePlayerModes(targets, checkOnly, cards);
+        if (modeNotes.length) {
+            console.warn('[controller-ops] distribute role notes:', modeNotes);
+            op.label += ` (${modeNotes.join('; ')})`;
+            publish();
+        }
+
+        const run = new ContentSyncRun(plan, targets, { dryRun: checkOnly, force: !!command.force });
+        contentRun = run;
+        const pushProgress = () => {
+            contentDistState().run = toContentDistRun(run.snapshot, { opId: op.id, checkOnly, trigger, names });
+            publish();
+        };
+        pushProgress();
+        timer = setInterval(pushProgress, CONTENT_PUBLISH_MS);
+
+        const report = await run.run();
+        lastContentRunMs = Date.now();
+
+        // The queue names songs still waiting to be delivered, so anything
+        // this run delivered to every target has stopped waiting -- however
+        // the run was started. A run narrowed to some devices says nothing
+        // about the rest, and a failed item is still outstanding.
+        if (!checkOnly && !report.cancelled && !command.ids?.length) {
+            const failed = new Set<string>();
+            for (const t of report.targets) {
+                for (const item of t.items) if (item.action === 'failed') failed.add(item.name);
+            }
+            let drained = false;
+            for (const seq of plan.sequences) {
+                if (!failed.has(seq.name) && contentQueue.delete(seq.name)) drained = true;
+            }
+            if (drained) publishQueue();
+        }
+
+        const cd = contentDistState();
+        delete cd.run;
+        cd.lastReport = toContentDistReport(report, { checkOnly, trigger, names });
+        delete cd.autoHold;
+
+        // Each device's row learns what it now holds.
+        for (const target of cd.lastReport.targets) {
+            const dev = state.devices[target.id];
+            if (dev) state.devices[target.id] = { ...dev, contentStatus: contentStatusFor(target) };
+        }
+
+        op.status = report.cancelled ? 'cancelled' : 'done';
+        op.finishedAt = nowIso();
+        if (report.totals.targetsFailed > 0) {
+            op.status = 'error';
+            op.error = `${report.totals.targetsFailed} of ${report.totals.targets} device(s) failed`;
+        }
+    } catch (err) {
+        delete contentDistState().run;
+        op.status = 'error';
+        op.error = failureText(err);
+        op.finishedAt = nowIso();
+        throw err;
+    } finally {
+        if (timer) clearInterval(timer);
+        contentRun = undefined;
+        // Slices are derived files; they are read during the upload and are of
+        // no use once it is done.
+        await workspace?.dispose().catch(() => undefined);
+        if (slot) releaseSlot('distribute');
         publish();
         retireOlderOps(op);
     }
@@ -1155,7 +1941,7 @@ async function runScan(
         return result;
     } catch (err) {
         op.status = 'error';
-        op.error = (err as Error).message;
+        op.error = failureText(err);
         op.finishedAt = nowIso();
         publish();
         throw err;

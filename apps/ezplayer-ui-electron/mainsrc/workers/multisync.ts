@@ -51,6 +51,8 @@ export interface SyncFrameInfo {
 }
 
 export interface MultiSyncConfig {
+    /** See MultisyncSettings.mode; resolved to `enabled` before it gets here. */
+    mode?: 'auto' | 'on' | 'off';
     enabled?: boolean;
     remotes?: string[];
     port?: number;

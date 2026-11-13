@@ -78,28 +78,36 @@ const StatusCards = ({
                                             </Typography>
                                         </Box>
 
-                                        {/* Controller Count Summary */}
+                                        {/* Controller count summary, over the show's controllers:
+                                            a remote or a second player takes sync rather than
+                                            pixel data and still counts. */}
                                         <Box sx={{ mb: 2 }}>
                                             <Typography variant="body1" sx={{ fontWeight: 'bold', mb: 1 }}>
                                                 Controllers: {stats.total}
-                                                {(controller.controllers?.length ?? 0) === stats.total
-                                                    ? ''
-                                                    : ` (${controller.controllers?.length} including skipped)`}
+                                                {stats.outOfShow > 0 && ` (${stats.outOfShow} not in this show)`}
                                             </Typography>
 
                                             <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mb: 1 }}>
                                                 <Chip
-                                                    label={`${stats.online} Online; ${stats.offline} Offline`}
+                                                    label={`${stats.online} Online; ${stats.offline} Offline${
+                                                        stats.pending > 0 ? `; ${stats.pending} waiting` : ''
+                                                    }`}
                                                     color={
-                                                        stats.online === stats.total
-                                                            ? 'success'
-                                                            : stats.offline > 0
-                                                              ? 'error'
+                                                        stats.offline > 0
+                                                            ? 'error'
+                                                            : stats.online === stats.total
+                                                              ? 'success'
                                                               : 'warning'
                                                     }
                                                     size="small"
                                                 />
                                             </Box>
+                                            {stats.playsOwnCopy > 0 && (
+                                                <Typography variant="caption" color="text.secondary">
+                                                    {stats.playsOwnCopy} of them play their own copy of the show and
+                                                    follow sync; the rest are sent live data.
+                                                </Typography>
+                                            )}
                                         </Box>
 
                                         {/* Error Summary */}
