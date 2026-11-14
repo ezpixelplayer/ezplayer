@@ -17,6 +17,9 @@ import { MovingHeadBeams } from './MovingHeadBeams';
 import type { MhFixtureInfo } from 'xllayoutcalcs';
 import type { AssetResolver } from '../../services/assetResolver';
 
+// Effectively unbounded: perspective depth precision is set by the near plane, not this.
+const FAR_PLANE = 1e7;
+
 export interface CameraState3D {
     position: [number, number, number];
     target: [number, number, number];
@@ -1066,6 +1069,8 @@ function SceneContent({
         if (controls && 'syncFromCamera' in controls) {
             (controls as unknown as { syncFromCamera: () => void }).syncFromCamera();
         } else if (controls && 'update' in controls) {
+            // Orbit around the scene centre; update() otherwise re-aims at the old target.
+            (controls as unknown as { target?: THREE.Vector3 }).target?.copy(center);
             (controls as unknown as { update: () => void }).update();
         }
 
@@ -1504,14 +1509,14 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
                             height: '100%',
                         }}
                     >
-                        <PerspectiveCamera makeDefault position={[5, 5, 5]} fov={75} near={0.1} far={50000} />
+                        <PerspectiveCamera makeDefault position={[5, 5, 5]} fov={75} near={0.1} far={FAR_PLANE} />
                         {isTouchOnly || forceOrbitControls ? (
                             <OrbitControls
                                 makeDefault
                                 enableDamping
                                 dampingFactor={0.35}
                                 minDistance={10}
-                                maxDistance={10000}
+                                maxDistance={FAR_PLANE / 10}
                                 enablePan={true}
                                 enableRotate={true}
                                 enableZoom={true}
