@@ -155,6 +155,12 @@ export interface Preview3DProps {
     renderOnDemand?: boolean;
     /** Registers the active viewer's imperative render handle (null when the viewer unmounts). */
     onRenderHandle?: (handle: PreviewRenderHandle | null) => void;
+    /** Keep click-to-select enabled in `'embedded'` mode. */
+    selectableModels?: boolean;
+    /** Host-driven single-model selection; leave undefined for uncontrolled. */
+    selectedModelName?: string | null;
+    /** Reports the selected model (null when cleared) on user-driven changes. */
+    onSelectedModelChange?: (modelName: string | null) => void;
 }
 
 /**
@@ -186,11 +192,14 @@ export const Preview3D: React.FC<Preview3DProps> = ({
     captureViewStateRef,
     renderOnDemand = false,
     onRenderHandle,
+    selectableModels = false,
+    selectedModelName: hostSelectedModelName,
+    onSelectedModelChange,
 }) => {
     const theme = useTheme();
     const preferOrbitControls = useOrbitPreference();
     const embedded = mode === 'embedded';
-    const disableModelSelection = embedded;
+    const disableModelSelection = embedded && !selectableModels;
     const hideAudioControls = embedded;
     const [viewMode, setViewMode] = useState<ViewMode>(defaultViewMode);
     // True once the mode came from somewhere deliberate — an explicit
@@ -221,6 +230,34 @@ export const Preview3D: React.FC<Preview3DProps> = ({
     });
     // This is the selection state of the model list
     const [selectedModelNames, setSelectedModelNames] = useState<Set<string>>(new Set<string>());
+
+    // Host-driven selection: adopt the host's model, and report user-driven changes back.
+    const selectedModelNamesRef = useRef(selectedModelNames);
+    selectedModelNamesRef.current = selectedModelNames;
+    const onSelectedModelChangeRef = useRef(onSelectedModelChange);
+    onSelectedModelChangeRef.current = onSelectedModelChange;
+    const lastReportedModelRef = useRef<string | null>(hostSelectedModelName ?? null);
+    const reportedSetRef = useRef(selectedModelNames);
+    useEffect(() => {
+        if (hostSelectedModelName === undefined) return;
+        lastReportedModelRef.current = hostSelectedModelName;
+        const current = selectedModelNamesRef.current;
+        const same = hostSelectedModelName
+            ? current.size === 1 && current.has(hostSelectedModelName)
+            : current.size === 0;
+        if (same) return;
+        setSelectedModelNames(new Set<string>(hostSelectedModelName ? [hostSelectedModelName] : []));
+        setSelectionState((prev) => ({ ...prev, selectedIds: new Set<string>() }));
+    }, [hostSelectedModelName]);
+    useEffect(() => {
+        // Unchanged set identity means mount, not a selection change.
+        if (reportedSetRef.current === selectedModelNames) return;
+        reportedSetRef.current = selectedModelNames;
+        const first: string | null = selectedModelNames.values().next().value ?? null;
+        if (first === lastReportedModelRef.current) return;
+        lastReportedModelRef.current = first;
+        onSelectedModelChangeRef.current?.(first);
+    }, [selectedModelNames]);
 
     // Settings state
     const [settingsAnchorPosition, setSettingsAnchorPosition] = useState<{ top: number; left: number } | null>(null);

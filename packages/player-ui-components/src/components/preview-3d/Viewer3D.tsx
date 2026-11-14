@@ -55,9 +55,7 @@ export interface Viewer3DProps {
     onGetCurrentCameraState?: (getter: () => CameraState3D | null) => void; // Callback to register a function that gets current camera state
     /** When true, omit fixed minHeight so the canvas fills a flex parent (e.g. dialog). */
     fillContainer?: boolean;
-    /** Force OrbitControls (the trackpad/touch variant) regardless of input detection.
-     *  Used by the layout-edit visual mode where click-to-select + orbit/pan/zoom
-     *  is the desired interaction model on every device. */
+    /** Force OrbitControls (the trackpad/touch variant) regardless of input detection. */
     forceOrbitControls?: boolean;
     /** Stop the r3f frameloop; frames render only via `PreviewRenderHandle.renderFrame`.
      *  Used for deterministic offline rendering (video export). */
