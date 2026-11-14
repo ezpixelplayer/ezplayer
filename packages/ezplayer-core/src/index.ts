@@ -158,6 +158,7 @@ export type {
 } from './types/ControllerOps';
 export {
     effectiveMaxFps,
+    effectiveForceLocalIP,
     needsContentDelivery,
     CARD_DRIVER_TYPES,
     contentFamilyOf,
@@ -184,7 +185,10 @@ export {
     hasPortDrift,
     hasExtraConfig,
     portDriftSeverity,
+    devicePortChannels,
+    portCountAgrees,
     reconcileInputs,
+    dropUnusedTrailingOutputs,
     overlayHealth,
     healthNeedsAttention,
     applyOverrides,
@@ -197,6 +201,7 @@ export {
     buildPortMap,
     expandIntentStrings,
     getPortSR,
+    nodeCountLabel,
     portIntentFromModelIntents,
     PORTS_PER_SMARTREMOTE,
 } from './util/controllerPortMap';

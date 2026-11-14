@@ -39,6 +39,38 @@ describe('UdpClient', () => {
             await client.disconnect();
         }
     });
+    it('leaves from the preferred local port when it is free', async () => {
+        const port = await closedPort();
+        const client = new UdpClient('udp4', '127.0.0.1', await closedPort(), undefined, undefined, {
+            preferredLocalPort: port,
+        });
+        await client.connect();
+        try {
+            expect(client.localPort).toBe(port);
+        } finally {
+            await client.disconnect();
+        }
+    });
+
+    it('falls back to an ephemeral port when the preferred one is taken', async () => {
+        const holder = dgram.createSocket('udp4');
+        await new Promise<void>((resolve) => holder.bind(0, resolve));
+        const port = holder.address().port;
+        const client = new UdpClient('udp4', '127.0.0.1', await closedPort(), undefined, undefined, {
+            preferredLocalPort: port,
+        });
+        await client.connect();
+        try {
+            expect(client.isConnected()).toBe(true);
+            expect(client.localPort).toBeDefined();
+            expect(client.localPort).not.toBe(port);
+            expect(client.getStats()).toMatchObject({ nErrors: 0, lastError: undefined });
+        } finally {
+            await client.disconnect();
+            await new Promise<void>((resolve) => holder.close(resolve));
+        }
+    });
+
     it('leaves no batch in flight when a batch is ended that was never started', async () => {
         const client = new UdpClient('udp4', '127.0.0.1', await closedPort());
         await client.connect();

@@ -30,6 +30,8 @@
                             report('failed to load ' + (t.src || t.href));
                             return;
                         }
+                        // Other element load failures (img, audio, video) are plain Events with no message.
+                        if (!(e instanceof ErrorEvent)) return;
                         report(String(e.message || 'unknown error'), e.error && e.error.stack);
                     },
                     true,

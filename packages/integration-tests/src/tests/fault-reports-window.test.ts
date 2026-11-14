@@ -44,6 +44,14 @@ describe('main window faults', () => {
         expect(log).toContain('[renderer:main] E Uncaught Error: ezp-fault: renderer-throw');
     });
 
+    it('does not report an image that fails to load', async () => {
+        await start(['renderer-missing-image']);
+        await mock.waitFor('renderer-error', 'ezp-fault: after-missing-image');
+        expect(mock.reports.filter((x) => x.kind === 'renderer-error').map((x) => x.message)).toEqual([
+            expect.stringContaining('ezp-fault: after-missing-image'),
+        ]);
+    });
+
     it('reports an error thrown while the app bundle loads', async () => {
         await start(['bundle-throw']);
         await mock.waitFor('renderer-error', 'ezp-fault: bundle-throw');

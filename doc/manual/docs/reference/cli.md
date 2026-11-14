@@ -501,9 +501,8 @@ CLI arguments take **priority over** [environment variables](./env-variables.md)
 when both configure the same setting (for example `--web-port=` beats
 `EZPLAYER_WEB_PORT`).
 
-On Windows, append flags after the executable path. On Linux AppImage/deb
-packages, `executableArgs` may include `--no-sandbox` automatically — see
-[Platform notes](#platform-notes).
+On Windows, append flags after the executable path. On Linux, see
+[Platform notes](#platform-notes) for when to add `--no-sandbox`.
 
 ### Quick reference
 
@@ -739,7 +738,7 @@ troubleshooting startup, rendering, or networking:
 
 | Flag                       | When to use                                                                                                                                       |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--no-sandbox`             | Applied automatically on Linux (see [Platform notes](#platform-notes)). Rarely needed elsewhere; can work around sandbox-related launch failures. |
+| `--no-sandbox`             | Linux sandbox launch failures, or running as root (see [Platform notes](#platform-notes)). Rarely needed elsewhere.                             |
 | `--disable-gpu`            | Force software rendering to work around GPU/driver glitches (blank window, flicker, artifacts).                                                   |
 | `--proxy-server=host:port` | Route EZPlayer's traffic through an explicit HTTP/HTTPS proxy. Pair with a trusted CA (above) if the proxy intercepts TLS.                        |
 
@@ -761,10 +760,12 @@ after fixing the driver, launch once with the environment variable
 
 **Linux**
 
-- EZPlayer appends `--no-sandbox` on Linux at startup (Ubuntu 24.04+ AppArmor and
-  older distros without a setuid sandbox helper).
-- Linux packages in `electron-builder` config also list `--no-sandbox` in
-  `executableArgs` for AppImage/deb/tar.gz targets.
+- The menu launchers of the AppImage and deb packages pass `--no-sandbox`. The
+  AppImage also adds it when the system has no user namespaces. Run from a
+  terminal, the deb uses the Chromium sandbox that its installer set up.
+- If a terminal launch stops with "No usable sandbox", or you run EZPlayer as
+  root, add `--no-sandbox` to the command line. It must be on the command line
+  itself; it cannot be set in a settings file or environment variable.
 
 **macOS**
 

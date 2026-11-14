@@ -3,7 +3,7 @@ import { alpha, Chip, Typography, useTheme } from '@mui/material';
 import type { Theme } from '@mui/material';
 import { Box } from '../box/Box';
 import { CompactDialog } from '../dialog/CompactDialog';
-import { buildPortMap } from '@ezplayer/ezplayer-core';
+import { buildPortMap, nodeCountLabel } from '@ezplayer/ezplayer-core';
 import type {
     ControllerModelIntent,
     ControllerPanelMatrix,
@@ -62,7 +62,7 @@ const PropBox: React.FC<{ box: PortMapBox; drifted: boolean; theme: Theme }> = (
             </Box>
             <Typography variant="caption" sx={{ color: 'text.secondary' }}>
                 {[
-                    box.totalPixels !== undefined ? `${box.totalPixels} px` : undefined,
+                    box.totalPixels !== undefined ? nodeCountLabel(box.totalPixels, box.totalChannels) : undefined,
                     box.protocol,
                     box.span > 1 ? `spans ${box.span} ports` : undefined,
                 ]
@@ -74,7 +74,7 @@ const PropBox: React.FC<{ box: PortMapBox; drifted: boolean; theme: Theme }> = (
                     <Typography key={s.stringIndex} variant="caption" sx={{ color: 'text.secondary', lineHeight: 1.4 }}>
                         str {s.stringIndex} → port {s.port}
                         {s.smartRemote > 0 ? ` ${srLetter(s.smartRemote)}` : ''}
-                        {s.nodeCount !== undefined ? ` · ${s.nodeCount} px` : ''}
+                        {s.nodeCount !== undefined ? ` · ${nodeCountLabel(s.nodeCount, s.channels)}` : ''}
                     </Typography>
                 ))}
         </div>
@@ -257,7 +257,7 @@ export const PortVisualizerDialog: React.FC<{
                                             variant="caption"
                                             sx={{ display: 'block', color: 'text.secondary' }}
                                         >
-                                            plan {r.intendedPixels} px
+                                            plan {nodeCountLabel(r.intendedPixels, r.intendedChannels)}
                                         </Typography>
                                     )}
                                     {haveActual && (
@@ -274,7 +274,7 @@ export const PortVisualizerDialog: React.FC<{
                                                       : 'text.secondary',
                                             }}
                                         >
-                                            device {r.actualPixels ?? 0} px
+                                            device {nodeCountLabel(r.actualPixels ?? 0, r.actualChannels)}
                                         </Typography>
                                     )}
                                 </div>

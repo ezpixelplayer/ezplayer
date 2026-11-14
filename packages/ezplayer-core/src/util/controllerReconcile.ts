@@ -65,6 +65,7 @@ export function applyOverrides(xlights: KnownController[], records: EzpControlle
             model: r.model ?? k.model,
             variant: r.variant ?? k.variant,
             fpsOverride: r.fpsOverride,
+            forceLocalIPOverride: r.forceLocalIP,
             source: 'both',
         });
     }
@@ -86,6 +87,7 @@ export function applyOverrides(xlights: KnownController[], records: EzpControlle
             model: r.model,
             variant: r.variant,
             fpsOverride: r.fpsOverride,
+            forceLocalIPOverride: r.forceLocalIP,
             source: 'ezp',
         });
     }
@@ -151,6 +153,8 @@ export function reconcileControllers(known: KnownController[], devices: Discover
             startChannel: k.startChannel,
             maxFps: k.maxFps,
             fpsOverride: k.fpsOverride,
+            forceLocalIP: k.forceLocalIP,
+            forceLocalIPOverride: k.forceLocalIPOverride,
         });
     }
 
@@ -203,6 +207,42 @@ export function portDriftSeverity(drift: PortDriftKind): PortDriftSeverity {
     return drift === 'unexpected' ? 'extra' : 'conflict';
 }
 
+/** Channels a device port covers: its channel span when it reports one, else
+ *  its pixels at the width its colour order implies. */
+export function devicePortChannels(a: {
+    pixels?: number;
+    startChannel?: number;
+    endChannel?: number;
+    colorOrder?: string;
+}): number | undefined {
+    if (a.startChannel !== undefined && a.endChannel !== undefined && a.endChannel >= a.startChannel) {
+        return a.endChannel - a.startChannel + 1;
+    }
+    if (a.pixels === undefined) return undefined;
+    return a.pixels * devicePixelWidth(a.colorOrder);
+}
+
+/** Channels per pixel as the device counts them: four for an RGBW order, else three. */
+function devicePixelWidth(colorOrder?: string): number {
+    return (colorOrder?.trim().length ?? 0) >= 4 ? 4 : 3;
+}
+
+/** Whether a device port holds what the layout puts there. Equal pixel counts
+ *  settle it; otherwise the layout's channels, counted in the device's own
+ *  pixels, must come to the device's count — thirteen one-channel nodes are
+ *  five pixels to a controller that counts in threes. */
+export function portCountAgrees(
+    intendedPixels: number | undefined,
+    intendedChannels: number | undefined,
+    actualPixels: number | undefined,
+    actualColorOrder?: string,
+): boolean {
+    if (intendedPixels === undefined || actualPixels === undefined) return true;
+    if (intendedPixels === actualPixels) return true;
+    if (intendedChannels === undefined) return false;
+    return Math.ceil(intendedChannels / devicePixelWidth(actualColorOrder)) === actualPixels;
+}
+
 export function reconcilePorts(
     intent: ControllerPortIntent[],
     actual: ControllerPort[],
@@ -223,6 +263,7 @@ export function reconcilePorts(
             intendedModels: i.models,
             intendedModelLabels: i.modelLabels,
             intendedPixels: i.pixels,
+            intendedChannels: i.channels,
             drift: 'missing', // no actual seen yet
         });
     }
@@ -243,9 +284,10 @@ export function reconcilePorts(
                 row.extraModels = actualModels.filter((m) => !intendedSet.has(modelCompareKey(m)));
             }
             row.actualPixels = a.pixels;
+            row.actualChannels = devicePortChannels(a);
             const intendedStart = intendedStarts.get(a.port);
             if (!active) row.drift = 'missing';
-            else if (row.intendedPixels !== undefined && a.pixels !== undefined && row.intendedPixels !== a.pixels)
+            else if (!portCountAgrees(row.intendedPixels, row.intendedChannels, a.pixels, a.colorOrder))
                 row.drift = 'count';
             else if (
                 intendedStart !== undefined &&
@@ -265,6 +307,7 @@ export function reconcilePorts(
                 actualModels,
                 extraModels: actualModels, // nothing intended ⇒ every model is extra
                 actualPixels: a.pixels,
+                actualChannels: devicePortChannels(a),
                 drift: 'unexpected',
             });
         }
@@ -535,6 +578,28 @@ const summarizeUniverses = (u: { universe: number; channels: number }[]): string
     const size = sizes.size === 1 ? ` × ${u[0].channels} ch` : '';
     return `${u.length} universe${u.length !== 1 ? 's' : ''} (${u.length > 6 && !contiguous ? `U ${first}…${last}` : range})${size}`;
 };
+
+/**
+ * The outputs without the universes past the last channel any model on the
+ * controller uses. xLights can leave such a universe in networks.xml (since
+ * 2026.04 a single-colour string of over 510 lights is counted by lights but
+ * sized by its one channel, so one extra 510 universe is created and never
+ * sized), and neither its upload nor ours writes a universe no string maps
+ * into. Nothing is dropped when no model says where the channels end.
+ */
+export function dropUnusedTrailingOutputs(
+    outputs: ControllerOutputIntent[] | undefined,
+    used: { startChannel?: number; channels?: number }[],
+): ControllerOutputIntent[] | undefined {
+    if (!outputs?.length) return outputs;
+    let last = 0;
+    for (const u of used) {
+        if (u.startChannel !== undefined && u.channels) last = Math.max(last, u.startChannel + u.channels - 1);
+    }
+    if (last === 0) return outputs;
+    const kept = outputs.filter((o) => o.universe === undefined || o.startChannel <= last);
+    return kept.length ? kept : outputs.slice(0, 1);
+}
 
 /**
  * Compare the xLights output/universe intent against the device's actual

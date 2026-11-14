@@ -7,13 +7,14 @@ import {
     hasPortDrift,
     portDriftSeverity,
     reconcileInputs,
+    dropUnusedTrailingOutputs,
     overlayHealth,
     healthNeedsAttention,
     applyOverrides,
     ipInCidr,
     findOffNetworkControllers,
 } from '../src/util/controllerReconcile';
-import { contentRoleOf } from '../src/types/ControllerOps';
+import { contentRoleOf, effectiveForceLocalIP } from '../src/types/ControllerOps';
 import type {
     KnownController,
     DiscoveredController,
@@ -136,6 +137,7 @@ describe('reconcilePorts', () => {
                 missingModels: [],
                 extraModels: [],
                 actualPixels: 50,
+                actualChannels: 150,
                 drift: 'ok',
                 severity: 'ok',
             },
@@ -323,6 +325,15 @@ describe('applyOverrides', () => {
         expect(out[0].source).toBe('both');
     });
 
+    it('lets the record choose the address the data is sent from', () => {
+        const xl = [known({ name: 'Roof', address: '10.0.0.50', forceLocalIP: '10.0.0.42' })];
+        expect(effectiveForceLocalIP(applyOverrides(xl, [])[0])).toBe('10.0.0.42');
+        const out = applyOverrides(xl, [rec({ name: 'Roof', forceLocalIP: '10.0.0.7' })]);
+        expect(out[0]).toMatchObject({ forceLocalIP: '10.0.0.42', forceLocalIPOverride: '10.0.0.7' });
+        expect(effectiveForceLocalIP(out[0])).toBe('10.0.0.7');
+        expect(effectiveForceLocalIP({})).toBeUndefined();
+    });
+
     it('soft-deletes: a record with deleted drops the controller from the set', () => {
         const out = applyOverrides(
             [known({ name: 'Roof', address: '1.1.1.1' }), known({ name: 'Garage', address: '2.2.2.2' })],
@@ -423,6 +434,38 @@ describe('how much a drift matters', () => {
         // A row built by hand (a test, an older payload) falls back to the kind.
         expect(hasPortDrift([{ drift: 'count' }])).toBe(true);
         expect(hasPortDrift([{ drift: 'unexpected' }])).toBe(false);
+    });
+});
+
+describe('dropUnusedTrailingOutputs', () => {
+    const outputs = [
+        { type: 'e131', universe: 1, startChannel: 1, channels: 510 },
+        { type: 'e131', universe: 2, startChannel: 511, channels: 48 },
+        { type: 'e131', universe: 3, startChannel: 559, channels: 510 },
+    ];
+
+    it('drops the universes no model on the controller reaches', () => {
+        const kept = dropUnusedTrailingOutputs(outputs, [
+            { startChannel: 1, channels: 510 },
+            { startChannel: 511, channels: 48 },
+        ]);
+        expect(kept?.map((o) => o.universe)).toEqual([1, 2]);
+    });
+
+    it('keeps a universe a model only starts in', () => {
+        const kept = dropUnusedTrailingOutputs(outputs, [{ startChannel: 400, channels: 160 }]);
+        expect(kept?.map((o) => o.universe)).toEqual([1, 2, 3]);
+    });
+
+    it('keeps everything when no model says where the channels end', () => {
+        expect(dropUnusedTrailingOutputs(outputs, [])).toBe(outputs);
+        expect(dropUnusedTrailingOutputs(outputs, [{ channels: 3 }, { startChannel: 1 }])).toBe(outputs);
+        expect(dropUnusedTrailingOutputs(undefined, [{ startChannel: 1, channels: 3 }])).toBeUndefined();
+    });
+
+    it('leaves a DDP block alone', () => {
+        const ddp = [{ type: 'ddp', startChannel: 1, channels: 6000 }];
+        expect(dropUnusedTrailingOutputs(ddp, [{ startChannel: 1, channels: 30 }])).toEqual(ddp);
     });
 });
 

@@ -2678,3 +2678,77 @@ describe('interactive playlist play', () => {
         expect(logs.filter((l) => l.eventType === 'Schedule Ended').length).toBe(0);
     });
 });
+
+// #321: a non-looping playlist longer than its window, stepped the way the playback loop
+// steps it. When nothing is upcoming, the loop sends black. L3 should never start.
+describe('playlist longer than its schedule window', () => {
+    const song = (id: string): SequenceRecord => ({
+        id,
+        instanceId: id,
+        work: { length: 120, artist: id, title: id },
+        files: { fseq: `f${id}` },
+    });
+    const pl: PlaylistRecord = {
+        title: 'threeLong',
+        createdAt: 0,
+        tags: [],
+        id: 'threeLong',
+        items: [
+            { id: 'L1', sequence: 1 },
+            { id: 'L2', sequence: 2 },
+            { id: 'L3', sequence: 3 },
+        ],
+    };
+    const sched = (endPolicy: ScheduledPlaylist['endPolicy']): ScheduledPlaylist => ({
+        id: `threeMin-${endPolicy}`,
+        title: 'threeMin',
+        playlistTitle: 'threeLong',
+        playlistId: pl.id,
+        date: 0,
+        fromTime: '18:00',
+        toTime: '18:03',
+        loop: false,
+        endPolicy,
+        duration: 0,
+    });
+
+    // [policy, seconds after the start when the show goes idle]
+    const cases: [ScheduledPlaylist['endPolicy'], number][] = [
+        ['seqboundlate', 240],
+        ['seqboundnearest', 240],
+        ['seqboundearly', 120],
+        ['hardcut', 180],
+    ];
+    for (const [policy, idleAtS] of cases) {
+        it(`${policy}: plays until ${idleAtS}s, then nothing`, () => {
+            const bdate = new Date(0);
+            bdate.setHours(0, 0, 0);
+            const start = bdate.getTime() + 18 * 3600 * 1000;
+            const plr = new PlayerRunState(start - 5000);
+            const errs: string[] = [];
+            plr.setUpSequences([song('L1'), song('L2'), song('L3')], [pl], [sched(policy)], errs);
+            expect(errs).toEqual([]);
+            plr.addTimeRangeToSchedule(start - 5000, start - 5000 + 25 * 3600 * 1000);
+
+            // What the loop would play at each step: [first ms, last ms, seqId]
+            const spans: [number, number, string][] = [];
+            for (let t = start - 5000; t <= start + 300_000; t += 50) {
+                for (;;) {
+                    const plog: PlaybackLogDetail[] = [];
+                    plr.runUntil(t, 1, plog);
+                    if (!plog.length) break;
+                }
+                const a = plr.getUpcomingItems(2000, 25 * 3600 * 1000).curPLActions?.actions?.[0];
+                const id = a?.seqId ?? '-';
+                const last = spans[spans.length - 1];
+                if (last && last[2] === id) last[1] = t - start;
+                else spans.push([t - start, t - start, id]);
+            }
+            const ids = spans.map((s) => s[2]);
+            expect(ids).toEqual(policy === 'seqboundearly' ? ['-', 'L1', '-'] : ['-', 'L1', 'L2', '-']);
+            // Within one 50ms step (the loop snaps to a sequence start; this test does not)
+            expect(Math.abs(spans[1][0])).toBeLessThanOrEqual(50);
+            expect(Math.abs(spans[spans.length - 1][0] - idleAtS * 1000)).toBeLessThanOrEqual(50);
+        });
+    }
+});

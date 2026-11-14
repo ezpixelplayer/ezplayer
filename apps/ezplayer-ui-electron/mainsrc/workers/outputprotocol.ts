@@ -21,7 +21,7 @@ export interface OutputWorkerSettings {
 export interface OutputWorkerOpenMsg {
     type: 'open';
     controllers: ControllerState[];
-    opts: { ddpPort?: number; fpsOverrides?: Record<string, number> };
+    opts: { ddpPort?: number; fpsOverrides?: Record<string, number>; forceLocalIPs?: Record<string, string> };
     pool: SharedArrayBuffer;
     stats: SharedArrayBuffer;
     outputs: SerializedOutput[];

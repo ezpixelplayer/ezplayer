@@ -102,6 +102,15 @@ export function injectRendererFaults(wc: WebContents): void {
                 ),
         );
     }
+    // A broken <img>, then a throw from its onerror: the throw should be the only report.
+    if (hasFault('renderer-missing-image')) {
+        later(
+            () =>
+                void wc.executeJavaScript(
+                    "{ const i = document.createElement('img'); document.body.appendChild(i); i.onerror = () => setTimeout(() => { throw new Error('ezp-fault: after-missing-image'); }); i.src = 'ezp-fault-missing.png'; }",
+                ),
+        );
+    }
     if (hasFault('renderer-hang')) later(() => void wc.executeJavaScript('setTimeout(() => { for (;;) {} })'));
     if (hasFault('renderer-crash')) later(() => crashRenderer(wc));
     if (hasFault('gpu-crash')) {

@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { SendJob, SenderJob, SendJobSenderState } from '../SenderJob';
-import { e131Universes, E131Sender, fillE131PacketHeaderStatic, updateE131PacketHeader } from './E131';
+import {
+    e131MulticastAddress,
+    e131Universes,
+    E131Sender,
+    fillE131PacketHeaderStatic,
+    isE131MulticastAddress,
+    updateE131PacketHeader,
+} from './E131';
 import type { UdpClient } from './UDP';
 
 /**
@@ -220,5 +227,79 @@ describe('E131Sender packetizing', () => {
 
         expect(sequences.size).toBe(n);
         for (const seqs of sequences.values()) expect(seqs).toEqual([254, 255, 0, 1]);
+    });
+});
+
+describe('E1.31 multicast', () => {
+    it('maps a universe to its group address', () => {
+        expect(e131MulticastAddress(1)).toBe('239.255.0.1');
+        expect(e131MulticastAddress(256)).toBe('239.255.1.0');
+        expect(e131MulticastAddress(63999)).toBe('239.255.249.255');
+    });
+
+    it('recognises the layout addresses that ask for it', () => {
+        expect(isE131MulticastAddress('MULTICAST')).toBe(true);
+        expect(isE131MulticastAddress(' multicast ')).toBe(true);
+        expect(isE131MulticastAddress('239.255.0.7')).toBe(true);
+        expect(isE131MulticastAddress('192.168.1.50')).toBe(false);
+        expect(isE131MulticastAddress('falcon.local')).toBe(false);
+    });
+
+    it('addresses each universe, and the sync packet, to its own group', () => {
+        const sender = new E131Sender();
+        sender.multicast = true;
+        sender.syncUniverse = 300;
+        sender.universes = e131Universes([1, 2, 256], [510, 510, 510]);
+        const sent: Array<{ universe: number; to: string | undefined }> = [];
+        sender.client = {
+            isConnected: () => true,
+            addSendToBatch: (bufs: Uint8Array | Uint8Array[], to?: string) => {
+                const hdr = Buffer.from(Array.isArray(bufs) ? bufs[0] : bufs);
+                // Data packets carry the universe at 113, the sync packet at 45.
+                sent.push({ universe: hdr.length > 49 ? hdr.readUInt16BE(113) : hdr.readUInt16BE(45), to });
+            },
+        } as unknown as UdpClient;
+
+        const job = new SendJob();
+        const sj = new SenderJob();
+        sj.sender = sender;
+        sj.burstSize = 1_000_000;
+        sj.parts.push({ bufIdx: 0, bufStart: 0, bufLen: 1530 });
+        job.senders.push(sj);
+        job.dataBuffers = [new Uint8Array(1530)];
+        const state = new SendJobSenderState();
+        sender.startFrame();
+        while (!sender.sendPortion(job, sj, state)) {
+            /* drain */
+        }
+        sender.sendPush(job, sj, state);
+
+        expect(sent).toEqual([
+            { universe: 1, to: '239.255.0.1' },
+            { universe: 2, to: '239.255.0.2' },
+            { universe: 256, to: '239.255.1.0' },
+            { universe: 300, to: '239.255.1.44' },
+        ]);
+    });
+
+    it('names no destination when unicast', () => {
+        const sender = new E131Sender();
+        sender.pushAtEnd = false;
+        sender.universes = e131Universes([5], [10]);
+        const to: Array<string | undefined> = [];
+        sender.client = {
+            isConnected: () => true,
+            addSendToBatch: (_bufs: Uint8Array[], dest?: string) => to.push(dest),
+        } as unknown as UdpClient;
+        const job = new SendJob();
+        const sj = new SenderJob();
+        sj.sender = sender;
+        sj.burstSize = 1_000_000;
+        sj.parts.push({ bufIdx: 0, bufStart: 0, bufLen: 10 });
+        job.senders.push(sj);
+        job.dataBuffers = [new Uint8Array(10)];
+        sender.startFrame();
+        sender.sendPortion(job, sj, new SendJobSenderState());
+        expect(to).toEqual([undefined]);
     });
 });

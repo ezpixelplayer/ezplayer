@@ -6,7 +6,7 @@ title: Support Matrix
 # Support Matrix
 
 :::note
-This support matrix pertains to [detailed controller status](controllerlist.md), [controller actions](controlleractions.md), and [content distribution](contentdistribution.md).  DDP and E1.31 controllers that have already been configured and respond to pings will work with EZPlayer even if detailed status and configuration actions are not available.
+This support matrix pertains to [detailed controller status](controllerlist.md), [controller actions](controlleractions.md), and [content distribution](contentdistribution.md).  DDP, E1.31 (sACN, unicast or multicast), and ArtNet controllers that have already been configured and respond to pings will work with EZPlayer even if detailed status and configuration actions are not available.
 :::
 
 As there are innumerable combinations of controller model, firmware version, and test scenario, this documentation will never be complete.  Please contact the team if you have any issues, or to request additional controller support.  We do our best to automate testing of boards we have as lab samples, but this doesn't rule out issues related to model and firmware differences, or nuances only apparent during manual testing.

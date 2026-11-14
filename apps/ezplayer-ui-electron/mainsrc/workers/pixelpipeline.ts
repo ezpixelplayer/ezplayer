@@ -60,7 +60,7 @@ export interface PixelPipelineOptions {
     controllers: ControllerState[];
     /** Channel-space extent the legacy export and controllers cover. */
     nChannels: number;
-    openOpts: { ddpPort?: number; fpsOverrides?: Record<string, number> };
+    openOpts: { ddpPort?: number; fpsOverrides?: Record<string, number>; forceLocalIPs?: Record<string, string> };
     settings: { outputEnabled: boolean; blackFramesEnabled: boolean; maxSlotFraction: number };
     /** Existing channel-space ring for preview readers. */
     /** Channel-space export ring for the existing previews; absent when there are no channels. */

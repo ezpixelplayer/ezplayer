@@ -18,7 +18,12 @@ import type {
     PanelMatrixReconcile,
     VirtualMatrixReconcile,
 } from '../types/ControllerOps';
-import { reconcilePanelMatrices, reconcileVirtualMatrices } from './controllerReconcile';
+import {
+    devicePortChannels,
+    portCountAgrees,
+    reconcilePanelMatrices,
+    reconcileVirtualMatrices,
+} from './controllerReconcile';
 
 /** Ports per smart-remote bank. */
 export const PORTS_PER_SMARTREMOTE = 4;
@@ -40,6 +45,8 @@ export interface PortMapString {
     startChannel?: number;
     /** Pixels on this string; undefined when unknown (grouped summary intent). */
     nodeCount?: number;
+    /** Channels the string takes; undefined when unknown. */
+    channels?: number;
     protocol?: string;
 }
 
@@ -53,6 +60,8 @@ export interface PortMapBox {
     column: number;
     /** Total pixels across the box's strings; undefined when unknown. */
     totalPixels?: number;
+    /** Channels across the box's strings; undefined when unknown. */
+    totalChannels?: number;
     protocol?: string;
     /** Distinct smart-remote slots in use (1 = A …), empty when none. */
     smartRemotes: number[];
@@ -66,11 +75,15 @@ export interface PortMapRow {
     port: number;
     /** Sum of intended pixels on this port (from the expanded strings). */
     intendedPixels?: number;
+    /** Channels those pixels take; undefined when any string's count is unknown. */
+    intendedChannels?: number;
     /** Pixels the device actually reports configured on this port. */
     actualPixels?: number;
+    /** Channels the device port covers, when it says. */
+    actualChannels?: number;
     /** Model name the device reports, when it has one. */
     actualModel?: string;
-    /** True when intended and actual pixel counts disagree. */
+    /** True when the device holds a different count from the layout (see portCountAgrees). */
     drift: boolean;
 }
 
@@ -170,6 +183,37 @@ export function getPortSR(
     return { port: currp, smartRemote: currsr };
 }
 
+/** Channels of string i (of n) in a model intent, when the intent says. */
+function intentStringChannels(mi: ControllerModelIntent, i: number, n: number): number | undefined {
+    if (n === 1) {
+        if (mi.channels !== undefined) return mi.channels;
+        return mi.channelsPerPixel !== undefined ? mi.nodeCount * mi.channelsPerPixel : undefined;
+    }
+    const listed = mi.stringChannels?.[i];
+    if (listed !== undefined) return listed;
+    const nodes = mi.stringNodeCounts?.[i];
+    return nodes !== undefined && mi.channelsPerPixel !== undefined ? nodes * mi.channelsPerPixel : undefined;
+}
+
+/** The sum of counts, or undefined when any is unknown. */
+function sumKnown(values: (number | undefined)[]): number | undefined {
+    let sum = 0;
+    for (const v of values) {
+        if (v === undefined) return undefined;
+        sum += v;
+    }
+    return sum;
+}
+
+/** How a count of lights reads: pixels when each takes three or four channels,
+ *  nodes otherwise, with the channels beside it when they are known. */
+export function nodeCountLabel(nodes: number, channels?: number): string {
+    if (channels === undefined || nodes <= 0) return `${nodes} px`;
+    const perNode = channels / nodes;
+    const unit = perNode === 3 || perNode === 4 ? 'px' : nodes === 1 ? 'node' : 'nodes';
+    return `${nodes} ${unit} · ${channels} ch`;
+}
+
 /** Expand model intents into per-string placements (multi-string models get one
  *  entry per physical string, on the port/SR slot the cascade rules assign). */
 export function expandIntentStrings(intents: ControllerModelIntent[]): PortMapString[] {
@@ -195,6 +239,7 @@ export function expandIntentStrings(intents: ControllerModelIntent[]): PortMapSt
                 smartRemoteType: mi.smartRemoteType,
                 startChannel: n === 1 ? mi.startChannel : starts![i],
                 nodeCount: n === 1 ? mi.nodeCount : counts![i],
+                channels: intentStringChannels(mi, i, n),
                 protocol: mi.protocol,
             });
         }
@@ -243,11 +288,13 @@ export function portIntentFromModelIntents(intents: ControllerModelIntent[]): Co
         }
         const models = [...perModel.keys()];
         const starts = ss.map((s) => s.startChannel).filter((c): c is number => c !== undefined);
+        const channels = sumKnown(ss.map((s) => s.channels));
         out.push({
             port,
             models,
             modelLabels: models.map((m) => portModelLabel(m, perModel.get(m)!)),
             pixels: ss.reduce((sum, s) => sum + (s.nodeCount ?? 0), 0),
+            ...(channels !== undefined ? { channels } : {}),
             protocol: ss.find((s) => s.protocol)?.protocol,
             ...(starts.length ? { startChannel: Math.min(...starts) } : {}),
         });
@@ -310,10 +357,8 @@ export function buildPortMap(
         const ports = ss.map((s) => s.port);
         const firstPort = Math.min(...ports);
         const span = Math.max(...ports) - firstPort + 1;
-        const pixels = ss.map((s) => s.nodeCount);
-        const totalPixels = pixels.every((p) => p !== undefined)
-            ? (pixels as number[]).reduce((a, b) => a + b, 0)
-            : undefined;
+        const totalPixels = sumKnown(ss.map((s) => s.nodeCount));
+        const totalChannels = sumKnown(ss.map((s) => s.channels));
         const smartRemotes = [...new Set(ss.map((s) => s.smartRemote).filter((r) => r > 0))].sort((a, b) => a - b);
         boxes.push({
             model,
@@ -321,6 +366,7 @@ export function buildPortMap(
             span,
             column: 0, // assigned below
             totalPixels,
+            totalChannels,
             protocol: ss[0]?.protocol,
             smartRemotes,
             smartRemoteType: ss.find((s) => s.smartRemoteType)?.smartRemoteType,
@@ -349,13 +395,21 @@ export function buildPortMap(
 
     // Rows run contiguously from 1 to the max port either side touches.
     const intendedByPort = new Map<number, number>();
+    const channelsByPort = new Map<number, number | undefined>();
     if (modelIntents?.length) {
         for (const s of strings) {
             intendedByPort.set(s.port, (intendedByPort.get(s.port) ?? 0) + (s.nodeCount ?? 0));
+            channelsByPort.set(
+                s.port,
+                sumKnown([channelsByPort.has(s.port) ? channelsByPort.get(s.port) : 0, s.channels]),
+            );
         }
     } else {
         for (const pi of intent ?? []) {
-            if (pi.models.length || pi.pixels) intendedByPort.set(pi.port, pi.pixels);
+            if (pi.models.length || pi.pixels) {
+                intendedByPort.set(pi.port, pi.pixels);
+                channelsByPort.set(pi.port, pi.channels);
+            }
         }
     }
     const actualByPort = new Map<number, ControllerPort>();
@@ -374,14 +428,20 @@ export function buildPortMap(
     const rows: PortMapRow[] = [];
     for (let p = 1; p <= maxPort; p++) {
         const intended = intendedByPort.get(p);
+        const intendedChannels = channelsByPort.get(p);
         const act = actualByPort.get(p);
         const actualPixels = act?.pixels;
         rows.push({
             port: p,
             intendedPixels: intended,
+            intendedChannels,
             actualPixels,
+            actualChannels: act ? devicePortChannels(act) : undefined,
             actualModel: act?.model,
-            drift: haveActual && haveIntent && (intended ?? 0) !== (actualPixels ?? 0),
+            drift:
+                haveActual &&
+                haveIntent &&
+                !portCountAgrees(intended ?? 0, intendedChannels, actualPixels ?? 0, act?.colorOrder),
         });
     }
 
