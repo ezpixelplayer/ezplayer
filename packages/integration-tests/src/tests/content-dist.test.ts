@@ -63,6 +63,11 @@ async function command(body: Record<string, unknown>): Promise<Record<string, un
 const learnAbout = (mock: MockController) =>
     command({ cmd: 'status', id: idOf(mock), address: addressOf(mock), depth: 'full' });
 
+/** Put a device in the show as a remote. Membership is the show's intent,
+ *  stated in a record; the device is told, never asked. */
+const enroll = (mock: MockController, name: string) =>
+    command({ cmd: 'record', name, patch: { address: addressOf(mock), active: 'remote' } });
+
 /** Sequence file names the mock holds. */
 const heldSequences = (mock: MockController) => [...(mock.http.content.files.get('sequences')?.keys() ?? [])].sort();
 
@@ -103,9 +108,10 @@ describe('add a song, send it, play it', () => {
         expect(reg.status).toBe(200);
 
         await learnAbout(primary);
+        await enroll(primary, 'Primary');
         const seen = await device(primary);
         expect(seen?.driverType).toBe('FPP');
-        // It answers as a remote, but covers the whole show, so nothing is cut.
+        // A remote that covers the whole show, so nothing is cut.
         expect(seen?.mode).toBe('remote');
         expect(seen?.channelRanges).toBeTruthy();
 
@@ -161,6 +167,7 @@ describe('one device down, then back', () => {
         spare = await startMockController({ channels: CHANNELS, ddpPort: 0 });
         sparePort = spare.httpPort;
         await learnAbout(spare);
+        await enroll(spare, 'Spare');
         expect((await device(spare))?.driverType).toBe('FPP');
     }, 60_000);
 
@@ -235,6 +242,7 @@ describe('a remote that drives only part of the show', () => {
     beforeAll(async () => {
         partial = await startMockController({ channels: REMOTE_CHANNELS, ddpPort: 0 });
         await learnAbout(partial);
+        await enroll(partial, 'Partial');
     }, 60_000);
 
     afterAll(async () => {
