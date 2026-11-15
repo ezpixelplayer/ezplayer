@@ -17,6 +17,9 @@ import { MovingHeadBeams } from './MovingHeadBeams';
 import type { MhFixtureInfo } from 'xllayoutcalcs';
 import type { AssetResolver } from '../../services/assetResolver';
 
+// Effectively unbounded: perspective depth precision is set by the near plane, not this.
+const FAR_PLANE = 1e7;
+
 export interface CameraState3D {
     position: [number, number, number];
     target: [number, number, number];
@@ -55,9 +58,7 @@ export interface Viewer3DProps {
     onGetCurrentCameraState?: (getter: () => CameraState3D | null) => void; // Callback to register a function that gets current camera state
     /** When true, omit fixed minHeight so the canvas fills a flex parent (e.g. dialog). */
     fillContainer?: boolean;
-    /** Force OrbitControls (the trackpad/touch variant) regardless of input detection.
-     *  Used by the layout-edit visual mode where click-to-select + orbit/pan/zoom
-     *  is the desired interaction model on every device. */
+    /** Force OrbitControls (the trackpad/touch variant) regardless of input detection. */
     forceOrbitControls?: boolean;
     /** Stop the r3f frameloop; frames render only via `PreviewRenderHandle.renderFrame`.
      *  Used for deterministic offline rendering (video export). */
@@ -1068,6 +1069,8 @@ function SceneContent({
         if (controls && 'syncFromCamera' in controls) {
             (controls as unknown as { syncFromCamera: () => void }).syncFromCamera();
         } else if (controls && 'update' in controls) {
+            // Orbit around the scene centre; update() otherwise re-aims at the old target.
+            (controls as unknown as { target?: THREE.Vector3 }).target?.copy(center);
             (controls as unknown as { update: () => void }).update();
         }
 
@@ -1506,14 +1509,14 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
                             height: '100%',
                         }}
                     >
-                        <PerspectiveCamera makeDefault position={[5, 5, 5]} fov={75} near={0.1} far={50000} />
+                        <PerspectiveCamera makeDefault position={[5, 5, 5]} fov={75} near={0.1} far={FAR_PLANE} />
                         {isTouchOnly || forceOrbitControls ? (
                             <OrbitControls
                                 makeDefault
                                 enableDamping
                                 dampingFactor={0.35}
                                 minDistance={10}
-                                maxDistance={10000}
+                                maxDistance={FAR_PLANE / 10}
                                 enablePan={true}
                                 enableRotate={true}
                                 enableZoom={true}

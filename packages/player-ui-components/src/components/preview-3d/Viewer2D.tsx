@@ -652,6 +652,7 @@ function Scene2DContent({
     onGetCurrentCameraState?: (getter: () => CameraState2D | null) => void;
 }) {
     const { camera, controls } = useThree();
+    const getThree = useThree((s) => s.get);
     const hasRestoredCameraRef = useRef(false);
     const lastCameraStateRef = useRef<CameraState2D | null>(null);
     const lastCameraStatePropRef = useRef<CameraState2D | null | undefined>(cameraState);
@@ -745,6 +746,17 @@ function Scene2DContent({
         }
     }, [shouldAutoFit]);
 
+    // Scale the far plane to the scene so very large layouts are not cut off.
+    useEffect(() => {
+        if (points.length === 0) return;
+        const box = new THREE.Box3();
+        const v = new THREE.Vector3();
+        points.forEach((point) => box.expandByPoint(v.set(point.x, point.y, point.z)));
+        const size = box.getSize(v);
+        camera.far = Math.max(50000, Math.max(size.x, size.y, size.z) * 20);
+        camera.updateProjectionMatrix();
+    }, [points, camera]);
+
     // Auto-fit camera to scene (only when shouldAutoFit is true or no saved state)
     useEffect(() => {
         if (points.length === 0) return;
@@ -837,6 +849,12 @@ function Scene2DContent({
         if (camera instanceof THREE.OrthographicCamera && maxDim > 0) {
             const targetZoom = 100 / maxDim;
             camera.zoom = Math.max(0.5, Math.min(targetZoom, 50));
+            // Zoom is px per world unit: cap it so a very large layout still fits the canvas.
+            const { width, height } = getThree().size;
+            if (width > 0 && height > 0) {
+                const fitZoom = 0.9 * Math.min(width / (size.x || maxDim), height / (size.y || maxDim));
+                camera.zoom = Math.min(camera.zoom, fitZoom);
+            }
             camera.updateProjectionMatrix();
         }
 
