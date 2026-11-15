@@ -268,6 +268,27 @@ export async function startEzPlayer(showFolder: string, opts: StartOptions = {})
     // A windowed run loads its show only once the page is up, which some faults prevent.
     if (!opts.noApiWait) await waitForApi(child, base, logFile, !opts.windowed);
 
+    // The web server answers before the playback worker has opened its
+    // controllers; the first statistics publish means the playback loop is up.
+    const readyDeadline = Date.now() + 30_000;
+    // Windowed runs start playback only once the main window connects, so they are not waited on here.
+    for (; !opts.noApiWait && !opts.windowed; ) {
+        if (child.exitCode !== null) {
+            throw new Error(`EZPlayer exited with code ${child.exitCode} before playback started (log: ${logFile})`);
+        }
+        try {
+            const res = await fetch(`${base}/api/ezp/playback-stats`, { signal: AbortSignal.timeout(2000) });
+            if (res.ok) break;
+        } catch {
+            /* not up yet */
+        }
+        if (Date.now() > readyDeadline) {
+            killTree(child);
+            throw new Error(`EZPlayer playback did not start within 30s (log: ${logFile})`);
+        }
+        await new Promise((r) => setTimeout(r, 250));
+    }
+
     return {
         port,
         base,
