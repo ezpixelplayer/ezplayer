@@ -389,3 +389,59 @@ describe.each(CASES)('$name', ({ name, spec }) => {
         }
     });
 });
+
+describe('re-render under the same name', () => {
+    test('checkFileIdentity drops the cached header and frames when the file changes', async () => {
+        const fn = path.join(dir, 'rerender.fseq');
+        const before: Spec = { kind: 'v2', channels: 60, frames: 4, zstd: true, framesPerBlock: 2 };
+        const after: Spec = { ...before, frames: 6 };
+        await fsp.writeFile(fn, build(before));
+        const errors: string[] = [];
+        const warnings: string[] = [];
+        const pf = new FSeqPrefetchCache({ now: 0 }, (m) => errors.push(m), (m) => warnings.push(m));
+        try {
+            pf.prefetchSeqMetadata({ fseqfile: fn, needByTime: 0 });
+            pf.dispatch();
+            await pf.headerPrefetchCache.finishFetches();
+            pf.prefetchSeqFrames({ fseqfile: fn, startFrame: 0, nFrames: before.frames, needByTime: 0 });
+            pf.dispatch();
+            await pf.decompPrefetchCache.finishFetches();
+            expect(pf.getHeaderInfo({ fseqfile: fn })?.ref?.header.frames).toBe(before.frames);
+            const held = pf.getFrame(fn, { num: 1 });
+            expect(held?.ref?.frame).toEqual(expectedDense(before, 1));
+
+            // Same size and mtime: nothing happens.
+            pf.checkFileIdentity(fn, 0);
+            await new Promise((r) => setTimeout(r, 50));
+            expect(pf.getHeaderInfo({ fseqfile: fn })?.ref?.header.frames).toBe(before.frames);
+
+            // The file is rewritten with more frames, as a re-render would.
+            await fsp.writeFile(fn, build(after));
+            const later = new Date(Date.now() + 10_000);
+            await fsp.utimes(fn, later, later);
+            pf.setNow(10_000);
+            pf.checkFileIdentity(fn, 0);
+            await new Promise((r) => setTimeout(r, 50));
+            expect(warnings.some((w) => /changed on disk/.test(w))).toBe(true);
+            // The header is gone until it is fetched again; the held frame stays valid.
+            expect(pf.getHeaderInfo({ fseqfile: fn })).toBeUndefined();
+            expect(held?.ref?.frame).toEqual(expectedDense(before, 1));
+            held!.ref!.release();
+
+            pf.prefetchSeqMetadata({ fseqfile: fn, needByTime: 0 });
+            pf.dispatch();
+            await pf.headerPrefetchCache.finishFetches();
+            expect(pf.getHeaderInfo({ fseqfile: fn })?.ref?.header.frames).toBe(after.frames);
+            pf.prefetchSeqFrames({ fseqfile: fn, startFrame: 0, nFrames: after.frames, needByTime: 0 });
+            pf.dispatch();
+            await pf.decompPrefetchCache.finishFetches();
+            const got = pf.getFrame(fn, { num: after.frames - 1 });
+            expect(got?.err).toBeUndefined();
+            expect(got?.ref?.frame).toEqual(expectedDense(after, after.frames - 1));
+            got!.ref!.release();
+            expect(errors).toEqual([]);
+        } finally {
+            await pf.shutdown();
+        }
+    });
+});

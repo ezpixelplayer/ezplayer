@@ -135,6 +135,7 @@ export interface FSeqFileVal {
     layout: FileLayout;
     /** Set when frames of this file are cached in canonical form. */
     inputMap?: InputMapProgram;
+    /** What the file looked like when its header was read; a change means a re-render. */
     identity: FileIdentity;
 }
 
@@ -329,7 +330,10 @@ export class FSeqPrefetchCache {
                                     return { decompChunk: res.outBuf ?? outBuf };
                                 } else if (key.compression === 0) {
                                     const dummy = this.decompDataPool.get(64);
-                                    const res = await this.decompFunc(dummy, readBuf, 0, key.fileLen, fileChunkLen, { ...post, raw: true });
+                                    const res = await this.decompFunc(dummy, readBuf, 0, key.fileLen, fileChunkLen, {
+                                        ...post,
+                                        raw: true,
+                                    });
                                     readBuf = res.compBuf;
                                     this.decompDataPool.release(res.decompBuf);
                                     return { decompChunk: res.outBuf ?? outBuf };
@@ -602,7 +606,9 @@ export class FSeqPrefetchCache {
         fsp.stat(fseqfile).then(
             (st) => {
                 if (st.size === info.identity.size && st.mtimeMs === info.identity.mtimeMs) return;
-                this.emitWarning(`[fseq] ${fseqfile} changed on disk (size ${info.identity.size} -> ${st.size}); dropping cached frames`);
+                this.emitWarning(
+                    `[fseq] ${fseqfile} changed on disk (size ${info.identity.size} -> ${st.size}); dropping cached frames`,
+                );
                 this.invalidateFile(fseqfile);
             },
             () => {
