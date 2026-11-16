@@ -2475,6 +2475,14 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
                         </Button>
                     </Box>
 
+                    {interfaces.length > 0 && (
+                        <Typography variant="body2" sx={{ color: 'text.secondary', mb: 2 }}>
+                            Check <b>Controllers on this network</b> for the networks where you expect to find your
+                            controllers. Your choice is saved, and those networks are pre-selected for scanning
+                            whenever this screen opens.
+                        </Typography>
+                    )}
+
                     {interfaces.length === 0 ? (
                         <Typography variant="body2" sx={{ color: 'text.secondary', mb: 2 }}>
                             No external networks found on this host.
@@ -2488,7 +2496,11 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
                                         <TableCell sx={{ width: 48 }}>Scan</TableCell>
                                         <TableCell>Network</TableCell>
                                         <TableCell>Interface</TableCell>
-                                        <TableCell sx={{ whiteSpace: 'nowrap' }}>Controllers expected</TableCell>
+                                        <TableCell sx={{ whiteSpace: 'nowrap' }}>
+                                            <Tooltip title="Check the networks where you expect to find your controllers. Your choice is saved, and those networks are pre-selected for scanning the next time this screen opens.">
+                                                <span>Controllers on this network</span>
+                                            </Tooltip>
+                                        </TableCell>
                                         <TableCell sx={{ whiteSpace: 'nowrap' }}>
                                             <Tooltip title="Let a browser or the cloud UI reach this network's devices through this player. Scanning is unaffected.">
                                                 <span>Proxy Allowed</span>
@@ -2538,7 +2550,7 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
                                                             })
                                                         }
                                                         inputProps={{
-                                                            'aria-label': 'controllers expected on this network',
+                                                            'aria-label': 'I expect to find controllers on this network; pre-select it for scanning',
                                                         }}
                                                     />
                                                 </TableCell>

@@ -219,7 +219,13 @@ export const PreviewSettings: React.FC<PreviewSettingsProps> = ({
                         {/* Brightness Multiplier Slider */}
                         <Box>
                             <Typography variant="body2" gutterBottom sx={{ mb: 1 }}>
-                                Brightness: {Math.round(localSettings.brightnessMultiplier)}%
+                                Background/Object Brightness: {Math.round(localSettings.brightnessMultiplier)}%
+                            </Typography>
+                            <Typography
+                                variant="caption"
+                                sx={{ display: 'block', color: 'text.secondary', mb: 1 }}
+                            >
+                                Adjusts background images and 3D objects only, not LED pixel brightness.
                             </Typography>
                             <Slider
                                 value={localSettings.brightnessMultiplier}
