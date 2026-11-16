@@ -6,7 +6,7 @@
 
 import type { GetNodeResult, XlModelChannelInfo, ChannelRole } from 'xllayoutcalcs';
 import { ChannelRoleSpec, LayoutModelSpec, NodeRun } from './Layout';
-import { ChannelDescriptor, ChannelDescriptorModel } from './InputMap';
+import { ChannelDescriptor, ChannelDescriptorModel, compareDescriptorModels } from './InputMap';
 
 function rolesFromRgbOffsets(m: XlModelChannelInfo): ChannelRoleSpec[] {
     const cpn = m.nodeCount > 0 ? Math.round(m.channelCount / m.nodeCount) : 3;
@@ -104,18 +104,32 @@ export function layoutSpecsFromXlights(models: XlModelChannelInfo[], coords?: Ma
     return specs;
 }
 
-/** The descriptor a file rendered against the current layout would carry: pin-on-first-sight. */
+/** Runs that only restate the contiguous span carry no information. */
+function runsAreContiguous(s: LayoutModelSpec): boolean {
+    return !s.runs || s.runs.every((r) => r.channelStart === s.startChannel + r.nodeStart * s.channelsPerNode);
+}
+
+/**
+ * The descriptor a file rendered against the current layout would carry:
+ * pin-on-first-sight. Canonical: models in canonical order, runs only when
+ * they differ from contiguous, gamma and brightness only when not 1, so a
+ * renderer's body and the player's are byte-identical.
+ */
 export function descriptorFromSpecs(specs: LayoutModelSpec[], totalChannels: number, source = 'pinned'): ChannelDescriptor {
-    const models: ChannelDescriptorModel[] = specs.map((s) => ({
-        name: s.name,
-        startChannel: s.startChannel,
-        nodeCount: s.nodeCount,
-        channelsPerNode: s.channelsPerNode,
-        roles: s.roles,
-        runs: s.runs,
-        gamma: s.gamma,
-        brightness: s.brightness,
-    }));
+    const models: ChannelDescriptorModel[] = specs.map((s) => {
+        const m: ChannelDescriptorModel = {
+            name: s.name,
+            startChannel: s.startChannel,
+            nodeCount: s.nodeCount,
+            channelsPerNode: s.channelsPerNode,
+            roles: s.roles,
+        };
+        if (s.runs && !runsAreContiguous(s)) m.runs = s.runs;
+        if (s.gamma !== undefined && s.gamma !== 1) m.gamma = s.gamma;
+        if (s.brightness !== undefined && s.brightness !== 1) m.brightness = s.brightness;
+        return m;
+    });
+    models.sort(compareDescriptorModels);
     return { totalChannels, models, source };
 }
 

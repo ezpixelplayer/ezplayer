@@ -48,10 +48,9 @@ export function encodeDescriptorHeader(desc: ChannelDescriptor): Uint8Array {
     return out;
 }
 
+/** The body is exactly the model table; flags and fingerprint live in the prefix. */
 function stripForHeader(desc: ChannelDescriptor): ChannelDescriptor {
-    // Keep the header self-contained but free of per-player bookkeeping.
-    const { source: _source, fingerprint: _fp, ...rest } = desc;
-    return rest;
+    return { totalChannels: desc.totalChannels, models: desc.models };
 }
 
 /** Read the prefix only; undefined when the bytes are not an EZ descriptor. */

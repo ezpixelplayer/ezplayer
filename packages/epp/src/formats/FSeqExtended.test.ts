@@ -6,7 +6,7 @@ import { FSEQReaderAsync, FSEQReaderSync } from './FSeqUtil';
 import { buildExtendedHeaders, compressExtended, readExtendedText, XL_NETWORKS_HEADER, XL_RGBEFFECTS_HEADER } from './FSeqExtended';
 import { decodeDescriptorHeader, descriptorFromEmbeddedXlights, encodeDescriptorHeader, EZ_DESCRIPTOR_HEADER, peekDescriptorPrefix } from '../pipeline/Descriptor';
 import { compileInputMap, applyInputMap, inputMapProgram, descriptorHash, ChannelDescriptor } from '../pipeline/InputMap';
-import { compileLayout, LayoutModelSpec } from '../pipeline/Layout';
+import { ChannelRoleSpec, compileLayout, LayoutModelSpec } from '../pipeline/Layout';
 import { FSeqPrefetchCache } from './FSeqPrefetcher';
 
 const RGBEFFECTS = `<?xml version="1.0" encoding="UTF-8"?>
@@ -129,6 +129,21 @@ describe('extended fseq headers', () => {
         const dst = new Uint8Array(layout.frameBytes);
         applyInputMap(map, src, 0, dst, 0);
         expect(Array.from(dst.subarray(0, 3))).toEqual([20, 10, 30]);
+    });
+
+    it('fingerprints the same model table regardless of listing order', () => {
+        const rgb = (name: string, startChannel: number, nodeCount: number) => ({
+            name,
+            startChannel,
+            nodeCount,
+            channelsPerNode: 3,
+            roles: [{ offset: 0, kind: 'red' }, { offset: 1, kind: 'green' }, { offset: 2, kind: 'blue' }] as ChannelRoleSpec[],
+        });
+        const a = rgb('A', 0, 4), b = rgb('B', 12, 4), same = rgb('A', 12, 4);
+        const hash = (models: ChannelDescriptor['models']) => descriptorHash({ totalChannels: 24, models });
+        expect(hash([b, a])).toBe(hash([a, b]));
+        expect(hash([b, same])).toBe(hash([same, b]));
+        expect(hash([a, b])).not.toBe(hash([a, same]));
     });
 
     it('round-trips an EZ descriptor header and honors its flags', () => {

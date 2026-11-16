@@ -37,10 +37,32 @@ export interface ChannelDescriptor {
     nodeOrder?: 'xlights' | 'canonical';
 }
 
+/** Code-point order, so every language sorts names the same way. */
+function compareCodePoints(a: string, b: string): number {
+    const ia = a[Symbol.iterator](), ib = b[Symbol.iterator]();
+    for (;;) {
+        const x = ia.next(), y = ib.next();
+        if (x.done || y.done) return (x.done ? 0 : 1) - (y.done ? 0 : 1);
+        const d = x.value.codePointAt(0)! - y.value.codePointAt(0)!;
+        if (d) return d;
+    }
+}
+
+/** Canonical model order: ascending start channel, then name by code point. */
+export function compareDescriptorModels(a: ChannelDescriptorModel, b: ChannelDescriptorModel): number {
+    return a.startChannel - b.startChannel || compareCodePoints(a.name, b.name);
+}
+
+/**
+ * FNV-1a over a canonical JSON form of the model table. Models are hashed in
+ * canonical order, so the order a renderer or layout parser lists them in
+ * does not matter.
+ */
 export function descriptorHash(d: ChannelDescriptor): number {
+    const ordered = [...d.models].sort(compareDescriptorModels);
     const canon = {
         totalChannels: d.totalChannels,
-        models: d.models.map((m) => ({
+        models: ordered.map((m) => ({
             n: m.name,
             s: m.startChannel,
             c: m.nodeCount,
