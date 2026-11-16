@@ -5,6 +5,7 @@ import { SuspenseLoader } from '@ezplayer/shared-ui-components';
 
 import {
     AudioSettings,
+    BrightnessSettings,
     CloudPage,
     ControllersScreen,
     CreateEditPlaylist,
@@ -53,6 +54,7 @@ import ContrastIcon from '@mui/icons-material/Contrast';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import LibraryMusicIcon from '@mui/icons-material/LibraryMusic';
 import VolumeUpIcon from '@mui/icons-material/VolumeUp';
+import Brightness6Icon from '@mui/icons-material/Brightness6';
 import TuneIcon from '@mui/icons-material/Tune';
 import TroubleshootIcon from '@mui/icons-material/Troubleshoot';
 import SyncAltIcon from '@mui/icons-material/SyncAlt';
@@ -112,6 +114,12 @@ const ElectronSettingsPage = () => {
             label: 'Audio',
             icon: <VolumeUpIcon sx={{ fontSize: 56 }} />,
             content: <AudioSettings />,
+        },
+        {
+            key: 'brightness',
+            label: 'Brightness',
+            icon: <Brightness6Icon sx={{ fontSize: 56 }} />,
+            content: <BrightnessSettings />,
         },
         {
             key: 'cloud',

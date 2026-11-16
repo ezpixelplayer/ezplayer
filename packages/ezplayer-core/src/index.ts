@@ -42,6 +42,8 @@ export type {
     CloudPlayerSettings,
     ViewerControlScheduleEntry,
     VolumeScheduleEntry,
+    BrightnessScheduleEntry,
+    BrightnessControlState,
     AudioOutputConfig,
     VirtualMatrixOutput,
     VolumeControlState,
@@ -287,6 +289,7 @@ export {
 
 export {
     getActiveVolumeSchedule,
+    getActiveBrightnessSchedule,
     getActiveViewerControlSchedule,
     findMatchingScheduleEntry,
 } from './util/SettingsScheduleUtils';
@@ -336,6 +339,15 @@ export {
     type VolumeTarget,
     type VolumeTargets,
 } from './util/volumeTargets';
+export {
+    COLOR_TEMPERATURE_MIN_K,
+    COLOR_TEMPERATURE_NEUTRAL_K,
+    COLOR_TEMPERATURE_MAX_K,
+    clampBrightness,
+    clampColorTemperature,
+    scheduledBrightness,
+    type BrightnessTarget,
+} from './util/brightnessLevel';
 export {
     hasViewerControlBackend,
     primaryViewerControlType,

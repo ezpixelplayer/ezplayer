@@ -279,6 +279,16 @@ export interface PlayerPStatusContent {
         outputs?: Array<{ id: string; label: string; level: number; deviceId?: string; groupId?: string }>;
     };
 
+    /** Live output brightness, after slewing toward `brightnessControl`. */
+    brightness?: {
+        /** 0-100, applied to every pixel on the way out. */
+        level: number;
+        /** Kelvin; 6500 is neutral. Warmer dims blue and green, cooler dims red. */
+        colorTemperature: number;
+        /** True while a schedule window, not the default, sets the targets. */
+        scheduled?: boolean;
+    };
+
     /** Files pinned by currently-loaded playback (foreground + background), as stored
      *  on the sequence records (may be show-relative). The main process unions this
      *  with the current records to decide which cloud files are safe to GC. */
@@ -683,6 +693,14 @@ export type EZPlayerCommand =
           volume?: number;
           /** Live mute. */
           mute?: boolean;
+      }
+    | {
+          command: 'setbrightness';
+          /** Sets the default brightness 0-100 (persisted; the player ramps to
+           *  it). Like volume, not a live override of a scheduled window. */
+          brightness?: number;
+          /** Sets the default colour temperature in kelvin (persisted). */
+          colorTemperature?: number;
       };
 
 /** Initial state returned by ipcUIConnect. The connect invoke RETURNS the
@@ -734,6 +752,16 @@ export interface VolumeScheduleEntry {
     startTime: string; // HH:MM format
     endTime: string; // HH:MM format (can exceed 24:00)
     volumeLevel: number; // 0-100
+}
+
+export interface BrightnessScheduleEntry {
+    id: string;
+    days: ScheduleDays;
+    startTime: string; // HH:MM format
+    endTime: string; // HH:MM format (can exceed 24:00)
+    brightness: number; // 0-100
+    /** Kelvin for this window; omitted keeps the default colour temperature. */
+    colorTemperature?: number;
 }
 
 /** A single allowed-window for cloud content polling. Same shape as the other
@@ -793,6 +821,17 @@ export interface VolumeControlState {
     defaultVolume: number;
     /** Optional for the same reason as `ViewerControlState.schedule`. */
     schedule?: VolumeScheduleEntry[];
+}
+
+/** Output brightness and colour temperature: a default, and schedule windows on
+ *  top of it, the same shape as volume. Colour temperature only ever dims
+ *  channels (warm dims blue, cool dims red), so 100% stays 100%. */
+export interface BrightnessControlState {
+    /** 0-100. */
+    defaultBrightness: number;
+    /** Kelvin; undefined or `COLOR_TEMPERATURE_NEUTRAL_K` leaves colours alone. */
+    defaultColorTemperature?: number;
+    schedule?: BrightnessScheduleEntry[];
 }
 
 /** One named local output for the desktop player when the system default
@@ -862,6 +901,8 @@ export interface PlaybackSettings {
     backgroundSequence?: 'overlay' | 'underlay';
     viewerControl: ViewerControlState;
     volumeControl: VolumeControlState;
+    /** Output brightness and colour temperature; absent means full, neutral. */
+    brightnessControl?: BrightnessControlState;
     jukebox?: JukeboxSettings;
     /** Tags identifying test sequences, for display in test area. */
     testSequenceTags?: string[];

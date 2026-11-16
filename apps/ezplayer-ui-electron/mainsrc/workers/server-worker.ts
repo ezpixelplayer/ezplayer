@@ -40,6 +40,12 @@ import {
     replaceVolumeSchedule,
     setDefaultVolume,
 } from './volume-settings.js';
+import {
+    describeBrightness,
+    describeWindow as describeBrightnessWindow,
+    replaceBrightnessSchedule,
+    setDefaultBrightness,
+} from './brightness-settings.js';
 import { AudioStreamEncoder } from './audio-stream-encoder.js';
 import { BufferPool } from '@ezplayer/epp';
 import { ZstdCodec, ZstdSimple } from 'zstd-codec';
@@ -334,6 +340,37 @@ async function handleSetVolume(cmd: {
     }
     if (cmd.mute !== undefined) await rpc.call('sendPlayerCommand', { command: 'setvolume', mute: cmd.mute });
     return { status: 200, body: { ...reply, message: 'Command sent' } };
+}
+
+/** Reply body for a brightness write: the state after it, and whether the
+ *  defaults are what the lights show right now or a schedule window is in effect. */
+function brightnessReply(settings: PlaybackSettings): Record<string, unknown> {
+    const brightness = describeBrightness(settings, currentPStatus());
+    const w = brightness.activeWindow;
+    return {
+        success: true,
+        defaultInEffect: !w,
+        ...(w
+            ? {
+                  warning: `A scheduled brightness window is in effect (${describeBrightnessWindow(w)}); the default applies when it ends`,
+              }
+            : {}),
+        brightness,
+    };
+}
+
+/** `setbrightness`: writes the default brightness and/or colour temperature; the
+ *  player's slew then ramps the live values to them. */
+async function handleSetBrightness(cmd: {
+    brightness?: unknown;
+    colorTemperature?: unknown;
+}): Promise<{ status: number; body: Record<string, unknown> }> {
+    const settings = currentPlaybackSettings();
+    if (!settings) return { status: 503, body: { error: 'Playback settings not loaded yet' } };
+    const r = setDefaultBrightness(settings, cmd.brightness, cmd.colorTemperature);
+    if (!r.ok) return { status: r.status, body: { error: r.error } };
+    await applyPlaybackSettings(r.settings);
+    return { status: 200, body: { ...brightnessReply(r.settings), message: 'Command sent' } };
 }
 
 // Forward client → server WebSocket commands to main via RPC. Main pushes
@@ -1775,6 +1812,12 @@ async function startServer(config: ServerWorkerData) {
                 ctx.body = reply.body;
                 return;
             }
+            if (command.command === 'setbrightness') {
+                const reply = await handleSetBrightness(command);
+                ctx.status = reply.status;
+                ctx.body = reply.body;
+                return;
+            }
             await rpc.call('sendPlayerCommand', command);
             ctx.body = { success: true, message: 'Command sent' };
         } catch (error) {
@@ -1836,6 +1879,7 @@ async function startServer(config: ServerWorkerData) {
         'backgroundSequence',
         'viewerControl',
         'volumeControl',
+        'brightnessControl',
         'jukebox',
         'testSequenceTags',
         'sendIdleBlackFrames',
@@ -2039,6 +2083,61 @@ async function startServer(config: ServerWorkerData) {
             ctx.body = volumeReply(r.settings);
         } catch (error) {
             console.error('[server-worker] Error replacing volume schedule:', error);
+            ctx.status = 500;
+            ctx.body = { error: 'Internal server error' };
+        }
+    });
+
+    // ----------------------------------------------
+    // API: GET  /api/ezp/brightness — defaults, windows and live values
+    //      POST /api/ezp/brightness { brightness?, colorTemperature? } — set the defaults
+    //      GET/POST /api/ezp/brightness/schedule — the windows
+    // One control for the whole display, so no target id.
+    // ----------------------------------------------
+    router.get('/api/ezp/brightness', (ctx) => {
+        const settings = settingsOr503(ctx);
+        if (settings) ctx.body = describeBrightness(settings, currentPStatus());
+    });
+
+    router.post('/api/ezp/brightness', async (ctx) => {
+        const settings = settingsOr503(ctx);
+        if (!settings) return;
+        try {
+            const body = ctx.request.body as { brightness?: unknown; colorTemperature?: unknown } | undefined;
+            const r = setDefaultBrightness(settings, body?.brightness, body?.colorTemperature);
+            if (!r.ok) {
+                ctx.status = r.status;
+                ctx.body = { error: r.error };
+                return;
+            }
+            await applyPlaybackSettings(r.settings);
+            ctx.body = brightnessReply(r.settings);
+        } catch (error) {
+            console.error('[server-worker] Error setting default brightness:', error);
+            ctx.status = 500;
+            ctx.body = { error: 'Internal server error' };
+        }
+    });
+
+    router.get('/api/ezp/brightness/schedule', (ctx) => {
+        const settings = settingsOr503(ctx);
+        if (settings) ctx.body = describeBrightness(settings).schedule;
+    });
+
+    router.post('/api/ezp/brightness/schedule', async (ctx) => {
+        const settings = settingsOr503(ctx);
+        if (!settings) return;
+        try {
+            const r = replaceBrightnessSchedule(settings, ctx.request.body);
+            if (!r.ok) {
+                ctx.status = r.status;
+                ctx.body = { error: r.error };
+                return;
+            }
+            await applyPlaybackSettings(r.settings);
+            ctx.body = brightnessReply(r.settings);
+        } catch (error) {
+            console.error('[server-worker] Error replacing brightness schedule:', error);
             ctx.status = 500;
             ctx.body = { error: 'Internal server error' };
         }

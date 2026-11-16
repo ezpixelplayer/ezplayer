@@ -15,6 +15,7 @@ import {
     isBlack,
     lutNodes,
     scaleNodes,
+    scaleNodesRgb,
     testPatternNodes,
 } from './Kernels';
 import { buildForwardLut } from './OutputMap';
@@ -86,6 +87,18 @@ describe('fill, lut, scale, isBlack, dynamic gamma', () => {
         const g = Uint8Array.from([255, 100, 0]);
         scaleNodes(g, 3, 0, 1, 0.5);
         expect(Array.from(g)).toEqual([128, 50, 0]);
+    });
+    it('scales channels independently, leaving X alone unless asked', () => {
+        const f = Uint8Array.from([255, 255, 255, 200, 100, 100, 100, 200]);
+        scaleNodesRgb(f, 4, 0, 2, 1, 0.5, 0.25);
+        expect(Array.from(f)).toEqual([255, 128, 64, 200, 100, 50, 25, 200]);
+        scaleNodesRgb(f, 4, 0, 2, 1, 1, 1, 0.5);
+        expect(Array.from(f)).toEqual([255, 128, 64, 100, 100, 50, 25, 100]);
+        const g = Uint8Array.from([255, 100, 0]);
+        scaleNodesRgb(g, 3, 0, 1, 1, 1, 1);
+        expect(Array.from(g)).toEqual([255, 100, 0]);
+        scaleNodesRgb(g, 3, 0, 1, 0.5, 0.5, 0.5);
+        expect(Array.from(g)).toEqual([128, 50, 0]); // same as scaleNodes at 0.5
     });
     it('dynamic gamma keeps hue ratios', () => {
         const lut = new Uint8Array(256);

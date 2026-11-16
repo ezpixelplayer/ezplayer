@@ -179,6 +179,27 @@ export function scaleNodes(frame: Uint8Array, stride: number, nodeStart: number,
     }
 }
 
+/**
+ * Scale R, G, B (and X) by separate factors in [0, 1] without a LUT: global
+ * brightness folded together with a colour-temperature tint. Factors at or
+ * above 1 leave the channel alone.
+ */
+export function scaleNodesRgb(frame: Uint8Array, stride: number, nodeStart: number, nodeEnd: number, kr: number, kg: number, kb: number, kx = 1): void {
+    const r = Math.max(0, Math.min(256, Math.round(kr * 256)));
+    const g = Math.max(0, Math.min(256, Math.round(kg * 256)));
+    const b = Math.max(0, Math.min(256, Math.round(kb * 256)));
+    const x = Math.max(0, Math.min(256, Math.round(kx * 256)));
+    if (r === 256 && g === 256 && b === 256 && (stride === 3 || x === 256)) return;
+    const start = nodeStart * stride;
+    const end = nodeEnd * stride;
+    for (let i = start; i < end; i += stride) {
+        if (r !== 256) frame[i] = (frame[i] * r + 128) >> 8;
+        if (g !== 256) frame[i + 1] = (frame[i + 1] * g + 128) >> 8;
+        if (b !== 256) frame[i + 2] = (frame[i + 2] * b + 128) >> 8;
+        if (stride === 4 && x !== 256) frame[i + 3] = (frame[i + 3] * x + 128) >> 8;
+    }
+}
+
 /** True when every color channel in the range is zero. */
 export function isBlack(frame: Uint8Array, stride: number, nodeStart: number, nodeEnd: number): boolean {
     const start = nodeStart * stride;

@@ -334,7 +334,7 @@ Main is merged through 0.6.12. The send-path fixes from main (#286, #288, #290) 
 
 ### Built but not wired to settings or an API
 
-- **Brightness and dynamic gamma.** The brightness param, LUT, scale and dynamic-gamma kernels exist; nothing sets them (no schedule, API or UI).
+- **Brightness and dynamic gamma.** Global brightness and colour temperature are set from `brightnessControl` (default plus schedule windows, slewed in the conductor, applied in compose by `scaleNodesRgb`), with API, settings tile and player-screen meter (branch moc/brightness-schedule, 2026-11-16). Per-model brightness and dynamic gamma still have no setter.
 - **Dynamic port mapping.** The output map supports segments, nulls, grouping, reverse, color order and the player policy; the app only builds controller-policy outputs straight from the networks file.
 - **Blend modes.** Nine modes in kernels; the background setting selects only max or underlay.
 - **Test patterns.** Kernel exists; no route or UI calls it.

@@ -13,13 +13,14 @@ import {
 } from '@mui/material';
 import { Box } from '../box/Box';
 import { PlayerPStatusContent, isPlaybackActive, resolveAudioOutputDevice } from '@ezplayer/ezplayer-core';
-import { VolumeOff, VolumeUp, Refresh, Tune, Close, WarningAmber, QueueMusic } from '@mui/icons-material';
+import { VolumeOff, VolumeUp, Refresh, Tune, Close, WarningAmber, QueueMusic, Brightness6 } from '@mui/icons-material';
 import { useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { callImmediateCommand } from '../../store/slices/RuntimeStore';
 import { AppDispatch, RootState } from '../../store/Store';
 import { QueueAndControlStack } from './QueueAndControlStack';
 import { AudioSettings } from '../playback-settings/sections/AudioSettings';
+import { BrightnessSettings, describeColorTemperature } from '../playback-settings/sections/BrightnessSettings';
 import { PlayerSystemTime } from './PlayerSystemTime';
 import { PlaybackDetailDialog } from './PlaybackDetailDialog';
 
@@ -102,6 +103,12 @@ export const NowPlayingCard = ({
             : [{ id: 'default', label: '', level: Math.round(volume) }];
     const silent = muted || volumeRows.every((r) => r.level === 0);
     const openAudioSettings = () => setAudioSettingsOpen(true);
+    const [brightnessSettingsOpen, setBrightnessSettingsOpen] = useState(false);
+    const openBrightnessSettings = () => setBrightnessSettingsOpen(true);
+    const brightness = player.brightness;
+    const brightnessTitle = brightness
+        ? `Brightness ${brightness.level}%, ${describeColorTemperature(brightness.colorTemperature)}${brightness.scheduled ? ' (scheduled)' : ''}`
+        : 'Brightness';
 
     return (
         <Card
@@ -206,6 +213,59 @@ export const NowPlayingCard = ({
                         </Tooltip>
                     )}
                 </Box>
+
+                {/* Output brightness, like volume: automated toward the scheduled target and
+                    shown read-only; the settings dialog changes it. Shown once the player
+                    reports it (older players do not). */}
+                {brightness && (
+                    <Box
+                        onClick={allowVolumeControl ? openBrightnessSettings : undefined}
+                        role={allowVolumeControl ? 'button' : undefined}
+                        aria-label={allowVolumeControl ? 'Open brightness settings' : undefined}
+                        title={brightnessTitle}
+                        sx={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 1,
+                            ml: 2,
+                            mt: 0.5,
+                            ...(allowVolumeControl ? { cursor: 'pointer' } : {}),
+                        }}
+                    >
+                        <Box
+                            sx={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                width: 34,
+                                height: 34,
+                            }}
+                        >
+                            <Brightness6 fontSize="small" color={allowVolumeControl ? 'inherit' : 'disabled'} />
+                        </Box>
+                        <LinearProgress
+                            variant="determinate"
+                            value={brightness.level}
+                            color="warning"
+                            sx={{ width: compact ? 80 : 120, height: 6, borderRadius: 3, flexShrink: 0 }}
+                        />
+                        <Typography variant="caption" color="text.secondary" noWrap>
+                            {brightness.level}%
+                            {brightness.colorTemperature !== 6500 ? ` (${brightness.colorTemperature} K)` : ''}
+                        </Typography>
+                        {allowVolumeControl && (
+                            <Tooltip title="Brightness settings">
+                                <IconButton
+                                    size="small"
+                                    aria-label="Open brightness settings"
+                                    onClick={openBrightnessSettings}
+                                >
+                                    <Tune fontSize="small" />
+                                </IconButton>
+                            </Tooltip>
+                        )}
+                    </Box>
+                )}
 
                 {/* Now Playing Section */}
                 {hasNowPlaying ? (
@@ -359,6 +419,30 @@ export const NowPlayingCard = ({
                     </DialogTitle>
                     <DialogContent dividers>
                         <AudioSettings />
+                    </DialogContent>
+                </Dialog>
+
+                <Dialog
+                    open={brightnessSettingsOpen}
+                    onClose={() => setBrightnessSettingsOpen(false)}
+                    maxWidth="md"
+                    fullWidth
+                    PaperProps={{ sx: { maxHeight: '90vh' } }}
+                >
+                    <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <Typography variant="h5">Brightness</Typography>
+                        <Tooltip title="Close">
+                            <IconButton
+                                onClick={() => setBrightnessSettingsOpen(false)}
+                                size="small"
+                                aria-label="close"
+                            >
+                                <Close />
+                            </IconButton>
+                        </Tooltip>
+                    </DialogTitle>
+                    <DialogContent dividers>
+                        <BrightnessSettings />
                     </DialogContent>
                 </Dialog>
             </CardContent>

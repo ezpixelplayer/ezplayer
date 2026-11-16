@@ -52,6 +52,8 @@ import {
     portIntentFromModelIntents,
     songVolumeScale,
     resolveVolumeTargets,
+    scheduledBrightness,
+    COLOR_TEMPERATURE_NEUTRAL_K,
     type VolumeTarget,
     viewerControlBackends,
     viewerControlSchedule,
@@ -405,6 +407,11 @@ function sendPlayerStateUpdate() {
                           level: outputLevels.get(t.id) ?? t.level,
                       }))
                     : undefined,
+        },
+        brightness: {
+            level: Math.round(brightnessNow),
+            colorTemperature: Math.round(colorTemperatureNow),
+            scheduled: brightnessScheduled,
         },
     };
     playStatus.engine_time = foregroundPlayerRunState.currentTime;
@@ -1053,6 +1060,32 @@ function doVolumeAdjust(dn: number) {
     // Consume only the time we used so a sub-interval remainder carries forward.
     lastVolCheck += used * VOLUME_SLEW_INTERVAL_MS;
     recomputeVolumeGains();
+}
+
+// Brightness slews like volume: 1% per 10 ms, and 100 K per 10 ms for colour
+// temperature, so a full swing of either takes about a second. Unlike volume
+// there is one control for the whole display.
+const BRIGHTNESS_SLEW_INTERVAL_MS = 10;
+const COLOR_TEMPERATURE_SLEW_K = 100;
+let lastBrightnessCheck: number = Date.now();
+function doBrightnessAdjust(dn: number) {
+    const target = scheduledBrightness(latestSettings?.brightnessControl);
+    brightnessScheduled = target.window !== null;
+    const levelDiff = target.brightness - brightnessNow;
+    const tempDiff = target.colorTemperature - colorTemperatureNow;
+    if (levelDiff === 0 && tempDiff === 0) {
+        lastBrightnessCheck = dn;
+        return;
+    }
+    const elapsed = dn - lastBrightnessCheck;
+    if (elapsed < BRIGHTNESS_SLEW_INTERVAL_MS) return;
+    const maxSteps = Math.floor(elapsed / BRIGHTNESS_SLEW_INTERVAL_MS);
+    const levelStep = Math.min(Math.abs(levelDiff), maxSteps);
+    const tempStep = Math.min(Math.abs(tempDiff), maxSteps * COLOR_TEMPERATURE_SLEW_K);
+    brightnessNow += Math.sign(levelDiff) * levelStep;
+    colorTemperatureNow += Math.sign(tempDiff) * tempStep;
+    const used = Math.max(levelStep, Math.ceil(tempStep / COLOR_TEMPERATURE_SLEW_K));
+    lastBrightnessCheck += used * BRIGHTNESS_SLEW_INTERVAL_MS;
 }
 
 /** Derive the per-output gains, the headline `volume`, and the listener-ring
@@ -1843,6 +1876,11 @@ let volumeMode: 'default' | 'outputs' = 'default';
 let volumeTargetsNow: VolumeTarget[] = [];
 /** Linear gain per output key, mute applied; shipped with every audio chunk. */
 let outputGains: Record<string, number> = {};
+/** Live (slewed) output brightness 0..100 and colour temperature in kelvin. */
+let brightnessNow = 100;
+let colorTemperatureNow = COLOR_TEMPERATURE_NEUTRAL_K;
+/** True while a schedule window, not the default, sets the brightness targets. */
+let brightnessScheduled = false;
 let curAudioSyncNum = 1;
 let pendingSchedule: PlayerCommand | undefined = undefined;
 /** The newest schedupdate received. A handler still awaiting may hold an older one. */
@@ -3018,6 +3056,7 @@ async function processQueue() {
             }
             if (iteration % 4 === 3) {
                 doVolumeAdjust(Date.now());
+                doBrightnessAdjust(Date.now());
                 if (curPN - lastRFUpdatePN >= 1000) {
                     sendRemoteUpdate();
                     sendEzvcUpdate();
@@ -3684,6 +3723,8 @@ async function presentFrame(
             fg: args.fg?.frame,
             bg: args.bg?.frame,
             bgMode: blendModeFromSettings(latestSettings?.backgroundSequence === 'underlay' ? 'underlay' : 'max'),
+            brightness: brightnessNow / 100,
+            colorTemperature: colorTemperatureNow,
             timeMs: args.targetRTC,
             frameIntervalMs: args.frameInterval,
             frameNumber: args.frameNumber,

@@ -191,6 +191,7 @@ Send player command. Sends a command to control player playback, volume, or requ
 | `clearrequests`     | Clear all pending requests                                                           |                                                    |
 | `endsong`           | End the current song (skip to the next item)                                         | `songId?` (only skip if this song is playing)      |
 | `setvolume`         | Set the default volume (persisted) and/or mute (live); see the note below            | `volume?`, `mute?`                                 |
+| `setbrightness`     | Set the default output brightness and/or colour temperature (persisted); see below   | `brightness?`, `colorTemperature?`                |
 
 **Request Body Examples:**
 
@@ -247,6 +248,13 @@ ends; the response says which (`defaultInEffect`, and a `warning` naming the
 window). `mute` is live and takes effect at once either way. Per-output
 defaults and the windows themselves are managed through
 [`/api/ezp/volume`](#get-apiezpvolume).
+
+`setbrightness` works the same way for the lights: `brightness` (0–100) and
+`colorTemperature` (kelvin, 2000–12000, 6500 neutral) write the **defaults**
+in `brightnessControl`, the player ramps to them within about a second unless
+a scheduled brightness window is in effect, and the response carries the same
+`defaultInEffect` and `warning` fields plus the
+[`/api/ezp/brightness`](#get-apiezpbrightness) overview as `brightness`.
 
 ```json
 {
@@ -816,6 +824,19 @@ control, sync output (FPP MultiSync master), and advanced overrides.
             }
         ]
     },
+    "brightnessControl": {
+        "defaultBrightness": 100,
+        "defaultColorTemperature": 3000,
+        "schedule": [
+            {
+                "id": "dim-1",
+                "days": "all",
+                "startTime": "22:00",
+                "endTime": "24:00",
+                "brightness": 40
+            }
+        ]
+    },
     "sendIdleBlackFrames": true,
     "sync": {
         "multisync": {
@@ -879,7 +900,8 @@ whole-object POST so unrelated settings survive the round trip.
 
 One part of the settings, addressed by its path in the object with `/`
 between levels: `sync`, `sync/multisync`, `sync/multisync/remotes`,
-`volumeControl/defaultVolume`, `sendIdleBlackFrames`. The first segment must
+`volumeControl/defaultVolume`, `brightnessControl/defaultBrightness`,
+`sendIdleBlackFrames`. The first segment must
 be a `PlaybackSettings` key.
 
 GET returns the value at that path as JSON. POST replaces just that value
@@ -989,6 +1011,75 @@ curl -X POST http://127.0.0.1:8080/api/ezp/volume/default/schedule \
 - Status: 200 OK - replaced
 - Status: 400 Bad Request - not an array, or an entry is malformed (the error names the field)
 - Status: 404 Not Found - unknown target
+- Status: 503 Service Unavailable - settings not loaded yet
+
+---
+
+### GET /api/ezp/brightness
+
+Output brightness as the player automates it (see
+[Brightness](../advanced/brightness.md)): the **default brightness** and
+**default colour temperature**, the **scheduled windows**, the window in effect
+right now (if any), and the live values the slew has reached. There is one
+control for the whole display, so unlike volume there is no target id.
+
+```json
+{
+    "defaultBrightness": 80,
+    "defaultColorTemperature": 6500,
+    "schedule": [{ "id": "b1", "days": "all", "startTime": "22:00", "endTime": "24:00", "brightness": 40, "colorTemperature": 2700 }],
+    "activeWindow": { "id": "b1", "days": "all", "startTime": "22:00", "endTime": "24:00", "brightness": 40, "colorTemperature": 2700 },
+    "level": 40,
+    "colorTemperature": 2700
+}
+```
+
+- Status: 200 OK - the overview
+- Status: 503 Service Unavailable - settings not loaded yet
+
+### POST /api/ezp/brightness
+
+Set the defaults: `{ "brightness": 65 }`, `{ "colorTemperature": 3000 }`, or
+both. Brightness is clamped to 0–100 and colour temperature to 2000–12000 K
+(6500 K is neutral and stored as "unset"). The values are persisted and the
+player ramps to them when its defaults are in effect; windows are left alone,
+so inside one the window's values hold until it ends. The `setbrightness`
+player command is this call.
+
+```json
+{
+    "success": true,
+    "defaultInEffect": false,
+    "warning": "A scheduled brightness window is in effect (22:00-24:00 at 40%, 2700 K); the default applies when it ends",
+    "brightness": { "defaultBrightness": 65, "defaultColorTemperature": 6500, "schedule": ["…"], "activeWindow": { "…": "…" }, "level": 40, "colorTemperature": 2700 }
+}
+```
+
+- Status: 200 OK - written; `defaultInEffect` is false and `warning` present while a window is in effect
+- Status: 400 Bad Request - neither field given, or a field is not a number
+- Status: 503 Service Unavailable - settings not loaded yet
+
+### GET /api/ezp/brightness/schedule
+
+The windows, the `schedule` array from the overview.
+
+### POST /api/ezp/brightness/schedule
+
+Replace the windows with the posted array. Each entry needs `days` (as for
+volume), `startTime` and `endTime` as `HH:MM` (`endTime` may pass `24:00`)
+and `brightness` 0–100; `colorTemperature` in kelvin is optional and, when
+absent, the window keeps the default colour temperature. `id` is kept when
+given and generated otherwise. Later entries win where windows overlap. An
+empty array clears the schedule. Answers like `POST /api/ezp/brightness`.
+
+```bash
+curl -X POST http://127.0.0.1:8080/api/ezp/brightness/schedule \
+  -H 'Content-Type: application/json' \
+  -d '[{ "days": "all", "startTime": "22:00", "endTime": "24:00", "brightness": 40, "colorTemperature": 2700 }]'
+```
+
+- Status: 200 OK - replaced
+- Status: 400 Bad Request - not an array, or an entry is malformed (the error names the field)
 - Status: 503 Service Unavailable - settings not loaded yet
 
 ---
@@ -1660,6 +1751,11 @@ State update broadcast. Broadcasts player state updates. Contains version number
             "volume": {
                 "level": 75,
                 "muted": false
+            },
+            "brightness": {
+                "level": 100,
+                "colorTemperature": 6500,
+                "scheduled": false
             }
         }
     }
