@@ -65,7 +65,7 @@ A warning ![Controller Alert](/img/ctrlalert.png) indicator is presented when a 
 
 Several things can require attention:
 
-- **Ports or input config differ from expected** — **Reconfigure** the controller.
+- **Ports or input config differ from expected** — **Reconfigure** the controller.  A port's brightness, gamma or colour order counts when the controller's [port settings](#port-settings) are compared.
 - **The controller is in the wrong mode** — it reports itself as a player or a remote while the show wants it to take live data, or the other way round.  Also fixed by **Reconfigure**.
 - **The player's send list differs from expected** — only on an FPP player: a controller is missing from the list, switched off in it, or sent the wrong channels or address.  Fixed by **Send output universes**.
 - **Content delivery needed** ![Content delivery needed](/img/ctrlcontent.png) — the device holds its own copy of the show and that copy is not current; see [Content Distribution](contentdistribution.md).
@@ -78,6 +78,9 @@ Some controllers cannot keep up with the show's frame rate.  The **Max FPS** col
 
 ### Send-from address
 EZPlayer can pin a controller to one of the computer's network interfaces (**Force Local IP** on the controller, or **Global Force Local IP** on the Controllers tab).  EZPlayer sends from that address and shows it in the controller's details.  An address that is not assigned to any network interface on this computer is ignored.  **Edit record** can set a different address for this player; it takes effect the next time the show is reloaded with **Reload show and controllers**.
+
+### Port settings
+A model in xLights may leave a port's brightness, gamma, colour order and similar settings unset.  Whether EZPlayer manages those is decided by the [Manage port settings](../../settings/player.md#controllers) player setting and, when that is per controller, by xLights' **Full xLights Control** for the controller or by **Edit record**.  When they are managed, **Reconfigure** sets them to the controller's defaults, and every setting is compared with the controller.  Otherwise they are left as they are on the controller, and only the settings the layout sets are compared; a record that leaves the settings to the controller turns the comparison off.  The controller's details say which applies.
 
 ## Controller Details
 

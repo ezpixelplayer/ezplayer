@@ -143,6 +143,10 @@ export type {
     PortDriftKind,
     PortDriftSeverity,
     PortReconcile,
+    PortSettingsValues,
+    PortSettingsManagement,
+    PortSettingsOwner,
+    PortSettingsCheck,
     ControllerHealth,
     ControllerSerialPortIntent,
     ControllerSerialModelIntent,
@@ -158,6 +162,8 @@ export type {
 export {
     effectiveMaxFps,
     effectiveForceLocalIP,
+    managesPortSettings,
+    portSettingsCheck,
     needsContentDelivery,
     CARD_DRIVER_TYPES,
     contentFamilyOf,
@@ -193,8 +199,10 @@ export {
     applyOverrides,
     ipInCidr,
     findOffNetworkControllers,
+    intendedPortSettings,
+    portSettingsDrift,
 } from './util/controllerReconcile';
-export type { InputReconcile, OffNetworkGroup } from './util/controllerReconcile';
+export type { InputReconcile, OffNetworkGroup, PortSettingsCheckOptions } from './util/controllerReconcile';
 
 export {
     buildPortMap,

@@ -88,6 +88,7 @@ import {
     isPlaybackActive,
     isPlayerOnlyRecord,
     needsContentDelivery,
+    portSettingsCheck,
     takesLiveData,
 } from '@ezplayer/ezplayer-core';
 import { ContentDistributionDialog } from '../content-dist/ContentDistributionDialog';
@@ -106,6 +107,9 @@ import type {
     PortReconcile,
     PortDriftKind,
     PortDriftSeverity,
+    PortSettingsManagement,
+    PortSettingsOwner,
+    PortSettingsValues,
     SerialPortReconcile,
     PanelMatrixReconcile,
     VirtualMatrixReconcile,
@@ -394,7 +398,38 @@ const PORT_DRIFT_LABEL: Record<PortDriftKind, string> = {
     unexpected: 'not in xLights',
     count: 'count differs',
     start: 'start channel differs',
+    settings: 'settings differ',
 };
+
+/** A port's settings on one line, e.g. "GRB, 40%, gamma 2.2". */
+const settingsLabel = (v: PortSettingsValues): string =>
+    [v.colorOrder, v.brightness !== undefined && `${v.brightness}%`, v.gamma !== undefined && `gamma ${v.gamma}`]
+        .filter(Boolean)
+        .join(', ');
+
+const SETTABLE_SETTINGS = 'brightness, gamma, colour order, start/end null pixels, grouping, zig-zag and direction';
+
+/** What happens to the per-port settings a model leaves unset, and whose
+ *  choice that is: the player setting, the record, or xLights' flag. */
+function portSettingsNoteFor(
+    setting: PortSettingsManagement | undefined,
+    row: { fullxLightsControl?: boolean; portSettingsOverride?: PortSettingsOwner },
+): string {
+    const source =
+        setting === 'all' || setting === 'none'
+            ? 'the player’s Manage port settings setting'
+            : row.portSettingsOverride
+              ? 'this player’s record'
+              : `xLights’ Full xLights Control, which is ${row.fullxLightsControl ? 'on' : 'off'} for this controller`;
+    const check = portSettingsCheck(setting, row);
+    if (check === 'all') {
+        return `Settings a model leaves unset (${SETTABLE_SETTINGS}) are set to the controller’s defaults by Reconfigure, and every setting is compared with the controller: ${source}.`;
+    }
+    if (check === 'none') {
+        return `Settings a model leaves unset (${SETTABLE_SETTINGS}) are left as they are on the controller, and its settings are not compared: ${source}.`;
+    }
+    return `Settings a model leaves unset (${SETTABLE_SETTINGS}) are left as they are on the controller; only the settings the layout sets are compared: ${source}.`;
+}
 
 /** How a row reads: a contradiction is amber and filled, config this show
  *  simply does not describe is quiet. */
@@ -475,6 +510,11 @@ const PortReconcileTable: React.FC<{ rows: PortReconcile[] }> = ({ rows }) => (
                                     {nodeCountLabel(r.intendedPixels ?? 0, r.intendedChannels)}
                                     {r.drift === 'start' && ` @ ch ${r.intendedStart}`}
                                 </Typography>
+                                {r.intendedSettings && (
+                                    <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary' }}>
+                                        {settingsLabel(r.intendedSettings)}
+                                    </Typography>
+                                )}
                             </>
                         ) : (
                             '—'
@@ -494,6 +534,11 @@ const PortReconcileTable: React.FC<{ rows: PortReconcile[] }> = ({ rows }) => (
                                     {nodeCountLabel(r.actualPixels, r.actualChannels)}
                                     {r.drift === 'start' && ` @ ch ${r.actualStart}`}
                                 </Typography>
+                                {r.actualSettings && (
+                                    <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary' }}>
+                                        {settingsLabel(r.actualSettings)}
+                                    </Typography>
+                                )}
                             </>
                         ) : (
                             '—'
@@ -503,7 +548,7 @@ const PortReconcileTable: React.FC<{ rows: PortReconcile[] }> = ({ rows }) => (
                         <Chip
                             size="small"
                             {...severityChip(r.severity, r.drift)}
-                            title={severityTitle(r.severity, r.drift)}
+                            title={r.settingsNotes?.join('; ') ?? severityTitle(r.severity, r.drift)}
                             label={PORT_DRIFT_LABEL[r.drift]}
                         />
                     </TableCell>
@@ -755,7 +800,7 @@ const GridRow: React.FC<{
     onStatus: (id: string, address?: string) => void;
     onDistribute: (id: string, checkOnly: boolean) => void;
     onAction: (id: string, action: ControllerDeviceAction) => void;
-    onUpload: (id: string, fullControl: boolean) => void;
+    onUpload: (id: string) => void;
     /** Write the show player's own send list (which controller gets which channels). */
     onUploadOutputs: (id: string) => void;
     onActivate: (name: string, active: boolean) => void;
@@ -785,17 +830,24 @@ const GridRow: React.FC<{
     const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
     const [portDialog, setPortDialog] = useState<'compare' | 'map' | null>(null);
     const [uploadOpen, setUploadOpen] = useState(false);
+    const managePortSettings = useSelector((s: RootState) => s.playbackSettings.settings.managePortSettings);
     const d = row.device;
     const meta = STATE_META[row.state];
     const ghost = row.state === 'unregistered';
     const known = !ghost && !!row.name;
+    // Whose choice the unset per-port settings are decides what is compared.
+    const portSettingsNote = known ? portSettingsNoteFor(managePortSettings, row) : undefined;
     const hasDetail = !!d?.detail?.length;
     // Drift is only meaningful once the device's port config has actually been
     // read (depth=full); before that every intended port would read "missing".
     const portsRead = d?.pixelPorts !== undefined;
     // The driver matters: on a controller that maps channels by each output's
     // own range, an output we did not configure moves the ones we did.
-    const portRows = reconcilePorts(row.intent ?? [], d?.pixelPorts ?? [], row.startChannel, d?.driverType);
+    const portRows = reconcilePorts(row.intent ?? [], d?.pixelPorts ?? [], row.startChannel, d?.driverType, {
+        check: portSettingsCheck(managePortSettings, row),
+        defaultBrightness: row.defaultBrightness,
+        defaultGamma: row.defaultGamma,
+    });
     // Serial (DMX/…) ports are compared in channels, apart from the pixels.
     const serialRead = d?.serialPorts !== undefined;
     const serialRows = reconcileSerialPorts(row.serialIntent, d?.serialPorts);
@@ -1298,6 +1350,14 @@ const GridRow: React.FC<{
                                         {sendFromNote}
                                     </Typography>
                                 )}
+                                {portSettingsNote && (
+                                    <Typography
+                                        variant="body2"
+                                        sx={{ mb: hasHealthDetail ? 1 : 2, color: 'text.secondary' }}
+                                    >
+                                        {portSettingsNote}
+                                    </Typography>
+                                )}
                                 {hasHealthDetail && health && (
                                     <Box sx={{ mb: 2 }}>
                                         <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
@@ -1566,10 +1626,11 @@ const GridRow: React.FC<{
             {uploadOpen && d && (
                 <UploadDialog
                     name={row.name ?? d.hostname ?? ip ?? 'this controller'}
+                    note={portSettingsNote ?? ''}
                     onClose={() => setUploadOpen(false)}
-                    onSubmit={(fullControl) => {
+                    onSubmit={() => {
                         setUploadOpen(false);
-                        onUpload(d.id, fullControl);
+                        onUpload(d.id);
                     }}
                 />
             )}
@@ -1609,42 +1670,34 @@ const OpProgress: React.FC<{ op: ControllerOp; onCancel?: (opId: string) => void
 
 /** Per-string settings stamped to a default when "set all settings" is on;
  *  otherwise the controller keeps whatever it already has for these. */
-const SETTABLE_SETTINGS = 'brightness, gamma, colour order, start/end null pixels, grouping, zig-zag and direction';
-
-/** Reconfigure confirmation. The checkbox is xLights' FullxLightsControl. */
+/** Reconfigure confirmation; `note` says what becomes of the settings a model leaves unset. */
 const UploadDialog: React.FC<{
     name: string;
+    note: string;
     onClose: () => void;
-    onSubmit: (fullControl: boolean) => void;
-}> = ({ name, onClose, onSubmit }) => {
-    const [setAll, setSetAll] = useState(false);
-    return (
-        <Dialog open onClose={onClose} maxWidth="sm" fullWidth>
-            <DialogTitle>Reconfigure {name}?</DialogTitle>
-            <DialogContent>
-                <Typography variant="body2" sx={{ mb: 2 }}>
-                    Sends this show&rsquo;s xLights port configuration to the controller. The controller stops
-                    outputting for a moment while it applies the change.
+    onSubmit: () => void;
+}> = ({ name, note, onClose, onSubmit }) => (
+    <Dialog open onClose={onClose} maxWidth="sm" fullWidth>
+        <DialogTitle>Reconfigure {name}?</DialogTitle>
+        <DialogContent>
+            <Typography variant="body2" sx={{ mb: 2 }}>
+                Sends this show&rsquo;s xLights port configuration to the controller. The controller stops outputting
+                for a moment while it applies the change.
+            </Typography>
+            {note && (
+                <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                    {note}
                 </Typography>
-                <FormControlLabel
-                    control={<Checkbox checked={setAll} onChange={(e) => setSetAll(e.target.checked)} />}
-                    label={`Set all settings (${SETTABLE_SETTINGS})`}
-                />
-                <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary', mt: 0.5 }}>
-                    {setAll
-                        ? 'Anything xLights does not specify is reset to this controller’s defaults — settings changed on the controller itself are overwritten.'
-                        : 'Anything xLights does not specify is left exactly as it is on the controller.'}
-                </Typography>
-            </DialogContent>
-            <DialogActions>
-                <Button onClick={onClose}>Cancel</Button>
-                <Button color="warning" variant="contained" onClick={() => onSubmit(setAll)}>
-                    Reconfigure
-                </Button>
-            </DialogActions>
-        </Dialog>
-    );
-};
+            )}
+        </DialogContent>
+        <DialogActions>
+            <Button onClick={onClose}>Cancel</Button>
+            <Button color="warning" variant="contained" onClick={onSubmit}>
+                Reconfigure
+            </Button>
+        </DialogActions>
+    </Dialog>
+);
 
 type DialogMode = 'edit' | 'promote' | 'new';
 const DIALOG_TITLE: Record<DialogMode, string> = {
@@ -1673,6 +1726,12 @@ const RecordDialog: React.FC<{
     initialForceLocalIP?: string;
     /** xLights' Force Local IP, the fallback when the record says nothing. */
     xlightsForceLocalIP?: string;
+    /** The record's choice for the per-port settings a model leaves unset, if any. */
+    initialPortSettings?: PortSettingsOwner;
+    /** xLights' Full xLights Control flag, the fallback when the record says nothing. */
+    xlightsFullControl?: boolean;
+    /** The player setting, which outranks the record when it is not per-controller. */
+    managePortSettings?: PortSettingsManagement;
     /** This computer's addresses, offered as choices. */
     hostAddresses?: string[];
     onClose: () => void;
@@ -1690,6 +1749,9 @@ const RecordDialog: React.FC<{
     initialPresumeUp,
     initialForceLocalIP,
     xlightsForceLocalIP,
+    initialPortSettings,
+    xlightsFullControl,
+    managePortSettings,
     hostAddresses,
     onClose,
     onSubmit,
@@ -1705,6 +1767,8 @@ const RecordDialog: React.FC<{
     const [role, setRole] = useState<ControllerActiveState | ''>(initialRole ?? '');
     const [presumeUp, setPresumeUp] = useState(!!initialPresumeUp);
     const [sendFrom, setSendFrom] = useState(initialForceLocalIP ?? '');
+    // '' leaves the choice to the layout.
+    const [portSettings, setPortSettings] = useState<PortSettingsOwner | ''>(initialPortSettings ?? '');
     const nameLocked = mode === 'edit';
     const fpsNum = fps.trim() === '' ? undefined : Number(fps);
     const fpsValid = fpsNum === undefined || (Number.isFinite(fpsNum) && fpsNum > 0 && fpsNum <= 1000);
@@ -1719,6 +1783,7 @@ const RecordDialog: React.FC<{
         // is the explicit "no override" (the store drops it).
         patch.fpsOverride = fpsNum ?? 0;
         patch.forceLocalIP = sendFrom.trim();
+        patch.portSettings = portSettings;
         patch.active = role === '' ? undefined : role;
         patch.presumeUp = presumeUp;
         onSubmit(name.trim(), patch);
@@ -1838,6 +1903,27 @@ const RecordDialog: React.FC<{
                             <option key={a} value={a} />
                         ))}
                     </datalist>
+                    <TextField
+                        select
+                        label="Port settings a model leaves unset"
+                        value={portSettings}
+                        onChange={(e) => setPortSettings(e.target.value as PortSettingsOwner | '')}
+                        fullWidth
+                        size="small"
+                        SelectProps={{ native: true }}
+                        InputLabelProps={{ shrink: true }}
+                        helperText={
+                            managePortSettings === 'all' || managePortSettings === 'none'
+                                ? `Brightness, gamma, colour order and the like. The player’s Manage port settings setting covers ${managePortSettings === 'all' ? 'every' : 'no'} controller, which outranks this choice.`
+                                : `Brightness, gamma, colour order and the like. xLights’ Full xLights Control is ${xlightsFullControl ? 'on' : 'off'} for this controller.`
+                        }
+                    >
+                        <option value="">Whatever the xLights layout says</option>
+                        <option value="managed">
+                            Managed — set to the controller’s defaults by Reconfigure, all compared
+                        </option>
+                        <option value="controller">Left to the controller — not set, and not compared</option>
+                    </TextField>
                 </Stack>
             </DialogContent>
             <DialogActions>
@@ -1873,6 +1959,7 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
     const contentRun = contentDist?.run;
     // Live per-controller health, overlaid onto the grid rows.
     const statusesRaw = useSelector((s: RootState) => s.runtime?.combined?.controller?.controllers);
+    const managePortSettings = useSelector((s: RootState) => s.playbackSettings.settings.managePortSettings);
     // Base URL for the player's /proxy bridge (see controllerUrl).
     const { url: serverBase } = useFrameServerUrl();
 
@@ -1895,6 +1982,8 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
         presumeUp?: boolean;
         forceLocalIP?: string;
         xlightsForceLocalIP?: string;
+        portSettings?: PortSettingsOwner;
+        xlightsFullControl?: boolean;
     } | null>(null);
 
     const policyFor = (cidr: string) => (networkPolicies ?? []).find((p) => p.cidr === cidr);
@@ -2051,8 +2140,8 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
         }
     };
     // Confirmation lives in the row's UploadDialog.
-    const upload = (id: string, fullControl: boolean) => {
-        dispatch(issueControllerCommand({ cmd: 'upload', id, scope: 'full', fullControl }));
+    const upload = (id: string) => {
+        dispatch(issueControllerCommand({ cmd: 'upload', id, scope: 'full' }));
     };
     // The player's send list: every controller's channels, not this one row's.
     const uploadOutputs = (id: string) => {
@@ -2137,8 +2226,8 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
         if (
             window.confirm(
                 `Send the xLights configuration (universes + string outputs) to ${uploadAllRows.length} ` +
-                    `reachable controller(s)? This rewrites their port config; current device settings are ` +
-                    `replaced.${players}`,
+                    `reachable controller(s)? This rewrites their port config. Settings a model leaves unset ` +
+                    `follow each controller’s port-settings choice.${players}`,
             )
         ) {
             void runBulk('upload', [
@@ -2197,6 +2286,8 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
             presumeUp: row.presumeUp,
             forceLocalIP: row.forceLocalIPOverride,
             xlightsForceLocalIP: row.forceLocalIP,
+            portSettings: row.portSettingsOverride,
+            xlightsFullControl: row.fullxLightsControl,
         });
     const openPromote = (row: ControllerGridRow) =>
         setDialog({ mode: 'promote', name: row.device?.hostname ?? '', address: row.device?.ip ?? '' });
@@ -2607,6 +2698,9 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
                     initialPresumeUp={dialog.presumeUp}
                     initialForceLocalIP={dialog.forceLocalIP}
                     xlightsForceLocalIP={dialog.xlightsForceLocalIP}
+                    initialPortSettings={dialog.portSettings}
+                    xlightsFullControl={dialog.xlightsFullControl}
+                    managePortSettings={managePortSettings}
                     hostAddresses={hostAddresses}
                     onClose={() => setDialog(null)}
                     onSubmit={submitDialog}

@@ -755,6 +755,12 @@ export interface KnownController {
     /** xLights defaults applied when uploading in full-control mode. */
     defaultBrightness?: number;
     defaultGamma?: number;
+    /** xLights' Full xLights Control flag: an upload stamps the defaults on
+     *  the per-string settings a model leaves unset. */
+    fullxLightsControl?: boolean;
+    /** Our record's answer to the same question, when set; wins over
+     *  `fullxLightsControl`. */
+    portSettingsOverride?: PortSettingsOwner;
     /** Output protocol, e.g. 'E131' / 'DDP'. */
     protocol?: string;
     /**
@@ -822,6 +828,56 @@ export function effectiveMaxFps(k: { maxFps?: number; fpsOverride?: number }): n
  *  else the xLights declaration, else none (the route picks the interface). */
 export function effectiveForceLocalIP(k: { forceLocalIP?: string; forceLocalIPOverride?: string }): string | undefined {
     return k.forceLocalIPOverride ?? k.forceLocalIP;
+}
+
+/**
+ * The player setting for the per-port settings a model leaves unset
+ * (brightness, gamma, colour order, null pixels, grouping, zig-zag, direction):
+ *  - `controller`  each controller's own answer: xLights' Full xLights Control
+ *                  flag, or the EZPlayer record's choice (the default)
+ *  - `all`         every controller: a reconfigure stamps the controller's
+ *                  defaults on them, and every setting is checked for drift
+ *  - `none`        no controller: they stay as the device has them
+ */
+export type PortSettingsManagement = 'controller' | 'all' | 'none';
+
+/**
+ * A record's answer for one controller:
+ *  - `managed`     EZPlayer: a reconfigure stamps the controller's defaults
+ *                  on unset settings, and every setting is checked for drift
+ *  - `controller`  the device: they are left as set there, and differences
+ *                  are not reported
+ */
+export type PortSettingsOwner = 'managed' | 'controller';
+
+/** Whether a reconfigure stamps the defaults on a controller's unset
+ *  per-port settings: the player setting when it is `all` or `none`, else the
+ *  record's choice, else xLights' Full xLights Control flag. */
+export function managesPortSettings(
+    setting: PortSettingsManagement | undefined,
+    k: { fullxLightsControl?: boolean; portSettingsOverride?: PortSettingsOwner },
+): boolean {
+    if (setting === 'all') return true;
+    if (setting === 'none') return false;
+    if (k.portSettingsOverride) return k.portSettingsOverride === 'managed';
+    return !!k.fullxLightsControl;
+}
+
+/**
+ * Which per-port settings a comparison holds the device to:
+ *  - `all`        every setting; an unset one is held to the controller's default
+ *  - `specified`  only the settings the layout sets, since a reconfigure
+ *                 writes those whoever owns the rest
+ *  - `none`       nothing: the record leaves the settings to the device
+ */
+export type PortSettingsCheck = 'all' | 'specified' | 'none';
+
+export function portSettingsCheck(
+    setting: PortSettingsManagement | undefined,
+    k: { fullxLightsControl?: boolean; portSettingsOverride?: PortSettingsOwner },
+): PortSettingsCheck {
+    if (managesPortSettings(setting, k)) return 'all';
+    return k.portSettingsOverride === 'controller' ? 'none' : 'specified';
 }
 
 /** xLights intent for one serial (DMX / Renard / Pixelnet / …) output port. */
@@ -1014,11 +1070,17 @@ export interface EzpControllerRecord {
     fpsOverride?: number;
     /** This computer's address to send from (supersedes the xLights Force Local IP). */
     forceLocalIP?: string;
+    /** Who owns the per-port settings a model leaves unset (supersedes xLights'
+     *  Full xLights Control). */
+    portSettings?: PortSettingsOwner;
     notes?: string;
 }
 
 /** A partial edit merged into a record by the `record` command (create if absent). */
-export type EzpControllerRecordPatch = Partial<Omit<EzpControllerRecord, 'name'>>;
+export type EzpControllerRecordPatch = Partial<Omit<EzpControllerRecord, 'name' | 'portSettings'>> & {
+    /** An empty string clears the record's choice, so the layout decides again. */
+    portSettings?: PortSettingsOwner | '';
+};
 
 /**
  * How a grid row relates our known records to the live scan:
@@ -1079,6 +1141,12 @@ export interface ControllerGridRow {
     /** Send-from address: xLights declaration and our override (see KnownController). */
     forceLocalIP?: string;
     forceLocalIPOverride?: string;
+    /** Per-port settings a model leaves unset: xLights' flag, our override, and
+     *  the defaults a managed reconfigure stamps (see KnownController). */
+    fullxLightsControl?: boolean;
+    portSettingsOverride?: PortSettingsOwner;
+    defaultBrightness?: number;
+    defaultGamma?: number;
     /** Live health overlaid from the playback pipeline, joined by address/name. */
     health?: ControllerHealth;
 }
@@ -1139,6 +1207,10 @@ export interface ControllerPortIntent {
     protocol?: string;
     /** Absolute 1-based start channel of the port's first string. */
     startChannel?: number;
+    /** Settings of the port's first string, when the layout sets them. */
+    colorOrder?: string;
+    brightness?: number;
+    gamma?: number;
 }
 
 /** One input universe as configured on the device (E1.31/ArtNet). */
@@ -1175,6 +1247,9 @@ export interface ControllerPort {
     pixels?: number;
     protocol?: string;
     colorOrder?: string;
+    /** Percent, as the device reports it. */
+    brightness?: number;
+    gamma?: number;
     startChannel?: number;
     endChannel?: number;
     /** Set when the port is addressed by universe (e.g. AlphaPix); its
@@ -1189,8 +1264,10 @@ export interface ControllerPort {
  *  - `count`      both present but the pixel counts differ; for a matrix, any
  *                 difference in its configuration (see the row's `notes`)
  *  - `start`      counts agree but the port starts at the wrong channel, so it
- *                 shows another part of the show */
-export type PortDriftKind = 'ok' | 'missing' | 'unexpected' | 'count' | 'start';
+ *                 shows another part of the show
+ *  - `settings`   counts and start agree but the brightness, gamma or colour
+ *                 order is not what the show wants */
+export type PortDriftKind = 'ok' | 'missing' | 'unexpected' | 'count' | 'start' | 'settings';
 
 /**
  * How much a drift matters, which is a different question from what it is.
@@ -1207,6 +1284,14 @@ export type PortDriftKind = 'ok' | 'missing' | 'unexpected' | 'count' | 'start';
  * {@link reconcilePorts} is told the driver so it can say so.
  */
 export type PortDriftSeverity = 'ok' | 'conflict' | 'extra';
+
+/** The per-port settings a comparison can hold a device to. */
+export interface PortSettingsValues {
+    colorOrder?: string;
+    /** Percent. */
+    brightness?: number;
+    gamma?: number;
+}
 
 /** One port's intent-vs-actual reconciliation. */
 export interface PortReconcile {
@@ -1232,6 +1317,11 @@ export interface PortReconcile {
     /** Start channels, set when they disagree (`drift: 'start'`). */
     intendedStart?: number;
     actualStart?: number;
+    /** Settings compared, set when they disagree (`drift: 'settings'`). */
+    intendedSettings?: PortSettingsValues;
+    actualSettings?: PortSettingsValues;
+    /** One line per setting that disagrees, e.g. "brightness 40% (xLights 100%)". */
+    settingsNotes?: string[];
     drift: PortDriftKind;
     /** How much it matters. Absent on a row built by hand in a test;
      *  {@link portDriftSeverity} is the fallback. */

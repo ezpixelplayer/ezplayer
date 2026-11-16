@@ -48,6 +48,10 @@ export interface PortMapString {
     /** Channels the string takes; undefined when unknown. */
     channels?: number;
     protocol?: string;
+    /** Settings the layout sets on the string, when it does. */
+    colorOrder?: string;
+    brightness?: number;
+    gamma?: number;
 }
 
 /** One renderable box: a model spanning `span` port rows starting at `firstPort`,
@@ -241,6 +245,9 @@ export function expandIntentStrings(intents: ControllerModelIntent[]): PortMapSt
                 nodeCount: n === 1 ? mi.nodeCount : counts![i],
                 channels: intentStringChannels(mi, i, n),
                 protocol: mi.protocol,
+                ...(mi.colorOrder !== undefined ? { colorOrder: mi.colorOrder } : {}),
+                ...(mi.brightness !== undefined ? { brightness: mi.brightness } : {}),
+                ...(mi.gamma !== undefined ? { gamma: mi.gamma } : {}),
             });
         }
     }
@@ -289,6 +296,8 @@ export function portIntentFromModelIntents(intents: ControllerModelIntent[]): Co
         const models = [...perModel.keys()];
         const starts = ss.map((s) => s.startChannel).filter((c): c is number => c !== undefined);
         const channels = sumKnown(ss.map((s) => s.channels));
+        // A device reports one set of settings per port: its first string's.
+        const first = ss[0];
         out.push({
             port,
             models,
@@ -297,6 +306,9 @@ export function portIntentFromModelIntents(intents: ControllerModelIntent[]): Co
             ...(channels !== undefined ? { channels } : {}),
             protocol: ss.find((s) => s.protocol)?.protocol,
             ...(starts.length ? { startChannel: Math.min(...starts) } : {}),
+            ...(first.colorOrder !== undefined ? { colorOrder: first.colorOrder } : {}),
+            ...(first.brightness !== undefined ? { brightness: first.brightness } : {}),
+            ...(first.gamma !== undefined ? { gamma: first.gamma } : {}),
         });
     }
     return out.sort((a, b) => a.port - b.port);

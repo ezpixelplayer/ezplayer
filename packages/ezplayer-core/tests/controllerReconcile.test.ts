@@ -13,8 +13,15 @@ import {
     applyOverrides,
     ipInCidr,
     findOffNetworkControllers,
+    intendedPortSettings,
+    portSettingsDrift,
 } from '../src/util/controllerReconcile';
-import { contentRoleOf, effectiveForceLocalIP } from '../src/types/ControllerOps';
+import {
+    contentRoleOf,
+    effectiveForceLocalIP,
+    managesPortSettings,
+    portSettingsCheck,
+} from '../src/types/ControllerOps';
 import type {
     KnownController,
     DiscoveredController,
@@ -796,5 +803,146 @@ describe('reconcilePorts start channels', () => {
             CONTROLLER_START,
         );
         expect(rows[0].drift).toBe('ok');
+    });
+});
+
+describe('who owns the port settings a model leaves unset', () => {
+    it('follows the player setting when it names every controller or none', () => {
+        expect(managesPortSettings('all', { fullxLightsControl: false, portSettingsOverride: 'controller' })).toBe(
+            true,
+        );
+        expect(managesPortSettings('none', { fullxLightsControl: true, portSettingsOverride: 'managed' })).toBe(false);
+    });
+
+    it('otherwise follows the record, then the xLights flag, then leaves them alone', () => {
+        expect(managesPortSettings('controller', { fullxLightsControl: false, portSettingsOverride: 'managed' })).toBe(
+            true,
+        );
+        expect(managesPortSettings(undefined, { fullxLightsControl: true, portSettingsOverride: 'controller' })).toBe(
+            false,
+        );
+        expect(managesPortSettings(undefined, { fullxLightsControl: true })).toBe(true);
+        expect(managesPortSettings(undefined, {})).toBe(false);
+    });
+
+    it('compares everything when managed, what the layout sets when not, and nothing when the record says so', () => {
+        expect(portSettingsCheck(undefined, { fullxLightsControl: true })).toBe('all');
+        expect(portSettingsCheck(undefined, { fullxLightsControl: false })).toBe('specified');
+        expect(portSettingsCheck('none', {})).toBe('specified');
+        expect(portSettingsCheck('none', { portSettingsOverride: 'controller' })).toBe('none');
+        expect(portSettingsCheck('all', { portSettingsOverride: 'controller' })).toBe('all');
+    });
+
+    it('holds an unset setting to the controller default only when every setting is managed', () => {
+        expect(
+            intendedPortSettings({ brightness: 60 }, { check: 'all', defaultBrightness: 40, defaultGamma: 2.2 }),
+        ).toEqual({
+            colorOrder: 'RGB',
+            brightness: 60,
+            gamma: 2.2,
+        });
+        expect(intendedPortSettings({}, { check: 'all' })).toEqual({ colorOrder: 'RGB', brightness: 100, gamma: 1.0 });
+        expect(intendedPortSettings({ brightness: 60 }, { check: 'specified', defaultGamma: 2.2 })).toEqual({
+            brightness: 60,
+        });
+        expect(intendedPortSettings({ brightness: 60 }, { check: 'none' })).toEqual({});
+    });
+
+    it('names each setting that differs, ignoring case and a tenth of gamma', () => {
+        expect(
+            portSettingsDrift(
+                { colorOrder: 'GRB', brightness: 100, gamma: 2.2 },
+                { colorOrder: 'grb', brightness: 100, gamma: 2.24 },
+            ),
+        ).toEqual([]);
+        expect(
+            portSettingsDrift(
+                { colorOrder: 'GRB', brightness: 100, gamma: 2.2 },
+                { colorOrder: 'RGB', brightness: 40, gamma: 1 },
+            ),
+        ).toEqual(['colour order RGB (xLights GRB)', 'brightness 40% (xLights 100%)', 'gamma 1 (xLights 2.2)']);
+        // A side that says nothing about a setting is not compared on it.
+        expect(portSettingsDrift({ brightness: 100 }, { colorOrder: 'RGB' })).toEqual([]);
+    });
+});
+
+describe('reconcilePorts settings drift', () => {
+    const intent = [{ port: 1, models: ['Tree'], pixels: 50, brightness: 60 }];
+    const dim = [{ port: 1, model: 'Tree', pixels: 50, colorOrder: 'GRB', brightness: 40, gamma: 1.0 }];
+
+    it('is not looked for unless asked', () => {
+        expect(reconcilePorts(intent, dim)[0].drift).toBe('ok');
+    });
+
+    it('flags a managed port lit differently from what the show wants', () => {
+        const rows = reconcilePorts(intent, dim, undefined, undefined, { check: 'all', defaultGamma: 2.2 });
+        expect(rows[0]).toMatchObject({
+            drift: 'settings',
+            severity: 'conflict',
+            intendedSettings: { colorOrder: 'RGB', brightness: 60, gamma: 2.2 },
+            actualSettings: { colorOrder: 'GRB', brightness: 40, gamma: 1.0 },
+            settingsNotes: ['colour order GRB (xLights RGB)', 'brightness 40% (xLights 60%)', 'gamma 1 (xLights 2.2)'],
+        });
+        expect(hasPortDrift(rows)).toBe(true);
+    });
+
+    it('holds an unmanaged port only to the settings the layout sets', () => {
+        const rows = reconcilePorts(intent, dim, undefined, undefined, { check: 'specified', defaultGamma: 2.2 });
+        expect(rows[0].drift).toBe('settings');
+        expect(rows[0].settingsNotes).toEqual(['brightness 40% (xLights 60%)']);
+        const bright = [{ ...dim[0], brightness: 60 }];
+        expect(reconcilePorts(intent, bright, undefined, undefined, { check: 'specified' })[0].drift).toBe('ok');
+    });
+
+    it('leaves a port alone when the record leaves it to the controller', () => {
+        expect(reconcilePorts(intent, dim, undefined, undefined, { check: 'none' })[0].drift).toBe('ok');
+    });
+
+    it('says nothing about a setting the device does not report', () => {
+        const mute = [{ port: 1, model: 'Tree', pixels: 50 }];
+        expect(reconcilePorts(intent, mute, undefined, undefined, { check: 'all' })[0].drift).toBe('ok');
+    });
+
+    it('reports a wrong pixel count ahead of wrong settings', () => {
+        const short = [{ ...dim[0], pixels: 20 }];
+        const rows = reconcilePorts(intent, short, undefined, undefined, { check: 'all' });
+        expect(rows[0].drift).toBe('count');
+        expect(rows[0].settingsNotes).toBeUndefined();
+    });
+});
+
+describe('port settings on records and rows', () => {
+    it('carries the record choice beside the xLights flag', () => {
+        const out = applyOverrides(
+            [known({ name: 'Roof', address: '10.0.0.50', fullxLightsControl: true, defaultBrightness: 40 })],
+            [rec({ name: 'Roof', portSettings: 'controller' })],
+        );
+        expect(out[0]).toMatchObject({ fullxLightsControl: true, portSettingsOverride: 'controller' });
+        expect(managesPortSettings(undefined, out[0])).toBe(false);
+        expect(applyOverrides([], [rec({ name: 'Own', portSettings: 'managed' })])[0].portSettingsOverride).toBe(
+            'managed',
+        );
+    });
+
+    it('puts the flag, the choice and the defaults on the grid row', () => {
+        const rows = reconcileControllers(
+            [
+                known({
+                    name: 'Roof',
+                    address: '10.0.0.50',
+                    fullxLightsControl: true,
+                    portSettingsOverride: 'managed',
+                    defaultBrightness: 40,
+                    defaultGamma: 2.2,
+                }),
+            ],
+            [],
+        );
+        expect(rows[0]).toMatchObject({
+            fullxLightsControl: true,
+            portSettingsOverride: 'managed',
+            defaultBrightness: 40,
+            defaultGamma: 2.2,
+        });
     });
 });

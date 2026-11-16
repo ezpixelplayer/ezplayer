@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fsp from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
+import type { KnownController, PlaybackSettings } from '@ezplayer/ezplayer-core';
 
 // Controller reads resolve when a test says so, and never touch the network.
 const probe = vi.hoisted(() => ({
@@ -400,5 +401,104 @@ describe('holding data while a controller is read', () => {
         await settleRead({ success: true });
         await Promise.all([a, b]);
         expect(events.filter((e) => e.startsWith('release')).sort()).toEqual(['release 10.9.4.3', 'release 10.9.4.4']);
+    });
+});
+
+describe('the port-settings choice on a record', () => {
+    it("sits beside the layout's flag, and an empty one clears it", async () => {
+        await loadControllerRecords(await fsp.mkdtemp(path.join(os.tmpdir(), 'ezp-ops-')));
+        setKnownControllers([
+            {
+                name: 'K',
+                address: '10.0.0.9',
+                active: true,
+                enableState: 'enabled',
+                fullxLightsControl: true,
+                source: 'xlights',
+            },
+        ]);
+        await dispatchControllerCommand({ cmd: 'record', name: 'K', patch: { portSettings: 'controller' } }, 'lan');
+        expect(getControllerOpsState().known?.[0]).toMatchObject({
+            fullxLightsControl: true,
+            portSettingsOverride: 'controller',
+        });
+        await dispatchControllerCommand({ cmd: 'record', name: 'K', patch: { portSettings: '' } }, 'lan');
+        expect(getControllerOpsState().known?.[0].portSettingsOverride).toBeUndefined();
+        expect(getControllerOpsState().known?.[0].fullxLightsControl).toBe(true);
+    });
+});
+
+describe('what a reconfigure does with the settings a model leaves unset', () => {
+    const tree: KnownController = {
+        name: 'K',
+        address: '10.0.0.21',
+        active: true,
+        enableState: 'enabled',
+        defaultBrightness: 40,
+        defaultGamma: 2.2,
+        modelIntents: [{ name: 'Tree', controllerPort: 1, protocol: 'ws2811', startChannel: 1, nodeCount: 50 }],
+        source: 'xlights',
+    };
+
+    /** Reconfigures the strings of a controller and returns the port config the driver was handed. */
+    async function reconfigure(
+        known: KnownController,
+        settings: Partial<PlaybackSettings>,
+        fullControl?: boolean,
+    ): Promise<{ brightness?: number; gamma?: number; colorOrder?: string }[]> {
+        await loadControllerRecords(await fsp.mkdtemp(path.join(os.tmpdir(), 'ezp-ops-')));
+        setKnownControllers([known]);
+        setContentSource(() => ({ sequences: [], settings: settings as PlaybackSettings, idle: true }));
+        const id = '10.0.0.21|direct';
+        const read = startRead('10.0.0.21');
+        await settleRead({ success: true, report: { ip: '10.0.0.21', driverType: 'Falcon' } } as never);
+        await read;
+        const written: unknown[] = [];
+        const driver = {
+            supportsPlayerMode: false,
+            setOutputs: async (ports: unknown) => {
+                written.push(ports);
+                return { success: true };
+            },
+            applyConfig: async () => ({ success: true }),
+        };
+        const upload = dispatchControllerCommand(
+            { cmd: 'upload', id, scope: 'strings', ...(fullControl !== undefined ? { fullControl } : {}) },
+            'lan',
+        );
+        await vi.waitFor(() => expect(probe.pending.length).toBeGreaterThan(0));
+        probe.pending.shift()!({ success: true, driver, report: { ip: '10.0.0.21', driverType: 'Falcon' } } as never);
+        // The read-back after the write is not what is under test.
+        await vi.waitFor(() => expect(probe.pending.length).toBeGreaterThan(0));
+        probe.pending.shift()!({ success: false, error: 'not read back' });
+        await upload;
+        return written[0] as { brightness?: number; gamma?: number; colorOrder?: string }[];
+    }
+
+    it("stamps the controller's defaults when xLights has Full xLights Control on", async () => {
+        const ports = await reconfigure({ ...tree, fullxLightsControl: true }, {});
+        expect(ports[0]).toMatchObject({ brightness: 40, gamma: 2.2, colorOrder: 'RGB' });
+    });
+
+    it('leaves them alone when the flag is off', async () => {
+        const ports = await reconfigure(tree, {});
+        expect(ports[0].brightness).toBeUndefined();
+        expect(ports[0].colorOrder).toBeUndefined();
+    });
+
+    it('lets the record and the player setting overrule the flag', async () => {
+        const kept = await reconfigure({ ...tree, fullxLightsControl: true, portSettingsOverride: 'controller' }, {});
+        expect(kept[0].brightness).toBeUndefined();
+        const stamped = await reconfigure(tree, { managePortSettings: 'all' });
+        expect(stamped[0].brightness).toBe(40);
+        const none = await reconfigure({ ...tree, fullxLightsControl: true }, { managePortSettings: 'none' });
+        expect(none[0].brightness).toBeUndefined();
+    });
+
+    it('lets the request itself say', async () => {
+        const kept = await reconfigure({ ...tree, fullxLightsControl: true }, {}, false);
+        expect(kept[0].brightness).toBeUndefined();
+        const stamped = await reconfigure(tree, {}, true);
+        expect(stamped[0].brightness).toBe(40);
     });
 });

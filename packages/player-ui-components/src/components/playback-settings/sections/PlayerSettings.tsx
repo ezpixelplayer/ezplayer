@@ -2,7 +2,12 @@ import { Checkbox, Divider, FormControl, FormControlLabel, Switch, TextField, Ty
 import React from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { Select } from '@ezplayer/shared-ui-components';
-import type { AppSettingsCommand, ControllerRefreshMode, PreventSleepMode } from '@ezplayer/ezplayer-core';
+import type {
+    AppSettingsCommand,
+    ControllerRefreshMode,
+    PortSettingsManagement,
+    PreventSleepMode,
+} from '@ezplayer/ezplayer-core';
 import { controllerRefreshMode } from '@ezplayer/ezplayer-core';
 import { Box } from '../../box/Box';
 import { TagListInput } from '../../tag-list-input/TagListInput';
@@ -179,6 +184,34 @@ export const PlayerSettings: React.FC = () => {
                 Allowing a read mid-show keeps a controller that just came back up to date; it joins the show once the
                 read finishes.
             </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 2, mb: 1 }}>
+                A model in xLights may leave a port’s brightness, gamma, colour order and similar settings unset.
+                <strong> Manage port settings</strong> says whether Reconfigure sets those to the controller’s defaults
+                and every setting is checked against the controller, or whether they are left as set on the controller.
+            </Typography>
+            <FormControl fullWidth size="small">
+                <Select
+                    options={[
+                        {
+                            id: 'controller',
+                            name: 'Per controller: xLights’ Full xLights Control, or the EZPlayer record (recommended)',
+                        },
+                        { id: 'all', name: 'All controllers' },
+                        { id: 'none', name: 'No controllers' },
+                    ]}
+                    itemText="name"
+                    itemValue="id"
+                    onChange={(e) =>
+                        dispatch(
+                            playbackSettingsActions.setManagePortSettings(
+                                (e.target as HTMLSelectElement).value as PortSettingsManagement,
+                            ),
+                        )
+                    }
+                    label="Manage port settings"
+                    value={settings.managePortSettings ?? 'controller'}
+                />
+            </FormControl>
 
             <Divider sx={{ my: 3 }} />
             <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
