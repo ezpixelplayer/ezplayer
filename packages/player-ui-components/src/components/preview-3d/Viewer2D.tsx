@@ -12,6 +12,7 @@ import { LatestFrameRingBuffer } from '@ezplayer/ezplayer-core';
 import { GeometryManager } from './geometryManager';
 import { getGammaFromModelConfiguration } from './pointShaders';
 import { MovingHeadMarkers2D } from './MovingHeadMarkers2D';
+import { SceneObjectsLayer } from './SceneObjectsLayer';
 import type { MhFixtureInfo } from 'xllayoutcalcs';
 import { type AssetResolver, createShowFileResolver } from '../../services/assetResolver';
 
@@ -999,6 +1000,11 @@ function Scene2DContent({
 
             {movingHeadFixtures && movingHeadFixtures.length > 0 && (
                 <MovingHeadMarkers2D fixtures={movingHeadFixtures} liveData={liveData} viewPlane={viewPlane} />
+            )}
+
+            {/* Objects injected through /api/ezp/objects; world X/Y only, so not for the side planes */}
+            {viewPlane === 'xy' && (
+                <SceneObjectsLayer mode="2d" frameServerUrl={frameServerUrl} assetResolver={assetResolver} />
             )}
         </>
     );

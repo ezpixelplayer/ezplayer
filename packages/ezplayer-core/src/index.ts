@@ -351,3 +351,22 @@ export type {
     PlaySongSource,
 } from './types/DataTypes';
 export type { VcPickSource, VcDropReason } from './types/ViewerControlWire';
+
+export type {
+    SceneVec3,
+    ScenePlacement,
+    SceneAppearance,
+    SceneShapeKind,
+    SceneFileRef,
+    SceneContent,
+    SceneContentType,
+    SceneNode,
+    SceneView,
+    SceneObjectRequest,
+    SceneObjectPatch,
+    SceneAssetInfo,
+    SceneObjectInfo,
+    SceneObjectDelta,
+    SceneDelta,
+} from './types/SceneObjects';
+export { SCENE_OBJECTS_PATH, SCENE_FEED_PATH } from './types/SceneObjects';
