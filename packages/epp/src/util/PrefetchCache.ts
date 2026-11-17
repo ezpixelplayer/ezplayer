@@ -134,6 +134,8 @@ interface CacheItem<K, V, P> {
     generation: number; // the prefetch generation in which this was last (re)requested
 
     refCount: number;
+    /** Invalidated while referenced or fetching: out of the map, disposed when the last user lets go. */
+    detached?: boolean;
     waiters: Set<Deferred<V>>;
     fetchPromise?: Promise<V>; // Wait on cleanup
     lastPrefetchedAt: number; // for staleness of prefetch requests that haven't been renewed in a while
@@ -572,6 +574,7 @@ export class PrefetchCache<K, V, P> {
     }
     private releaseRefInternal(item: CacheItem<K, V, P>) {
         item.refCount = Math.max(0, item.refCount - 1);
+        if (item.detached && item.refCount === 0 && item.state !== 'fetching') this.disposeItem(item);
     }
 
     private async fetchItem(item: CacheItem<K, V, P>): Promise<void> {
@@ -605,6 +608,37 @@ export class PrefetchCache<K, V, P> {
             item.abort = undefined;
 
             this.activeFetches.delete(this.options.keyToId(item.key));
+            if (item.detached && item.refCount === 0) this.disposeItem(item);
+        }
+    }
+
+    /**
+     * Drop one entry so lookups miss from now on. A value still referenced (or
+     * a fetch still running) is disposed when the last user releases it.
+     */
+    invalidate(key: K): boolean {
+        const id = this.options.keyToId(key);
+        const item = this.cache.get(id);
+        if (!item) return false;
+        this.detachItem(id, item);
+        return true;
+    }
+
+    /** Drop every entry whose key matches; same lifetime rules as invalidate. */
+    invalidateWhere(pred: (key: K) => boolean): number {
+        const hits: [string, CacheItem<K, V, P>][] = [];
+        for (const [id, item] of this.cache.entries()) if (pred(item.key)) hits.push([id, item]);
+        for (const [id, item] of hits) this.detachItem(id, item);
+        return hits.length;
+    }
+
+    private detachItem(id: string, item: CacheItem<K, V, P>): void {
+        this.cache.delete(id);
+        item.detached = true;
+        if (item.refCount === 0 && !this.activeFetches.has(id)) {
+            this.disposeItem(item);
+        } else {
+            item.abort?.abort();
         }
     }
 
@@ -612,14 +646,21 @@ export class PrefetchCache<K, V, P> {
         const id = this.options.keyToId(key);
         const item = this.cache.get(id);
         if (!item) return;
+        this.cache.delete(id);
+        this.disposeItem(item);
+    }
 
+    /** Release the value and reject waiters; the item must already be out of the map. */
+    private disposeItem(item: CacheItem<K, V, P>): void {
         // Cancel if queued or fetching
         item.abort?.abort();
         item.abort = undefined;
 
         if (item.value && this.options.onDispose) {
+            const value = item.value;
+            item.value = undefined;
             try {
-                const disposed = this.options.onDispose(key, item.value);
+                const disposed = this.options.onDispose(item.key, value);
                 // Async dispose errors would otherwise escape this try/catch.
                 if (disposed) disposed.catch((error) => console.error('Error disposing cache item:', error));
             } catch (error) {
@@ -633,8 +674,6 @@ export class PrefetchCache<K, V, P> {
             for (const w of item.waiters) w.reject(err);
             item.waiters.clear();
         }
-
-        this.cache.delete(id);
     }
 
     // Test / shutdown
