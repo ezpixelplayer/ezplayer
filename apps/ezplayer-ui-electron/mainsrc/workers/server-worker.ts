@@ -359,7 +359,7 @@ function brightnessReply(settings: PlaybackSettings): Record<string, unknown> {
     };
 }
 
-/** `setbrightness`: writes the default brightness and/or colour temperature; the
+/** `setbrightness`: writes the default brightness and/or color temperature; the
  *  player's slew then ramps the live values to them. */
 async function handleSetBrightness(cmd: {
     brightness?: unknown;

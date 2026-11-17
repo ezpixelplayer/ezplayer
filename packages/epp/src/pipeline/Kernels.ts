@@ -181,7 +181,7 @@ export function scaleNodes(frame: Uint8Array, stride: number, nodeStart: number,
 
 /**
  * Scale R, G, B (and X) by separate factors in [0, 1] without a LUT: global
- * brightness folded together with a colour-temperature tint. Factors at or
+ * brightness folded together with a color-temperature tint. Factors at or
  * above 1 leave the channel alone.
  */
 export function scaleNodesRgb(frame: Uint8Array, stride: number, nodeStart: number, nodeEnd: number, kr: number, kg: number, kb: number, kx = 1): void {

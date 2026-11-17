@@ -33,7 +33,7 @@ describe('scheduledBrightness', () => {
         });
         expect(scheduledBrightness({ defaultBrightness: 250 }, WED_2130).brightness).toBe(100);
     });
-    it('a window without a colour temperature keeps the default one', () => {
+    it('a window without a color temperature keeps the default one', () => {
         const base = { defaultBrightness: 80, defaultColorTemperature: 3000 };
         expect(scheduledBrightness({ ...base, schedule: [dimNights] }, WED_2130).colorTemperature).toBe(3000);
         expect(scheduledBrightness({ ...base, schedule: [warmNights] }, WED_2130).colorTemperature).toBe(2700);
@@ -41,7 +41,7 @@ describe('scheduledBrightness', () => {
             COLOR_TEMPERATURE_NEUTRAL_K,
         );
     });
-    it('clamps colour temperature and treats 0 as neutral', () => {
+    it('clamps color temperature and treats 0 as neutral', () => {
         expect(clampColorTemperature(0)).toBe(COLOR_TEMPERATURE_NEUTRAL_K);
         expect(clampColorTemperature(100)).toBe(2000);
         expect(clampColorTemperature(50000)).toBe(12000);

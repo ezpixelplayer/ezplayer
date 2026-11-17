@@ -381,7 +381,7 @@ export class PixelPipeline {
 
     private tintKelvin = COLOR_TEMP_NEUTRAL_K;
     private tint: [number, number, number] = [1, 1, 1];
-    /** Per-channel factors for a colour temperature, cached for the last value asked. */
+    /** Per-channel factors for a color temperature, cached for the last value asked. */
     private tintFor(kelvin: number): [number, number, number] {
         if (kelvin !== this.tintKelvin) {
             this.tintKelvin = kelvin;

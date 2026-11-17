@@ -1,5 +1,5 @@
 /*
- * Colour temperature as a tint that only ever dims: per-channel factors in
+ * Color temperature as a tint that only ever dims: per-channel factors in
  * (0, 1] that pull a frame toward the look of a blackbody at the chosen
  * temperature. Neutral (6500 K) leaves every channel at 1; warmer reduces
  * green and blue, cooler reduces red (and a little green). Nothing is ever
@@ -30,7 +30,7 @@ function blackbodyRgb(kelvin: number): [number, number, number] {
 const NEUTRAL = blackbodyRgb(COLOR_TEMP_NEUTRAL_K);
 
 /**
- * Per-channel scale factors for a colour temperature in kelvin, relative to
+ * Per-channel scale factors for a color temperature in kelvin, relative to
  * neutral and normalised so the largest factor is exactly 1. Out-of-range
  * temperatures are clamped to [COLOR_TEMP_MIN_K, COLOR_TEMP_MAX_K].
  */

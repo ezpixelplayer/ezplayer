@@ -699,7 +699,7 @@ export type EZPlayerCommand =
           /** Sets the default brightness 0-100 (persisted; the player ramps to
            *  it). Like volume, not a live override of a scheduled window. */
           brightness?: number;
-          /** Sets the default colour temperature in kelvin (persisted). */
+          /** Sets the default color temperature in kelvin (persisted). */
           colorTemperature?: number;
       };
 
@@ -760,7 +760,7 @@ export interface BrightnessScheduleEntry {
     startTime: string; // HH:MM format
     endTime: string; // HH:MM format (can exceed 24:00)
     brightness: number; // 0-100
-    /** Kelvin for this window; omitted keeps the default colour temperature. */
+    /** Kelvin for this window; omitted keeps the default color temperature. */
     colorTemperature?: number;
 }
 
@@ -823,13 +823,13 @@ export interface VolumeControlState {
     schedule?: VolumeScheduleEntry[];
 }
 
-/** Output brightness and colour temperature: a default, and schedule windows on
- *  top of it, the same shape as volume. Colour temperature only ever dims
+/** Output brightness and color temperature: a default, and schedule windows on
+ *  top of it, the same shape as volume. Color temperature only ever dims
  *  channels (warm dims blue, cool dims red), so 100% stays 100%. */
 export interface BrightnessControlState {
     /** 0-100. */
     defaultBrightness: number;
-    /** Kelvin; undefined or `COLOR_TEMPERATURE_NEUTRAL_K` leaves colours alone. */
+    /** Kelvin; undefined or `COLOR_TEMPERATURE_NEUTRAL_K` leaves colors alone. */
     defaultColorTemperature?: number;
     schedule?: BrightnessScheduleEntry[];
 }
@@ -901,7 +901,7 @@ export interface PlaybackSettings {
     backgroundSequence?: 'overlay' | 'underlay';
     viewerControl: ViewerControlState;
     volumeControl: VolumeControlState;
-    /** Output brightness and colour temperature; absent means full, neutral. */
+    /** Output brightness and color temperature; absent means full, neutral. */
     brightnessControl?: BrightnessControlState;
     jukebox?: JukeboxSettings;
     /** Tags identifying test sequences, for display in test area. */

@@ -62,7 +62,7 @@ clicking the meter or the tune icon — see [Volume](../advanced/volume.md).
 ### Brightness
 
 Below the volume meter, a second meter shows the output brightness the player
-is sending right now (0–100%), with the colour temperature in kelvin when it is
+is sending right now (0–100%), with the color temperature in kelvin when it is
 not neutral. It follows your brightness schedule, so it too is read-only;
 clicking it or its tune icon opens the brightness settings — see
 [Brightness](../advanced/brightness.md).

@@ -70,8 +70,8 @@ export function describeColorTemperature(kelvin: number | undefined): string {
 }
 
 /**
- * Output brightness and colour temperature: a default and schedule windows on
- * top of it, the same shape as the audio volume section. Colour temperature
+ * Output brightness and color temperature: a default and schedule windows on
+ * top of it, the same shape as the audio volume section. Color temperature
  * only dims channels (warm dims blue and green, cool dims red), so full
  * brightness stays full.
  */
@@ -171,7 +171,7 @@ export const BrightnessSettings: React.FC = () => {
 
             <Box sx={{ mb: 3 }}>
                 <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                    Default Colour Temperature
+                    Default Color Temperature
                 </Typography>
                 <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
                     Warm pulls the whole display toward amber by dimming blue and green; cool dims red. Nothing is ever
@@ -195,7 +195,7 @@ export const BrightnessSettings: React.FC = () => {
                     />
                 </Box>
                 <Typography variant="body2" sx={{ mt: 1, fontWeight: 'medium' }}>
-                    Default Colour Temperature: {describeColorTemperature(defaultTemperature)}
+                    Default Color Temperature: {describeColorTemperature(defaultTemperature)}
                 </Typography>
             </Box>
 
@@ -204,7 +204,7 @@ export const BrightnessSettings: React.FC = () => {
                     Brightness Schedule Overrides
                 </Typography>
                 <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                    While a window is in effect its brightness (and colour temperature, when set) replaces the defaults.
+                    While a window is in effect its brightness (and color temperature, when set) replaces the defaults.
                     Later entries take priority when windows overlap.
                 </Typography>
                 {entries.length > 0 && (
@@ -364,7 +364,7 @@ export const BrightnessSettings: React.FC = () => {
                                         }
                                     />
                                 }
-                                label="Also set colour temperature"
+                                label="Also set color temperature"
                             />
                             {newEntry.colorTemperature !== undefined && (
                                 <Box sx={{ px: 2 }}>

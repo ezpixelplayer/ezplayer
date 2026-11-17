@@ -1,5 +1,5 @@
 /**
- * What the output brightness and colour temperature should be right now.
+ * What the output brightness and color temperature should be right now.
  *
  * One resolver for everyone: the playback worker slews toward these targets and
  * reports the live values in `PlayerPStatusContent.brightness`; the API and the
@@ -32,9 +32,9 @@ export function clampColorTemperature(kelvin: number | undefined): number {
     return Math.max(COLOR_TEMPERATURE_MIN_K, Math.min(COLOR_TEMPERATURE_MAX_K, kelvin));
 }
 
-/** The brightness and colour temperature a control calls for at `now`: its
+/** The brightness and color temperature a control calls for at `now`: its
  *  active window, else its defaults, else full and neutral. A window without a
- *  colour temperature keeps the default one. */
+ *  color temperature keeps the default one. */
 export function scheduledBrightness(
     control: BrightnessControlState | undefined,
     now: Date = new Date(),

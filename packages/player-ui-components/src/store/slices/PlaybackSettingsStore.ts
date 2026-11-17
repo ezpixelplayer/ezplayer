@@ -352,7 +352,7 @@ const playbackSettingsSlice = createSlice({
             moveEntry(state.settings.volumeControl.schedule, action.payload.entryId, action.payload.delta);
         },
 
-        // Brightness control (output brightness and colour temperature)
+        // Brightness control (output brightness and color temperature)
         setDefaultBrightness(state, action: PayloadAction<number>) {
             (state.settings.brightnessControl ??= { defaultBrightness: 100, schedule: [] }).defaultBrightness =
                 action.payload;

@@ -70,7 +70,7 @@ describe('brightness API', () => {
         });
     });
 
-    it('setbrightness is the same write, and neutral clears the colour temperature', async () => {
+    it('setbrightness is the same write, and neutral clears the color temperature', async () => {
         const r = await post('/api/ezp/player-command', {
             command: 'setbrightness',
             brightness: 100,

@@ -191,7 +191,7 @@ Send player command. Sends a command to control player playback, volume, or requ
 | `clearrequests`     | Clear all pending requests                                                           |                                                    |
 | `endsong`           | End the current song (skip to the next item)                                         | `songId?` (only skip if this song is playing)      |
 | `setvolume`         | Set the default volume (persisted) and/or mute (live); see the note below            | `volume?`, `mute?`                                 |
-| `setbrightness`     | Set the default output brightness and/or colour temperature (persisted); see below   | `brightness?`, `colorTemperature?`                |
+| `setbrightness`     | Set the default output brightness and/or color temperature (persisted); see below   | `brightness?`, `colorTemperature?`                |
 
 **Request Body Examples:**
 
@@ -1019,7 +1019,7 @@ curl -X POST http://127.0.0.1:8080/api/ezp/volume/default/schedule \
 
 Output brightness as the player automates it (see
 [Brightness](../advanced/brightness.md)): the **default brightness** and
-**default colour temperature**, the **scheduled windows**, the window in effect
+**default color temperature**, the **scheduled windows**, the window in effect
 right now (if any), and the live values the slew has reached. There is one
 control for the whole display, so unlike volume there is no target id.
 
@@ -1040,7 +1040,7 @@ control for the whole display, so unlike volume there is no target id.
 ### POST /api/ezp/brightness
 
 Set the defaults: `{ "brightness": 65 }`, `{ "colorTemperature": 3000 }`, or
-both. Brightness is clamped to 0–100 and colour temperature to 2000–12000 K
+both. Brightness is clamped to 0–100 and color temperature to 2000–12000 K
 (6500 K is neutral and stored as "unset"). The values are persisted and the
 player ramps to them when its defaults are in effect; windows are left alone,
 so inside one the window's values hold until it ends. The `setbrightness`
@@ -1068,7 +1068,7 @@ The windows, the `schedule` array from the overview.
 Replace the windows with the posted array. Each entry needs `days` (as for
 volume), `startTime` and `endTime` as `HH:MM` (`endTime` may pass `24:00`)
 and `brightness` 0–100; `colorTemperature` in kelvin is optional and, when
-absent, the window keeps the default colour temperature. `id` is kept when
+absent, the window keeps the default color temperature. `id` is kept when
 given and generated otherwise. Later entries win where windows overlap. An
 empty array clears the schedule. Answers like `POST /api/ezp/brightness`.
 

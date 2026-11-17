@@ -1062,7 +1062,7 @@ function doVolumeAdjust(dn: number) {
     recomputeVolumeGains();
 }
 
-// Brightness slews like volume: 1% per 10 ms, and 100 K per 10 ms for colour
+// Brightness slews like volume: 1% per 10 ms, and 100 K per 10 ms for color
 // temperature, so a full swing of either takes about a second. Unlike volume
 // there is one control for the whole display.
 const BRIGHTNESS_SLEW_INTERVAL_MS = 10;
@@ -1876,7 +1876,7 @@ let volumeMode: 'default' | 'outputs' = 'default';
 let volumeTargetsNow: VolumeTarget[] = [];
 /** Linear gain per output key, mute applied; shipped with every audio chunk. */
 let outputGains: Record<string, number> = {};
-/** Live (slewed) output brightness 0..100 and colour temperature in kelvin. */
+/** Live (slewed) output brightness 0..100 and color temperature in kelvin. */
 let brightnessNow = 100;
 let colorTemperatureNow = COLOR_TEMPERATURE_NEUTRAL_K;
 /** True while a schedule window, not the default, sets the brightness targets. */

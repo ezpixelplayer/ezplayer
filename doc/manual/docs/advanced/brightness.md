@@ -14,15 +14,15 @@ second rather than jumping.
 
 - **Default Brightness** — the baseline level (0–100%) used when no override is
   active. 100% sends the sequence exactly as rendered.
-- **Default Colour Temperature** — a tint from **Warm** (2000 K) through
+- **Default Color Temperature** — a tint from **Warm** (2000 K) through
   **Neutral** (6500 K) to **Cool** (12000 K). Warm dims blue and green so the
   display leans amber; cool dims red so it leans blue. Nothing is ever boosted,
-  so at neutral the colours are untouched and at 100% brightness a white pixel
+  so at neutral the colors are untouched and at 100% brightness a white pixel
   is still as bright as the sequence asked for.
 - **Brightness Schedule Overrides** — time-bounded brightness for specific
-  times, optionally with their own colour temperature. Click **Add Brightness
+  times, optionally with their own color temperature. Click **Add Brightness
   Override** to set the days, start/end time and level; turn on **Also set
-  colour temperature** to tint during that window. A window without a colour
+  color temperature** to tint during that window. A window without a color
   temperature keeps the default one.
 
 When two overrides cover the same time, the **last entry wins** (the same way

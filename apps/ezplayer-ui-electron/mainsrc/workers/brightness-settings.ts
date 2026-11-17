@@ -1,7 +1,7 @@
 /**
  * Output brightness as a setting, for the API surfaces that read or write it.
  *
- * The playback worker slews the live brightness and colour temperature toward
+ * The playback worker slews the live brightness and color temperature toward
  * what the settings say (`brightnessLevel.ts` in ezplayer-core): the defaults,
  * or the schedule window in effect. So a brightness "set" here is a write of
  * the default, not a live override; a live override would be slewed straight
@@ -78,7 +78,7 @@ function withControl(
     };
 }
 
-/** Set the default brightness and/or colour temperature. Either may be omitted. */
+/** Set the default brightness and/or color temperature. Either may be omitted. */
 export function setDefaultBrightness(
     settings: PlaybackSettings,
     brightness: unknown,

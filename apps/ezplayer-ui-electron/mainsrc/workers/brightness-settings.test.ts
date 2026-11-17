@@ -56,7 +56,7 @@ describe('setDefaultBrightness', () => {
         const hi = setDefaultBrightness(settings(), 500);
         expect(hi.ok && hi.settings.brightnessControl?.defaultBrightness).toBe(100);
     });
-    it('writes colour temperature alone, dropping it when neutral', () => {
+    it('writes color temperature alone, dropping it when neutral', () => {
         const warm = setDefaultBrightness(settings(), undefined, 3000);
         expect(warm.ok && warm.settings.brightnessControl).toMatchObject({
             defaultBrightness: 70,
