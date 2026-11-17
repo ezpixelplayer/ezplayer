@@ -47,6 +47,7 @@ import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import Tooltip from '@mui/material/Tooltip';
 import { PlayerCloudRegistrationDialog } from '../player-cloud-registration/PlayerCloudRegistrationDialog';
 import { MaskedPlayerId } from '../player-cloud-registration/MaskedPlayerId';
+import { EzrgbPromoCard } from './EzrgbPromoCard';
 import React, { useMemo, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { QRCodeSVG } from 'qrcode.react';
@@ -851,6 +852,15 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea, allowRe
                         </>
                     )}
                 </Card>
+
+                {/* Promotion only while unregistered (not paused, not registered). */}
+                {topMode === 'unregistered' && (
+                    <EzrgbPromoCard
+                        variant="full"
+                        sx={{ maxWidth: '720px', p: 2, mb: 3 }}
+                        onRegister={allowRegistration ? () => setRegDialogOpen(true) : undefined}
+                    />
+                )}
 
                 {cloudActive && isRegistered && (
                     <MusicRightsCard
