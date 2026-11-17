@@ -1609,7 +1609,7 @@ const OpProgress: React.FC<{ op: ControllerOp; onCancel?: (opId: string) => void
 
 /** Per-string settings stamped to a default when "set all settings" is on;
  *  otherwise the controller keeps whatever it already has for these. */
-const SETTABLE_SETTINGS = 'brightness, gamma, colour order, start/end null pixels, grouping, zig-zag and direction';
+const SETTABLE_SETTINGS = 'brightness, gamma, color order, start/end null pixels, grouping, zig-zag and direction';
 
 /** Reconfigure confirmation. The checkbox is xLights' FullxLightsControl. */
 const UploadDialog: React.FC<{
