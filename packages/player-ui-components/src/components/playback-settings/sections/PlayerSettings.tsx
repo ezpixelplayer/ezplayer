@@ -2,7 +2,12 @@ import { Checkbox, Divider, FormControl, FormControlLabel, Switch, TextField, Ty
 import React from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { Select } from '@ezplayer/shared-ui-components';
-import type { AppSettingsCommand, ControllerRefreshMode, PreventSleepMode } from '@ezplayer/ezplayer-core';
+import type {
+    AppSettingsCommand,
+    ControllerRefreshMode,
+    PortSettingsManagement,
+    PreventSleepMode,
+} from '@ezplayer/ezplayer-core';
 import { controllerRefreshMode } from '@ezplayer/ezplayer-core';
 import { Box } from '../../box/Box';
 import { TagListInput } from '../../tag-list-input/TagListInput';
@@ -104,7 +109,7 @@ export const PlayerSettings: React.FC = () => {
             </FormControl>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
                 {appSettings
-                    ? 'A sleeping computer cannot start a show or answer a remote request, and EZPlayer cannot wake it. The display may still turn off.'
+                    ? 'If the computer is asleep, it cannot play shows and is not accessible via the cloud.  Turn this on to prevent sleeping while EZPlayer is running.'
                     : 'Prevent sleeping is set in the EZPlayer desktop app.'}
             </Typography>
             <Divider sx={{ my: 3 }} />
@@ -142,8 +147,7 @@ export const PlayerSettings: React.FC = () => {
                     label="Blackout when idle"
                 />
                 <Typography variant="body2" color="text.secondary">
-                    Send black frames while nothing is playing so lights go dark. Turn off when another player drives
-                    the same controllers — lights then hold their last frame when playback stops.
+                    Send black frames while nothing is playing so lights are consistently dark.
                 </Typography>
             </Box>
 
@@ -155,9 +159,9 @@ export const PlayerSettings: React.FC = () => {
                 Controllers
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                The player can read each controller’s configuration on its own — ports, firmware, and anything that has
-                drifted from xLights. A read takes up to tens of seconds and pauses that controller’s data, so reads
-                normally wait for an idle player.
+                EZPlayer can read each controller's status and check for correct configuration.
+                Because this takes time and may disrupt the show, this is normally only done
+                when EZPlayer is idle.
             </Typography>
             <FormControl fullWidth size="small">
                 <Select
@@ -181,8 +185,35 @@ export const PlayerSettings: React.FC = () => {
             </FormControl>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
                 Allowing a read mid-show keeps a controller that just came back up to date; it joins the show once the
-                read finishes.
+                status read finishes.
             </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 2, mb: 1 }}>
+                <strong> Manage port settings</strong> determines whether EZPlayer's "Reconfigure" action sets brightness, gamma, and color
+                order on the controller ports.  If unset, EZPlayer does not control or verify these settings.
+            </Typography>
+            <FormControl fullWidth size="small">
+                <Select
+                    options={[
+                        {
+                            id: 'controller',
+                            name: 'Per controller: xLights’ Full xLights Control, or the EZPlayer record (recommended)',
+                        },
+                        { id: 'all', name: 'All controllers' },
+                        { id: 'none', name: 'No controllers' },
+                    ]}
+                    itemText="name"
+                    itemValue="id"
+                    onChange={(e) =>
+                        dispatch(
+                            playbackSettingsActions.setManagePortSettings(
+                                (e.target as HTMLSelectElement).value as PortSettingsManagement,
+                            ),
+                        )
+                    }
+                    label="Manage port settings"
+                    value={settings.managePortSettings ?? 'controller'}
+                />
+            </FormControl>
 
             <Divider sx={{ my: 3 }} />
             <Typography variant="subtitle2" sx={{ mb: 0.5 }}>

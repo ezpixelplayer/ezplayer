@@ -105,6 +105,20 @@ describe('controllers API', () => {
         return { status: res.status, body: (await res.json()) as Record<string, unknown> };
     };
 
+    describe('upload', () => {
+        it('passes the full-control choice through only as a boolean', async () => {
+            let res = await post({ cmd: 'upload', id: '10.0.0.9|direct', scope: 'full' });
+            expect(res.status).toBe(200);
+            expect(issued[0]).toEqual({ cmd: 'upload', id: '10.0.0.9|direct', scope: 'full' });
+            res = await post({ cmd: 'upload', id: '10.0.0.9|direct', scope: 'full', fullControl: false });
+            expect(res.status).toBe(200);
+            expect(issued[0]).toMatchObject({ fullControl: false });
+            res = await post({ cmd: 'upload', id: '10.0.0.9|direct', scope: 'full', fullControl: 'yes' });
+            expect(res.status).toBe(400);
+            expect(String(res.body.error)).toMatch(/fullControl/);
+        });
+    });
+
     describe('distribute', () => {
         it('takes a bare distribute: everything, everywhere', async () => {
             const res = await post({ cmd: 'distribute' });
