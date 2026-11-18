@@ -3189,6 +3189,8 @@ async function processQueue() {
                         if (!fsf) continue;
                         // Always fetch the header.
                         fseqCache!.prefetchSeqMetadata({ fseqfile: fsf, needByTime: play.atTime, tier });
+                        // A re-render under the same name must not keep serving stale frames.
+                        fseqCache!.checkFileIdentity(fsf);
                         // Frames only for the imminent window.
                         if (play.atTime >= frameGate) continue;
                         let ourDur = frameGate - play.atTime;

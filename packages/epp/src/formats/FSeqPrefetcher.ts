@@ -92,6 +92,13 @@ export interface FSeqFileVal {
     header: FSEQHeader;
     chunkMap: CompBlockCache;
     layout: FileLayout;
+    /** What the file looked like when its header was read; a change means a re-render. */
+    identity: FileIdentity;
+}
+
+export interface FileIdentity {
+    size: number;
+    mtimeMs: number;
 }
 
 export interface ScatterRange {
@@ -502,6 +509,41 @@ export class FSeqPrefetchCache {
         };
     }
 
+    private identityChecked = new Map<string, number>();
+
+    /**
+     * Re-stat a cached file at most every `everyMs` and drop its header and
+     * chunks when the size or mtime changed (a re-render under the same name).
+     * Cheap enough to call from the prefetch pass for every referenced file.
+     */
+    checkFileIdentity(fseqfile: string, everyMs = 5000): void {
+        const last = this.identityChecked.get(fseqfile) ?? -Infinity;
+        if (this.now - last < everyMs) return;
+        this.identityChecked.set(fseqfile, this.now);
+        const info = this.getHeaderInfo({ fseqfile })?.ref;
+        if (!info) return;
+        fsp.stat(fseqfile).then(
+            (st) => {
+                if (st.size === info.identity.size && st.mtimeMs === info.identity.mtimeMs) return;
+                this.emitWarning(
+                    `[fseq] ${fseqfile} changed on disk (size ${info.identity.size} -> ${st.size}); dropping cached frames`,
+                );
+                this.invalidateFile(fseqfile);
+            },
+            () => {
+                // Gone or unreadable: the next open reports it.
+                this.invalidateFile(fseqfile);
+            },
+        );
+    }
+
+    /** Forget everything cached for a file. */
+    invalidateFile(fseqfile: string): void {
+        this.headerPrefetchCache.invalidate({ fseqfile });
+        this.decompPrefetchCache.invalidateWhere((k) => k.fseqfile === fseqfile);
+        this.identityChecked.delete(fseqfile);
+    }
+
     /** Start a new prefetch generation (call once per pass, before prefetching). */
     beginGeneration() {
         this.headerPrefetchCache.beginGeneration();
@@ -522,6 +564,8 @@ export class FSeqPrefetchCache {
             const chunkMap = new CompBlockCache();
             FSEQReaderAsync.createCompBlockCache(header, chunkMap);
             const layout = computeFileLayout(header);
+            const st = await fsp.stat(key.fseqfile);
+            const identity: FileIdentity = { size: st.size, mtimeMs: st.mtimeMs };
             if (this.emitInfo) {
                 this.emitInfo(
                     `[fseq] opened ${key.fseqfile}; ${summarizeFSEQHeader(header)}; ` +
@@ -532,6 +576,7 @@ export class FSeqPrefetchCache {
                 header,
                 chunkMap,
                 layout,
+                identity,
             };
         },
         budgetPredictor: (_key) => 1,

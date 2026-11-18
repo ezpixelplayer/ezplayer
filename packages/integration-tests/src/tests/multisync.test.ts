@@ -153,10 +153,11 @@ describe('FPP MultiSync master', () => {
             matched++;
             // Sync goes out as the frame's deadline arrives, then the frame's
             // single DDP packet follows within the send slot. A packet prepared a
-            // frame early would land ~50 ms before its push.
+            // frame early would land ~50 ms before its push. The trailing bound
+            // allows a Windows timer tick (15.6 ms) between the two sends.
             const lead = push.t - s.t;
             expect(lead, `sync for frame ${s.frame} led its DDP push by ${lead} ms`).toBeLessThan(30);
-            expect(lead, `sync for frame ${s.frame} trailed its DDP push by ${-lead} ms`).toBeGreaterThan(-15);
+            expect(lead, `sync for frame ${s.frame} trailed its DDP push by ${-lead} ms`).toBeGreaterThan(-20);
         }
         expect(matched).toBeGreaterThan(2);
     }, 60_000);
