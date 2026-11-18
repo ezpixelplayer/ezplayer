@@ -832,7 +832,7 @@ export function effectiveForceLocalIP(k: { forceLocalIP?: string; forceLocalIPOv
 
 /**
  * The player setting for the per-port settings a model leaves unset
- * (brightness, gamma, colour order, null pixels, grouping, zig-zag, direction):
+ * (brightness, gamma, color order, null pixels, grouping, zig-zag, direction):
  *  - `controller`  each controller's own answer: xLights' Full xLights Control
  *                  flag, or the EZPlayer record's choice (the default)
  *  - `all`         every controller: a reconfigure stamps the controller's
@@ -1265,7 +1265,7 @@ export interface ControllerPort {
  *                 difference in its configuration (see the row's `notes`)
  *  - `start`      counts agree but the port starts at the wrong channel, so it
  *                 shows another part of the show
- *  - `settings`   counts and start agree but the brightness, gamma or colour
+ *  - `settings`   counts and start agree but the brightness, gamma or color
  *                 order is not what the show wants */
 export type PortDriftKind = 'ok' | 'missing' | 'unexpected' | 'count' | 'start' | 'settings';
 

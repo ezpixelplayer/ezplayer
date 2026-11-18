@@ -71,7 +71,7 @@ player. **Read controller details automatically** sets when this happens:
 | **Also when a controller comes back mid-show** | Also reads a controller that just came back up; it joins the show once the read finishes.                         |
 | **Never**                                      | No automatic reads.                                                                                               |
 
-A model in xLights may leave a port's brightness, gamma, colour order and
+A model in xLights may leave a port's brightness, gamma, color order and
 similar settings unset. **Manage port settings** says what EZPlayer does with
 those:
 

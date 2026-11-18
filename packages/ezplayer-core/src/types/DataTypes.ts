@@ -882,7 +882,7 @@ export interface PlaybackSettings {
     /** When the player may read controller configuration by itself. */
     controllerRefresh?: ControllerRefreshSettings;
     /** Whether the player manages the per-port settings a model leaves unset
-     *  (brightness, gamma, colour order and the like); absent = `controller`. */
+     *  (brightness, gamma, color order and the like); absent = `controller`. */
     managePortSettings?: PortSettingsManagement;
     /** Diagnostic/testing overrides; leave unset for normal operation. */
     advanced?: AdvancedPlaybackSettings;

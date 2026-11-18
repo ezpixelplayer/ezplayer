@@ -860,7 +860,7 @@ describe('who owns the port settings a model leaves unset', () => {
                 { colorOrder: 'GRB', brightness: 100, gamma: 2.2 },
                 { colorOrder: 'RGB', brightness: 40, gamma: 1 },
             ),
-        ).toEqual(['colour order RGB (xLights GRB)', 'brightness 40% (xLights 100%)', 'gamma 1 (xLights 2.2)']);
+        ).toEqual(['color order RGB (xLights GRB)', 'brightness 40% (xLights 100%)', 'gamma 1 (xLights 2.2)']);
         // A side that says nothing about a setting is not compared on it.
         expect(portSettingsDrift({ brightness: 100 }, { colorOrder: 'RGB' })).toEqual([]);
     });
@@ -881,7 +881,7 @@ describe('reconcilePorts settings drift', () => {
             severity: 'conflict',
             intendedSettings: { colorOrder: 'RGB', brightness: 60, gamma: 2.2 },
             actualSettings: { colorOrder: 'GRB', brightness: 40, gamma: 1.0 },
-            settingsNotes: ['colour order GRB (xLights RGB)', 'brightness 40% (xLights 60%)', 'gamma 1 (xLights 2.2)'],
+            settingsNotes: ['color order GRB (xLights RGB)', 'brightness 40% (xLights 60%)', 'gamma 1 (xLights 2.2)'],
         });
         expect(hasPortDrift(rows)).toBe(true);
     });

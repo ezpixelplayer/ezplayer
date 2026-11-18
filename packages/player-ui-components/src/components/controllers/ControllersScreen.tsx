@@ -407,7 +407,7 @@ const settingsLabel = (v: PortSettingsValues): string =>
         .filter(Boolean)
         .join(', ');
 
-const SETTABLE_SETTINGS = 'brightness, gamma, colour order, start/end null pixels, grouping, zig-zag and direction';
+const SETTABLE_SETTINGS = 'brightness, gamma, color order, start/end null pixels, grouping, zig-zag and direction';
 
 /** What happens to the per-port settings a model leaves unset, and whose
  *  choice that is: the player setting, the record, or xLights' flag. */
@@ -1914,8 +1914,8 @@ const RecordDialog: React.FC<{
                         InputLabelProps={{ shrink: true }}
                         helperText={
                             managePortSettings === 'all' || managePortSettings === 'none'
-                                ? `Brightness, gamma, colour order and the like. The player’s Manage port settings setting covers ${managePortSettings === 'all' ? 'every' : 'no'} controller, which outranks this choice.`
-                                : `Brightness, gamma, colour order and the like. xLights’ Full xLights Control is ${xlightsFullControl ? 'on' : 'off'} for this controller.`
+                                ? `Brightness, gamma, color order and the like. The player’s Manage port settings setting covers ${managePortSettings === 'all' ? 'every' : 'no'} controller, which outranks this choice.`
+                                : `Brightness, gamma, color order and the like. xLights’ Full xLights Control is ${xlightsFullControl ? 'on' : 'off'} for this controller.`
                         }
                     >
                         <option value="">Whatever the xLights layout says</option>

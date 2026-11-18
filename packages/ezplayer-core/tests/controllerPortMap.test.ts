@@ -249,7 +249,7 @@ describe('single-channel nodes', () => {
 });
 
 describe('port settings in the intent', () => {
-    it("carries the first string's colour order, brightness and gamma onto the port", () => {
+    it("carries the first string's color order, brightness and gamma onto the port", () => {
         const out = portIntentFromModelIntents([
             mi({ name: 'Arch', controllerPort: 1, startChannel: 301, nodeCount: 50, brightness: 80 }),
             mi({ name: 'Tree', controllerPort: 1, startChannel: 1, nodeCount: 100, colorOrder: 'GRB', gamma: 2.2 }),

@@ -216,7 +216,7 @@ export function portDriftSeverity(drift: PortDriftKind): PortDriftSeverity {
 }
 
 /** Channels a device port covers: its channel span when it reports one, else
- *  its pixels at the width its colour order implies. */
+ *  its pixels at the width its color order implies. */
 export function devicePortChannels(a: {
     pixels?: number;
     startChannel?: number;
@@ -283,7 +283,7 @@ export function portSettingsDrift(intended: PortSettingsValues, actual: PortSett
         actual.colorOrder !== undefined &&
         intended.colorOrder.trim().toUpperCase() !== actual.colorOrder.trim().toUpperCase()
     ) {
-        notes.push(`colour order ${actual.colorOrder} (xLights ${intended.colorOrder})`);
+        notes.push(`color order ${actual.colorOrder} (xLights ${intended.colorOrder})`);
     }
     if (
         intended.brightness !== undefined &&
@@ -663,7 +663,7 @@ const summarizeUniverses = (u: { universe: number; channels: number }[]): string
 /**
  * The outputs without the universes past the last channel any model on the
  * controller uses. xLights can leave such a universe in networks.xml (since
- * 2026.04 a single-colour string of over 510 lights is counted by lights but
+ * 2026.04 a single-color string of over 510 lights is counted by lights but
  * sized by its one channel, so one extra 510 universe is created and never
  * sized), and neither its upload nor ours writes a universe no string maps
  * into. Nothing is dropped when no model says where the channels end.
