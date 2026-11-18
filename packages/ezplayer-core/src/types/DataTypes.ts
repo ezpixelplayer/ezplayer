@@ -1,4 +1,9 @@
-import type { ControllerOpsState, ControllerCommand, ControllerSenderStats } from './ControllerOps';
+import type {
+    ControllerOpsState,
+    ControllerCommand,
+    ControllerSenderStats,
+    PortSettingsManagement,
+} from './ControllerOps';
 import type { ViewerStatsSummary } from '../util/viewerStats';
 import type { AudioDevice } from './EZPElectronAPI';
 
@@ -876,6 +881,9 @@ export interface PlaybackSettings {
     contentDistribution?: ContentDistributionSettings;
     /** When the player may read controller configuration by itself. */
     controllerRefresh?: ControllerRefreshSettings;
+    /** Whether the player manages the per-port settings a model leaves unset
+     *  (brightness, gamma, color order and the like); absent = `controller`. */
+    managePortSettings?: PortSettingsManagement;
     /** Diagnostic/testing overrides; leave unset for normal operation. */
     advanced?: AdvancedPlaybackSettings;
     /**

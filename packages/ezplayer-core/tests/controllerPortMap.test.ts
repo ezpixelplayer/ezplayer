@@ -247,3 +247,17 @@ describe('single-channel nodes', () => {
         expect(nodeCountLabel(50)).toBe('50 px');
     });
 });
+
+describe('port settings in the intent', () => {
+    it("carries the first string's color order, brightness and gamma onto the port", () => {
+        const out = portIntentFromModelIntents([
+            mi({ name: 'Arch', controllerPort: 1, startChannel: 301, nodeCount: 50, brightness: 80 }),
+            mi({ name: 'Tree', controllerPort: 1, startChannel: 1, nodeCount: 100, colorOrder: 'GRB', gamma: 2.2 }),
+            mi({ name: 'Star', controllerPort: 2, startChannel: 1000, nodeCount: 10 }),
+        ]);
+        expect(out[0]).toMatchObject({ port: 1, colorOrder: 'GRB', gamma: 2.2 });
+        expect(out[0].brightness).toBeUndefined();
+        expect(out[1].colorOrder).toBeUndefined();
+        expect(expandIntentStrings([mi({ name: 'Arch', controllerPort: 1, brightness: 80 })])[0].brightness).toBe(80);
+    });
+});
