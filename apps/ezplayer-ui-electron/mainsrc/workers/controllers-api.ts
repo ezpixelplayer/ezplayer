@@ -94,6 +94,9 @@ function validateCommand(body: unknown): { command?: ControllerCommand; error?: 
             if (!error && !(UPLOAD_SCOPES as readonly string[]).includes(o.scope as string)) {
                 error = `'upload' needs scope (${UPLOAD_SCOPES.join(' | ')})`;
             }
+            if (!error && o.fullControl !== undefined && typeof o.fullControl !== 'boolean') {
+                error = `'upload' needs 'fullControl' to be a boolean`;
+            }
             break;
         case 'distribute':
             // Everything is optional: no ids means every target that holds

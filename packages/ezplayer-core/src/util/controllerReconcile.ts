@@ -25,6 +25,8 @@ import type {
     ControllerHealth,
     ControllerNetwork,
     EzpControllerRecord,
+    PortSettingsValues,
+    PortSettingsCheck,
 } from '../types/ControllerOps';
 import type { PortDriftKind, PortDriftSeverity } from '../types/ControllerOps';
 import { activeStateFrom } from '../types/ControllerOps';
@@ -66,6 +68,7 @@ export function applyOverrides(xlights: KnownController[], records: EzpControlle
             variant: r.variant ?? k.variant,
             fpsOverride: r.fpsOverride,
             forceLocalIPOverride: r.forceLocalIP,
+            portSettingsOverride: r.portSettings,
             source: 'both',
         });
     }
@@ -88,6 +91,7 @@ export function applyOverrides(xlights: KnownController[], records: EzpControlle
             variant: r.variant,
             fpsOverride: r.fpsOverride,
             forceLocalIPOverride: r.forceLocalIP,
+            portSettingsOverride: r.portSettings,
             source: 'ezp',
         });
     }
@@ -155,6 +159,10 @@ export function reconcileControllers(known: KnownController[], devices: Discover
             fpsOverride: k.fpsOverride,
             forceLocalIP: k.forceLocalIP,
             forceLocalIPOverride: k.forceLocalIPOverride,
+            fullxLightsControl: k.fullxLightsControl,
+            portSettingsOverride: k.portSettingsOverride,
+            defaultBrightness: k.defaultBrightness,
+            defaultGamma: k.defaultGamma,
         });
     }
 
@@ -208,7 +216,7 @@ export function portDriftSeverity(drift: PortDriftKind): PortDriftSeverity {
 }
 
 /** Channels a device port covers: its channel span when it reports one, else
- *  its pixels at the width its colour order implies. */
+ *  its pixels at the width its color order implies. */
 export function devicePortChannels(a: {
     pixels?: number;
     startChannel?: number;
@@ -243,16 +251,75 @@ export function portCountAgrees(
     return Math.ceil(intendedChannels / devicePixelWidth(actualColorOrder)) === actualPixels;
 }
 
+/** What a port's settings are held to; without one, settings are not compared. */
+export interface PortSettingsCheckOptions {
+    check: PortSettingsCheck;
+    /** The controller's defaults, which a managed reconfigure stamps on an
+     *  unset setting; 100% and 1.0 when xLights gives none. */
+    defaultBrightness?: number;
+    defaultGamma?: number;
+}
+
+/** The settings a port is held to: what the layout sets, plus the controller's
+ *  defaults for the rest when every setting is managed. */
+export function intendedPortSettings(layout: PortSettingsValues, opts: PortSettingsCheckOptions): PortSettingsValues {
+    if (opts.check === 'none') return {};
+    const out: PortSettingsValues = {};
+    const colorOrder = layout.colorOrder ?? (opts.check === 'all' ? 'RGB' : undefined);
+    const brightness = layout.brightness ?? (opts.check === 'all' ? (opts.defaultBrightness ?? 100) : undefined);
+    const gamma = layout.gamma ?? (opts.check === 'all' ? (opts.defaultGamma ?? 1.0) : undefined);
+    if (colorOrder !== undefined) out.colorOrder = colorOrder;
+    if (brightness !== undefined) out.brightness = brightness;
+    if (gamma !== undefined) out.gamma = gamma;
+    return out;
+}
+
+/** One line per setting on which the device differs from what it is held to.
+ *  A setting either side leaves out is not compared. */
+export function portSettingsDrift(intended: PortSettingsValues, actual: PortSettingsValues): string[] {
+    const notes: string[] = [];
+    if (
+        intended.colorOrder !== undefined &&
+        actual.colorOrder !== undefined &&
+        intended.colorOrder.trim().toUpperCase() !== actual.colorOrder.trim().toUpperCase()
+    ) {
+        notes.push(`color order ${actual.colorOrder} (xLights ${intended.colorOrder})`);
+    }
+    if (
+        intended.brightness !== undefined &&
+        actual.brightness !== undefined &&
+        Math.round(intended.brightness) !== Math.round(actual.brightness)
+    ) {
+        notes.push(`brightness ${actual.brightness}% (xLights ${intended.brightness}%)`);
+    }
+    // Gamma to a tenth, the precision devices report.
+    if (intended.gamma !== undefined && actual.gamma !== undefined && Math.abs(intended.gamma - actual.gamma) >= 0.05) {
+        notes.push(`gamma ${actual.gamma} (xLights ${intended.gamma})`);
+    }
+    return notes;
+}
+
+/** The settings a device reports for a port, leaving out what it does not say. */
+function reportedPortSettings(a: ControllerPort): PortSettingsValues {
+    const out: PortSettingsValues = {};
+    if (a.colorOrder !== undefined) out.colorOrder = a.colorOrder;
+    if (a.brightness !== undefined) out.brightness = a.brightness;
+    if (a.gamma !== undefined) out.gamma = a.gamma;
+    return out;
+}
+
 export function reconcilePorts(
     intent: ControllerPortIntent[],
     actual: ControllerPort[],
     controllerStart?: number,
     driverType?: string,
+    settings?: PortSettingsCheckOptions,
 ): PortReconcile[] {
     const extraSeverity: PortDriftSeverity =
         driverType && EXTRAS_CONFLICT_DRIVERS.has(driverType) ? 'conflict' : 'extra';
     const byPort = new Map<number, PortReconcile>();
     const intendedStarts = new Map(intent.map((i) => [i.port, i.startChannel]));
+    const intentByPort = new Map(intent.map((i) => [i.port, i]));
     const startOk = (intended: number, actualStart: number): boolean =>
         actualStart === intended || (controllerStart !== undefined && actualStart === intended - (controllerStart - 1));
 
@@ -298,7 +365,21 @@ export function reconcilePorts(
                 row.drift = 'start';
                 row.intendedStart = intendedStart;
                 row.actualStart = a.startChannel;
-            } else row.drift = 'ok';
+            } else {
+                row.drift = 'ok';
+                // Counts and start agree; now the settings.
+                if (settings && settings.check !== 'none') {
+                    const want = intendedPortSettings(intentByPort.get(a.port) ?? {}, settings);
+                    const have = reportedPortSettings(a);
+                    const notes = portSettingsDrift(want, have);
+                    if (notes.length) {
+                        row.drift = 'settings';
+                        row.intendedSettings = want;
+                        row.actualSettings = have;
+                        row.settingsNotes = notes;
+                    }
+                }
+            }
         } else if (active) {
             byPort.set(a.port, {
                 port: a.port,
@@ -582,7 +663,7 @@ const summarizeUniverses = (u: { universe: number; channels: number }[]): string
 /**
  * The outputs without the universes past the last channel any model on the
  * controller uses. xLights can leave such a universe in networks.xml (since
- * 2026.04 a single-colour string of over 510 lights is counted by lights but
+ * 2026.04 a single-color string of over 510 lights is counted by lights but
  * sized by its one channel, so one extra 510 universe is created and never
  * sized), and neither its upload nor ours writes a universe no string maps
  * into. Nothing is dropped when no model says where the channels end.

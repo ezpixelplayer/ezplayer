@@ -586,7 +586,7 @@ to what the desktop/LAN/cloud UIs issue. One endpoint covers every verb:
 | `scan`              | Discover controllers (same options as `/api/ezp/scan/discover`); returns the scan result. |
 | `status`            | Deep-read one controller: `{ "cmd": "status", "id": "<ip>\|direct", "address": "<ip>" }`. `address` lets it work with no prior scan. |
 | `action`            | Run a driver action: `{ "cmd": "action", "id": "…", "action": "reboot" }`. Action ids are driver-enumerated (see each device's `actions`). |
-| `upload`            | Push xLights config: `{ "cmd": "upload", "id": "…", "scope": "inputs"\|"strings"\|"full", "fullControl": true\|false }`. |
+| `upload`            | Push xLights config: `{ "cmd": "upload", "id": "…", "scope": "inputs"\|"strings"\|"full", "fullControl": true\|false }`. `fullControl` is optional; left out, the controller's [port settings](../advanced/controllers/controllerlist.md#port-settings) choice decides what happens to settings xLights doesn't specify. |
 | `distribute`        | Send show content to the devices that hold their own copy: `{ "cmd": "distribute", "ids": ["…"], "sequences": ["<file.fseq>"], "checkOnly": true\|false, "force": true\|false }`. Omit `ids` for every device that should hold content, `sequences` for the whole show; `checkOnly` reports what a send would transfer, `force` sends every file. The report lands in `contentDist.lastReport`; see [Content Distribution](../advanced/controllers/contentdistribution.md). |
 | `record`            | Create/update a persisted controller record: `{ "cmd": "record", "name": "…", "patch": { … } }`. |
 | `network`           | Update a per-network policy: `{ "cmd": "network", "cidr": "…", "patch": { "allow": false } }`. |
@@ -1429,7 +1429,7 @@ Get DMX moving head fixture definitions. Returns the list of `DmxMovingHead` and
 
 **Usage:**
 
-To render a live beam, slice `channelOffset … channelOffset + numChannels` bytes from the current frame buffer, then pass that slice along with `definition`, `beamParams`, and `worldTransform` to the `xllayoutcalcs` functions `mhChannelsToState` and `computeBeamDescriptor`. The resulting `MhBeamDescriptor` gives world-space `origin`, `direction`, `length`, `coneHalfAngle`, and colour.
+To render a live beam, slice `channelOffset … channelOffset + numChannels` bytes from the current frame buffer, then pass that slice along with `definition`, `beamParams`, and `worldTransform` to the `xllayoutcalcs` functions `mhChannelsToState` and `computeBeamDescriptor`. The resulting `MhBeamDescriptor` gives world-space `origin`, `direction`, `length`, `coneHalfAngle`, and color.
 
 ---
 

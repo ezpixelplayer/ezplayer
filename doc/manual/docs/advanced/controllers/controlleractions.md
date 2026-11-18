@@ -14,7 +14,7 @@ The controller actions available depend on the driver for the selected item, but
 - **Test pattern on** / **off**: Starts or stops the controller's own hardware test pattern, on controllers that have one.  While it runs, the outputs show the pattern instead of the show's data.
 - **Reboot**: Allows soft and/or hard reboot of the controller, depending on the model.
 - **Reset counters**: Zeroes the controller's packet and error counters, so the Show stats details start fresh.
-- **Reconfigure**: Configure the controller according to its input settings, Port Map, and mode.
+- **Reconfigure**: Configure the controller according to its input settings, Port Map, and mode.  Settings a model leaves unset follow the controller's [port settings](controllerlist.md#port-settings).
 - **Send output universes**: Offered on the FPP players instead of **Reconfigure**.  It rewrites the player's send list (which controller is sent which channels).
 - **Send content**: Sends this show's sequences and audio to the controller / player; see [Content Distribution](contentdistribution.md).
 - **Check content**: Reads the device's own file list and reports what a send would transfer, without transferring anything.
@@ -37,3 +37,4 @@ The record is EZPlayer's own information about a controller.  This supersedes an
 - **Vendor / Model / Variant**: the identity used to look up the controller's capabilities.
 - **Max FPS override**: caps the frame rate sent to this controller; see [Max FPS](controllerlist.md#max-fps).
 - **Send from**: the interface this controller's data leaves from, if it cannot be established automatically.
+- **Port settings a model leaves unset**: managed by EZPlayer, left to the controller, or left to the layout; see [Port settings](controllerlist.md#port-settings).
