@@ -12,3 +12,5 @@ The controller port map shows which models (lighting props) are connected to the
 Each prop shows how many lights it has and how many channels they take.  Lights that take three or four channels each are counted as pixels; lights that take one channel each, such as the outlets on an AC board or a single-color string, are counted as nodes.
 
 A controller counts in its own units, usually pixels of three channels, so a port of thirteen one-channel nodes reads back from it as five pixels over fifteen channels.  That is the same thing said two ways, not drift, and the comparison treats it so.
+
+The comparison also holds a port's brightness, gamma and color order to what the show wants, as far as the controller's [port settings](controllerlist.md#port-settings) say they are EZPlayer's to manage.

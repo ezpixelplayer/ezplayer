@@ -11,35 +11,47 @@ import { getOpsState, postCommand, resolveHost, unreachableHint } from '../ezp-c
 const SCOPES = ['inputs', 'strings', 'full'] as const;
 type Scope = (typeof SCOPES)[number];
 
-export async function run(args: string[]): Promise<number> {
+export interface UploadArgs {
+    /** Controller name; may have had spaces, so unquoted positionals are joined. */
+    name: string;
+    host?: string;
+    scope: Scope;
+    /** Set only by --full-control / --no-full-control; otherwise the player decides. */
+    fullControl?: boolean;
+}
+
+export function parseArgs(args: string[]): UploadArgs | { error: string } {
     const positionals: string[] = [];
-    let hostFlag: string | undefined;
+    let host: string | undefined;
     let scope: Scope = 'full';
-    let fullControl = false;
+    let fullControl: boolean | undefined;
     for (let i = 0; i < args.length; i++) {
         const a = args[i];
-        if (a === '--host') hostFlag = args[++i];
+        if (a === '--host') host = args[++i];
         else if (a === '--full-control') fullControl = true;
+        else if (a === '--no-full-control') fullControl = false;
         else if (a === '--scope') {
             const v = args[++i];
             if (!v || !(SCOPES as readonly string[]).includes(v)) {
-                console.error(`upload: invalid --scope '${v ?? ''}' (expected ${SCOPES.join(' | ')})`);
-                return 2;
+                return { error: `invalid --scope '${v ?? ''}' (expected ${SCOPES.join(' | ')})` };
             }
             scope = v as Scope;
         } else if (!a.startsWith('-')) positionals.push(a);
-        else {
-            console.error(`upload: unrecognized argument '${a}'`);
-            return 2;
-        }
+        else return { error: `unrecognized argument '${a}'` };
     }
-    // Controller names may contain spaces — join unquoted positionals back up.
     const name = positionals.join(' ');
-    if (!name) {
-        console.error('upload: missing <name> (a known controller name from the running app)');
+    if (!name) return { error: 'missing <name> (a known controller name from the running app)' };
+    return { name, host, scope, fullControl };
+}
+
+export async function run(args: string[]): Promise<number> {
+    const parsed = parseArgs(args);
+    if ('error' in parsed) {
+        console.error(`upload: ${parsed.error}`);
         return 2;
     }
-    const host = resolveHost(hostFlag);
+    const { name, scope, fullControl } = parsed;
+    const host = resolveHost(parsed.host);
 
     let state: ControllerOpsState;
     try {
@@ -74,10 +86,9 @@ export async function run(args: string[]): Promise<number> {
             process.stderr.write(`No scanned entry for ${addr}; reading it first…\n`);
             await postCommand(host, { cmd: 'status', id, address: addr });
         }
-        process.stderr.write(
-            `Uploading ${scope} config to '${known.name}' (${addr})${fullControl ? ' [full control]' : ''}…\n`,
-        );
-        await postCommand(host, { cmd: 'upload', id, scope, fullControl });
+        const control = fullControl === undefined ? '' : fullControl ? ' [full control]' : ' [keep device settings]';
+        process.stderr.write(`Uploading ${scope} config to '${known.name}' (${addr})${control}…\n`);
+        await postCommand(host, { cmd: 'upload', id, scope, ...(fullControl !== undefined ? { fullControl } : {}) });
     } catch (e) {
         console.error(`upload: ${(e as Error).message}`);
         return 1;

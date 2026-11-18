@@ -71,6 +71,16 @@ player. **Read controller details automatically** sets when this happens:
 | **Also when a controller comes back mid-show** | Also reads a controller that just came back up; it joins the show once the read finishes.                         |
 | **Never**                                      | No automatic reads.                                                                                               |
 
+A model in xLights may leave a port's brightness, gamma, color order and
+similar settings unset. **Manage port settings** says what EZPlayer does with
+those:
+
+| Option                           | What it does                                                                                                                                             |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Per controller (recommended)** | Follows each controller's own choice: xLights' Full xLights Control, or the EZPlayer record's [port settings](../advanced/controllers/controllerlist.md#port-settings). |
+| **All controllers**              | Reconfigure sets unset settings to the controller's defaults, and every setting is compared with the controller.                                        |
+| **No controllers**               | Unset settings are left as they are on the controller.                                                                                                  |
+
 ## Test Sequences
 
 Sequences carrying any of these tags (default `test`) are offered in the

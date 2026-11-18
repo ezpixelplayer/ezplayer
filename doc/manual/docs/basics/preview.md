@@ -65,7 +65,7 @@ in 3D mode — click it to jump to one of those saved angles.
 Click the gear icon to open **Show View Settings**:
 
 - **Pixel Size** — make the pixels larger or smaller so the preview reads well.
-- **Brightness** — adjust how bright any background images or models are, dimming it can help the pixels stand out.
+- **Background/Object Brightness** — adjust how bright any background images or 3D objects are (it does not change the brightness of the LED pixels); dimming it can help the pixels stand out.
 - **Reset View** — reset the camera to its original position.
 - **Set as Default View** — remember the current camera angle, view mode, and
   slider settings as the starting point next time.

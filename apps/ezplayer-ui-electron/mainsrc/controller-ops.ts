@@ -32,6 +32,7 @@ import {
     contentRoleOf,
     isPlayerOnlyRecord,
     layoutPlayerMode,
+    managesPortSettings,
     playerModeDrift,
 } from '@ezplayer/ezplayer-core';
 import type {
@@ -395,6 +396,8 @@ function toControllerPort(p: PixelPortInfo): ControllerPort {
         pixels: p.pixels,
         protocol: p.protocol,
         colorOrder: p.colorOrder,
+        brightness: p.brightness,
+        gamma: p.gamma,
         startChannel: p.startChannel,
         endChannel: p.endChannel,
         universe: p.universe,
@@ -769,14 +772,19 @@ async function runRecord(command: Extract<ControllerCommand, { cmd: 'record' }>)
     if (!recordsShowFolder) throw new Error('no show folder open to store controller records');
     const { name, patch } = command;
     const existing = records.find((r) => r.name === name);
-    const merged: EzpControllerRecord = { ...(existing ?? { name }), ...patch, name };
     // A patch is a merge, so "clear the override" arrives as an explicit 0
-    // (or an empty address).
+    // (or an empty address, or an empty port-settings choice).
+    const { portSettings, ...rest } = patch;
+    const merged: EzpControllerRecord = { ...(existing ?? { name }), ...rest, name };
     if (merged.fpsOverride !== undefined && !(merged.fpsOverride > 0)) delete merged.fpsOverride;
     if (merged.forceLocalIP !== undefined) {
         const addr = merged.forceLocalIP.trim();
         if (addr) merged.forceLocalIP = addr;
         else delete merged.forceLocalIP;
+    }
+    if (portSettings !== undefined) {
+        if (portSettings) merged.portSettings = portSettings;
+        else delete merged.portSettings;
     }
 
     const dir = recordsDir(recordsShowFolder);
@@ -1253,9 +1261,13 @@ async function runUpload(
                 outputs: outputs.length ? outputs : undefined,
                 controllerStartChannel: rec.startChannel,
             });
-            if (command.fullControl) {
-                // Full control: unset per-string settings become the defaults
-                // instead of "keep whatever the device has".
+            // The request may say outright; otherwise the player setting, the
+            // record and xLights' Full xLights Control flag decide.
+            const stampUnset =
+                command.fullControl ?? managesPortSettings(contentSource?.().settings?.managePortSettings, rec);
+            if (stampUnset) {
+                // Unset per-string settings become the defaults instead of
+                // "keep whatever the device has".
                 const defBrightness = rec.defaultBrightness ?? 100;
                 const defGamma = rec.defaultGamma ?? 1.0;
                 const stamp = <

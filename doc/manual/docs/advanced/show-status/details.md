@@ -44,8 +44,12 @@ Play a test sequence on demand.
 The dropdown lists sequences carrying one of the configured test
 tags (default `test`; set under
 [Settings → Player](../../settings/player.md#test-sequences)), and **Play Test
-Sequence** starts the selection immediately. **Stop** ends the test sequence you
-started from this screen.  Unavailable when no test tags are configured.
+Sequence** starts the selection immediately. The test sequence repeats
+continuously, starting again from the beginning each time it finishes, until you
+click **Stop**, which ends the test sequence you started from this screen and
+stops the repeat.  Leaving the Show Status screen also stops the repeat (the
+sequence currently playing finishes).  Unavailable when no test tags are
+configured.
 
 ## Content & Schedule
 
