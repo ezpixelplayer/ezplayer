@@ -108,11 +108,12 @@ While playback is active (**Playing**, **Paused**, or **Ending**), the same play
 If there is a **queue** of jukebox or API requests, they appear below the
 controls. Remove an item with **×**.
 
-### Reload Schedule
+### Reload Show
 
-When the player is **Stopped**, a **Reload Schedule** button appears instead of
-the transport controls. Click it to reread the schedule from disk and re-engage
-playback (`resetplayback`). Pressing this is generally not needed unless you
+When the player is **Stopped**, a **Reload Show** button appears instead of
+the transport controls. Click it to reread the show folder from disk, reopen all
+controllers, and restart the schedule (`resetplayback`). The **Reload Show**
+button on the Controllers screen does exactly the same thing. Pressing this is generally not needed unless you
 have manually changed files on disk, or something has gone wrong. The button is
 disabled while a controller operation is running or queued, since reloading
 clears controller state.

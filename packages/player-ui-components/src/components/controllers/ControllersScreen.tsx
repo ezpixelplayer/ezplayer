@@ -2042,7 +2042,7 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
     const cardRunning = running.filter((o) => !rowTargets.has(o.target));
     const errored = failed.filter((o) => !rowTargets.has(o.target)).slice(0, 5);
 
-    // Reload show & controllers: the Player page's Reload Schedule, which also
+    // Reload Show: the same button as on the Player page, which also
     // clears what was learned from the network. Not while the show runs or a
     // controller operation is still going.
     const playerStatus = useSelector((s: RootState) => s.runtime?.combined?.player?.status);
@@ -2380,7 +2380,7 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
                         <Tooltip
                             title={
                                 reloadBlocked ??
-                                'Reload the show, then clear scan results, controller details and operation errors'
+                                'Rereads the show folder, reopens all controllers, and restarts the schedule. Only needed after changing files on disk or if something has gone wrong.'
                             }
                         >
                             <span>
@@ -2390,7 +2390,7 @@ export const ControllersScreen: React.FC<ControllersScreenProps> = ({ title, sta
                                     onClick={reloadAll}
                                     disabled={!!reloadBlocked}
                                 >
-                                    Reload show &amp; controllers
+                                    Reload Show
                                 </Button>
                             </span>
                         </Tooltip>
