@@ -1191,7 +1191,7 @@ Scene objects let an external program put things into the Show View: a pointer b
 
 Each object lives under a **key** and a **lease**. If the player hears nothing about an object for `ttlMs`, the object disappears. Any write renews the lease, so a program that keeps moving its object needs no separate keepalive.
 
-Coordinates are xLights world units, the same space the layout is drawn in. In the 2D view objects are flattened onto the X/Y plane, drawn under the lights, and stacked by Z: a higher Z draws on top, and objects at the same Z (0 when not given) stack in the order they were created.
+Coordinates are xLights world units, the same space the layout is drawn in. The 2D view looks at the X/Y plane from the front and still honors Z: a solid object hides the lights and objects behind it, and lights in front of it draw over it. See-through objects (images, beams, points, anything with `opacity` below 1) draw over the lights.
 
 Write routes are served on the web port only, not on the kiosk port.
 
@@ -1282,7 +1282,7 @@ curl -X PATCH http://localhost:3000/api/ezp/objects/wand -H 'Content-Type: appli
   -d '{ "placement": { "direction": [0.4, 0.3, -1] }, "appearance": { "color": "#ffb020" } }'
 ```
 
-`scripts/scene-objects-demo.mjs` in the source tree is a runnable example that animates a few objects.
+`scripts/scene-objects-demo.mjs` in the source tree is a runnable example that animates a few objects. `scripts/scene-flashlight-tag.mjs` is a larger one: a game of flashlight tag that uploads its own meshes and images.
 
 #### Uploaded assets
 

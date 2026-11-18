@@ -586,13 +586,14 @@ function BackgroundImage2D({
         }
     }
 
-    // The plane spans (0,0) to (planeWidth, planeHeight), behind points at z=-1.
+    // The plane spans (0,0) to (planeWidth, planeHeight). Drawn first and out of
+    // the depth buffer, so it sits behind everything whatever its Z.
     return (
         <mesh position={[planeWidth / 2, planeHeight / 2, -1]} renderOrder={-1}>
             <planeGeometry args={[planeWidth, planeHeight]} />
             <meshBasicMaterial
                 map={texture}
-                depthWrite={true}
+                depthWrite={false}
                 side={THREE.FrontSide}
                 color={brightnessColor}
                 toneMapped={false}

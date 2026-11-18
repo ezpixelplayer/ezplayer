@@ -6,9 +6,9 @@
  * leaves or gets new content; placement and appearance are read from the store
  * inside useFrame, so a moving object costs no reconciliation.
  *
- * The same tree serves both viewers. The 2D viewer looks down -Z, so there the
- * layer is flattened, parked between the background image and the lights, and
- * stacked by each object's Z (ties in creation order).
+ * The same tree serves both viewers. The 2D viewer looks down -Z and squashes
+ * Z for the pixels; the layer is squashed the same way, so the depth buffer
+ * still decides what hides what.
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
@@ -27,15 +27,15 @@ import type { ViewObject } from '../../types/model3d';
 import { type AssetResolver, createShowFileResolver } from '../../services/assetResolver';
 import { pollSceneObjects, SceneObjectsStore } from '../../services/sceneObjectsStore';
 import { HouseMesh } from './HouseMesh';
+import { FLAT_DEPTH_SCALE } from './pointShaders';
 
 const DEFAULT_SMOOTH_MS = 120;
 const DEFAULT_POINT_SIZE = 4;
 const DEFAULT_BEAM_ANGLE_DEG = 3;
-/** Z squash and offset that put the layer between the 2D background (z=-1) and the lights (z=0). */
-const FLAT_SCALE: [number, number, number] = [1, 1, 1e-5];
-const FLAT_POSITION: [number, number, number] = [0, 0, -0.5];
-/** Between the 2D background (-1) and everything else (0). */
-const FLAT_RENDER_ORDER = -0.5;
+/** The 2D viewer squashes Z the same way for the pixels, so depth compares like with like. */
+const FLAT_SCALE: [number, number, number] = [1, 1, FLAT_DEPTH_SCALE];
+/** Puts see-through objects after the pixels in the 2D draw order. */
+const FLAT_RENDER_ORDER = 0.5;
 
 // ---------------------------------------------------------------------------
 // Placement and appearance
@@ -685,30 +685,8 @@ export function SceneObjectsLayer({ frameServerUrl, assetResolver, mode, enabled
     );
 
     const flat = mode === '2d';
-    const layerRef = useRef<THREE.Group>(null);
-    // Flattened objects share one depth, so stack them by their own Z, then by position in the tree.
-    useFrame(() => {
-        if (!flat || !layerRef.current) return;
-        const drawn: { mesh: THREE.Mesh; z: number; n: number }[] = [];
-        layerRef.current.traverse((o) => {
-            const mesh = o as THREE.Mesh;
-            if (!mesh.isMesh && !(o as THREE.Points).isPoints) return;
-            // Undo the flattening; rounding keeps float noise from reordering equal Z.
-            const z = Math.round(((mesh.matrixWorld.elements[14] - FLAT_POSITION[2]) / FLAT_SCALE[2]) * 1000);
-            drawn.push({ mesh, z, n: drawn.length });
-            for (const mat of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
-                if (!mat || (mat.transparent && !mat.depthWrite)) continue;
-                mat.transparent = true;
-                mat.depthWrite = false;
-                mat.needsUpdate = true;
-            }
-        });
-        // The camera looks down -Z, so higher Z is nearer and drawn later.
-        drawn.sort((a, b) => a.z - b.z || a.n - b.n);
-        drawn.forEach((d, i) => (d.mesh.renderOrder = FLAT_RENDER_ORDER + (i + 1) * 1e-5));
-    });
     return (
-        <group ref={layerRef} position={flat ? FLAT_POSITION : undefined} scale={flat ? FLAT_SCALE : undefined}>
+        <group renderOrder={flat ? FLAT_RENDER_ORDER : 0} scale={flat ? FLAT_SCALE : undefined}>
             {structure
                 .filter((e) => e.view === 'both' || e.view === mode)
                 .map((e) => (
