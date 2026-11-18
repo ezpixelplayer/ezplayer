@@ -74,6 +74,9 @@ export { Preview3DPage, PREVIEW_3D_PAGE_STORAGE_KEY } from './components/preview
 export type { Preview3DPageProps } from './components/preview-3d/Preview3DPage';
 export { Viewer3D } from './components/preview-3d/Viewer3D';
 export type { Viewer3DProps } from './components/preview-3d/Viewer3D';
+export { SceneObjectsLayer } from './components/preview-3d/SceneObjectsLayer';
+export type { SceneObjectsLayerProps } from './components/preview-3d/SceneObjectsLayer';
+export { SceneObjectsStore, pollSceneObjects } from './services/sceneObjectsStore';
 export { Viewer2D } from './components/preview-3d/Viewer2D';
 export type { Viewer2DProps } from './components/preview-3d/Viewer2D';
 export { RenderBridge } from './components/preview-3d/RenderBridge';

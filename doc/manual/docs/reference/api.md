@@ -1276,6 +1276,146 @@ Packets for a frame may arrive in any order; a packet for a new sequence number 
 
 ---
 
+### Scene objects (`/api/ezp/objects`)
+
+Scene objects let an external program put things into the Show View: a pointer beam, a cloud of sparkles, a prop mesh, a picture, or a group of those. They are display only. They never reach the controllers and never change what is playing. Every viewer of the Show View sees them, in the app, on the LAN web page, and through the cloud.
+
+Each object lives under a **key** and a **lease**. If the player hears nothing about an object for `ttlMs`, the object disappears. Any write renews the lease, so a program that keeps moving its object needs no separate keepalive.
+
+Coordinates are xLights world units, the same space the layout is drawn in. The 2D view looks at the X/Y plane from the front and still honors Z: a solid object hides the lights and objects behind it, and lights in front of it draw over it. See-through objects (images, beams, points, anything with `opacity` below 1) draw over the lights.
+
+Write routes are served on the web port only, not on the kiosk port.
+
+#### Keys and tokens
+
+- `PUT /api/ezp/objects/:key` creates or replaces the object with that key. A program that restarts simply carries on under the same key.
+- `POST /api/ezp/objects` creates an object under the body's `name`, or under a made-up key when there is no `name`.
+- A **token** protects an object from other writers. Supply your own as `token` in the create body, or let the player make one up (it does whenever it makes up the key). The create response shows it once. Later writes pass it as `?token=T` or an `x-ezp-token` header; without it they get `403`.
+- An object created with a key and no token is open: anyone who knows the key may change it.
+
+Keys are 1-64 characters from `A-Z a-z 0-9 . _ ~ -`, starting with a letter or digit.
+
+#### Object body
+
+| Field        | Meaning                                                                    |
+| ------------ | -------------------------------------------------------------------------- |
+| `content`    | What to draw (below). Required on create.                                  |
+| `placement`  | Where it sits                                                              |
+| `appearance` | Visibility, color, opacity                                                 |
+| `ttlMs`      | Lease length, default 30000 (250 to 86400000)                              |
+| `view`       | `both` (default), `2d` or `3d`                                             |
+| `smoothMs`   | How quickly the drawn object follows a new placement, default 120; 0 snaps |
+| `name`       | Key, for `POST` only                                                       |
+| `token`      | Write token to set, on create only                                         |
+
+`placement`:
+
+| Field        | Meaning                                                                           |
+| ------------ | --------------------------------------------------------------------------------- |
+| `position`   | `[x, y, z]`                                                                       |
+| `rotation`   | `[x, y, z]` degrees, applied in xLights order (Z, then Y, then X)                 |
+| `quaternion` | `[x, y, z, w]`; used instead of `rotation`                                        |
+| `direction`  | `[x, y, z]`; aims the object's local +Z axis along it. Used instead of `rotation` |
+| `scale`      | A number, or `[x, y, z]`                                                          |
+| `matrix`     | 16 numbers, column-major; replaces all of the above                               |
+
+`appearance`:
+
+| Field      | Meaning                                                             |
+| ---------- | ------------------------------------------------------------------- |
+| `visible`  | `false` hides the object without ending its lease                   |
+| `color`    | `#rrggbb`. Tints meshes and images; colors shapes, beams and points |
+| `opacity`  | 0..1                                                                |
+| `additive` | Blend as light. Beams default to `true`                             |
+
+`content` is one of:
+
+| `type`   | Fields                                                                                                                                  |
+| -------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `points` | `positions` (flat `x, y, z` per point), `colors` (flat `r, g, b`, 0-255, optional), `size` (diameter, default 4), `smooth` (soft edges) |
+| `beam`   | `length`, `angle` (half-angle in degrees, default 3), `radius` (at the origin, default 0). Runs along local +Z and fades with distance  |
+| `shape`  | `shape` (`sphere`, `box`, `cylinder`, `cone`, `plane`), `size` (number or `[x, y, z]`), `wireframe`                                     |
+| `mesh`   | `file` (an OBJ in the show folder) or `asset` (an uploaded OBJ)                                                                         |
+| `image`  | `file` or `asset`, `width`, `height` (either alone keeps the image's proportions)                                                       |
+| `group`  | `children`: a list of `{ name, placement, appearance, content }`, placed relative to the group                                          |
+
+Cylinders and cones stand along their local Y axis. A plane and an image face local +Z. A group child takes its parent's color unless it sets its own, and its opacity multiplies its parent's. Groups nest up to 4 deep; one object holds up to 512 nodes and 100000 points. The player holds up to 256 objects.
+
+#### Routes
+
+| Route                                       | Does                                                                 |
+| ------------------------------------------- | -------------------------------------------------------------------- |
+| `GET /api/ezp/objects`                      | List live objects                                                    |
+| `GET /api/ezp/objects/:key`                 | One object                                                           |
+| `POST /api/ezp/objects`                     | Create (`201`), or replace when `name` exists                        |
+| `PUT /api/ezp/objects/:key`                 | Create (`201`) or replace (`200`). Uploaded assets are kept          |
+| `PATCH /api/ezp/objects/:key`               | Change some of it. `404` once the lease has run out: create it again |
+| `POST /api/ezp/objects/:key/keepalive`      | Renew the lease and change nothing                                   |
+| `DELETE /api/ezp/objects/:key`              | Remove it now                                                        |
+| `PUT /api/ezp/objects/:key/assets/:name`    | Upload a file to keep with the object                                |
+| `GET /api/ezp/objects/:key/assets/:name`    | Read it back                                                         |
+| `DELETE /api/ezp/objects/:key/assets/:name` | Remove it                                                            |
+| `GET /api/ezp/scene`                        | The viewer feed (below)                                              |
+
+A `PATCH` body takes `placement`, `appearance`, `content`, `ttlMs`, `view` and `smoothMs`. `placement` and `appearance` merge field by field, and a `null` clears a field; `content` replaces the whole content. Errors come back as `{ "ok": false, "error": "..." }` with `400` (bad body), `403` (token), `404` (no such object) or `429` (too many).
+
+```bash
+# A cyan pointer beam
+curl -X PUT http://localhost:3000/api/ezp/objects/wand -H 'Content-Type: application/json' -d '{
+  "ttlMs": 2000,
+  "content": { "type": "beam", "length": 600, "angle": 4 },
+  "placement": { "position": [200, 20, 300], "direction": [0, 0.2, -1] },
+  "appearance": { "color": "#00d0ff" }
+}'
+
+# Aim it somewhere else; this also renews the lease
+curl -X PATCH http://localhost:3000/api/ezp/objects/wand -H 'Content-Type: application/json' \
+  -d '{ "placement": { "direction": [0.4, 0.3, -1] }, "appearance": { "color": "#ffb020" } }'
+```
+
+`scripts/scene-objects-demo.mjs` in the source tree is a runnable example that animates a few objects. `scripts/scene-flashlight-tag.mjs` is a larger one: a game of flashlight tag that uploads its own meshes and images.
+
+#### Uploaded assets
+
+A mesh or image can name a file in the show folder (`file`, served like `/api/ezp/show-file`) or a file uploaded under the object's own key (`asset`). Uploaded files live in memory with the object and go away with it.
+
+Send the bytes as `application/octet-stream`. The name's extension must be one of `.obj .mtl .png .jpg .jpeg .gif .webp .bmp .tga .dds`. An OBJ finds its material file and textures among the same object's assets by file name, so upload `house.obj`, `house.mtl` and the textures the MTL names side by side. One file may be 32 MB; an object holds up to 32 files.
+
+```bash
+curl -X PUT http://localhost:3000/api/ezp/objects/sleigh -H 'Content-Type: application/json' \
+  -d '{ "content": { "type": "mesh", "asset": "sleigh.obj" }, "placement": { "position": [0, 300, 0] } }'
+curl -X PUT http://localhost:3000/api/ezp/objects/sleigh/assets/sleigh.obj \
+  -H 'Content-Type: application/octet-stream' --data-binary @sleigh.obj
+```
+
+The object is drawn once the file it names has arrived.
+
+#### GET /api/ezp/scene?since=N&epoch=E
+
+What a viewer polls. With no query it returns the whole scene. With the `rev` and `epoch` of the last answer it returns only what changed since, or `204` when nothing did.
+
+```json
+{
+    "epoch": "9f2c41d07a3e",
+    "rev": 42,
+    "keys": ["wand", "sleigh"],
+    "objects": [
+        {
+            "key": "wand",
+            "rev": 42,
+            "contentRev": 17,
+            "view": "both",
+            "placement": { "position": [200, 20, 300], "direction": [0.4, 0.3, -1] },
+            "appearance": { "color": "#ffb020" }
+        }
+    ]
+}
+```
+
+`keys` lists every live object, so a key that is missing has gone away. An entry carries `content` and `assets` only when its `contentRev` is newer than `since`; a move or recolor sends just the placement and appearance. `epoch` changes when the player restarts, and a viewer that sees a new one starts over.
+
+---
+
 ### GET /api/ezp/time
 
 Server clock for client clock-offset estimation. Returns the server's current `Date.now()` value. Clients can measure the round-trip time of this request and compute the offset between their local clock and the server's clock, enabling accurate audio scheduling on remote devices.

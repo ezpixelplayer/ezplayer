@@ -19,6 +19,7 @@ import { Line2 } from 'three/examples/jsm/lines/Line2.js';
 import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry.js';
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
 import { stringColorHex } from './wiringColors';
+import { FLAT_DEPTH_SCALE } from './pointShaders';
 
 /**
  * Pixels per world unit for point sizing.
@@ -565,7 +566,7 @@ export class GeometryManager {
                 spts.forEach((p, i) => {
                     positions[i * 3] = this.viewPlane === 'yz' ? 0 : p.x;
                     positions[i * 3 + 1] = this.viewPlane === 'xz' ? 0 : p.y;
-                    positions[i * 3 + 2] = this.viewPlane === 'xy' ? 0 : p.z;
+                    positions[i * 3 + 2] = this.viewPlane === 'xy' ? p.z * FLAT_DEPTH_SCALE : p.z;
                     box.expandByPoint(this._tmpVec.set(positions[i * 3], positions[i * 3 + 1], positions[i * 3 + 2]));
                 });
                 const center = box.getCenter(new THREE.Vector3());

@@ -80,6 +80,8 @@ import {
 import { http09Request, isHeaderlessResponse } from './http09-fallback.js';
 import { registerScanApiRoutes } from './scan-api.js';
 import { registerControllersApiRoutes } from './controllers-api.js';
+import { SceneObjectRegistry } from './scene-objects.js';
+import { dispatchSceneRead, registerSceneReadRoutes, registerSceneWriteRoutes } from './scene-objects-api.js';
 import { ViewObject, LayoutSettings, type MhFixtureInfo } from './playbacktypes.js';
 import { trustSystemCAs } from '../trustSystemCAs.js';
 import { throwLater } from '../faultinject.js';
@@ -220,6 +222,11 @@ const rpc = new MainThreadRPC();
 throwLater('server-worker-throw', 3000);
 
 const wsBroadcaster = new WebSocketBroadcaster();
+
+// Display-only objects injected into the live preview (see scene-objects.ts).
+const sceneObjects = new SceneObjectRegistry();
+// Frees expired leases even when no viewer is polling.
+setInterval(() => sceneObjects.sweep(), 5_000).unref();
 
 /** The port the web server actually bound (after any EADDRINUSE walk-up). Set
  *  once the listener is up; used to dial our own remote-access sockets from the
@@ -1439,6 +1446,10 @@ async function dispatchHttpProxy(
     if (pathStr === '/api/ezp/layout-settings') return jsonResult(cachedLayoutSettings);
     if (pathStr === '/api/ezp/moving-heads') return jsonResult(cachedMovingHeads);
 
+    // Injected scene objects: the viewer feed and uploaded asset bytes.
+    const sceneRead = dispatchSceneRead(sceneObjects, pathStr, query);
+    if (sceneRead) return sceneRead;
+
     // /api/ezp/show-file?path=… — OBJ/MTL/textures for the 3D viewer.
     // Same validation as the Koa route; deviations would create a path the
     // LAN-only consumer can hit but cloud can't (or vice versa).
@@ -2489,6 +2500,9 @@ async function startServer(config: ServerWorkerData) {
         ctx.body = { now: rtcNow(), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone };
     });
 
+    // Scene object reads (viewer feed, asset bytes); writes are web-app-only below.
+    registerSceneReadRoutes(router, sceneObjects);
+
     webApp.use(router.routes());
     webApp.use(router.allowedMethods());
 
@@ -2517,6 +2531,8 @@ async function startServer(config: ServerWorkerData) {
             },
         isIpAllowed: proxyTargetAllowed,
     });
+    // Scene object writes change what every viewer sees, so not on the kiosk.
+    registerSceneWriteRoutes(scanRouter, sceneObjects);
     // Support zip; web app only, like the routes above. ?level= picks what it holds.
     scanRouter.get('/api/ezp/support/logs.zip', async (ctx) => {
         const level = ctx.query.level ?? 'logs';
