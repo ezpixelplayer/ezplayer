@@ -1841,6 +1841,7 @@ async function startServer(config: ServerWorkerData) {
         'sendIdleBlackFrames',
         'sync',
         'controllerRefresh',
+        'managePortSettings',
         'advanced',
         'mediaFolder',
         'useDefaultAudioOutput',

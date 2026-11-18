@@ -2295,6 +2295,7 @@ function xlControllerToKnown(
         variant: c.variant || undefined,
         defaultBrightness: c.defaultBrightnessUnderFullControl,
         defaultGamma: c.defaultGammaUnderFullControl,
+        fullxLightsControl: c.fullxLightsControl,
         protocol: c.protocol || undefined,
         proxy: c.fppProxy || undefined,
         monitor: c.monitor,

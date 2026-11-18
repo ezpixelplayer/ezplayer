@@ -832,7 +832,7 @@ function HouseMeshContent({
         });
     }, [obj, brightness]);
 
-    // ----- Live colour extraction from frame buffer -----
+    // ----- Live color extraction from frame buffer -----
     useFrame(() => {
         if (!obj || !liveData) return;
 

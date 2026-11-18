@@ -45,11 +45,12 @@ import {
 import { QueueCard } from './QueueCard';
 import { ViewerControlCard } from './ViewerControlCard';
 import { ContentDistributionCard } from './ContentDistributionCard';
+import { EzrgbPromoCard, useShowEzrgbPromo } from '../cloud/EzrgbPromoCard';
 import { hasContentDistribution } from '../content-dist/contentDistHelpers';
 import { callImmediateCommand } from '../../store/slices/RuntimeStore';
 import { normalizeTagList, songMatchesAnyTag } from '../../services/jukeboxFilter';
 import type { EZPElectronAPI } from '@ezplayer/ezplayer-core';
-import { isSequencePlayable } from '@ezplayer/ezplayer-core';
+import { isSequencePlayable, activeRequestFor } from '@ezplayer/ezplayer-core';
 
 // Extend Window interface to include electronAPI
 declare global {
@@ -118,6 +119,7 @@ export const ShowStatusScreen = ({ title, statusArea, allowTestControls = true }
     const contentDist = useSelector((s: RootState) => s.controllerOps.contentDist);
     const distributionMode = useSelector((s: RootState) => s.playbackSettings.settings.contentDistribution?.mode);
     const showContentDist = hasContentDistribution(contentDevices, distributionMode, contentDist);
+    const showEzrgbPromo = useShowEzrgbPromo();
     const [testSongId, setTestSongId] = useState<string | null>(null);
     /** The test request we started, so Stop can target only our own. */
     const [testRequest, setTestRequest] = useState<{ songId: string; requestId: string } | null>(null);
@@ -132,9 +134,32 @@ export const ShowStatusScreen = ({ title, statusArea, allowTestControls = true }
     );
     const selectedTestSequence = testSequences.find((seq) => seq.id === testSongId) ?? null;
 
+    /** Our request is on (or about to be on) the player; used to detect that it has finished so it can loop. */
+    const activeTestRequestId = useSelector((s: RootState) =>
+        testRequest ? activeRequestFor(s.runtime.combined?.player, { songId: testRequest.songId }) : undefined,
+    );
+    /** True once the current test request has been seen playing (so "not playing" then means "finished"). */
+    const testSeenActiveRef = React.useRef(false);
+    /** True while a (re)start or a stop is in flight, so loops never overlap and Stop wins over a restart. */
+    const testBusyRef = React.useRef(false);
+    /** Every request id the current loop has issued, so Stop can remove all of them. */
+    const testIssuedIdsRef = React.useRef<Set<string>>(new Set());
+    const testStoppedRef = React.useRef(false);
+    const mountedRef = React.useRef(true);
+    useEffect(() => {
+        mountedRef.current = true;
+        return () => {
+            mountedRef.current = false;
+        };
+    }, []);
+
     const handlePlayTestSequence = async () => {
         if (!selectedTestSequence) return;
+        if (testBusyRef.current) return;
+        testBusyRef.current = true;
+        testStoppedRef.current = false;
         const requestId = uuidv4();
+        testIssuedIdsRef.current = new Set([requestId]);
         try {
             await dispatch(
                 callImmediateCommand({
@@ -145,7 +170,8 @@ export const ShowStatusScreen = ({ title, statusArea, allowTestControls = true }
                     requestId,
                 }),
             ).unwrap();
-            setTestRequest({ songId: selectedTestSequence.id, requestId });
+            testSeenActiveRef.current = false;
+            if (mountedRef.current) setTestRequest({ songId: selectedTestSequence.id, requestId });
             ToastMsgs.showSuccessMessage(`Playing "${selectedTestSequence.work?.title || 'test sequence'}"`, {
                 theme: 'colored',
                 position: 'bottom-right',
@@ -158,18 +184,66 @@ export const ShowStatusScreen = ({ title, statusArea, allowTestControls = true }
                 position: 'bottom-right',
                 autoClose: 2000,
             });
+        } finally {
+            testBusyRef.current = false;
         }
     };
+
+    /**
+     * Loop: when the request we started has been playing and is no longer on the
+     * player, it finished — start it again, until Stop clears `testRequest`.
+     */
+    useEffect(() => {
+        if (!testRequest) {
+            testSeenActiveRef.current = false;
+            return;
+        }
+        if (activeTestRequestId === testRequest.requestId) {
+            testSeenActiveRef.current = true;
+            return;
+        }
+        if (!testSeenActiveRef.current || testBusyRef.current || testStoppedRef.current) return;
+
+        testBusyRef.current = true;
+        testSeenActiveRef.current = false;
+        const requestId = uuidv4();
+        const songId = testRequest.songId;
+        testIssuedIdsRef.current.add(requestId);
+        void dispatch(callImmediateCommand({ command: 'playsong', songId, immediate: true, priority: 5, requestId }))
+            .unwrap()
+            .then(() => {
+                if (mountedRef.current && !testStoppedRef.current) setTestRequest({ songId, requestId });
+                else if (testStoppedRef.current || !mountedRef.current) {
+                    // Stopped/unmounted while restarting: don't leave the new request running.
+                    void dispatch(callImmediateCommand({ command: 'deleterequest', requestId }));
+                }
+            })
+            .catch((error) => {
+                console.error('Error restarting test sequence:', error);
+                if (mountedRef.current) setTestRequest(null);
+            })
+            .finally(() => {
+                testBusyRef.current = false;
+            });
+    }, [activeTestRequestId, testRequest, dispatch]);
 
     /**
      * Stop the test sequence we started.
      */
     const handleStopTestSequence = async () => {
         if (!testRequest) return;
+        // Set first so a status push between the delete and the state clear can't trigger a restart.
+        testStoppedRef.current = true;
         try {
-            await dispatch(
-                callImmediateCommand({ command: 'deleterequest', requestId: testRequest.requestId }),
-            ).unwrap();
+            // Remove every request the loop issued, not just the latest, so nothing keeps playing.
+            const ids = new Set(testIssuedIdsRef.current);
+            ids.add(testRequest.requestId);
+            await Promise.all(
+                [...ids].map((requestId) =>
+                    dispatch(callImmediateCommand({ command: 'deleterequest', requestId })).unwrap(),
+                ),
+            );
+            testIssuedIdsRef.current = new Set();
             setTestRequest(null);
             ToastMsgs.showSuccessMessage('Test sequence stopped', {
                 theme: 'colored',
@@ -177,6 +251,7 @@ export const ShowStatusScreen = ({ title, statusArea, allowTestControls = true }
                 autoClose: 2000,
             });
         } catch (error) {
+            testStoppedRef.current = false;
             console.error('Error stopping test sequence:', error);
             ToastMsgs.showErrorMessage('Failed to stop test sequence', {
                 theme: 'colored',
@@ -408,6 +483,17 @@ export const ShowStatusScreen = ({ title, statusArea, allowTestControls = true }
                                 )}
                             </CardContent>
                         </Card>
+                    </Grid>
+                )}
+
+                {/* EZRGB registration promotion: unregistered players only, not in kiosk mode. */}
+                {allowTestControls && showEzrgbPromo && (
+                    <Grid item xs={12}>
+                        <EzrgbPromoCard
+                            variant="compact"
+                            registerLabel="Register on Cloud page"
+                            onRegister={() => navigate(CLOUD)}
+                        />
                     </Grid>
                 )}
 

@@ -1,6 +1,7 @@
 import type {
     CloudPollScheduleEntry,
     ControllerRefreshMode,
+    PortSettingsManagement,
     ViewerControlBackend,
     ViewerControlScheduleList,
 } from '@ezplayer/ezplayer-core';
@@ -265,6 +266,11 @@ const playbackSettingsSlice = createSlice({
             state.settings.controllerRefresh = controllerRefreshSettingsFor(action.payload);
         },
 
+        setManagePortSettings(state, action: PayloadAction<PortSettingsManagement>) {
+            if (action.payload === 'controller') delete state.settings.managePortSettings;
+            else state.settings.managePortSettings = action.payload;
+        },
+
         setNormalizeNewSongs(state, action: PayloadAction<boolean>) {
             state.settings.normalizeNewSongs = action.payload;
         },
@@ -427,6 +433,7 @@ export const {
     moveViewerControlScheduleEntry,
     setSendIdleBlackFrames,
     setControllerRefresh,
+    setManagePortSettings,
     setNormalizeNewSongs,
     setMultisyncEnabled,
     setMultisyncMode,

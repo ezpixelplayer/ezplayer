@@ -95,7 +95,7 @@ function bakeWhiteAsAlpha(img: HTMLImageElement | HTMLCanvasElement): HTMLCanvas
     const d = id.data;
     for (let i = 0; i < d.length; i += 4) {
         // alpha = 1 - whiteness, where whiteness = min(r,g,b).  Saturated
-        // colours stay opaque; only near-white pixels fade out.
+        // colors stay opaque; only near-white pixels fade out.
         const minRGB = Math.min(d[i], Math.min(d[i + 1], d[i + 2]));
         d[i + 3] = Math.min(d[i + 3], 255 - minRGB);
     }
