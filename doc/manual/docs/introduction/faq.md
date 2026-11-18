@@ -17,7 +17,9 @@ and sends the pixel data to your controllers. See
 
 Download it from [EZRGB](https://ezrgb.com/ezplayer), or get source and binary
 releases from [GitHub](https://github.com/ezpixelplayer/ezplayer/releases).
-EZPlayer runs on Windows, macOS, and Linux (x64 and Raspberry Pi).
+EZPlayer runs on Windows, macOS, and Linux (x64 and Raspberry Pi). On a
+Raspberry Pi (4 or 5), use a 64-bit OS with at least 2GB of RAM; EZPlayer
+refuses to start with less.
 
 ## How do I learn more about the features?
 
