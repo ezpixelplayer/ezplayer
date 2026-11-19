@@ -81,7 +81,7 @@ The rest of this section is the manual fallback for when the runner is down (or 
 
 ### Prerequisites (on the Pi)
 
-1. **Raspberry Pi OS 64-bit** (Bookworm or later recommended)
+1. **Raspberry Pi OS 64-bit** (Bookworm or later recommended), with at least 2GB of RAM (EZPlayer refuses to start with less)
 2. **Node.js 24** — install via [NodeSource](https://github.com/nodesource/distributions) or `nvm`:
     ```bash
     curl -fsSL https://deb.nodesource.com/setup_24.x | sudo bash -
