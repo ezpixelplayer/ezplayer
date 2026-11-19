@@ -10,7 +10,7 @@ title: Controller List
 The Controller List on the Controllers screen shows a combination of all configured and detected controller devices.
 
 Above the table, the title row shows a summary of controller [status](#present--absent--unregistered) next to the following commands:
-- **Reload show & controllers** re-reads the show folder, resets the layout, reopens all controllers, and restarts the show as applicable.
+- **Reload Show** (same as the button on the Player screen) re-reads the show folder, resets the layout, reopens all controllers, and restarts the show as applicable.
 - **Refresh all** re-reads the details of every *Present* controller.
 - **New record** creates an EZPlayer controller record by hand.
 

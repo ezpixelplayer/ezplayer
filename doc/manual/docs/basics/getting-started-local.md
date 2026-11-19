@@ -15,6 +15,7 @@ If you set up your show in the EZRGB cloud, [start here instead](./getting-start
 You'll need:
 
 - EZPlayer installed (Windows, macOS, or Linux). See [releases](https://ezrgb.com/ezplayer).
+  On a Raspberry Pi (4 or 5), use a 64-bit OS and at least 2GB of RAM; EZPlayer will not start with less.
 - An **xLights show folder** — layout, sequences, and audio EZPlayer can read.
 - Eventually you will need your controllers reachable on the network, with lights wired up, but you can skip this at first.
 
