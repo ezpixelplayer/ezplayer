@@ -377,7 +377,11 @@ export const NowPlayingCard = ({
                 {!isActive && (
                     <Box sx={{ mt: 2, display: 'flex', justifyContent: 'center' }}>
                         <Tooltip
-                            title={controllerOpRunning ? 'Wait for the running controller operation to finish' : ''}
+                            title={
+                                controllerOpRunning
+                                    ? 'Wait for the running controller operation to finish'
+                                    : 'Rereads the show folder, reopens all controllers, and restarts the schedule. Only needed after changing files on disk or if something has gone wrong.'
+                            }
                         >
                             <span>
                                 <Button
@@ -388,7 +392,7 @@ export const NowPlayingCard = ({
                                         await dispatch(callImmediateCommand({ command: 'resetplayback' })).unwrap();
                                     }}
                                 >
-                                    Reload Schedule
+                                    Reload Show
                                 </Button>
                             </span>
                         </Tooltip>
