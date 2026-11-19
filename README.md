@@ -20,14 +20,16 @@ EZPlayer can be used completely locally, supporting:
 - A flexible schedule of playlists of songs (a.k.a. sequences)
 - A jukebox view of songs to choose from for immediate / queued playback
 - Audio (.mp3, and auto-conversion from other formats) and .fseq playback from an xLights show folder
-- DDP and E1.31 controllers on attached IPv4 networks
+- DDP, E1.31, and Art-Net controllers on attached IPv4 networks
 - Live view of the show
 - Status screens
 - Network scan, controller status, and controller configuration actions for many common controllers
+- Content distribution (sequences and audio) to controllers that play from their own storage
 - Remote Falcon viewer control
 - Local (LAN) Web UI
 - Background sequences, volume control automation, etc.
-- Integrations API for advanced users
+- Headless mode (no window) for unattended players, such as a Raspberry Pi
+- Integrations API for advanced users, including an FPP-compatible API
 
 With the (optional) EZPlayer cloud registration:
 
@@ -103,7 +105,7 @@ sudo sysctl -p /etc/sysctl.d/99-ezplayer-ping.conf
 
 #### Raspberry Pi
 
-EZPlayer is tested on Raspberry Pi 5 and 4 (64-bit OS and 4GB or more required). The Linux ARM releases work, or you can build it yourself. Releases currently only include the application; it is not a full OS image (though that may be provided by EZRGB later).
+EZPlayer is tested on Raspberry Pi 5 and 4 (64-bit OS and at least 2GB of RAM required; EZPlayer will refuse to start with less). On boards with 2GB, the maximum song length is limited by available memory. The Linux ARM releases work, or you can build it yourself. Releases currently only include the application; it is not a full OS image (though that may be provided by EZRGB later).
 
 ### Running EZPlayer
 
