@@ -29,7 +29,9 @@ import {
     layoutManifest,
     layoutSpecsFromXlights,
     ParamsBlock,
-    scaleNodes,
+    scaleNodesRgb,
+    colorTemperatureScale,
+    COLOR_TEMP_NEUTRAL_K,
     sharedInputMapProgram,
     StatsBlock,
     type BlendMode,
@@ -87,6 +89,8 @@ export interface ComposeArgs {
     bgMode?: BlendMode;
     /** 0..1 global brightness applied to every pixel node. */
     brightness?: number;
+    /** Kelvin; a tint that only dims (warm dims blue and green, cool dims red). 6500 is neutral. */
+    colorTemperature?: number;
     timeMs: number;
     frameIntervalMs: number;
     frameNumber: number;
@@ -355,8 +359,13 @@ export class PixelPipeline {
             flags &= ~FRAME_FLAG_IDLE;
         }
         if (black) flags |= FRAME_FLAG_BLACK;
-        if (!black && a.brightness !== undefined && a.brightness < 1) {
-            scaleNodes(bytes, stride, 0, L.nodeCount, a.brightness, L.xMeaning === 2);
+        if (!black) {
+            const b = a.brightness ?? 1;
+            const [kr, kg, kb] = this.tintFor(a.colorTemperature ?? COLOR_TEMP_NEUTRAL_K);
+            if (b < 1 || kr < 1 || kg < 1 || kb < 1) {
+                // The white channel takes the brightness but not the tint.
+                scaleNodesRgb(bytes, stride, 0, L.nodeCount, kr * b, kg * b, kb * b, L.xMeaning === 2 ? b : 1);
+            }
         }
         this.pool.publish(slot, {
             frameNumber: a.frameNumber,
@@ -368,6 +377,17 @@ export class PixelPipeline {
             flags,
         });
         return true;
+    }
+
+    private tintKelvin = COLOR_TEMP_NEUTRAL_K;
+    private tint: [number, number, number] = [1, 1, 1];
+    /** Per-channel factors for a color temperature, cached for the last value asked. */
+    private tintFor(kelvin: number): [number, number, number] {
+        if (kelvin !== this.tintKelvin) {
+            this.tintKelvin = kelvin;
+            this.tint = colorTemperatureScale(kelvin);
+        }
+        return this.tint;
     }
 
     /** Snapshot of the output worker's counters and gauges. */

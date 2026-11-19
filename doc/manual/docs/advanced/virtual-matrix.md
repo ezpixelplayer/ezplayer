@@ -55,7 +55,7 @@ The link also works for the other two kinds of output, and for any model without
 http://<player address>/matrix?model=<model name>
 ```
 
-Add `&smooth=1` for smooth scaling and `&fit=fill` to stretch the picture to the page. Put the browser in full-screen mode (usually F11) to hide its toolbars.
+Capitalization of the model name does not matter. Add `&smooth=1` for smooth scaling and `&fit=fill` to stretch the picture to the page. Put the browser in full-screen mode (usually F11) to hide its toolbars.
 
 ## Frame rate
 

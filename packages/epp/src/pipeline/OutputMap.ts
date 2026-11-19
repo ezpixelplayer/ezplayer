@@ -82,12 +82,12 @@ export interface OutputMap {
     outputs: CompiledOutput[];
 }
 
-/** Forward LUT: brightness scale then gamma curve, as a controller would. */
+/** Forward LUT: gamma curve, then brightness scale, as xLights and FPP do it. */
 export function buildForwardLut(gamma: number, brightness: number, out: Uint8Array, off = 0): void {
     const g = gamma > 0 ? gamma : 1;
     const b = brightness >= 0 ? brightness : 1;
     for (let i = 0; i < 256; ++i) {
-        const v = Math.round(255 * Math.pow(Math.min(1, (i / 255) * b), g));
+        const v = Math.round(255 * b * Math.pow(i / 255, g));
         out[off + i] = v < 0 ? 0 : v > 255 ? 255 : v;
     }
 }

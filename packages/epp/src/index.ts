@@ -137,6 +137,7 @@ export {
     fillNodes,
     lutNodes,
     scaleNodes,
+    scaleNodesRgb,
     isBlack,
     dynamicGammaNodes,
     hsvToRgb,
@@ -155,6 +156,7 @@ export {
 export type { BlendMode, TestPatternKind, TestPatternParams } from './pipeline/Kernels';
 
 export { ParamsBlock } from './pipeline/Params';
+export { colorTemperatureScale, COLOR_TEMP_NEUTRAL_K, COLOR_TEMP_MIN_K, COLOR_TEMP_MAX_K } from './pipeline/ColorTemperature';
 export { StatsBlock } from './pipeline/Stats';
 export type { DecompPost, Canonicalizer } from './formats/FSeqPrefetcher';
 export { runDecompPost } from './formats/FSeqPrefetcher';

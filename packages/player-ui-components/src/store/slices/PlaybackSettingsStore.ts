@@ -5,7 +5,7 @@ import type {
     ViewerControlBackend,
     ViewerControlScheduleList,
 } from '@ezplayer/ezplayer-core';
-import { controllerRefreshSettingsFor } from '@ezplayer/ezplayer-core';
+import { controllerRefreshSettingsFor, COLOR_TEMPERATURE_NEUTRAL_K } from '@ezplayer/ezplayer-core';
 import { createAsyncThunk, createSlice, PayloadAction } from '@reduxjs/toolkit';
 import {
     AudioOutputConfig,
@@ -13,6 +13,7 @@ import {
     ViewerControlScheduleEntry,
     VolumeControlState,
     VolumeScheduleEntry,
+    BrightnessScheduleEntry,
     VirtualMatrixOutput,
     withViewerControlBackends,
 } from '@ezplayer/ezplayer-core';
@@ -111,6 +112,11 @@ function normalizePlaybackSettings(input: PlaybackSettings): PlaybackSettings {
             ...input.volumeControl,
             defaultVolume: input.volumeControl?.defaultVolume ?? 100,
             schedule: input.volumeControl?.schedule ?? [],
+        },
+        brightnessControl: {
+            ...input.brightnessControl,
+            defaultBrightness: input.brightnessControl?.defaultBrightness ?? 100,
+            schedule: input.brightnessControl?.schedule ?? [],
         },
         jukebox: {
             excludedTags: Array.from(new Set([...DEFAULT_JUKEBOX_EXCLUDED_TAGS, ...excludedNormalized])),
@@ -352,6 +358,32 @@ const playbackSettingsSlice = createSlice({
             moveEntry(state.settings.volumeControl.schedule, action.payload.entryId, action.payload.delta);
         },
 
+        // Brightness control (output brightness and color temperature)
+        setDefaultBrightness(state, action: PayloadAction<number>) {
+            (state.settings.brightnessControl ??= { defaultBrightness: 100, schedule: [] }).defaultBrightness =
+                action.payload;
+        },
+        /** Kelvin; neutral (6500) is stored as absent. */
+        setDefaultColorTemperature(state, action: PayloadAction<number>) {
+            const control = (state.settings.brightnessControl ??= { defaultBrightness: 100, schedule: [] });
+            if (action.payload === COLOR_TEMPERATURE_NEUTRAL_K) delete control.defaultColorTemperature;
+            else control.defaultColorTemperature = action.payload;
+        },
+        addBrightnessScheduleEntry(state, action: PayloadAction<BrightnessScheduleEntry>) {
+            const control = (state.settings.brightnessControl ??= { defaultBrightness: 100, schedule: [] });
+            (control.schedule ??= []).push(action.payload);
+        },
+        removeBrightnessScheduleEntry(state, action: PayloadAction<string>) {
+            const control = state.settings.brightnessControl;
+            if (control) control.schedule = (control.schedule ?? []).filter((e) => e.id !== action.payload);
+        },
+        updateBrightnessScheduleEntry(state, action: PayloadAction<BrightnessScheduleEntry>) {
+            replaceEntry(state.settings.brightnessControl?.schedule, action.payload);
+        },
+        moveBrightnessScheduleEntry(state, action: PayloadAction<{ entryId: string; delta: number }>) {
+            moveEntry(state.settings.brightnessControl?.schedule, action.payload.entryId, action.payload.delta);
+        },
+
         /** Desktop: true = system default output with `volumeControl`; false = `audioOutputs`. */
         setUseDefaultAudioOutput(state, action: PayloadAction<boolean>) {
             state.settings.useDefaultAudioOutput = action.payload ? undefined : false;
@@ -449,6 +481,12 @@ export const {
     setAdvancedDdpPort,
     setMediaFolder,
     setDefaultVolume,
+    setDefaultBrightness,
+    setDefaultColorTemperature,
+    addBrightnessScheduleEntry,
+    removeBrightnessScheduleEntry,
+    updateBrightnessScheduleEntry,
+    moveBrightnessScheduleEntry,
     addVolumeScheduleEntry,
     removeVolumeScheduleEntry,
     updateVolumeScheduleEntry,

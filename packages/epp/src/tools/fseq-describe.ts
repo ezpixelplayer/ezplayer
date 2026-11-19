@@ -93,7 +93,10 @@ async function main(argv: string[]): Promise<number> {
                 fingerprintRecomputed: recomputed,
                 fingerprintMatches: recomputed === ez.fingerprint,
                 modelCountMatchesPrefix: prefix?.modelCount === ez.models.length,
-                totalChannelsWithinFile: ez.totalChannels <= header.channels,
+                // A sparse file carries part of the show, so its ranges must lie within it.
+                totalChannelsWithinFile: header.nsparseranges > 0
+                    ? header.chranges.every((r) => r.startch + r.chcount <= ez!.totalChannels)
+                    : ez.totalChannels <= header.channels,
                 models: showModels ? ez.models : undefined,
             };
         } else {

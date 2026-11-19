@@ -36,7 +36,7 @@ its own password, and neither can be turned on from any UI — see
 
 Some of these tiles map to Advanced Features pages:
 [Viewer Control](../advanced/viewer-control.md),
-[Volume](../advanced/volume.md) and
+[Volume](../advanced/volume.md), [Brightness](../advanced/brightness.md) and
 [Virtual Matrix](../advanced/virtual-matrix.md). The **Player** tile (start at sign-in,
 prevent sleeping, background blend mode, idle blackout, controller reads, test
 sequences, advanced overrides) has [its own page](./player.md), as does the

@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { useSelector } from 'react-redux';
 import {
     AudioSettings,
+    BrightnessSettings,
     CloudPage,
     ControllersScreen,
     DiagnosticsSettings,
@@ -50,6 +51,7 @@ import ContrastIcon from '@mui/icons-material/Contrast';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import LibraryMusicIcon from '@mui/icons-material/LibraryMusic';
 import VolumeUpIcon from '@mui/icons-material/VolumeUp';
+import Brightness6Icon from '@mui/icons-material/Brightness6';
 import TuneIcon from '@mui/icons-material/Tune';
 import GridOnIcon from '@mui/icons-material/GridOn';
 import TroubleshootIcon from '@mui/icons-material/Troubleshoot';
@@ -120,6 +122,12 @@ const EmbeddedSettingsPage = () => {
             label: 'Audio',
             icon: <VolumeUpIcon sx={{ fontSize: 56 }} />,
             content: <AudioSettings />,
+        },
+        {
+            key: 'brightness',
+            label: 'Brightness',
+            icon: <Brightness6Icon sx={{ fontSize: 56 }} />,
+            content: <BrightnessSettings />,
         },
         {
             key: 'cloud',

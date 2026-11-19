@@ -47,6 +47,7 @@ export { UISettings } from './components/playback-settings/sections/UISettings';
 export { ViewerSettings } from './components/playback-settings/sections/ViewerSettings';
 export { JukeboxSettings } from './components/playback-settings/sections/JukeboxSettings';
 export { AudioSettings } from './components/playback-settings/sections/AudioSettings';
+export { BrightnessSettings } from './components/playback-settings/sections/BrightnessSettings';
 export { PlayerSettings } from './components/playback-settings/sections/PlayerSettings';
 export {
     VirtualMatrixSettings,
