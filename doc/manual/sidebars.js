@@ -79,6 +79,7 @@ const sidebars = {
                 },
                 'advanced/volume',
                 'advanced/viewer-control',
+                'advanced/virtual-matrix',
             ],
         },
         {
