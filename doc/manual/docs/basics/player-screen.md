@@ -1,4 +1,4 @@
----
+  ---
 sidebar_position: 8
 title: Player Screen
 ---
@@ -112,7 +112,7 @@ controls. Remove an item with **×**.
 
 When the player is **Stopped**, a **Reload Show** button appears instead of
 the transport controls. Click it to reread the show folder from disk, reopen all
-controllers, and restart the schedule (`resetplayback`). The **Reload Show**
+controllers, and restart the schedule. The **Reload Show**
 button on the Controllers screen does exactly the same thing. Pressing this is generally not needed unless you
 have manually changed files on disk, or something has gone wrong. The button is
 disabled while a controller operation is running or queued, since reloading
