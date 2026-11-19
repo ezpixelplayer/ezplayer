@@ -32,7 +32,7 @@ export const MATRIX_PAGE_HTML = `<!doctype html>
 <script>
 (() => {
   const q = new URLSearchParams(location.search);
-  const model = q.get('model') || '';
+  let model = q.get('model') || '';
   const smooth = q.get('smooth') === '1';
   const fit = q.get('fit') === 'fill' ? 'fill' : 'contain';
   const bg = '#' + (q.get('bg') || '000000').replace(/[^0-9a-fA-F]/g, '').padEnd(6, '0');
@@ -108,6 +108,9 @@ export const MATRIX_PAGE_HTML = `<!doctype html>
           '&painted=' + painted + (out ? '&out=' + encodeURIComponent(out) : '');
         const res = await fetch(url, { cache: 'no-store' });
         if (res.status === 200) {
+          // The player answers with the layout's spelling of the name; the title shows that.
+          const canon = res.headers.get('x-ezp-model');
+          if (canon) model = decodeURIComponent(canon);
           take(new Uint8Array(await res.arrayBuffer()));
           say('');
         } else if (res.status === 404) {

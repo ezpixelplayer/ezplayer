@@ -2349,12 +2349,20 @@ async function startServer(config: ServerWorkerData) {
             ctx.status = 204;
             return;
         }
-        const m = manifest.models.find((x) => x.name === ctx.params.name);
+        // Exact name first; a hand-typed URL may get the case wrong.
+        const wanted = String(ctx.params.name);
+        const lower = wanted.toLowerCase();
+        const m =
+            manifest.models.find((x) => x.name === wanted) ??
+            manifest.models.find((x) => x.name.toLowerCase() === lower);
         if (!m || m.nodeStart < 0) {
             ctx.status = 404;
             ctx.body = { error: 'no such pixel model' };
             return;
         }
+        // The layout's own spelling of the name, for the page's title.
+        ctx.set('X-EZP-Model', encodeURIComponent(m.name));
+        ctx.set('Access-Control-Expose-Headers', 'X-EZP-Model');
         const one = (v: unknown) => (typeof v === 'string' && v !== '' ? v.slice(0, 64) : undefined);
         const painted = Number(ctx.query.painted);
         const note = (served: boolean) =>

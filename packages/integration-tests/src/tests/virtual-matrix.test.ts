@@ -62,6 +62,10 @@ describe('virtual matrix', () => {
         expect(f.height).toBe(1);
         expect(f.seq).toBeGreaterThan(0);
         expect((await frame('', 'NoSuchModel')).status).toBe(404);
+        // A hand-typed name is matched without regard to case; the answer carries the layout's spelling.
+        const loose = await fetch(`${app.base}/api/ezp/pool/model/line1`);
+        expect(loose.status).toBe(200);
+        expect(loose.headers.get('x-ezp-model')).toBe('Line1');
     });
 
     it('answers a reader that waits with the next frame, not the one it has', async () => {
