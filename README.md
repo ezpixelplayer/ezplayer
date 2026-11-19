@@ -105,7 +105,7 @@ sudo sysctl -p /etc/sysctl.d/99-ezplayer-ping.conf
 
 #### Raspberry Pi
 
-EZPlayer is tested on Raspberry Pi 5 and 4 (64-bit OS and at least 2GB of RAM required; EZPlayer will refuse to start with less). On boards with 2GB, very long songs may be limited by available memory. The Linux ARM releases work, or you can build it yourself. Releases currently only include the application; it is not a full OS image (though that may be provided by EZRGB later).
+EZPlayer is tested on Raspberry Pi 5 and 4 (64-bit OS and at least 2GB of RAM required; EZPlayer will refuse to start with less). On boards with 2GB, the maximum song length is limited by available memory. The Linux ARM releases work, or you can build it yourself. Releases currently only include the application; it is not a full OS image (though that may be provided by EZRGB later).
 
 ### Running EZPlayer
 
