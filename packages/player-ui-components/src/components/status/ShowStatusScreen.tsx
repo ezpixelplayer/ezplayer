@@ -44,6 +44,7 @@ import {
 } from './ControllerHelpers';
 import { QueueCard } from './QueueCard';
 import { ViewerControlCard } from './ViewerControlCard';
+import { VirtualMatrixCard } from './VirtualMatrixCard';
 import { ContentDistributionCard } from './ContentDistributionCard';
 import { EzrgbPromoCard, useShowEzrgbPromo } from '../cloud/EzrgbPromoCard';
 import { hasContentDistribution } from '../content-dist/contentDistHelpers';
@@ -615,6 +616,9 @@ export const ShowStatusScreen = ({ title, statusArea, allowTestControls = true }
                 <Grid item xs={12}>
                     <ViewerControlCard />
                 </Grid>
+
+                {/* Virtual matrix outputs; brings its own grid item when it has something to show. */}
+                <VirtualMatrixCard />
 
                 {/* Content Distribution & Sync — only where a player holds its own copy. */}
                 {showContentDist && (

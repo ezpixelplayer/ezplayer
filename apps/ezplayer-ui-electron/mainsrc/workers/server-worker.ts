@@ -1,5 +1,6 @@
 import { FramePool, type LayoutManifest } from '@ezplayer/epp';
 import { MATRIX_PAGE_HTML } from './matrixpage.js';
+import { MatrixReaders } from './matrix-readers.js';
 import type { OverlayCommand } from './overlaytypes.js';
 import type { OverlayLeaseRequest } from '@ezplayer/epp';
 /**
@@ -32,7 +33,8 @@ import type {
     SequenceRecord,
 } from '@ezplayer/ezplayer-core';
 import { LatestFrameRingBuffer, AudioChunkRingBuffer, isSupportBundleLevel } from '@ezplayer/ezplayer-core';
-import type { AudioBridgeControlMessage, CloudAudioMode } from '@ezplayer/ezplayer-core';
+import type { AudioBridgeControlMessage, CloudAudioMode, VirtualMatrixStatus } from '@ezplayer/ezplayer-core';
+import * as os from 'os';
 import {
     activeWindowDescriptions,
     describeVolume,
@@ -440,6 +442,10 @@ let curFrameBuffer: SharedArrayBuffer | undefined = undefined;
 // Canonical frame pool from the playback worker, read by the /api/ezp/pool endpoints.
 let curPixelPool: FramePool | undefined = undefined;
 let curPoolManifest: LayoutManifest | undefined = undefined;
+const matrixReaders = new MatrixReaders();
+/** Longest a frame request may wait for the next frame. */
+const MATRIX_MAX_WAIT_MS = 2000;
+const VIRTUAL_ADAPTER = /vethernet|vmware|virtualbox|hyper-v|wsl|docker|^br-|^veth|tailscale|zerotier|loopback/i;
 let curAudioRing: AudioChunkRingBuffer | undefined = undefined;
 let serverStarted = false;
 
@@ -1901,6 +1907,7 @@ async function startServer(config: ServerWorkerData) {
         'mediaFolder',
         'useDefaultAudioOutput',
         'audioOutputs',
+        'virtualMatrixOutputs',
     ]);
     /** The player reads these unconditionally; a part write may not remove them. */
     const REQUIRED_KEYS = new Set<string>(['viewerControl', 'volumeControl']);
@@ -2293,13 +2300,25 @@ async function startServer(config: ServerWorkerData) {
     const overlayToken = (ctx: Koa.Context) => Number(ctx.query.token ?? ctx.get('x-ezp-token') ?? 0);
     router.get('/api/ezp/overlays/targets', (ctx) => overlayCall(ctx, { op: 'targets' }));
     router.get('/api/ezp/overlays', (ctx) => overlayCall(ctx, { op: 'list' }));
-    router.post('/api/ezp/overlays', (ctx) => overlayCall(ctx, { op: 'open', request: (ctx.request.body ?? {}) as OverlayLeaseRequest }));
-    router.delete('/api/ezp/overlays/:id', (ctx) => overlayCall(ctx, { op: 'close', id: overlayId(ctx), token: overlayToken(ctx) }));
-    router.post('/api/ezp/overlays/:id/keepalive', (ctx) => overlayCall(ctx, { op: 'keepalive', id: overlayId(ctx), token: overlayToken(ctx) }));
+    router.post('/api/ezp/overlays', (ctx) =>
+        overlayCall(ctx, { op: 'open', request: (ctx.request.body ?? {}) as OverlayLeaseRequest }),
+    );
+    router.delete('/api/ezp/overlays/:id', (ctx) =>
+        overlayCall(ctx, { op: 'close', id: overlayId(ctx), token: overlayToken(ctx) }),
+    );
+    router.post('/api/ezp/overlays/:id/keepalive', (ctx) =>
+        overlayCall(ctx, { op: 'keepalive', id: overlayId(ctx), token: overlayToken(ctx) }),
+    );
     router.put('/api/ezp/overlays/:id/frame', async (ctx) => {
         const raw = await getRawBody(ctx.req, { limit: '16mb' });
         const seq = Number(ctx.query.seq ?? Date.now() & 0x7fffffff);
-        await overlayCall(ctx, { op: 'frame', id: overlayId(ctx), token: overlayToken(ctx), seq, data: new Uint8Array(raw) });
+        await overlayCall(ctx, {
+            op: 'frame',
+            id: overlayId(ctx),
+            token: overlayToken(ctx),
+            seq,
+            data: new Uint8Array(raw),
+        });
     });
 
     // ----------------------------------------------
@@ -2316,9 +2335,14 @@ async function startServer(config: ServerWorkerData) {
         ctx.body = curPoolManifest;
     });
     // Binary: u16 width, u16 height, u32 seq, u8 stride, u8 flags (bit0: rows bottom-first), u16 reserved, then pixels.
-    router.get('/api/ezp/pool/model/:name', (ctx) => {
+    // ?after=SEQ answers 204 when nothing is newer; with &wait=MS it first waits that long for a newer frame.
+    router.get('/api/ezp/pool/model/:name', async (ctx) => {
         ctx.set('Access-Control-Allow-Origin', '*');
         ctx.set('Cache-Control', 'no-store');
+        const after = Number(ctx.query.after ?? -1);
+        const wait = Math.min(MATRIX_MAX_WAIT_MS, Math.max(0, Number(ctx.query.wait) || 0));
+        if (wait > 0 && curPixelPool && curPixelPool.latestSeq() === after) await curPixelPool.waitForSeq(after, wait);
+        // Read these after the wait: a layout change replaces both.
         const pool = curPixelPool;
         const manifest = curPoolManifest;
         if (!pool || !manifest) {
@@ -2331,14 +2355,27 @@ async function startServer(config: ServerWorkerData) {
             ctx.body = { error: 'no such pixel model' };
             return;
         }
-        const after = Number(ctx.query.after ?? -1);
+        const one = (v: unknown) => (typeof v === 'string' && v !== '' ? v.slice(0, 64) : undefined);
+        const painted = Number(ctx.query.painted);
+        const note = (served: boolean) =>
+            matrixReaders.note({
+                model: m.name,
+                client: one(ctx.query.client),
+                output: one(ctx.query.out),
+                ip: ctx.ip,
+                seq: pool.latestSeq(),
+                served,
+                painted: Number.isFinite(painted) && ctx.query.painted !== undefined ? painted : undefined,
+            });
         const f = pool.acquireLatest();
         if (!f) {
+            note(false);
             ctx.status = 204;
             return;
         }
         try {
             if (f.seq === after) {
+                note(false);
                 ctx.status = 204;
                 return;
             }
@@ -2357,9 +2394,28 @@ async function startServer(config: ServerWorkerData) {
             ctx.res.on('finish', () => frameBufferPool.release(out));
             ctx.type = 'application/octet-stream';
             ctx.body = out.subarray(0, 12 + bytes);
+            note(true);
         } finally {
             pool.release(f.slot);
         }
+    });
+    // Who is reading model pixels and how fast, plus where other computers can reach the /matrix page.
+    router.get('/api/ezp/matrix/status', (ctx) => {
+        ctx.set('Access-Control-Allow-Origin', '*');
+        ctx.set('Cache-Control', 'no-store');
+        const port = ctx.URL.port ? `:${ctx.URL.port}` : '';
+        const real: string[] = [];
+        const virtual: string[] = [];
+        for (const [name, list] of Object.entries(os.networkInterfaces())) {
+            for (const a of list ?? []) {
+                if (a.family !== 'IPv4' || a.internal) continue;
+                (VIRTUAL_ADAPTER.test(name) ? virtual : real).push(`http://${a.address}${port}`);
+            }
+        }
+        // Adapters of virtual machines and tunnels last: other computers rarely reach those.
+        const lanUrls = [...real, ...virtual];
+        const status: VirtualMatrixStatus = { readers: matrixReaders.list(), lanUrls };
+        ctx.body = status;
     });
     router.get('/api/ezp/displays', async (ctx) => {
         try {

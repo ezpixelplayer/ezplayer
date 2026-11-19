@@ -80,6 +80,7 @@ const sidebars = {
                 'advanced/volume',
                 'advanced/brightness',
                 'advanced/viewer-control',
+                'advanced/virtual-matrix',
             ],
         },
         {

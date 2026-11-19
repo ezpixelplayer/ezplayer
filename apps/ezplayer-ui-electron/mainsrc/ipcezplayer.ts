@@ -1,4 +1,4 @@
-import { syncMatrixWindowsFromSettings } from './matrixWindows.js';
+import { setMatrixWindowMovedHandler, syncMatrixWindowsFromSettings } from './matrixWindows.js';
 import type { OverlayCommand, OverlayResult } from './workers/overlaytypes.js';
 //import { app } from "electron";
 import { fileURLToPath } from 'url';
@@ -1139,6 +1139,23 @@ export async function applyRotatePlayerToken(): Promise<void> {
 export async function registerContentHandlers(mainWindow: BrowserWindow | null, nPlayWorker: Worker) {
     updateWindow = mainWindow;
     playWorker = nPlayWorker;
+
+    // A floating matrix window was dragged: remember where it is.
+    setMatrixWindowMovedHandler((id, x, y) => {
+        const showFolder = getCurrentShowFolder();
+        const current = getSettingsCache();
+        const outputs = current?.virtualMatrixOutputs;
+        if (!showFolder || !current || !outputs?.some((o) => o.id === id)) return;
+        const next = {
+            ...current,
+            virtualMatrixOutputs: outputs.map((o) => (o.id === id ? { ...o, windowX: x, windowY: y } : o)),
+        };
+        applySettingsFromRenderer(settingsPath(showFolder, 'playbackSettings.json'), next);
+        syncMatrixWindowsFromSettings(next);
+        safeSend(updateWindow, 'update:playbacksettings', next);
+        broadcastToWebSocket('playbackSettings', next);
+        playWorker?.postMessage({ type: 'settings', settings: next } as PlayerCommand);
+    });
 
     ipcMain.handle('ipcUIConnect', async (_event): Promise<UIConnectSnapshot> => {
         await loadShowFolder();

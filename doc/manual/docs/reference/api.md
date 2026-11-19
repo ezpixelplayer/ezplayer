@@ -860,8 +860,10 @@ overrides. `advanced.ddpPort` overrides the DDP output port (default 4048)
 and takes effect when controllers reopen.
 
 The example is not the whole object: `PlaybackSettings` also carries
-`normalizeNewSongs`, `jukebox`, `testSequenceTags`, `mediaFolder` and the
-machine-local audio-output choice (`useDefaultAudioOutput`, `audioOutputs`).
+`normalizeNewSongs`, `jukebox`, `testSequenceTags`, `mediaFolder`, the
+machine-local audio-output choice (`useDefaultAudioOutput`, `audioOutputs`)
+and the machine-local [virtual matrix](../advanced/virtual-matrix.md) outputs
+(`virtualMatrixOutputs`).
 A POST **replaces** the stored object, so read the current one from the
 WebSocket snapshot (`playbackSettings`) and send it back with your changes.
 
@@ -1273,6 +1275,76 @@ Sent to the player's overlay port (`udpPort` in the open response; `advanced.ove
 | 24     | N    | Payload bytes                            |
 
 Packets for a frame may arrive in any order; a packet for a new sequence number starts a new payload. `packetizeOverlayFrame` in `@ezplayer/epp` builds these, and `src/tools/overlay-tetris.ts` in that package is a complete example client.
+
+---
+
+### Virtual matrix (`/matrix`, `/api/ezp/pool`)
+
+A [virtual matrix](../advanced/virtual-matrix.md) shows one model's pixels as a picture. The player's own windows and any browser use the same page and the same frame route.
+
+#### GET /matrix?model=NAME
+
+The viewer page. It fills the browser window with the model's picture and follows the sequence's frame rate.
+
+| Query    | Meaning                                                                             |
+| -------- | ----------------------------------------------------------------------------------- |
+| `model`  | Model name. Required                                                                |
+| `smooth` | `1` blends between pixels; default is crisp blocks                                  |
+| `fit`    | `contain` (default) keeps the model's proportions; `fill` stretches it to the page |
+| `bg`     | Background color as `rrggbb`, default `000000`                                      |
+
+#### GET /api/ezp/pool/model/:name
+
+One frame of one model as bytes: a 12-byte header, then the pixels.
+
+| Offset | Type | Meaning                                         |
+| ------ | ---- | ----------------------------------------------- |
+| 0      | u16  | Width (the node count for a model with no grid) |
+| 2      | u16  | Height (1 for a model with no grid)             |
+| 4      | u32  | Frame number (`seq`)                            |
+| 8      | u8   | Bytes per pixel; the first three are R, G, B    |
+| 9      | u8   | Flags; bit 0 set means the bottom row is first  |
+| 10     | u16  | Reserved                                        |
+
+All numbers are little-endian. Pixels follow row by row.
+
+| Query     | Meaning                                                                                    |
+| --------- | ------------------------------------------------------------------------------------------ |
+| `after`   | The `seq` already held. The answer is `204` when there is nothing newer                    |
+| `wait`    | With `after`: wait up to this many milliseconds (at most 2000) for a newer frame           |
+| `client`  | An id the reader makes up, so two readers at one address are counted separately            |
+| `painted` | How many frames the reader has drawn since it started; reported back as its painted rate  |
+
+To follow a model at the sequence's frame rate, ask for `?after=<last seq>&wait=1000` in a loop: each answer arrives as soon as the next frame exists. `404` means there is no pixel model of that name, and `204` with no wait means the player has no frames yet.
+
+`GET /api/ezp/pool/manifest` lists every model with its place in the frame and its grid size, and `GET /api/ezp/overlays/targets` lists the models with their sizes.
+
+#### GET /api/ezp/matrix/status
+
+Who is reading model frames, and how fast.
+
+```json
+{
+    "readers": [
+        {
+            "model": "Matrix",
+            "output": "vm-mb2k1x",
+            "address": "local",
+            "idleMs": 21,
+            "sourceFps": 40,
+            "servedFps": 40,
+            "paintedFps": 40
+        }
+    ],
+    "lanUrls": ["http://192.168.1.50:3000"]
+}
+```
+
+`output` is set for the player's own windows. `address` is `local` for a reader on the player computer. `sourceFps` is what the player made, `servedFps` what it sent to this reader, and `paintedFps` what the reader says it drew (absent when the reader does not report it). A reader that has been silent for 30 seconds is dropped. `lanUrls` are the addresses other computers can reach the player at.
+
+#### GET /api/ezp/displays
+
+The displays attached to the player computer, as the Virtual Matrix settings list them: `index`, `id`, `label`, `width`, `height`, `x`, `y`, `primary`.
 
 ---
 
