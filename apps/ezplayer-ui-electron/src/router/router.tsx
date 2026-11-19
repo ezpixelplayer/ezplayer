@@ -14,6 +14,8 @@ import {
     PlayerCloudRegistrationDialog,
     PlayerScreen,
     PlayerSettings,
+    VirtualMatrixSettings,
+    VIRTUAL_MATRIX_SETTINGS_SECTION_KEY,
     DiagnosticsSettings,
     DIAGNOSTICS_SETTINGS_SECTION_KEY,
     ContentSyncSettings,
@@ -54,6 +56,7 @@ import VisibilityIcon from '@mui/icons-material/Visibility';
 import LibraryMusicIcon from '@mui/icons-material/LibraryMusic';
 import VolumeUpIcon from '@mui/icons-material/VolumeUp';
 import TuneIcon from '@mui/icons-material/Tune';
+import GridOnIcon from '@mui/icons-material/GridOn';
 import TroubleshootIcon from '@mui/icons-material/Troubleshoot';
 import SyncAltIcon from '@mui/icons-material/SyncAlt';
 import SystemUpdateAltIcon from '@mui/icons-material/SystemUpdateAlt';
@@ -125,6 +128,13 @@ const ElectronSettingsPage = () => {
             icon: <TuneIcon sx={{ fontSize: 56 }} />,
             title: 'Player Settings',
             content: <PlayerSettings />,
+        },
+        {
+            key: VIRTUAL_MATRIX_SETTINGS_SECTION_KEY,
+            label: 'Virtual Matrix',
+            icon: <GridOnIcon sx={{ fontSize: 56 }} />,
+            title: 'Virtual Matrix',
+            content: <VirtualMatrixSettings />,
         },
         {
             key: CONTENT_SYNC_SETTINGS_SECTION_KEY,

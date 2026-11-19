@@ -29,6 +29,7 @@ export { ShowStatusScreen } from './components/status/ShowStatusScreen';
 export { ViewerStatsScreen, ViewerStatsBody } from './components/viewer-stats/ViewerStatsScreen';
 export { ViewerControlCard } from './components/status/ViewerControlCard';
 export { ContentDistributionCard } from './components/status/ContentDistributionCard';
+export { VirtualMatrixCard } from './components/status/VirtualMatrixCard';
 export { ContentDistributionDialog } from './components/content-dist/ContentDistributionDialog';
 export { StatsDialog } from './components/status/StatsDialog';
 export { SettingsDrawer } from './components/playback-settings/SettingsDrawer';
@@ -47,6 +48,10 @@ export { ViewerSettings } from './components/playback-settings/sections/ViewerSe
 export { JukeboxSettings } from './components/playback-settings/sections/JukeboxSettings';
 export { AudioSettings } from './components/playback-settings/sections/AudioSettings';
 export { PlayerSettings } from './components/playback-settings/sections/PlayerSettings';
+export {
+    VirtualMatrixSettings,
+    VIRTUAL_MATRIX_SETTINGS_SECTION_KEY,
+} from './components/playback-settings/sections/VirtualMatrixSettings';
 export {
     DiagnosticsSettings,
     DIAGNOSTICS_SETTINGS_SECTION_KEY,

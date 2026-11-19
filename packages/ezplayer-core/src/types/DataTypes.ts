@@ -897,23 +897,59 @@ export interface PlaybackSettings {
     /** Named outputs used when `useDefaultAudioOutput` is false. Machine-local,
      *  not part of cloud-managed settings groups. */
     audioOutputs?: AudioOutputConfig[];
-    /** Full-screen windows showing a model's pixels on a display (HDMI, projector,
-     *  panel). Machine-local. */
+    /** Models shown as pictures: on a display, in a window, or by URL. Machine-local. */
     virtualMatrixOutputs?: VirtualMatrixOutput[];
 }
 
-/** One virtual matrix output: a model shown full-screen on a display of the player computer. */
+/** Where a virtual matrix output shows: a whole display, a floating window, or nowhere on this computer. */
+export type VirtualMatrixMode = 'fullscreen' | 'window' | 'url';
+
+/** One virtual matrix output: a model's pixels shown as a picture. */
 export interface VirtualMatrixOutput {
     id: string;
     /** Pixel model to show; grid models (matrices, trees) look like an image, others like a strip. */
     model: string;
-    /** Index into the player computer's displays (0 = first). */
+    /** Default 'fullscreen'. 'url' opens nothing; the picture is only served at /matrix. */
+    mode?: VirtualMatrixMode;
+    /** Full screen: index into the player computer's displays (0 = first). */
     display?: number;
+    /** Full screen: the display's OS id, preferred over the index while that display exists. */
+    displayId?: number;
+    /** Full screen: keep the model's proportions (default) or stretch to fill the display. */
+    fit?: 'contain' | 'fill';
+    /** Floating window: left and top on the desktop, saved as the window is dragged. */
+    windowX?: number;
+    windowY?: number;
+    /** Floating window: size in screen pixels. Absent means one screen pixel per model pixel. */
+    windowWidth?: number;
+    windowHeight?: number;
     /** Smooth scaling instead of crisp pixels. */
     smooth?: boolean;
-    /** Refresh rate of the window (default 30). */
+    /** No longer used: the picture follows the sequence's own frame rate. */
     fps?: number;
+    /** Open the display or window. Has no meaning for 'url'. */
     enabled: boolean;
+}
+
+/** One reader of a model's pixels, as GET /api/ezp/matrix/status reports it. */
+export interface VirtualMatrixReader {
+    model: string;
+    /** The configured output this reader is, when it is one of the player's own windows. */
+    output?: string;
+    /** Where the reader is: 'local' for this computer, else its address. */
+    address: string;
+    /** Milliseconds since it last asked for a frame. */
+    idleMs: number;
+    /** Frames per second the player made, sent, and the reader says it painted. */
+    sourceFps: number;
+    servedFps: number;
+    paintedFps?: number;
+}
+
+export interface VirtualMatrixStatus {
+    readers: VirtualMatrixReader[];
+    /** Base URLs other computers on the network can reach this player at. */
+    lanUrls: string[];
 }
 
 /** Each strategy is independent and gets its own sub-object; Art-Net, OSC,
