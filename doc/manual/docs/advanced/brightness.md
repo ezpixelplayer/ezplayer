@@ -5,42 +5,34 @@ title: Brightness
 
 # Brightness
 
-Brightness dims every light on the way out of the player, without changing your
-sequences or your controllers. Use it to take the edge off a display that is too
-bright for the street after a certain hour, or to warm the whole show up on a
-cold-looking night. Like [Volume](./volume.md), it has a default and a schedule
-of overrides on top of it, and the player eases toward the target over about a
-second rather than jumping.
+The brightness feature can be used to dim your lights without changing your
+sequences or your controllers. Color temperature adjustment is also supported.
+Like [Volume](./volume.md), it has a default level and a schedule
+of overrides, and the player applies changed gradually.
 
 - **Default Brightness** — the baseline level (0–100%) used when no override is
   active. 100% sends the sequence exactly as rendered.
 - **Default Color Temperature** — a tint from **Warm** (2000 K) through
-  **Neutral** (6500 K) to **Cool** (12000 K). Warm dims blue and green so the
-  display leans amber; cool dims red so it leans blue. Nothing is ever boosted,
-  so at neutral the colors are untouched and at 100% brightness a white pixel
-  is still as bright as the sequence asked for.
-- **Brightness Schedule Overrides** — time-bounded brightness for specific
-  times, optionally with their own color temperature. Click **Add Brightness
-  Override** to set the days, start/end time and level; turn on **Also set
-  color temperature** to tint during that window. A window without a color
+  **Neutral** (6500 K) to **Cool** (12000 K).  "Warm" dims blue and green; cool
+  dims red. (No brightness levels are ever increased above what the sequence
+  specifies.)
+- **Brightness Schedule Overrides** — brightness for specific
+  time windows, optionally with their own color temperature. Click **Add Brightness
+  Override** to set the days, start/end time, and level; check **Also set
+  color temperature** to apply tint during that time window. A window without a color
   temperature keeps the default one.
 
-When two overrides cover the same time, the **last entry wins** (the same way
-[Volume](./volume.md) and [Viewer Control](./viewer-control.md) resolve
-overlaps). Each override appears in a list with its days, time range, level,
+When two overrides cover the same time, the **last applicable entry wins**.
+Each override appears in a list with its days, time range, level,
 tint and priority. Use the pencil to edit an entry, the up and down arrows to
-lower or raise its priority (entries lower in the list take priority), or the
-bin to delete it.
+move it up or down on the priority list, or the bin to delete it.
 
-Brightness applies to everything the player sends: sequences, the background
+Brightness applies to everything the player sends: foreground sequences, the background
 sequence, and overlays. Previews show the dimmed result, so what you see on the
-Show View is what the lights get. It does not touch the brightness or gamma
-settings stored on your controllers; those still apply on top, as they always
-did.
+Show View is what the lights get.  The EZPlayer brightness does not affect
+settings stored on your controllers; those are still applied afterward.
 
-The player screen shows the live level next to the volume meter, and the
-[`/api/ezp/brightness`](../reference/api.md#get-apiezpbrightness) endpoints and
-the `setbrightness` player command read and write the same settings.
+The player screen shows the live level next to the volume indicator,.
 
 Brightness lives on the **Brightness** tile of the
 [Settings](../settings/overview.md) screen.
