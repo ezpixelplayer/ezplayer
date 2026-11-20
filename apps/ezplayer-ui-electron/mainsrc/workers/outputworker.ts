@@ -54,6 +54,8 @@ class OutputLoop {
     pool: FramePool;
     stats: StatsBlock;
     outputs: CompiledOutput[];
+    /** Outputs waiting to replace the current ones at the next encode. */
+    pendingOutputs?: CompiledOutput[];
     wire: Uint8Array[];
     legacy?: { ring: LatestFrameRingBuffer; output: CompiledOutput };
     job = new SendJob();
@@ -187,7 +189,34 @@ class OutputLoop {
         return Math.min(this.maxSlotFraction, Math.max(0.05, (iv - reserve) / iv));
     }
 
+    /** Swap in recompiled outputs between frames; wire buffers are regrown only when a size changed. */
+    private adoptPendingOutputs() {
+        const next = this.pendingOutputs;
+        if (!next) return;
+        this.pendingOutputs = undefined;
+        if (next.length !== this.outputs.length) {
+            log('warn', `[output] ignoring an output map with ${next.length} outputs; ${this.outputs.length} are open`);
+            return;
+        }
+        let resized = false;
+        next.forEach((o, i) => {
+            if (Math.max(4, o.wireBytes) !== this.wire[i].length) {
+                this.wire[i] = new Uint8Array(Math.max(4, o.wireBytes));
+                resized = true;
+            }
+        });
+        this.outputs = next;
+        if (resized) {
+            this.job.dataBuffers = this.wire;
+            this.controllers.forEach((c, i) => {
+                const sj = this.job.senders.find((s) => s.sender === c.sender);
+                if (sj) this.assignParts(sj, i);
+            });
+        }
+    }
+
     private encode(bytes: Uint8Array): void {
+        this.adoptPendingOutputs();
         const t0 = performance.now();
         const stride = this.pool.pixelStride;
         for (let i = 0; i < this.outputs.length; ++i) {
@@ -351,6 +380,10 @@ port.on('message', async (msg: OutputWorkerInMsg) => {
                 return;
             }
             await loop.reopen(msg.indices);
+            break;
+        }
+        case 'outputs': {
+            if (loop) loop.pendingOutputs = msg.outputs.map(toOutput);
             break;
         }
         case 'settings': {

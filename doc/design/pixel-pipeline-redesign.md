@@ -335,9 +335,9 @@ Main is merged through 0.6.12. The send-path fixes from main (#286, #288, #290) 
 ### Built but not wired to settings or an API
 
 - **Brightness and dynamic gamma.** Global brightness and color temperature are set from `brightnessControl` (default plus schedule windows, slewed in the conductor, applied in compose by `scaleNodesRgb`), with API, settings tile and player-screen meter (branch moc/brightness-schedule, 2026-11-16). Per-model brightness and dynamic gamma still have no setter.
-- **Dynamic port mapping.** The output map supports segments, nulls, grouping, reverse, color order and the player policy; the app only builds controller-policy outputs straight from the networks file.
+- **Dynamic port mapping.** The output map supports segments, nulls, grouping, reverse, color order and the player policy; the app builds controller-policy outputs from the networks file, plus the Test + Tweak overrides of section 17.
 - **Blend modes.** Nine modes in kernels; the background setting selects only max or underlay.
-- **Test patterns.** Kernel exists; no route or UI calls it.
+- **Test patterns.** The node-range kernel in `Kernels.ts` is still unused; the spatial patterns of section 17 are what the app runs.
 - **RGBX8.** Layout supports it; no setting selects it.
 - **Aliases.** Descriptor resolution does not yet consult the rgbeffects alias list for unmatched model names.
 
@@ -358,3 +358,24 @@ Main is merged through 0.6.12. The send-path fixes from main (#286, #288, #290) 
 - **Compose partition balance.** Static partition by node count is simple; an effect stage that owns a 500k-pixel matrix on one worker will be the long pole. A work-stealing split of large models across workers is the fix if it shows up.
 - **E1.31 with mixed universe sizes** is a prerequisite for Output Map segments landing at exact universe boundaries. It is a contained fix in `E131Sender` and should go in Phase 0.
 - **Renderer-process SAB access** for the window output and shader producer. The 3D preview already reads a SAB in the renderer, so cross-origin isolation is set; the window output needs the same wiring.
+
+## 17. Test + Tweak (branch `moc/testtunetweak`, 2026-11-16)
+
+A top-level screen and an HTTP API for testing models and trimming their output. One JSON document per show, `<showFolder>/.ezplayer/testtweak.json`, owned by the playback worker (`mainsrc/workers/testtweak.ts`); types and the pure logic are in `ezplayer-core/src/types/TestTweak.ts`.
+
+| Piece | Where | What it does |
+|---|---|---|
+| Tweaks | `OutputSpec.adjust` in `OutputMap.ts` | Per-model color order, brightness, gamma and white balance, applied while encoding to the wire, under either policy, on top of what the policy does. Group brightness multiplies with the model's; for the other three the model's own value wins, then the first group that sets one. The preview export is not trimmed. |
+| Test patterns | `SpatialPatterns.ts` | A per-node coordinate (world position projected on a direction, or place along the wiring) plus time: solid, color cycle, bars, rainbow, chase, count markers, flash. Painted over the target models after overlays and show brightness: the override stage. A test can bypass the tweaks of its targets. |
+| Groups and presets | the document | A group is a list of model names, optionally with a tweak. A preset is a named pattern. |
+| Wiring overrides | `planChunkWiring`, `OutputSpec.place` / `skipModels` | A model is cut into chunks; each chunk has a controller, a port and a position number (ascending, gaps allowed). Channel space is not renumbered: the channels of the overridden models on a controller form a pool, and the chunks assigned to that controller are laid into it port by port in position order, so on a port ascending start channel is wire order. The output map sends each run at its planned channels, and the controllers' upload intent (`ControllerModelIntent`) is rewritten to match, so the existing Controllers upload and port map carry it. |
+
+API, on the web app only (not the kiosk port): `GET /api/ezp/testtweak` (document, status, models, controllers, wiring problems), `PUT /api/ezp/testtweak/doc`, `POST` and `DELETE /api/ezp/testtweak/test`.
+
+Not done:
+
+- Wiring overrides are checked against the mock controller for the data path and against the intent the upload reads, not against real hardware.
+- A chunk moved to a controller with no free channels is refused; the planner does not grow or renumber a controller's channel range.
+- Tweaks are player-side only. Pushing them to controllers that have their own brightness, gamma and color order (section 14) is not wired.
+- Effects beyond the formulas above (xlrender effects, coordinate shaders), an API to trigger a preset by name, and a view of the tweaked output in the preview.
+- Submodels, groups of groups, moving or adding models: out of scope here.

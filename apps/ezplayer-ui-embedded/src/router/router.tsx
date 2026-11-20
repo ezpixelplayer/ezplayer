@@ -6,6 +6,7 @@ import {
     BrightnessSettings,
     CloudPage,
     ControllersScreen,
+    TestTweakScreen,
     DiagnosticsSettings,
     DIAGNOSTICS_SETTINGS_SECTION_KEY,
     JukeboxSettings,
@@ -47,6 +48,7 @@ import ViewInArIcon from '@mui/icons-material/ViewInAr';
 import DisplaySettingsIcon from '@mui/icons-material/DisplaySettings';
 import CloudIcon from '@mui/icons-material/Cloud';
 import RouterIcon from '@mui/icons-material/Router';
+import ScienceIcon from '@mui/icons-material/Science';
 import ContrastIcon from '@mui/icons-material/Contrast';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import LibraryMusicIcon from '@mui/icons-material/LibraryMusic';
@@ -76,6 +78,7 @@ const KIOSK_HIDDEN_ROUTES = new Set<string>([
     ROUTES.PLAYBACKSETTINGS,
     ROUTES.CLOUD,
     ROUTES.CONTROLLERS,
+    ROUTES.TEST_TWEAK,
 ]);
 
 const getStatusArea = () => [];
@@ -249,6 +252,11 @@ const allMenuRoutes: MenuRoute[] = [
         path: ROUTES.CONTROLLERS,
         element: <ControllersScreen title="Controllers" statusArea={getStatusArea()} />,
         sidebar: { icon: <RouterIcon />, label: 'Controllers' },
+    },
+    {
+        path: ROUTES.TEST_TWEAK,
+        element: <TestTweakScreen title="Test + Tweak" statusArea={getStatusArea()} compressed />,
+        sidebar: { icon: <ScienceIcon />, label: 'Test + Tweak' },
     },
     {
         path: ROUTES.PLAYBACKSETTINGS,

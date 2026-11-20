@@ -39,6 +39,31 @@ export interface OutputSpec {
     policy?: OutputPolicy;
     /** Explicit segments replace the channel-range derivation for pixel models. */
     segments?: OutputSegmentSpec[];
+    /**
+     * Segments laid over the channel-range derivation: the models they name
+     * are placed by them, everything else still follows the range.  Ignored
+     * when `segments` is set.
+     */
+    place?: OutputSegmentSpec[];
+    /** Models the channel-range derivation leaves out, because they are wired somewhere else. */
+    skipModels?: string[];
+    /**
+     * Player-side trims by model name, applied under either policy on top of
+     * whatever the policy already does: the tweak layer.
+     */
+    adjust?: Record<string, OutputModelAdjust>;
+}
+
+/** A per-model trim applied while encoding to the wire. */
+export interface OutputModelAdjust {
+    /** Wire order of the color channels, e.g. 'GRB'; replaces the model's own. */
+    colorOrder?: string;
+    /** Replaces the gamma the policy would apply. */
+    gamma?: number;
+    /** 0..1, multiplies the brightness the policy would apply. */
+    brightness?: number;
+    /** Per-channel scale (r, g, b), each 0..1: white balance. */
+    gain?: [number, number, number];
 }
 
 export const OUT_RAW = 1;
@@ -46,8 +71,8 @@ export const OUT_RGB = 2;
 export const OUT_RGBW = 3;
 export const OUT_MONO = 4;
 
-/** Ints per op: kind, src, dst, count, cpn, r, g, b, w, lut, permOff, mono, modelBase, dstStep, repeat, partial(skipFirst | dropLast<<16) */
-export const OUT_OP_INTS = 16;
+/** Ints per op: kind, src, dst, count, cpn, r, g, b, w, lut (red or mono), permOff, mono, modelBase, dstStep, repeat, partial(skipFirst | dropLast<<16), lutG, lutB, lutW */
+export const OUT_OP_INTS = 19;
 const O_KIND = 0;
 const O_SRC = 1;
 const O_DST = 2;
@@ -65,6 +90,9 @@ const O_MODEL_BASE = 12;
 const O_DST_STEP = 13;
 const O_REPEAT = 14;
 const O_PARTIAL = 15;
+const O_LUT_G = 16;
+const O_LUT_B = 17;
+const O_LUT_W = 18;
 
 export interface CompiledOutput {
     id: string;
@@ -139,6 +167,11 @@ function wireOffsets(codec: NodeCodec, colorOrder: string | undefined): { r: num
     const b = order.indexOf('B');
     const w = order.indexOf('W');
     if (r < 0 || g < 0 || b < 0) return { r: codec.r, g: codec.g, b: codec.b, w: codec.w };
+    if (w < 0 && codec.w >= 0 && order.length === 3) {
+        // A three-letter order on a node with a white channel permutes the color slots and leaves white where it is.
+        const slots = [codec.r, codec.g, codec.b].sort((x, y) => x - y);
+        return { r: slots[r], g: slots[g], b: slots[b], w: codec.w };
+    }
     return { r, g, b, w: w >= 0 ? w : codec.w };
 }
 
@@ -163,19 +196,34 @@ interface NodeSeg {
     brightness?: number;
 }
 
-function emitNodeSeg(b: OutBuilder, layout: DisplayLayout, s: NodeSeg, policy: OutputPolicy) {
+function validGain(g: [number, number, number] | undefined): [number, number, number] {
+    if (!g || g.length !== 3) return [1, 1, 1];
+    const c = (v: number) => (Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 1);
+    return [c(g[0]), c(g[1]), c(g[2])];
+}
+
+function emitNodeSeg(b: OutBuilder, layout: DisplayLayout, s: NodeSeg, policy: OutputPolicy, adj?: OutputModelAdjust) {
     const lm = s.lm;
     const codec = lm.codec;
-    const wo = wireOffsets(codec, s.colorOrder ?? lm.outputColorOrder);
-    const lut = policy === 'player' ? b.lutFor(s.gamma ?? lm.outputGamma, s.brightness ?? lm.outputBrightness) : -1;
+    const wo = wireOffsets(codec, adj?.colorOrder || s.colorOrder || lm.outputColorOrder);
+    // The policy's own curve, then the trim on top of it.
+    const gamma = adj?.gamma ?? (policy === 'player' ? (s.gamma ?? lm.outputGamma) : undefined);
+    const bright = (policy === 'player' ? (s.brightness ?? lm.outputBrightness ?? 1) : 1) * Math.min(1, Math.max(0, adj?.brightness ?? 1));
+    const gain = validGain(adj?.gain);
+    // White and single-color channels take the brightness without the color balance.
+    const lutW = b.lutFor(gamma, bright);
+    const mono = codec.kind === 'mono';
+    const lut = mono ? lutW : b.lutFor(gamma, bright * gain[0]);
+    const lutG = mono ? lutW : b.lutFor(gamma, bright * gain[1]);
+    const lutB = mono ? lutW : b.lutFor(gamma, bright * gain[2]);
     const permOff = lm.perm ? b.permFor(lm.perm) + s.node0 : -1;
     const white = layout.pixelStride === 4 && layout.xMeaning === X_MEANING_WHITE;
     let kind = OUT_RGB;
-    let mono = 0;
+    let monoSrc = 0;
     if (codec.kind === 'rgbw') kind = white ? OUT_RGBW : OUT_RGB;
-    else if (codec.kind === 'mono') {
+    else if (mono) {
         kind = OUT_MONO;
-        mono = monoComponent(codec);
+        monoSrc = monoComponent(codec);
     }
     const r = kind === OUT_MONO ? codec.mono : wo.r;
     b.push([
@@ -190,18 +238,21 @@ function emitNodeSeg(b: OutBuilder, layout: DisplayLayout, s: NodeSeg, policy: O
         wo.w,
         lut,
         permOff,
-        mono,
+        monoSrc,
         lm.nodeStart,
         s.dstStep,
         s.repeat,
         (s.skipFirst & 0xffff) | (s.dropLast << 16),
+        lutG,
+        lutB,
+        lutW,
     ]);
 }
 
 /** Derive segments for a controller that carries a channel range of the layout. */
-function segmentsFromRange(b: OutBuilder, layout: DisplayLayout, S: number, E: number, policy: OutputPolicy) {
+function segmentsFromRange(b: OutBuilder, layout: DisplayLayout, S: number, E: number, policy: OutputPolicy, adjust?: Record<string, OutputModelAdjust>, skip?: Set<string>) {
     for (const lm of layout.models) {
-        if (lm.nodeStart < 0) continue;
+        if (lm.nodeStart < 0 || skip?.has(lm.name)) continue;
         const cpn = lm.codec.channelsPerNode;
         for (const run of lm.runs) {
             const cs = run.channelStart;
@@ -227,6 +278,7 @@ function segmentsFromRange(b: OutBuilder, layout: DisplayLayout, S: number, E: n
                     dropLast,
                 },
                 policy,
+                adjust?.[lm.name],
             );
         }
     }
@@ -234,7 +286,7 @@ function segmentsFromRange(b: OutBuilder, layout: DisplayLayout, S: number, E: n
         const lo = Math.max(span.channelStart, S);
         const hi = Math.min(span.channelStart + span.count, E);
         if (hi <= lo) continue;
-        b.push([OUT_RAW, layout.rawOffset + span.rawOffset + (lo - span.channelStart), lo - S, hi - lo, 1, 0, 0, 0, 0, -1, -1, 0, 0, 1, 1, 0]);
+        b.push([OUT_RAW, layout.rawOffset + span.rawOffset + (lo - span.channelStart), lo - S, hi - lo, 1, 0, 0, 0, 0, -1, -1, 0, 0, 1, 1, 0, -1, -1, -1]);
     }
 }
 
@@ -244,8 +296,14 @@ export function compileOutputMap(layout: DisplayLayout, specs: OutputSpec[]): Ou
         const b = new OutBuilder();
         const policy = spec.policy ?? 'controller';
         let wireBytes = spec.channelCount;
-        if (spec.segments) {
-            for (const seg of spec.segments) {
+        const explicit = spec.segments ?? spec.place;
+        if (!spec.segments) {
+            const skip = new Set<string>(spec.skipModels ?? []);
+            for (const seg of spec.place ?? []) skip.add(seg.model);
+            segmentsFromRange(b, layout, spec.channelStart, spec.channelStart + spec.channelCount, policy, spec.adjust, skip.size ? skip : undefined);
+        }
+        if (explicit) {
+            for (const seg of explicit) {
                 const lm = layout.models.find((m) => m.name === seg.model);
                 if (!lm || lm.nodeStart < 0) continue;
                 const cpn = lm.codec.channelsPerNode;
@@ -272,18 +330,19 @@ export function compileOutputMap(layout: DisplayLayout, specs: OutputSpec[]): Ou
                         brightness: seg.brightness,
                     },
                     policy,
+                    spec.adjust?.[lm.name],
                 );
             }
+        }
+        if (spec.segments) {
             // Raw channels still come through by range.
             const E = spec.channelStart + spec.channelCount;
             for (const span of layout.rawSpans) {
                 const lo = Math.max(span.channelStart, spec.channelStart);
                 const hi = Math.min(span.channelStart + span.count, E);
                 if (hi <= lo) continue;
-                b.push([OUT_RAW, layout.rawOffset + span.rawOffset + (lo - span.channelStart), lo - spec.channelStart, hi - lo, 1, 0, 0, 0, 0, -1, -1, 0, 0, 1, 1, 0]);
+                b.push([OUT_RAW, layout.rawOffset + span.rawOffset + (lo - span.channelStart), lo - spec.channelStart, hi - lo, 1, 0, 0, 0, 0, -1, -1, 0, 0, 1, 1, 0, -1, -1, -1]);
             }
-        } else {
-            segmentsFromRange(b, layout, spec.channelStart, spec.channelStart + spec.channelCount, policy);
         }
         outputs.push({
             id: spec.id,
@@ -322,6 +381,12 @@ export function applyOutput(out: CompiledOutput, stride: number, frame: Uint8Arr
         const wo = ops[o + O_W];
         const lut = ops[o + O_LUT];
         const lutOff = lut >= 0 ? lut * 256 : -1;
+        const lutG = ops[o + O_LUT_G];
+        const lutB = ops[o + O_LUT_B];
+        const lutW = ops[o + O_LUT_W];
+        const lutOffG = lutG >= 0 ? lutG * 256 : -1;
+        const lutOffB = lutB >= 0 ? lutB * 256 : -1;
+        const lutOffW = lutW >= 0 ? lutW * 256 : -1;
         const permOff = ops[o + O_PERM];
         const srcNode0 = ops[o + O_SRC];
         const modelBase = ops[o + O_MODEL_BASE];
@@ -346,17 +411,15 @@ export function applyOutput(out: CompiledOutput, stride: number, frame: Uint8Arr
                 let r = frame[s];
                 let g = frame[s + 1];
                 let bl = frame[s + 2];
-                if (lutOff >= 0) {
-                    r = luts[lutOff + r];
-                    g = luts[lutOff + g];
-                    bl = luts[lutOff + bl];
-                }
+                if (lutOff >= 0) r = luts[lutOff + r];
+                if (lutOffG >= 0) g = luts[lutOffG + g];
+                if (lutOffB >= 0) bl = luts[lutOffB + bl];
                 target[td + ro] = r;
                 target[td + go] = g;
                 target[td + bo] = bl;
                 if (kind === OUT_RGBW && wo >= 0) {
                     let w = frame[s + 3];
-                    if (lutOff >= 0) w = luts[lutOff + w];
+                    if (lutOffW >= 0) w = luts[lutOffW + w];
                     target[td + wo] = w;
                 }
             }

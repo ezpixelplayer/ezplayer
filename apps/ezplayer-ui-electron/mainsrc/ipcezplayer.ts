@@ -1,5 +1,6 @@
 import { setMatrixWindowMovedHandler, syncMatrixWindowsFromSettings } from './matrixWindows.js';
 import type { OverlayCommand, OverlayResult } from './workers/overlaytypes.js';
+import type { TestTweakCommand, TestTweakResult } from './workers/testtweak.js';
 //import { app } from "electron";
 import { fileURLToPath } from 'url';
 import { ezpVersions } from '../versions.js';
@@ -315,6 +316,12 @@ let rpcc: RPCClient<PlayWorkerRPCAPI> | undefined = undefined;
 export async function playWorkerOverlay(cmd: OverlayCommand): Promise<OverlayResult> {
     if (!rpcc) return { ok: false, error: 'player not running' };
     return rpcc.call('overlay', cmd);
+}
+
+/** Forward a Test + Tweak command to the playback worker. */
+export async function playWorkerTestTweak(cmd: TestTweakCommand): Promise<TestTweakResult> {
+    if (!rpcc) return { ok: false, error: 'player not running' };
+    return rpcc.call('testTweak', cmd);
 }
 
 /** Ledger of files the cloud has installed into the show folder. `runGcSweep` deletes
@@ -1520,6 +1527,10 @@ export async function registerContentHandlers(mainWindow: BrowserWindow | null, 
             case 'modelCoordinates': {
                 pushModelCoordinates(msg.coords3D, msg.coords2D, msg.viewObjects, msg.layoutSettings, msg.movingHeads);
                 if (msg.controllers) setKnownControllers(msg.controllers);
+                break;
+            }
+            case 'knownControllers': {
+                setKnownControllers(msg.controllers);
                 break;
             }
             case 'rpc': {

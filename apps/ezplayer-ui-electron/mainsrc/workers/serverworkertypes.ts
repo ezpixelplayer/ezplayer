@@ -11,6 +11,7 @@ export interface DisplayInfo {
     primary: boolean;
 }
 import type { OverlayCommand, OverlayResult } from './overlaytypes';
+import type { TestTweakCommand, TestTweakResult } from './testtweak';
 /**
  * Types for communication between main thread and server worker
  */
@@ -137,6 +138,8 @@ export interface ServerWorkerRPCAPI {
     listDisplays(): Promise<DisplayInfo[]>;
     /** Overlay lease operations, forwarded to the playback worker. */
     overlayCommand(cmd: OverlayCommand): Promise<OverlayResult>;
+    /** Test + Tweak operations, forwarded to the playback worker. */
+    testTweakCommand(cmd: TestTweakCommand): Promise<TestTweakResult>;
     /** The baked song order of a playback item, for the detailed playback view. */
     getPlaybackItemOrder(key: string): Promise<unknown>;
     sendPlaybackSettings(settings: unknown): void;
