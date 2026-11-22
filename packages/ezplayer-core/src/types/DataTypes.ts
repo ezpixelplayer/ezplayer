@@ -127,6 +127,22 @@ export interface ScheduledPlaylist {
     playlistId: string;
     prePlaylistId?: string;
     postPlaylistId?: string;
+    /** A single sequence as the intro / outro; used when the matching playlist id is unset. */
+    preSequenceId?: string;
+    postSequenceId?: string;
+    /** Played between songs of the main playlist: a playlist, or else a single sequence. */
+    interstitialPlaylistId?: string;
+    interstitialSequenceId?: string;
+    /** Songs between interstitials; the interstitial is off unless this is at least 1. */
+    interstitialEvery?: number;
+    /** Songs played before the first interstitial; absent = `interstitialEvery`. */
+    interstitialFirstAfter?: number;
+    /**
+     * Start the playlist (intro and outro included) at this spacing, counted from the
+     * schedule start, instead of looping back to back. A start that comes due while the
+     * previous pass is still running is skipped. Set together with `loop`.
+     */
+    startEveryMinutes?: number;
     title: string;
     date: number;
     fromTime: string;
