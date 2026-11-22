@@ -133,7 +133,13 @@ export type { ChannelDescriptor, ChannelDescriptorModel, InputMap, InputMapProgr
 export { compileOutputMap, applyOutput, buildForwardLut, OUT_RAW, OUT_RGB, OUT_RGBW, OUT_MONO, OUT_OP_INTS } from './pipeline/OutputMap';
 export type { OutputSpec, OutputSegmentSpec, OutputModelAdjust, OutputPolicy, CompiledOutput, OutputMap } from './pipeline/OutputMap';
 
-export { SpatialPatternRenderer, patternTargetsForModels, patternAnimates, whiteBalanceGains } from './pipeline/SpatialPatterns';
+export {
+    SpatialPatternRenderer,
+    patternTargets,
+    patternTargetOfModel,
+    patternTargetsForModels,
+    patternAnimates,
+} from './pipeline/SpatialPatterns';
 export type { SpatialPatternKind, SpatialPatternParams, SpatialPatternTarget, PatternSpace } from './pipeline/SpatialPatterns';
 
 export {

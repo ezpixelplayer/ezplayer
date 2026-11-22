@@ -48,9 +48,10 @@ export const TestTweakScreen: React.FC<TestTweakScreenProps> = ({ title, statusA
     const { buffer: liveData } = useFrameBuffer({ baseUrl: url, enabled: !!url, compressed, resetKey: showDirectory });
     const { snapshot, doc, updateDoc, startTest, stopTest, error, saving } = useTestTweak(url);
 
-    // Other screens link here with ?model=Name (repeatable) and ?view=wiring.
+    // Other screens link here with ?model=Name and ?submodel=Model/Sub (both repeatable) and ?view=wiring.
     const [params] = useSearchParams();
     const [selectedModels, setSelectedModels] = useState<Set<string>>(() => new Set(params.getAll('model')));
+    const [selectedSubModels, setSelectedSubModels] = useState<Set<string>>(() => new Set(params.getAll('submodel')));
     const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
     const [view, setView] = useState<'layout' | 'wiring'>(params.get('view') === 'wiring' ? 'wiring' : 'layout');
 
@@ -58,19 +59,29 @@ export const TestTweakScreen: React.FC<TestTweakScreenProps> = ({ title, statusA
     const group = selectedGroup ? doc.groups.find((g) => g.id === selectedGroup) : undefined;
     const selectedList = useMemo(() => [...selectedModels].sort(), [selectedModels]);
 
-    const targets: TestTargets = group ? { groups: [group.id] } : { models: selectedList };
+    // Submodels are test targets only; the tweak and wiring panels work on the selected whole models.
+    const subList = useMemo(() => [...selectedSubModels].sort(), [selectedSubModels]);
+    const picked = [...selectedList, ...subList];
+    const targets: TestTargets = group
+        ? { groups: [group.id] }
+        : { models: selectedList, ...(subList.length ? { subModels: subList } : {}) };
     const targetLabel = group
         ? group.models.length
             ? `group ${group.name} (${group.models.length} model${group.models.length === 1 ? '' : 's'})`
             : ''
-        : selectedList.length === 1
-          ? selectedList[0]
-          : selectedList.length
-            ? `${selectedList.length} models`
-            : '';
+        : picked.length === 1
+          ? picked[0]
+          : !picked.length
+            ? ''
+            : !subList.length
+              ? `${selectedList.length} models`
+              : !selectedList.length
+                ? `${subList.length} submodels`
+                : `${selectedList.length} model${selectedList.length === 1 ? '' : 's'} and ${subList.length} submodel${subList.length === 1 ? '' : 's'}`;
 
     const selectOne = (name: string) => {
         setSelectedModels(new Set([name]));
+        setSelectedSubModels(new Set());
         setSelectedGroup(null);
     };
 
@@ -127,6 +138,9 @@ export const TestTweakScreen: React.FC<TestTweakScreenProps> = ({ title, statusA
                         testing={snapshot?.status.activeModels ?? []}
                         selectedModels={selectedModels}
                         onSelectModels={setSelectedModels}
+                        selectedSubModels={selectedSubModels}
+                        onSelectSubModels={setSelectedSubModels}
+                        baseUrl={url}
                         selectedGroup={selectedGroup}
                         onSelectGroup={setSelectedGroup}
                     />

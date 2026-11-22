@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Box } from '../box/Box';
 import {
     Button,
@@ -19,6 +19,8 @@ import AddIcon from '@mui/icons-material/Add';
 import CheckIcon from '@mui/icons-material/Check';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import EditIcon from '@mui/icons-material/Edit';
+import ExpandLessIcon from '@mui/icons-material/ExpandLess';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import SearchIcon from '@mui/icons-material/Search';
 import {
     effectiveTweak,
@@ -41,6 +43,11 @@ export interface TargetPanelProps {
     testing: string[];
     selectedModels: Set<string>;
     onSelectModels: (names: Set<string>) => void;
+    /** Submodels picked for testing, as "Model/Submodel". */
+    selectedSubModels: Set<string>;
+    onSelectSubModels: (names: Set<string>) => void;
+    /** The player, for listing a model's submodels when it is opened. */
+    baseUrl?: string;
     /** The group being tested or tweaked as a whole; null when working on models. */
     selectedGroup: string | null;
     onSelectGroup: (id: string | null) => void;
@@ -64,6 +71,35 @@ export function tweakChips(
 
 const hasTweak = (t: OutputTweak | undefined) => !!t && Object.keys(t).length > 0;
 
+/** A submodel as the player's target list describes it. */
+interface SubModelRow {
+    /** "Model/Submodel". */
+    target: string;
+    name: string;
+    nodeCount: number;
+    strands: number;
+}
+
+/** A model's submodels, fetched when the model is first opened; 'failed' when the player did not answer. */
+type SubModelList = SubModelRow[] | 'loading' | 'failed';
+
+async function fetchSubModels(baseUrl: string, model: string): Promise<SubModelRow[]> {
+    const res = await fetch(`${baseUrl}/api/ezp/overlays/targets?detail=submodels&model=${encodeURIComponent(model)}`);
+    const body = (await res.json()) as {
+        ok?: boolean;
+        targets?: { model: string; subModel?: string; target?: string; nodeCount: number; strands?: number[] }[];
+    };
+    if (!res.ok || !body.ok) throw new Error('no submodel list');
+    return (body.targets ?? [])
+        .filter((t) => t.model === model && !!t.subModel)
+        .map((t) => ({
+            target: t.target ?? `${t.model}/${t.subModel}`,
+            name: t.subModel!,
+            nodeCount: t.nodeCount,
+            strands: t.strands?.length ?? 0,
+        }));
+}
+
 export const TargetPanel: React.FC<TargetPanelProps> = ({
     doc,
     updateDoc,
@@ -72,6 +108,9 @@ export const TargetPanel: React.FC<TargetPanelProps> = ({
     testing,
     selectedModels,
     onSelectModels,
+    selectedSubModels,
+    onSelectSubModels,
+    baseUrl,
     selectedGroup,
     onSelectGroup,
 }) => {
@@ -79,6 +118,37 @@ export const TargetPanel: React.FC<TargetPanelProps> = ({
     const [search, setSearch] = useState('');
     const [newName, setNewName] = useState('');
     const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
+    const [open, setOpen] = useState<Set<string>>(() => new Set([...selectedSubModels].map((s) => s.split('/')[0])));
+    const [subModels, setSubModels] = useState<Record<string, SubModelList>>({});
+
+    // Submodel lists can be long and most are never looked at: fetch one when its model is opened.
+    useEffect(() => {
+        if (!baseUrl) return;
+        for (const model of open) {
+            if (subModels[model] !== undefined) continue;
+            setSubModels((s) => ({ ...s, [model]: 'loading' }));
+            fetchSubModels(baseUrl, model).then(
+                (rows) => setSubModels((s) => ({ ...s, [model]: rows })),
+                () => setSubModels((s) => ({ ...s, [model]: 'failed' })),
+            );
+        }
+    }, [open, baseUrl, subModels]);
+
+    const toggleOpen = (model: string) => {
+        const next = new Set(open);
+        if (next.has(model)) next.delete(model);
+        else next.add(model);
+        // A list that failed to load is asked for again the next time the model is opened.
+        if (subModels[model] === 'failed') setSubModels(({ [model]: _, ...rest }) => rest);
+        setOpen(next);
+    };
+    const toggleSubModel = (target: string) => {
+        const next = new Set(selectedSubModels);
+        if (next.has(target)) next.delete(target);
+        else next.add(target);
+        onSelectSubModels(next);
+        onSelectGroup(null);
+    };
 
     const rewiredSet = useMemo(() => new Set(rewired), [rewired]);
     const testingSet = useMemo(() => new Set(testing), [testing]);
@@ -136,7 +206,10 @@ export const TargetPanel: React.FC<TargetPanelProps> = ({
                 variant="fullWidth"
                 sx={{ flexShrink: 0, borderBottom: 1, borderColor: 'divider' }}
             >
-                <Tab value="models" label={`Models${selectedModels.size ? ` (${selectedModels.size})` : ''}`} />
+                <Tab
+                    value="models"
+                    label={`Models${selectedModels.size + selectedSubModels.size ? ` (${selectedModels.size + selectedSubModels.size})` : ''}`}
+                />
                 <Tab value="groups" label={`Groups${doc.groups.length ? ` (${doc.groups.length})` : ''}`} />
             </Tabs>
 
@@ -171,75 +244,149 @@ export const TargetPanel: React.FC<TargetPanelProps> = ({
                             const eff = effectiveTweak(doc, m.name);
                             const chips = isNeutralTweak(eff) ? [] : tweakChips(eff, true);
                             const wiredHere = rewiredSet.has(m.name);
+                            const subs = open.has(m.name) ? subModels[m.name] : undefined;
                             return (
-                                <ListItemButton
-                                    key={m.name}
-                                    dense
-                                    disabled={!m.pixel}
-                                    selected={selectedModels.has(m.name) && !selectedGroup}
-                                    onClick={() => toggleModel(m.name)}
-                                    sx={{ py: 0.25, pl: 1 }}
-                                >
-                                    <Checkbox
-                                        size="small"
-                                        edge="start"
-                                        tabIndex={-1}
-                                        disableRipple
-                                        checked={selectedModels.has(m.name)}
-                                        sx={{ py: 0.5 }}
-                                    />
-                                    <Box sx={{ minWidth: 0, flex: 1 }}>
-                                        <Typography
-                                            variant="body2"
-                                            noWrap
-                                            title={m.name}
-                                            sx={{ fontWeight: testingSet.has(m.name) ? 700 : 400 }}
-                                        >
-                                            {m.name}
-                                        </Typography>
-                                        <Typography variant="caption" color="text.secondary" noWrap component="div">
-                                            {m.type} · {m.nodeCount} {m.pixel ? 'px' : 'nodes, not pixels'}
-                                            {m.controller
-                                                ? ` · ${m.controller}${m.port ? `:${m.port}` : ''}`
-                                                : ' · no controller'}
-                                        </Typography>
-                                        {(testingSet.has(m.name) || chips.length > 0 || wiredHere) && (
-                                            <Stack
-                                                direction="row"
-                                                spacing={0.5}
-                                                sx={{ flexWrap: 'wrap', rowGap: 0.5, mt: 0.25 }}
+                                <React.Fragment key={m.name}>
+                                    <ListItemButton
+                                        dense
+                                        disabled={!m.pixel}
+                                        selected={selectedModels.has(m.name) && !selectedGroup}
+                                        onClick={() => toggleModel(m.name)}
+                                        sx={{ py: 0.25, pl: 1 }}
+                                    >
+                                        <Checkbox
+                                            size="small"
+                                            edge="start"
+                                            tabIndex={-1}
+                                            disableRipple
+                                            checked={selectedModels.has(m.name)}
+                                            sx={{ py: 0.5 }}
+                                        />
+                                        <Box sx={{ minWidth: 0, flex: 1 }}>
+                                            <Typography
+                                                variant="body2"
+                                                noWrap
+                                                title={m.name}
+                                                sx={{ fontWeight: testingSet.has(m.name) ? 700 : 400 }}
                                             >
-                                                {testingSet.has(m.name) && (
-                                                    <Chip
-                                                        size="small"
-                                                        color="warning"
-                                                        label="testing"
-                                                        sx={{ height: 18 }}
-                                                    />
-                                                )}
-                                                {chips.map((c) => (
-                                                    <Chip
-                                                        key={c}
-                                                        size="small"
-                                                        variant="outlined"
-                                                        color="primary"
-                                                        label={c}
-                                                        sx={{ height: 18 }}
-                                                    />
-                                                ))}
-                                                {wiredHere && (
-                                                    <Chip
-                                                        size="small"
-                                                        variant="outlined"
-                                                        color="secondary"
-                                                        label="rewired"
-                                                        sx={{ height: 18 }}
-                                                    />
-                                                )}
-                                            </Stack>
+                                                {m.name}
+                                            </Typography>
+                                            <Typography variant="caption" color="text.secondary" noWrap component="div">
+                                                {m.type} · {m.nodeCount} {m.pixel ? 'px' : 'nodes, not pixels'}
+                                                {m.controller
+                                                    ? ` · ${m.controller}${m.port ? `:${m.port}` : ''}`
+                                                    : ' · no controller'}
+                                            </Typography>
+                                            {(testingSet.has(m.name) || chips.length > 0 || wiredHere) && (
+                                                <Stack
+                                                    direction="row"
+                                                    spacing={0.5}
+                                                    sx={{ flexWrap: 'wrap', rowGap: 0.5, mt: 0.25 }}
+                                                >
+                                                    {testingSet.has(m.name) && (
+                                                        <Chip
+                                                            size="small"
+                                                            color="warning"
+                                                            label="testing"
+                                                            sx={{ height: 18 }}
+                                                        />
+                                                    )}
+                                                    {chips.map((c) => (
+                                                        <Chip
+                                                            key={c}
+                                                            size="small"
+                                                            variant="outlined"
+                                                            color="primary"
+                                                            label={c}
+                                                            sx={{ height: 18 }}
+                                                        />
+                                                    ))}
+                                                    {wiredHere && (
+                                                        <Chip
+                                                            size="small"
+                                                            variant="outlined"
+                                                            color="secondary"
+                                                            label="rewired"
+                                                            sx={{ height: 18 }}
+                                                        />
+                                                    )}
+                                                </Stack>
+                                            )}
+                                        </Box>
+                                        {!!m.subModels && m.pixel && (
+                                            <Tooltip title={`${m.subModels} submodel${m.subModels === 1 ? '' : 's'}`}>
+                                                <IconButton
+                                                    size="small"
+                                                    aria-label={`${open.has(m.name) ? 'Hide' : 'Show'} the submodels of ${m.name}`}
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        toggleOpen(m.name);
+                                                    }}
+                                                >
+                                                    {open.has(m.name) ? (
+                                                        <ExpandLessIcon fontSize="small" />
+                                                    ) : (
+                                                        <ExpandMoreIcon fontSize="small" />
+                                                    )}
+                                                </IconButton>
+                                            </Tooltip>
                                         )}
-                                    </Box>
-                                </ListItemButton>
+                                    </ListItemButton>
+                                    {subs === 'loading' && (
+                                        <Typography
+                                            variant="caption"
+                                            color="text.secondary"
+                                            sx={{ pl: 6 }}
+                                            component="div"
+                                        >
+                                            Loading submodels…
+                                        </Typography>
+                                    )}
+                                    {subs === 'failed' && (
+                                        <Typography variant="caption" color="error" sx={{ pl: 6 }} component="div">
+                                            The player did not list the submodels. Close and open to try again.
+                                        </Typography>
+                                    )}
+                                    {Array.isArray(subs) &&
+                                        subs.map((sm) => (
+                                            <ListItemButton
+                                                key={sm.target}
+                                                dense
+                                                selected={selectedSubModels.has(sm.target) && !selectedGroup}
+                                                onClick={() => toggleSubModel(sm.target)}
+                                                sx={{ py: 0, pl: 4 }}
+                                            >
+                                                <Checkbox
+                                                    size="small"
+                                                    edge="start"
+                                                    tabIndex={-1}
+                                                    disableRipple
+                                                    checked={selectedSubModels.has(sm.target)}
+                                                    sx={{ py: 0.5 }}
+                                                />
+                                                <Box sx={{ minWidth: 0, flex: 1 }}>
+                                                    <Typography
+                                                        variant="body2"
+                                                        noWrap
+                                                        title={sm.target}
+                                                        sx={{ fontWeight: testingSet.has(sm.target) ? 700 : 400 }}
+                                                    >
+                                                        {sm.name}
+                                                    </Typography>
+                                                    <Typography
+                                                        variant="caption"
+                                                        color="text.secondary"
+                                                        noWrap
+                                                        component="div"
+                                                    >
+                                                        submodel · {sm.nodeCount} px
+                                                        {sm.strands > 1 ? ` · ${sm.strands} strands` : ''}
+                                                        {testingSet.has(sm.target) ? ' · testing' : ''}
+                                                    </Typography>
+                                                </Box>
+                                            </ListItemButton>
+                                        ))}
+                                </React.Fragment>
                             );
                         })}
                         {!filtered.length && (

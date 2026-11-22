@@ -10,6 +10,7 @@
 
 import { DisplayLayout, LayoutModel, parseHexColor } from './Layout';
 import { hsvToRgb } from './Kernels';
+import { TargetCatalog } from './Targets';
 
 export type SpatialPatternKind =
     /** One color on every node. */
@@ -25,13 +26,19 @@ export type SpatialPatternKind =
     /** Whole target stepping through the palette (color order check). */
     | 'colorCycle'
     /** Every Nth node along the wiring lit, with the first and last node marked (pixel counting). */
-    | 'markers';
+    | 'markers'
+    /** Each strand in one color of the palette, in turn (string order check). */
+    | 'strands';
 
 export type PatternSpace =
     /** Project world coordinates onto the direction; the pattern spans all targets as one picture. */
     | 'world'
-    /** Position along each model's own wiring, 0 at its first node. */
-    | 'node';
+    /** Project each target's own coordinates onto the direction; every target gets the whole pattern. */
+    | 'local'
+    /** Position along each target's wiring, 0 at its first node. */
+    | 'node'
+    /** Position along each strand, 0 at the strand's first node. */
+    | 'strand';
 
 export interface SpatialPatternParams {
     kind: SpatialPatternKind;
@@ -56,9 +63,16 @@ export interface SpatialPatternParams {
     intensity?: number;
 }
 
+/** What a pattern paints: a model or a submodel, as its nodes in wiring order. */
 export interface SpatialPatternTarget {
-    nodeStart: number;
-    nodeCount: number;
+    /** "Model" or "Model/Submodel". */
+    name: string;
+    /** Canonical node per target node, in wiring order (the listed order for a submodel). */
+    nodes: Int32Array;
+    /** Nodes per strand in that order; one strand when absent or when they do not add up to the nodes. */
+    strands?: number[];
+    /** Model-local coordinates, 3 floats per target node. */
+    local?: Float32Array;
 }
 
 const DEFAULT_PALETTES: Record<SpatialPatternKind, string[]> = {
@@ -69,6 +83,7 @@ const DEFAULT_PALETTES: Record<SpatialPatternKind, string[]> = {
     strobe: ['#ffffff'],
     colorCycle: ['#ff0000', '#00ff00', '#0000ff', '#ffffff'],
     markers: ['#ffffff', '#00ff00', '#ff0000'],
+    strands: ['#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff', '#00ffff'],
 };
 
 function clamp01(v: number): number {
@@ -92,72 +107,147 @@ function buildPalette(p: SpatialPatternParams): Uint8Array {
     return out;
 }
 
+/** A layout model as a pattern target: its nodes in wiring order, no strands or local coordinates. */
+export function patternTargetOfModel(m: LayoutModel): SpatialPatternTarget {
+    const nodes = new Int32Array(m.nodeCount);
+    // Canonical position perm[i] holds xLights node i.
+    for (let i = 0; i < m.nodeCount; ++i) nodes[i] = m.nodeStart + (m.perm ? m.perm[i] : i);
+    return { name: m.name, nodes };
+}
+
 /** Pixel models of a layout by name, as pattern targets; unknown and raw models are skipped. */
-export function patternTargetsForModels(layout: DisplayLayout, names: Iterable<string>): LayoutModel[] {
+export function patternTargetsForModels(layout: DisplayLayout, names: Iterable<string>): SpatialPatternTarget[] {
     const want = new Set(names);
-    return layout.models.filter((m) => m.nodeStart >= 0 && m.nodeCount > 0 && want.has(m.name));
+    return layout.models
+        .filter((m) => m.nodeStart >= 0 && m.nodeCount > 0 && want.has(m.name))
+        .map(patternTargetOfModel);
+}
+
+/**
+ * Models and submodels ("Model/Submodel") by name, with their strands and
+ * local coordinates, in the order asked for.  Names the catalog does not
+ * have are skipped.
+ */
+export function patternTargets(catalog: TargetCatalog, names: Iterable<string>): SpatialPatternTarget[] {
+    const out: SpatialPatternTarget[] = [];
+    const seen = new Set<string>();
+    for (const name of names) {
+        const t = catalog.find(name);
+        if (!t || !t.nodes.length || seen.has(t.name)) continue;
+        seen.add(t.name);
+        if (t.subModel) {
+            out.push({ name: t.name, nodes: t.nodes, strands: t.strands, local: t.local });
+            continue;
+        }
+        const lm = catalog.layout.models.find((m) => m.name === t.model && m.nodeStart >= 0);
+        if (!lm) continue;
+        const tg = patternTargetOfModel(lm);
+        tg.strands = t.strands;
+        if (t.local) {
+            // The catalog keeps a model's coordinates in canonical order.
+            const local = new Float32Array(lm.nodeCount * 3);
+            for (let i = 0; i < lm.nodeCount; ++i) {
+                const c = (tg.nodes[i] - lm.nodeStart) * 3;
+                local.set(t.local.subarray(c, c + 3), i * 3);
+            }
+            tg.local = local;
+        }
+        out.push(tg);
+    }
+    return out;
 }
 
 export class SpatialPatternRenderer {
     readonly params: SpatialPatternParams;
-    readonly targets: SpatialPatternTarget[];
+    /** Names of the targets painted. */
+    readonly names: string[];
     /** Nodes painted per frame. */
     readonly nodeCount: number;
     private readonly palette: Uint8Array;
     private readonly paletteSize: number;
-    /** Coordinate 0..1 per target node, concatenated in target order (canonical node order within a target). */
+    /** Per painted node, targets concatenated, each in wiring order: */
+    /** canonical node, */
+    private readonly idx: Int32Array;
+    /** coordinate 0..1, */
     private readonly u: Float32Array;
-    /** Wiring index per target node, same order as u. */
-    private readonly wire: Int32Array;
+    /** place in the counted run (the target, or the strand in strand space), and that run's length, */
+    private readonly pos: Int32Array;
+    private readonly len: Int32Array;
+    /** and the strand it is on. */
+    private readonly strand: Int32Array;
 
-    constructor(layout: DisplayLayout, models: LayoutModel[], params: SpatialPatternParams) {
+    constructor(layout: DisplayLayout, targets: SpatialPatternTarget[], params: SpatialPatternParams) {
         this.params = params;
         this.palette = buildPalette(params);
         this.paletteSize = this.palette.length / 3;
-        const usable = models.filter((m) => m.nodeStart >= 0 && m.nodeCount > 0);
-        this.targets = usable.map((m) => ({ nodeStart: m.nodeStart, nodeCount: m.nodeCount }));
-        this.nodeCount = usable.reduce((a, m) => a + m.nodeCount, 0);
-        this.u = new Float32Array(this.nodeCount);
-        this.wire = new Int32Array(this.nodeCount);
+        const usable = targets.filter((t) => t.nodes.length > 0);
+        this.names = usable.map((t) => t.name);
+        const total = usable.reduce((a, t) => a + t.nodes.length, 0);
+        this.nodeCount = total;
+        this.idx = new Int32Array(total);
+        this.u = new Float32Array(total);
+        this.pos = new Int32Array(total);
+        this.len = new Int32Array(total);
+        this.strand = new Int32Array(total);
 
-        // Wiring index: canonical position perm[i] holds xLights node i.
-        let base = 0;
-        for (const m of usable) {
-            for (let i = 0; i < m.nodeCount; ++i) this.wire[base + (m.perm ? m.perm[i] : i)] = i;
-            base += m.nodeCount;
-        }
-
-        const space: PatternSpace =
-            params.space ?? (params.kind === 'chase' || params.kind === 'markers' ? 'node' : 'world');
         const world = layout.world;
-        if (space === 'world' && world) {
-            const az = ((params.angleDeg ?? 0) * Math.PI) / 180;
-            const el = ((params.elevationDeg ?? 0) * Math.PI) / 180;
-            const dx = Math.cos(az) * Math.cos(el);
-            const dy = Math.sin(az) * Math.cos(el);
-            const dz = Math.sin(el);
+        let space: PatternSpace =
+            params.space ?? (params.kind === 'chase' || params.kind === 'markers' ? 'node' : 'world');
+        if (space === 'world' && !world) space = 'node';
+
+        const az = ((params.angleDeg ?? 0) * Math.PI) / 180;
+        const el = ((params.elevationDeg ?? 0) * Math.PI) / 180;
+        const dx = Math.cos(az) * Math.cos(el);
+        const dy = Math.sin(az) * Math.cos(el);
+        const dz = Math.sin(el);
+        const normalize = (from: number, to: number) => {
             let lo = Infinity;
             let hi = -Infinity;
-            base = 0;
-            for (const m of usable) {
-                for (let n = 0; n < m.nodeCount; ++n) {
-                    const w = (m.nodeStart + n) * 3;
-                    const v = world[w] * dx + world[w + 1] * dy + world[w + 2] * dz;
-                    this.u[base + n] = v;
-                    if (v < lo) lo = v;
-                    if (v > hi) hi = v;
-                }
-                base += m.nodeCount;
+            for (let i = from; i < to; ++i) {
+                if (this.u[i] < lo) lo = this.u[i];
+                if (this.u[i] > hi) hi = this.u[i];
             }
             const span = hi - lo;
-            for (let i = 0; i < this.nodeCount; ++i) this.u[i] = span > 1e-9 ? (this.u[i] - lo) / span : 0;
-        } else {
-            base = 0;
-            for (const m of usable) {
-                for (let n = 0; n < m.nodeCount; ++n) this.u[base + n] = this.wire[base + n] / m.nodeCount;
-                base += m.nodeCount;
+            for (let i = from; i < to; ++i) this.u[i] = span > 1e-9 ? (this.u[i] - lo) / span : 0;
+        };
+
+        let base = 0;
+        for (const t of usable) {
+            const n = t.nodes.length;
+            const listed = t.strands?.filter((c) => c > 0) ?? [];
+            const strands = listed.length && listed.reduce((a, c) => a + c, 0) === n ? listed : [n];
+            let i = 0;
+            strands.forEach((count, si) => {
+                for (let k = 0; k < count; ++k, ++i) {
+                    const o = base + i;
+                    this.idx[o] = t.nodes[i];
+                    this.strand[o] = si;
+                    if (space === 'strand') {
+                        this.pos[o] = k;
+                        this.len[o] = count;
+                    } else {
+                        this.pos[o] = i;
+                        this.len[o] = n;
+                    }
+                }
+            });
+            // Local coordinates when the target has them, else its own corner of the world.
+            const own = space === 'local' ? (t.local && t.local.length >= n * 3 ? t.local : undefined) : undefined;
+            for (let k = 0; k < n; ++k) {
+                const o = base + k;
+                if (own) {
+                    this.u[o] = own[k * 3] * dx + own[k * 3 + 1] * dy + own[k * 3 + 2] * dz;
+                } else if ((space === 'world' || space === 'local') && world) {
+                    const w = this.idx[o] * 3;
+                    this.u[o] = world[w] * dx + world[w + 1] * dy + world[w + 2] * dz;
+                } else {
+                    this.u[o] = this.pos[o] / this.len[o];
+                }
             }
+            if (space === 'local' && (own || world)) normalize(base, base + n);
+            base += n;
         }
+        if (space === 'world') normalize(0, total);
     }
 
     /** Paint the targets of a canonical frame for time tMs. */
@@ -166,94 +256,103 @@ export class SpatialPatternRenderer {
         const pal = this.palette;
         const np = this.paletteSize;
         const t = tMs / 1000;
-        const u = this.u;
-        const wire = this.wire;
-        let k = 0;
-        for (const tg of this.targets) {
-            let d = tg.nodeStart * stride;
-            const n = tg.nodeCount;
-            switch (p.kind) {
-                case 'solid':
-                case 'strobe':
-                case 'colorCycle': {
-                    let r = pal[0];
-                    let g = pal[1];
-                    let b = pal[2];
-                    if (p.kind === 'strobe') {
-                        const period = Math.max(20, p.periodMs ?? 500);
-                        if (Math.floor(tMs / period) % 2 !== 0) r = g = b = 0;
-                    } else if (p.kind === 'colorCycle') {
-                        const period = Math.max(20, p.periodMs ?? 1000);
-                        const c = (Math.floor(tMs / period) % np) * 3;
-                        r = pal[c];
-                        g = pal[c + 1];
-                        b = pal[c + 2];
-                    }
-                    for (let i = 0; i < n; ++i, d += stride) {
-                        frame[d] = r;
-                        frame[d + 1] = g;
-                        frame[d + 2] = b;
-                    }
-                    k += n;
-                    break;
+        const { idx, u, pos, len, strand } = this;
+        const n = this.nodeCount;
+        switch (p.kind) {
+            case 'solid':
+            case 'strobe':
+            case 'colorCycle': {
+                let r = pal[0];
+                let g = pal[1];
+                let b = pal[2];
+                if (p.kind === 'strobe') {
+                    const period = Math.max(20, p.periodMs ?? 500);
+                    if (Math.floor(tMs / period) % 2 !== 0) r = g = b = 0;
+                } else if (p.kind === 'colorCycle') {
+                    const period = Math.max(20, p.periodMs ?? 1000);
+                    const c = (Math.floor(tMs / period) % np) * 3;
+                    r = pal[c];
+                    g = pal[c + 1];
+                    b = pal[c + 2];
                 }
-                case 'bars': {
-                    const width = Math.max(1e-4, p.width ?? 0.1);
-                    const duty = clamp01(p.duty ?? 1);
-                    const shift = t * (p.speed ?? 0.5);
-                    // A single color alternates with black.
-                    const bands = np === 1 ? 2 : np;
-                    for (let i = 0; i < n; ++i, d += stride, ++k) {
-                        const ph = u[k] / width - shift;
-                        const band = Math.floor(ph);
-                        const idx = ((band % bands) + bands) % bands;
-                        const lit = ph - band < duty && idx < np;
-                        const c = idx * 3;
-                        frame[d] = lit ? pal[c] : 0;
-                        frame[d + 1] = lit ? pal[c + 1] : 0;
-                        frame[d + 2] = lit ? pal[c + 2] : 0;
-                    }
-                    break;
+                for (let k = 0; k < n; ++k) {
+                    const d = idx[k] * stride;
+                    frame[d] = r;
+                    frame[d + 1] = g;
+                    frame[d + 2] = b;
                 }
-                case 'rainbow': {
-                    const width = Math.max(1e-4, p.width ?? 1);
-                    const shift = t * (p.speed ?? 0.1);
-                    const v = clamp01(p.intensity ?? 1);
-                    for (let i = 0; i < n; ++i, d += stride, ++k) {
-                        const [r, g, b] = hsvToRgb(frac(u[k] / width - shift), 1, v);
-                        frame[d] = r;
-                        frame[d + 1] = g;
-                        frame[d + 2] = b;
-                    }
-                    break;
+                break;
+            }
+            case 'bars': {
+                const width = Math.max(1e-4, p.width ?? 0.1);
+                const duty = clamp01(p.duty ?? 1);
+                const shift = t * (p.speed ?? 0.5);
+                // A single color alternates with black.
+                const bands = np === 1 ? 2 : np;
+                for (let k = 0; k < n; ++k) {
+                    const d = idx[k] * stride;
+                    const ph = u[k] / width - shift;
+                    const band = Math.floor(ph);
+                    const i = ((band % bands) + bands) % bands;
+                    const lit = ph - band < duty && i < np;
+                    const c = i * 3;
+                    frame[d] = lit ? pal[c] : 0;
+                    frame[d + 1] = lit ? pal[c + 1] : 0;
+                    frame[d + 2] = lit ? pal[c + 2] : 0;
                 }
-                case 'chase': {
-                    const width = clamp01(p.width ?? 0.05);
-                    const pos = frac(t * (p.speed ?? 0.25));
-                    for (let i = 0; i < n; ++i, d += stride, ++k) {
-                        const lit = frac(u[k] - pos) < width;
-                        frame[d] = lit ? pal[0] : 0;
-                        frame[d + 1] = lit ? pal[1] : 0;
-                        frame[d + 2] = lit ? pal[2] : 0;
-                    }
-                    break;
+                break;
+            }
+            case 'rainbow': {
+                const width = Math.max(1e-4, p.width ?? 1);
+                const shift = t * (p.speed ?? 0.1);
+                const v = clamp01(p.intensity ?? 1);
+                for (let k = 0; k < n; ++k) {
+                    const d = idx[k] * stride;
+                    const [r, g, b] = hsvToRgb(frac(u[k] / width - shift), 1, v);
+                    frame[d] = r;
+                    frame[d + 1] = g;
+                    frame[d + 2] = b;
                 }
-                case 'markers': {
-                    const every = Math.max(1, Math.round(p.every ?? 10));
-                    const first = np > 1 ? 3 : 0;
-                    const last = np > 2 ? 6 : 0;
-                    for (let i = 0; i < n; ++i, d += stride, ++k) {
-                        const w = wire[k];
-                        let c = -1;
-                        if (w === 0) c = first;
-                        else if (w === n - 1) c = last;
-                        else if ((w + 1) % every === 0) c = 0;
-                        frame[d] = c >= 0 ? pal[c] : 0;
-                        frame[d + 1] = c >= 0 ? pal[c + 1] : 0;
-                        frame[d + 2] = c >= 0 ? pal[c + 2] : 0;
-                    }
-                    break;
+                break;
+            }
+            case 'chase': {
+                const width = clamp01(p.width ?? 0.05);
+                const at = frac(t * (p.speed ?? 0.25));
+                for (let k = 0; k < n; ++k) {
+                    const d = idx[k] * stride;
+                    const lit = frac(u[k] - at) < width;
+                    frame[d] = lit ? pal[0] : 0;
+                    frame[d + 1] = lit ? pal[1] : 0;
+                    frame[d + 2] = lit ? pal[2] : 0;
                 }
+                break;
+            }
+            case 'markers': {
+                const every = Math.max(1, Math.round(p.every ?? 10));
+                const first = np > 1 ? 3 : 0;
+                const last = np > 2 ? 6 : 0;
+                for (let k = 0; k < n; ++k) {
+                    const d = idx[k] * stride;
+                    const w = pos[k];
+                    let c = -1;
+                    if (w === 0) c = first;
+                    else if (w === len[k] - 1) c = last;
+                    else if ((w + 1) % every === 0) c = 0;
+                    frame[d] = c >= 0 ? pal[c] : 0;
+                    frame[d + 1] = c >= 0 ? pal[c + 1] : 0;
+                    frame[d + 2] = c >= 0 ? pal[c + 2] : 0;
+                }
+                break;
+            }
+            case 'strands': {
+                for (let k = 0; k < n; ++k) {
+                    const d = idx[k] * stride;
+                    const c = (strand[k] % np) * 3;
+                    frame[d] = pal[c];
+                    frame[d + 1] = pal[c + 1];
+                    frame[d + 2] = pal[c + 2];
+                }
+                break;
             }
         }
     }
@@ -264,6 +363,7 @@ export function patternAnimates(p: SpatialPatternParams): boolean {
     switch (p.kind) {
         case 'solid':
         case 'markers':
+        case 'strands':
             return false;
         case 'strobe':
         case 'colorCycle':
@@ -271,27 +371,4 @@ export function patternAnimates(p: SpatialPatternParams): boolean {
         default:
             return (p.speed ?? 1) !== 0;
     }
-}
-
-/**
- * Per-channel gains that shift white toward a color temperature, relative to
- * 6500 K (which returns 1, 1, 1).  The largest gain is 1, so the adjustment
- * only ever dims channels.  Fit after Tanner Helland's approximation.
- */
-export function whiteBalanceGains(kelvin: number): [number, number, number] {
-    const rgbAt = (k: number): [number, number, number] => {
-        const t = Math.min(40000, Math.max(1000, k)) / 100;
-        const r = t <= 66 ? 255 : 329.698727446 * Math.pow(t - 60, -0.1332047592);
-        const g =
-            t <= 66 ? 99.4708025861 * Math.log(t) - 161.1195681661 : 288.1221695283 * Math.pow(t - 60, -0.0755148492);
-        const b = t >= 66 ? 255 : t <= 19 ? 0 : 138.5177312231 * Math.log(t - 10) - 305.0447927307;
-        const c = (v: number) => Math.min(255, Math.max(0, v));
-        return [c(r), c(g), c(b)];
-    };
-    const ref = rgbAt(6500);
-    const at = rgbAt(kelvin);
-    const g: [number, number, number] = [at[0] / ref[0], at[1] / ref[1], at[2] / ref[2]];
-    const mx = Math.max(g[0], g[1], g[2]);
-    if (!(mx > 0)) return [1, 1, 1];
-    return [g[0] / mx, g[1] / mx, g[2] / mx];
 }

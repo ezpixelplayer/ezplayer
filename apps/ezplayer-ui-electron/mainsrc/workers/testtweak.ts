@@ -27,7 +27,7 @@ import {
     type WiringModel,
     type WiringPlan,
 } from '@ezplayer/ezplayer-core';
-import { whiteBalanceGains, type OutputModelAdjust } from '@ezplayer/epp';
+import { colorTemperatureScale, type OutputModelAdjust } from '@ezplayer/epp';
 import type { XlControllerInfo, XlModelChannelInfo } from 'xllayoutcalcs';
 import type { PixelPipeline } from './pixelpipeline';
 
@@ -60,7 +60,7 @@ export function adjustFromDoc(doc: TestTweakDoc): Record<string, OutputModelAdju
         if (e.gamma !== undefined && e.gamma !== 1) a.gamma = e.gamma;
         if (e.brightness !== 1) a.brightness = e.brightness;
         if (e.colorTempK !== undefined && e.colorTempK !== NEUTRAL_COLOR_TEMP_K)
-            a.gain = whiteBalanceGains(e.colorTempK);
+            a.gain = colorTemperatureScale(e.colorTempK);
         out[name] = a;
     }
     return out;
@@ -249,7 +249,7 @@ export class TestTweakService {
         const t = this.active;
         if (!p || !t) return [];
         const names = resolveTestTargets(this.doc, t.targets, p.testableModels());
-        const painted = p.startTest(names, t.pattern, { ttlMs: t.ttlMs, bypassTweaks: t.bypassTweaks });
+        const painted = p.startTest(names, t.pattern, { ttlMs: t.ttlMs });
         if (!painted.length) this.active = undefined;
         return painted;
     }
@@ -285,6 +285,8 @@ export class TestTweakService {
                     controller: m.controllerName ?? '',
                     port: m.controllerPort ?? 0,
                 };
+                const subs = this.pipeline?.subModelCount(m.name);
+                if (subs) info.subModels = subs;
                 if (cc?.smartRemote) info.smartRemote = cc.smartRemote;
                 if (m.controllerProtocol) info.protocol = m.controllerProtocol;
                 if (cc?.colorOrder) info.xlColorOrder = cc.colorOrder;

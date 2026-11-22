@@ -33,8 +33,9 @@ import {
     colorTemperatureScale,
     COLOR_TEMP_NEUTRAL_K,
     patternAnimates,
-    patternTargetsForModels,
+    patternTargets,
     SpatialPatternRenderer,
+    TargetCatalog,
     sharedInputMapProgram,
     StatsBlock,
     type BlendMode,
@@ -151,8 +152,10 @@ export class PixelPipeline {
     private skipModels: string[] = [];
     /** What the output worker currently runs, so an unchanged configuration is not resent. */
     private pushedKey = JSON.stringify([{}, [], []]);
-    /** The running test pattern, painted over its models after everything else. */
-    private test?: { renderer: SpatialPatternRenderer; models: string[]; startMs: number; expiresAt?: number; bypass: boolean; animates: boolean };
+    /** Models and submodels a test can be aimed at. */
+    private readonly targets: TargetCatalog;
+    /** The running test pattern, painted over its targets ahead of the show brightness and the output trims. */
+    private test?: { renderer: SpatialPatternRenderer; models: string[]; startMs: number; expiresAt?: number; animates: boolean };
 
     private constructor(opts: PixelPipelineOptions, layout: DisplayLayout, specs: LayoutModelSpec[]) {
         this.layout = layout;
@@ -176,6 +179,7 @@ export class PixelPipeline {
         this.pinnedDescriptor = descriptorFromSpecs(specs, Math.max(opts.nChannels, layout.totalChannels));
         this.pinnedDescriptor.fingerprint = descriptorHash(this.pinnedDescriptor);
         this.overlays = new OverlayManager(layout, specs);
+        this.targets = new TargetCatalog(layout, specs);
     }
 
     /**
@@ -279,11 +283,7 @@ export class PixelPipeline {
 
     private pushOutputs() {
         if (this.closed || !this.outputSpecs.length) return;
-        let adjust = this.adjust;
-        if (this.test?.bypass) {
-            adjust = { ...adjust };
-            for (const m of this.test.models) delete adjust[m];
-        }
+        const adjust = this.adjust;
         const key = JSON.stringify([adjust, this.wired, this.skipModels]);
         if (key === this.pushedKey) return;
         this.pushedKey = key;
@@ -305,41 +305,41 @@ export class PixelPipeline {
 
     /** Pixel models a test may target. */
     testableModels(): string[] {
-        return this.layout.models.filter((m) => m.nodeStart >= 0 && m.nodeCount > 0).map((m) => m.name);
+        return this.targets.modelNames();
+    }
+
+    /** How many submodels a model has. */
+    subModelCount(model: string): number {
+        return this.targets.subModelNames(model).length;
     }
 
     /**
-     * Start (or replace) the test pattern on these models. Returns the models
-     * actually painted; names the layout does not have as pixel models are dropped.
+     * Start (or replace) the test pattern on these models and submodels
+     * ("Model/Submodel"). Returns the targets actually painted; names the
+     * layout does not have are dropped.
      */
-    startTest(models: string[], pattern: SpatialPatternParams, opts: { ttlMs?: number; bypassTweaks?: boolean } = {}): string[] {
-        const targets = patternTargetsForModels(this.layout, models);
-        const names = targets.map((m) => m.name);
+    startTest(names: string[], pattern: SpatialPatternParams, opts: { ttlMs?: number } = {}): string[] {
+        const targets = patternTargets(this.targets, names);
+        const painted = targets.map((t) => t.name);
         const prev = this.test;
         // Keep the clock when only the pattern changed, so dragging a slider does not restart the motion.
-        const sameTargets = !!prev && prev.models.length === names.length && prev.models.every((n, i) => n === names[i]);
+        const sameTargets = !!prev && prev.models.length === painted.length && prev.models.every((n, i) => n === painted[i]);
         const now = Date.now();
-        const bypass = !!opts.bypassTweaks;
-        const bypassChanged = (prev?.bypass ?? false) !== bypass || (bypass && !sameTargets);
         this.test = targets.length
             ? {
                   renderer: new SpatialPatternRenderer(this.layout, targets, pattern),
-                  models: names,
+                  models: painted,
                   startMs: sameTargets ? prev!.startMs : now,
                   expiresAt: opts.ttlMs ? now + opts.ttlMs : undefined,
-                  bypass,
                   animates: patternAnimates(pattern),
               }
             : undefined;
-        if (bypassChanged) this.pushOutputs();
-        return names;
+        return painted;
     }
 
     stopTest(): boolean {
         if (!this.test) return false;
-        const bypass = this.test.bypass;
         this.test = undefined;
-        if (bypass) this.pushOutputs();
         return true;
     }
 
@@ -470,15 +470,8 @@ export class PixelPipeline {
             black = false;
             flags &= ~FRAME_FLAG_IDLE;
         }
-        if (!black) {
-            const b = a.brightness ?? 1;
-            const [kr, kg, kb] = this.tintFor(a.colorTemperature ?? COLOR_TEMP_NEUTRAL_K);
-            if (b < 1 || kr < 1 || kg < 1 || kb < 1) {
-                // The white channel takes the brightness but not the tint.
-                scaleNodesRgb(bytes, stride, 0, L.nodeCount, kr * b, kg * b, kb * b, L.xMeaning === 2 ? b : 1);
-            }
-        }
-        // A test pattern replaces whatever its models were showing, and is not dimmed with the show.
+        // A test pattern replaces whatever its targets were showing. It is generated content like the
+        // rest, so the show brightness and tint below and the per-model output trims all apply to it.
         if (this.test) {
             if (this.test.expiresAt !== undefined && now >= this.test.expiresAt) {
                 this.log('info', '[test] test pattern timed out');
@@ -487,6 +480,14 @@ export class PixelPipeline {
                 this.test.renderer.render(bytes, stride, Math.max(0, now - this.test.startMs));
                 black = false;
                 flags &= ~FRAME_FLAG_IDLE;
+            }
+        }
+        if (!black) {
+            const b = a.brightness ?? 1;
+            const [kr, kg, kb] = this.tintFor(a.colorTemperature ?? COLOR_TEMP_NEUTRAL_K);
+            if (b < 1 || kr < 1 || kg < 1 || kb < 1) {
+                // The white channel takes the brightness but not the tint.
+                scaleNodesRgb(bytes, stride, 0, L.nodeCount, kr * b, kg * b, kb * b, L.xMeaning === 2 ? b : 1);
             }
         }
         if (black) flags |= FRAME_FLAG_BLACK;

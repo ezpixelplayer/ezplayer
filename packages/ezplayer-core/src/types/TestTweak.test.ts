@@ -131,6 +131,7 @@ describe('effectiveTweak', () => {
             'Star',
         ]);
         expect(resolveTestTargets(doc, { all: true, models: ['Arch'] }, ['A', 'Arch'])).toEqual(['A', 'Arch']);
+        expect(resolveTestTargets(doc, { models: ['Arch'], subModels: ['Tree/Star'] })).toEqual(['Arch', 'Tree/Star']);
     });
 });
 

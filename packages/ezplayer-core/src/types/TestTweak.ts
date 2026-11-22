@@ -10,7 +10,26 @@
 // ---------------------------------------------------------------------------
 
 /** Mirrors SpatialPatternKind in @ezplayer/epp, which renders these. */
-export type TestPatternKind = 'solid' | 'bars' | 'rainbow' | 'chase' | 'strobe' | 'colorCycle' | 'markers';
+export type TestPatternKind =
+    | 'solid'
+    | 'bars'
+    | 'rainbow'
+    | 'chase'
+    | 'strobe'
+    | 'colorCycle'
+    | 'markers'
+    /** Each strand (string) in its own color. */
+    | 'strands';
+
+/**
+ * What a pattern runs along: 'world' lays it across all targets as one
+ * picture, 'local' gives each target the whole pattern in its own
+ * coordinates, 'node' follows each target's wiring and 'strand' restarts on
+ * every strand.
+ */
+export type TestPatternSpace = 'world' | 'local' | 'node' | 'strand';
+
+export const TEST_PATTERN_SPACES: TestPatternSpace[] = ['world', 'local', 'node', 'strand'];
 
 /** Mirrors SpatialPatternParams in @ezplayer/epp. */
 export interface TestPatternSpec {
@@ -31,8 +50,7 @@ export interface TestPatternSpec {
     periodMs?: number;
     /** Node spacing for markers. */
     every?: number;
-    /** 'world' lays the pattern across all targets as one picture; 'node' follows each model's wiring. */
-    space?: 'world' | 'node';
+    space?: TestPatternSpace;
     /** 0..1 */
     intensity?: number;
 }
@@ -45,6 +63,7 @@ export const TEST_PATTERN_KINDS: TestPatternKind[] = [
     'strobe',
     'colorCycle',
     'markers',
+    'strands',
 ];
 
 /** A saved pattern: "my favorite test pattern", and later the thing an API call names. */
@@ -54,9 +73,11 @@ export interface TestPatternPreset {
     pattern: TestPatternSpec;
 }
 
-/** What a test runs on: models and groups, by name and id. */
+/** What a test runs on: models, submodels and groups, by name and id. */
 export interface TestTargets {
     models?: string[];
+    /** Submodels as "Model/Submodel". Test only: tweaks and wiring belong to whole models. */
+    subModels?: string[];
     groups?: string[];
     /** Every pixel model in the show. */
     all?: boolean;
@@ -66,8 +87,6 @@ export interface TestTargets {
 export interface ActiveTest {
     targets: TestTargets;
     pattern: TestPatternSpec;
-    /** When set, the output trims are bypassed for the targets so the raw pattern reaches the wire. */
-    bypassTweaks?: boolean;
     /** The test stops by itself after this long; absent means until stopped. */
     ttlMs?: number;
 }
@@ -75,7 +94,7 @@ export interface ActiveTest {
 export interface TestTweakStatus {
     /** The running test, if any. */
     active?: ActiveTest;
-    /** Model names the running test resolves to. */
+    /** Names of the models and submodels the running test paints. */
     activeModels?: string[];
     /** Models the document names that the current layout does not have. */
     unknownModels?: string[];
@@ -233,7 +252,7 @@ export function normalizeTestPattern(v: unknown): TestPatternSpec | undefined {
     set('periodMs', num(v.periodMs, 20, 600000));
     set('every', int(v.every, 1, 100000));
     set('intensity', num(v.intensity, 0, 1));
-    if (v.space === 'world' || v.space === 'node') p.space = v.space;
+    if (TEST_PATTERN_SPACES.includes(v.space as TestPatternSpace)) p.space = v.space as TestPatternSpace;
     return p;
 }
 
@@ -244,7 +263,9 @@ export function normalizeTestTargets(v: unknown): TestTargets {
         Array.isArray(a) ? [...new Set(a.filter((s): s is string => typeof s === 'string' && s.length > 0))] : [];
     const models = names(v.models);
     const groups = names(v.groups);
+    const subModels = names(v.subModels).filter((s) => s.includes('/'));
     if (models.length) out.models = models;
+    if (subModels.length) out.subModels = subModels;
     if (groups.length) out.groups = groups;
     if (v.all === true) out.all = true;
     return out;
@@ -255,7 +276,6 @@ export function normalizeActiveTest(v: unknown): ActiveTest | undefined {
     const pattern = normalizeTestPattern(v.pattern);
     if (!pattern) return undefined;
     const t: ActiveTest = { targets: normalizeTestTargets(v.targets), pattern };
-    if (v.bypassTweaks === true) t.bypassTweaks = true;
     const ttl = num(v.ttlMs, 100, 24 * 3600 * 1000);
     if (ttl !== undefined) t.ttlMs = ttl;
     return t;
@@ -380,7 +400,7 @@ export function tweakedModelNames(doc: TestTweakDoc): string[] {
     return [...names];
 }
 
-/** Model names a set of targets covers, in first-seen order. `allModels` backs the `all` flag. */
+/** Model and submodel names a set of targets covers, in first-seen order. `allModels` backs the `all` flag. */
 export function resolveTestTargets(doc: TestTweakDoc, targets: TestTargets, allModels: string[] = []): string[] {
     const out = new Set<string>();
     if (targets.all) for (const m of allModels) out.add(m);
@@ -389,6 +409,7 @@ export function resolveTestTargets(doc: TestTweakDoc, targets: TestTargets, allM
         const g = doc.groups.find((x) => x.id === id);
         if (g) for (const m of g.models) out.add(m);
     }
+    for (const s of targets.subModels ?? []) out.add(s);
     return [...out];
 }
 
@@ -570,6 +591,8 @@ export interface TweakModelInfo {
     pixel: boolean;
     /** Node count of each physical string as xLights has it. */
     stringNodeCounts: number[];
+    /** How many submodels the model has, when it has any. */
+    subModels?: number;
     /** The xLights wiring: controller name ('' when unassigned), 1-based port (0 when none), smart remote. */
     controller: string;
     port: number;

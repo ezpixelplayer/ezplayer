@@ -1,17 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Box } from '../box/Box';
-import {
-    Button,
-    Checkbox,
-    FormControlLabel,
-    IconButton,
-    MenuItem,
-    Slider,
-    Stack,
-    TextField,
-    Tooltip,
-    Typography,
-} from '@mui/material';
+import { Button, IconButton, MenuItem, Slider, Stack, TextField, Tooltip, Typography } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import CloseIcon from '@mui/icons-material/Close';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
@@ -21,6 +10,7 @@ import StopIcon from '@mui/icons-material/Stop';
 import type {
     ActiveTest,
     TestPatternKind,
+    TestPatternSpace,
     TestPatternSpec,
     TestTargets,
     TestTweakDoc,
@@ -33,7 +23,7 @@ export interface TestPanelProps {
     updateDoc: (change: (doc: TestTweakDoc) => TestTweakDoc) => void;
     /** What the test would run on, from the selection. */
     targets: TestTargets;
-    /** e.g. "3 models" or "group Roof"; empty when nothing is selected. */
+    /** e.g. "3 models", "Spinner/Arms" or "group Roof"; empty when nothing is selected. */
     targetLabel: string;
     status?: TestTweakStatus;
     onStart: (test: ActiveTest) => Promise<void>;
@@ -63,6 +53,11 @@ const KINDS: { kind: TestPatternKind; label: string; hint: string }[] = [
         label: 'Count markers',
         hint: 'First pixel green, last red, every Nth white: for counting pixels.',
     },
+    {
+        kind: 'strands',
+        label: 'Strand colors',
+        hint: 'Each strand in its own color, in turn: shows which string is which and where each one ends.',
+    },
     { kind: 'strobe', label: 'Flash', hint: 'On and off: for finding a prop in the yard.' },
 ];
 
@@ -73,6 +68,7 @@ const DEFAULT_COLORS: Record<TestPatternKind, string[]> = {
     rainbow: [],
     chase: ['#ffffff'],
     markers: [],
+    strands: ['#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff', '#00ffff'],
     strobe: ['#ffffff'],
 };
 
@@ -86,16 +82,25 @@ const FIELDS: Record<
         speed?: boolean;
         period?: boolean;
         every?: boolean;
-        space?: boolean;
+        /** What the pattern may run along; the first is the default. */
+        spaces?: TestPatternSpace[];
     }
 > = {
     solid: { colors: 'one' },
     colorCycle: { colors: 'many', period: true },
-    bars: { colors: 'many', angle: true, width: true, speed: true, space: true },
-    rainbow: { angle: true, width: true, speed: true, space: true },
-    chase: { colors: 'one', angle: true, width: true, speed: true, space: true },
-    markers: { every: true },
+    bars: { colors: 'many', angle: true, width: true, speed: true, spaces: ['world', 'local', 'node', 'strand'] },
+    rainbow: { angle: true, width: true, speed: true, spaces: ['world', 'local', 'node', 'strand'] },
+    chase: { colors: 'one', angle: true, width: true, speed: true, spaces: ['node', 'strand', 'world', 'local'] },
+    markers: { every: true, spaces: ['node', 'strand'] },
+    strands: { colors: 'many' },
     strobe: { colors: 'one', period: true },
+};
+
+const SPACE_LABELS: Record<TestPatternSpace, string> = {
+    world: 'The layout, as one picture across the selection',
+    local: 'Each model, in its own coordinates',
+    node: 'The wiring, first pixel to last',
+    strand: 'Each strand, restarting on every one',
 };
 
 const STORAGE_KEY = 'ezpTestTweakPattern';
@@ -139,17 +144,20 @@ export const TestPanel: React.FC<TestPanelProps> = ({
 }) => {
     const [pattern, setPattern] = useState<TestPatternSpec>(loadPattern);
     const [minutes, setMinutes] = useState(15);
-    const [bypass, setBypass] = useState(false);
     const [presetName, setPresetName] = useState('');
     const running = !!status?.active;
     const hasTargets = !!targetLabel;
     const fields = FIELDS[pattern.kind];
-    const space = pattern.space ?? (pattern.kind === 'chase' ? 'node' : 'world');
+    const space: TestPatternSpace | undefined = fields.spaces
+        ? pattern.space && fields.spaces.includes(pattern.space)
+            ? pattern.space
+            : fields.spaces[0]
+        : undefined;
+    const directed = space === 'world' || space === 'local';
 
     const test: ActiveTest = {
         targets,
         pattern,
-        ...(bypass ? { bypassTweaks: true } : {}),
         ...(minutes > 0 ? { ttlMs: minutes * 60_000 } : {}),
     };
     const testKey = JSON.stringify(test);
@@ -178,7 +186,6 @@ export const TestPanel: React.FC<TestPanelProps> = ({
             if (active) {
                 sentKey.current = ADOPTING;
                 setPattern(active.pattern);
-                setBypass(!!active.bypassTweaks);
             } else {
                 sentKey.current = testKey;
             }
@@ -250,10 +257,10 @@ export const TestPanel: React.FC<TestPanelProps> = ({
                 )}
                 <Typography variant="body2" color="text.secondary" sx={{ minWidth: 0 }}>
                     {running
-                        ? `Running on ${status?.activeModels?.length ?? 0} model${status?.activeModels?.length === 1 ? '' : 's'}; it follows your selection.`
+                        ? `Running on ${status?.activeModels?.length === 1 ? status.activeModels[0] : `${status?.activeModels?.length ?? 0} targets`}; it follows your selection.`
                         : hasTargets
                           ? `On ${targetLabel}.`
-                          : 'Select models or a group to test.'}
+                          : 'Select models, submodels or a group to test.'}
                 </Typography>
             </Stack>
 
@@ -357,19 +364,22 @@ export const TestPanel: React.FC<TestPanelProps> = ({
                 />
             </Labeled>
 
-            {fields.space && (
+            {fields.spaces && space && (
                 <TextField
                     select
                     size="small"
                     label="Runs along"
                     value={space}
-                    onChange={(e) => set({ space: e.target.value as 'world' | 'node' })}
+                    onChange={(e) => set({ space: e.target.value as TestPatternSpace })}
                 >
-                    <MenuItem value="world">The layout, as one picture across the selection</MenuItem>
-                    <MenuItem value="node">Each model's wiring, first pixel to last</MenuItem>
+                    {fields.spaces.map((sp) => (
+                        <MenuItem key={sp} value={sp}>
+                            {SPACE_LABELS[sp]}
+                        </MenuItem>
+                    ))}
                 </TextField>
             )}
-            {fields.angle && space === 'world' && (
+            {fields.angle && directed && (
                 <Labeled label="Direction" value={`${Math.round(pattern.angleDeg ?? 0)}°`}>
                     <Slider
                         size="small"
@@ -435,7 +445,7 @@ export const TestPanel: React.FC<TestPanelProps> = ({
                     label="Mark every"
                     value={pattern.every ?? 10}
                     onChange={(e) => set({ every: Math.max(1, Math.round(Number(e.target.value) || 1)) })}
-                    helperText="pixels along the wiring"
+                    helperText={space === 'strand' ? 'pixels along each strand' : 'pixels along the wiring'}
                     inputProps={{ min: 1 }}
                 />
             )}
@@ -447,7 +457,7 @@ export const TestPanel: React.FC<TestPanelProps> = ({
                     label="Stop after"
                     value={minutes}
                     onChange={(e) => setMinutes(Number(e.target.value))}
-                    sx={{ minWidth: 130 }}
+                    sx={{ minWidth: 130, flexShrink: 0 }}
                 >
                     <MenuItem value={1}>1 minute</MenuItem>
                     <MenuItem value={5}>5 minutes</MenuItem>
@@ -455,14 +465,9 @@ export const TestPanel: React.FC<TestPanelProps> = ({
                     <MenuItem value={60}>1 hour</MenuItem>
                     <MenuItem value={0}>Never</MenuItem>
                 </TextField>
-                <Tooltip title="Send the pattern without the brightness, gamma, color order and color temperature tweaks, to compare.">
-                    <FormControlLabel
-                        control={
-                            <Checkbox size="small" checked={bypass} onChange={(e) => setBypass(e.target.checked)} />
-                        }
-                        label={<Typography variant="body2">Without tweaks</Typography>}
-                    />
-                </Tooltip>
+                <Typography variant="caption" color="text.secondary">
+                    Goes out through the show brightness and every tweak, as the show does.
+                </Typography>
             </Stack>
 
             <Box>

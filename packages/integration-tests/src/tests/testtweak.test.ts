@@ -1,6 +1,6 @@
 /** Test + Tweak end to end: run a test pattern on the fixture model over
- *  HTTP and see it at the mock controller, trim it with a saved tweak, bypass
- *  the tweak, rewire the model within its controller, and stop. */
+ *  HTTP and see it at the mock controller, trim it with a saved tweak, dim it
+ *  with the show brightness, rewire the model within its controller, and stop. */
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import fsp from 'node:fs/promises';
@@ -53,7 +53,10 @@ const solid = { kind: 'solid', colors: ['#204060'], intensity: 1 };
 
 beforeAll(async () => {
     mock = await startMockController({ channels: CHANNELS, ddpPort: 4048 });
-    show = await createFixtureShow({ channels: CHANNELS });
+    show = await createFixtureShow({
+        channels: CHANNELS,
+        subModelsXml: '<subModel name="Tail" layout="horizontal" type="ranges" line0="46-50"/>',
+    });
     app = await startEzPlayer(show.dir);
 });
 
@@ -67,7 +70,9 @@ describe('test + tweak', () => {
     it('describes the show', async () => {
         const snap = await ok('GET');
         expect(snap.doc).toEqual(emptyDoc());
-        expect(snap.models.map((m) => [m.name, m.nodeCount, m.pixel])).toEqual([['Line1', PIXELS, true]]);
+        expect(snap.models.map((m) => [m.name, m.nodeCount, m.pixel, m.subModels])).toEqual([
+            ['Line1', PIXELS, true, 1],
+        ]);
         expect(snap.controllers.length).toBe(1);
         expect(snap.status.active).toBeUndefined();
     });
@@ -90,6 +95,22 @@ describe('test + tweak', () => {
         expect(px(wire, PIXELS - 1)).toEqual([0x20, 0x40, 0x60]);
     });
 
+    it('paints a submodel alone, counted in its own order', async () => {
+        const snap = await ok('POST', '/test', {
+            targets: { subModels: ['Line1/Tail', 'Line1/Nope'] },
+            pattern: { kind: 'markers', every: 1000 },
+        });
+        expect(snap.status.activeModels).toEqual(['Line1/Tail']);
+        const wire = await waitForWire(
+            (b) => px(b, 45).join() === '0,255,0' && px(b, 49).join() === '255,0,0',
+            'markers on the submodel',
+        );
+        expect(px(wire, 0)).toEqual([0, 0, 0]);
+        expect(px(wire, 44)).toEqual([0, 0, 0]);
+        await ok('POST', '/test', { targets: { models: ['Line1'] }, pattern: solid });
+        await waitForWire((b) => b[0] === 0x20 && b[1] === 0x40 && b[2] === 0x60, 'solid test back on the model');
+    });
+
     it('applies a saved tweak to what goes out, through a group too', async () => {
         const doc: TestTweakDoc = {
             ...emptyDoc(),
@@ -106,11 +127,28 @@ describe('test + tweak', () => {
         expect(saved.models.Line1.colorOrder).toBe('BGR');
     });
 
-    it('bypasses the tweak for the test when asked, and targets a group', async () => {
+    it('targets a group, and no request can send the test around the tweak', async () => {
         await ok('POST', '/test', { targets: { groups: ['g1'] }, pattern: solid, bypassTweaks: true });
-        await waitForWire((b) => b[0] === 0x20 && b[1] === 0x40 && b[2] === 0x60, 'untweaked test on the wire');
-        await ok('POST', '/test', { targets: { groups: ['g1'] }, pattern: solid });
-        await waitForWire((b) => b[0] === 0x30 && b[1] === 0x20 && b[2] === 0x10, 'tweak back on the wire');
+        await waitForWire((b) => b[0] === 0x30 && b[1] === 0x20 && b[2] === 0x10, 'group test on the wire, tweaked');
+    });
+
+    it('dims the test with the show brightness', async () => {
+        const setBrightness = async (level: number) => {
+            const res = await fetch(`${app.base}/api/ezp/brightness`, {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ brightness: level }),
+            });
+            expect(res.status, await res.text()).toBe(200);
+        };
+        await setBrightness(50);
+        try {
+            // Half from the show, half again from the group tweak, blue first.
+            await waitForWire((b) => b[0] === 0x18 && b[1] === 0x10 && b[2] === 0x08, 'test dimmed by the show', 8000);
+        } finally {
+            await setBrightness(100);
+        }
+        await waitForWire((b) => b[0] === 0x30 && b[1] === 0x20 && b[2] === 0x10, 'show brightness back up', 8000);
     });
 
     it('rewires the model in position order and tells the controller upload about it', async () => {

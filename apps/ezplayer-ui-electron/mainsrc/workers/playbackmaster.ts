@@ -3705,7 +3705,15 @@ function overlayCommand(cmd: OverlayCommand): OverlayResult {
 
 /** An idle black frame: previews see it, and the output worker sends it only when idle black is enabled. */
 function presentIdleBlack(pipeline: PixelPipeline, targetRTC: number) {
-    pipeline.compose({ timeMs: targetRTC, frameIntervalMs: playbackParams.idleSleepInterval, frameNumber: -1, idle: true });
+    // Overlays and test patterns still light the display while idle, so the show brightness and tint apply.
+    pipeline.compose({
+        timeMs: targetRTC,
+        frameIntervalMs: playbackParams.idleSleepInterval,
+        frameNumber: -1,
+        idle: true,
+        brightness: brightnessNow / 100,
+        colorTemperature: colorTemperatureNow,
+    });
 }
 
 /**

@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { ChannelRoleSpec, compileLayout, LayoutModelSpec } from './Layout';
 import { applyOutput, compileOutputMap } from './OutputMap';
-import { patternAnimates, patternTargetsForModels, SpatialPatternRenderer, whiteBalanceGains } from './SpatialPatterns';
+import {
+    patternAnimates,
+    patternTargetOfModel,
+    patternTargets,
+    patternTargetsForModels,
+    SpatialPatternRenderer,
+    type SpatialPatternParams,
+} from './SpatialPatterns';
+import { TargetCatalog } from './Targets';
 
 const RGB: ChannelRoleSpec[] = [
     { offset: 0, kind: 'red' },
@@ -52,7 +60,7 @@ describe('SpatialPatternRenderer', () => {
 
     it('runs bars across a group as one picture in world space', () => {
         // 20 nodes along x; two bands, so Left is the first color and Right the second.
-        const r = new SpatialPatternRenderer(layout, [left, right], {
+        const r = new SpatialPatternRenderer(layout, [left, right].map(patternTargetOfModel), {
             kind: 'bars',
             colors: ['#ff0000', '#0000ff'],
             width: 0.5,
@@ -67,7 +75,7 @@ describe('SpatialPatternRenderer', () => {
 
     it('turns the bars with the angle', () => {
         // Bars travelling along Y: every node of a horizontal strip sits in the same band.
-        const r = new SpatialPatternRenderer(layout, [left, other], {
+        const r = new SpatialPatternRenderer(layout, [left, other].map(patternTargetOfModel), {
             kind: 'bars',
             colors: ['#ff0000', '#0000ff'],
             width: 0.6,
@@ -82,7 +90,7 @@ describe('SpatialPatternRenderer', () => {
     });
 
     it('moves a chase along the wiring over time', () => {
-        const r = new SpatialPatternRenderer(layout, [left], {
+        const r = new SpatialPatternRenderer(layout, [patternTargetOfModel(left)], {
             kind: 'chase',
             width: 0.1,
             speed: 1,
@@ -112,7 +120,7 @@ describe('SpatialPatternRenderer', () => {
         };
         const gl = compileLayout([grid], { keepWorld: true });
         const g = gl.models[0];
-        const r = new SpatialPatternRenderer(gl, [g], { kind: 'markers', every: 100 });
+        const r = new SpatialPatternRenderer(gl, [patternTargetOfModel(g)], { kind: 'markers', every: 100 });
         const frame = new Uint8Array(gl.frameBytes);
         r.render(frame, 3, 0);
         // Wiring node 0 is canonical cell (1,0) = index 1 and is green; wiring node 3 is cell (1,1) = index 3 and is red.
@@ -122,7 +130,11 @@ describe('SpatialPatternRenderer', () => {
     });
 
     it('steps the color cycle and scales by intensity', () => {
-        const r = new SpatialPatternRenderer(layout, [left], { kind: 'colorCycle', periodMs: 100, intensity: 0.5 });
+        const r = new SpatialPatternRenderer(layout, [patternTargetOfModel(left)], {
+            kind: 'colorCycle',
+            periodMs: 100,
+            intensity: 0.5,
+        });
         const frame = new Uint8Array(layout.frameBytes);
         r.render(frame, 3, 0);
         expect(nodeRgb(frame, left.nodeStart)).toEqual([128, 0, 0]);
@@ -140,25 +152,109 @@ describe('SpatialPatternRenderer', () => {
     });
 });
 
-describe('whiteBalanceGains', () => {
-    it('is neutral at 6500 K and only ever dims', () => {
-        const n = whiteBalanceGains(6500);
-        expect(n[0]).toBeCloseTo(1, 5);
-        expect(n[1]).toBeCloseTo(1, 5);
-        expect(n[2]).toBeCloseTo(1, 5);
-        const warm = whiteBalanceGains(3000);
-        expect(warm[0]).toBe(1);
-        expect(warm[2]).toBeLessThan(warm[1]);
-        expect(warm[1]).toBeLessThan(1);
-        const cool = whiteBalanceGains(10000);
-        expect(cool[2]).toBe(1);
-        expect(cool[0]).toBeLessThan(1);
+describe('submodels, strands and local space', () => {
+    // A 4x2 tree: two strands of four, standing side by side, placed far from the origin.
+    const n = 8;
+    const world = new Float32Array(n * 3);
+    const local = new Float32Array(n * 3);
+    for (let i = 0; i < n; ++i) {
+        const x = Math.floor(i / 4);
+        const y = i % 4;
+        world.set([100 + x, 50 + y, 0], i * 3);
+        local.set([x, y, 0], i * 3);
+    }
+    const tree: LayoutModelSpec = {
+        name: 'Tree',
+        startChannel: 0,
+        nodeCount: n,
+        channelsPerNode: 3,
+        roles: RGB,
+        world,
+        local,
+        strands: [4, 4],
+        subModels: [
+            {
+                name: 'Tops',
+                nodes: Int32Array.from([7, 3]),
+                strands: [1, 1],
+                vertical: false,
+                bufferStyle: 'Default',
+                buffer: { width: 2, height: 1, cells: Int32Array.from([0, 0, 0, 1, 1, 0]) },
+            },
+        ],
+    };
+    const far = strip('Far', 30, 4, 0, 0);
+    const specs = [tree, far];
+    const layout = compileLayout(specs, { keepWorld: true });
+    const catalog = new TargetCatalog(layout, specs);
+    const t = layout.models.find((m) => m.name === 'Tree')!;
+    const paint = (names: string[], params: ConstructorParameters<typeof SpatialPatternRenderer>[2], tMs = 0) => {
+        const r = new SpatialPatternRenderer(layout, patternTargets(catalog, names), params);
+        const frame = new Uint8Array(layout.frameBytes);
+        r.render(frame, 3, tMs);
+        return { r, frame };
+    };
+
+    it('paints only the nodes of a submodel', () => {
+        const { r, frame } = paint(['Tree/Tops', 'Tree/Nope'], { kind: 'solid', colors: ['#0a0b0c'] });
+        expect(r.names).toEqual(['Tree/Tops']);
+        expect(r.nodeCount).toBe(2);
+        const lit: number[] = [];
+        for (let i = 0; i < n; ++i) if (frame[(t.nodeStart + i) * 3]) lit.push(i);
+        expect(lit).toEqual([3, 7]);
+    });
+
+    it('counts a submodel in the order it lists its nodes', () => {
+        const { frame } = paint(['Tree/Tops'], { kind: 'markers', every: 100 });
+        // Listed 7 then 3: node 7 is first (green), node 3 last (red).
+        expect(nodeRgb(frame, t.nodeStart + 7)).toEqual([0, 255, 0]);
+        expect(nodeRgb(frame, t.nodeStart + 3)).toEqual([255, 0, 0]);
+    });
+
+    it('gives each strand its own color', () => {
+        const { frame } = paint(['Tree'], { kind: 'strands', colors: ['#ff0000', '#0000ff'] });
+        for (let i = 0; i < 4; ++i) expect(nodeRgb(frame, t.nodeStart + i)).toEqual([255, 0, 0]);
+        for (let i = 4; i < 8; ++i) expect(nodeRgb(frame, t.nodeStart + i)).toEqual([0, 0, 255]);
+    });
+
+    it('restarts markers and the chase on every strand in strand space', () => {
+        const { frame } = paint(['Tree'], { kind: 'markers', every: 100, space: 'strand' });
+        expect(nodeRgb(frame, t.nodeStart)).toEqual([0, 255, 0]);
+        expect(nodeRgb(frame, t.nodeStart + 3)).toEqual([255, 0, 0]);
+        expect(nodeRgb(frame, t.nodeStart + 4)).toEqual([0, 255, 0]);
+        expect(nodeRgb(frame, t.nodeStart + 7)).toEqual([255, 0, 0]);
+        const chase = paint(['Tree'], { kind: 'chase', width: 0.25, speed: 0, space: 'strand', colors: ['#ffffff'] });
+        const lit: number[] = [];
+        for (let i = 0; i < n; ++i) if (chase.frame[(t.nodeStart + i) * 3]) lit.push(i);
+        expect(lit).toEqual([0, 4]);
+    });
+
+    it('gives every target the whole pattern in local space, and one picture across them in world space', () => {
+        const bars: SpatialPatternParams = {
+            kind: 'bars',
+            colors: ['#ff0000', '#0000ff'],
+            width: 0.6,
+            speed: 0,
+            angleDeg: 0,
+        };
+        // World: the tree sits at x 100..101, the strip at 0..3, so the tree is all in the last band.
+        const w = paint(['Tree', 'Far'], { ...bars, space: 'world' });
+        expect(nodeRgb(w.frame, t.nodeStart)).toEqual([0, 0, 255]);
+        expect(nodeRgb(w.frame, t.nodeStart + 4)).toEqual([0, 0, 255]);
+        // Local: the tree's own two columns split between the bands.
+        const l = paint(['Tree', 'Far'], { ...bars, space: 'local' });
+        expect(nodeRgb(l.frame, t.nodeStart)).toEqual([255, 0, 0]);
+        expect(nodeRgb(l.frame, t.nodeStart + 4)).toEqual([0, 0, 255]);
+        // The strip has no local coordinates and uses its own extent of the world.
+        const f = layout.models.find((m) => m.name === 'Far')!;
+        expect(nodeRgb(l.frame, f.nodeStart)).toEqual([255, 0, 0]);
+        expect(nodeRgb(l.frame, f.nodeStart + 3)).toEqual([0, 0, 255]);
     });
 });
 
 describe('OutputMap adjust', () => {
     const lut = (v: number, gamma: number, bright: number) =>
-        Math.round(255 * Math.pow(Math.min(1, (v / 255) * bright), gamma));
+        Math.min(255, Math.round(255 * bright * Math.pow(v / 255, gamma)));
 
     it('trims a model under controller policy and leaves the others byte-exact', () => {
         const layout = compileLayout([strip('A', 0, 2, 0, 0), strip('B', 6, 2, 0, 1)]);
