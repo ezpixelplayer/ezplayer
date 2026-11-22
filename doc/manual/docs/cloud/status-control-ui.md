@@ -57,8 +57,27 @@ A quick health check:
 - **Cloud Reachable** — `yes` / `no` / `(unknown)` from the last check-in
 - **Player Registered** — whether EZRGB knows this player
 - **Cloud Version**, **Last Checked**, **Last Error**
+- **Regional Server** — shown once the player is registered. It shows the
+  regional server in use, **Choosing…** while one is being picked, or **None,
+  using the central server** followed by the reason.
 
 If something is wrong, **Last Error** usually points you in the right direction.
+
+## Music Proof
+
+The cloud only sends audio for music you own. When one or more sequences are
+waiting for music proof, a card appears above **Cloud Status** showing
+**N sequences need music proof**, with a table of each **Sequence** and the
+**Music needed** (title and artist).
+
+Click **Scan my music** to search this player's show folder (and media folder,
+if set) for those songs. A fingerprint of each file is sent to the cloud, never
+the audio itself. If you do not have a song, add the file to your media folder
+and scan again.
+
+A line next to the button shows the scan progress, then the result — how many
+identifiers were accepted and how many sequences are still waiting — or the
+error if the scan failed.
 
 ## Remote Control Link
 
@@ -116,6 +135,7 @@ Sequence statuses:
 | **disabled**                | Turned off on EZRGB for this show                      |
 | **error**                   | Something failed — expand the row for details          |
 | **known**                   | Seen in the manifest, but not ready yet                |
+| **needs music proof**       | Audio is withheld until you [prove you own the music](#music-proof) |
 
 If the list is empty, confirm the top card shows **Cloud connected** and you
 have sequences assigned on EZRGB. A **halted** chip means content sync stopped
@@ -124,7 +144,7 @@ with an error — check **Last Error** and try **Sync Content Now** (or
 
 ## Cloud Configuration
 
-Shows this folder's cloud URL and Player ID. The Player ID is masked; use the
+Shows this folder's **Cloud Service URL** and **Player ID**. The Player ID is masked; use the
 eye icon to reveal it or the copy icon to copy it.
 
 - **Change Player ID** — generates a new Player ID and **moves** this player's

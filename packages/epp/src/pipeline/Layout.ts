@@ -26,6 +26,26 @@ export interface NodeRun {
     channelStart: number;
 }
 
+/** Cells of a render buffer as (node, x, y) triples, y up; a node in several cells has its primary cell last. */
+export interface BufferSpec {
+    width: number;
+    height: number;
+    cells: Int32Array;
+}
+
+/** A named subset of a model's nodes with its own render buffer. */
+export interface SubModelSpec {
+    name: string;
+    /** The parent's xLights node index per submodel node. */
+    nodes: Int32Array;
+    /** Nodes per strand as listed, repeats included; absent for a crop of the parent's buffer. */
+    strands?: number[];
+    vertical: boolean;
+    bufferStyle: string;
+    /** Cell nodes index into `nodes`. */
+    buffer: BufferSpec;
+}
+
 /** One model as the layout compiler needs it (a projection of XlModelChannelInfo plus geometry). */
 export interface LayoutModelSpec {
     name: string;
@@ -40,6 +60,13 @@ export interface LayoutModelSpec {
     grid?: { width: number; height: number; xy?: Int32Array };
     /** World coordinates, 3 floats per node, for coordinate kernels and the manifest. */
     world?: Float32Array;
+    /** Model-local coordinates, 3 floats per node. */
+    local?: Float32Array;
+    /** The model's own render buffer, dense or sparse; cell nodes are xLights node indexes. */
+    buffer?: BufferSpec;
+    /** Nodes per string. */
+    strands?: number[];
+    subModels?: SubModelSpec[];
     /** Baked-in renderer gamma and brightness (1 and 1 for a clean render). */
     gamma?: number;
     brightness?: number;
