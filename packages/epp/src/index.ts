@@ -111,6 +111,8 @@ export type {
     NodeCodec,
     NodeCodecKind,
     RawSpan,
+    BufferSpec,
+    SubModelSpec,
 } from './pipeline/Layout';
 
 export {
@@ -176,7 +178,17 @@ export {
     OVERLAY_HEADER_BYTES,
     OVERLAY_MAX_DATA,
 } from './pipeline/Overlays';
-export type { OverlayFormat, OverlayLeaseRequest, OverlayLeaseInfo, OverlayPacket } from './pipeline/Overlays';
+export type {
+    OverlayFormat,
+    OverlayOverlap,
+    OverlayLeaseRequest,
+    OverlayLeaseInfo,
+    OverlayTargetQuery,
+    OverlayTargetInfo,
+    OverlayPacket,
+} from './pipeline/Overlays';
+export { TargetCatalog, targetRuns, strandKind, overlappingNodes } from './pipeline/Targets';
+export type { PixelTarget, StrandKind } from './pipeline/Targets';
 export type { ExtendedHeaderRef } from './formats/FSeqUtil';
 export {
     readExtendedHeader,

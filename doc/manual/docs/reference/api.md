@@ -1201,17 +1201,55 @@ The 8-byte header is **not** compressed. Decompress the payload starting at offs
 
 An overlay lease lets an external program paint a model (or the whole display) while the player runs. The player composites the latest complete overlay payload into every frame it sends, on top of the sequence that is playing (or on top of black while idle), until the lease expires. Games, test tools, and GPU renderers on another machine all use the same path.
 
-A lease targets a **model** by name. Grid models (matrices, trees) take an RGB grid `width` x `height`, top row first; any model can take one RGB triple per node (`format: "nodes"`). A grid smaller or larger than the model's own grid is resampled nearest-neighbour.
+A lease targets a **model** by name, or one of its **submodels** as `Model/Submodel`. Grid models (matrices, trees) take an RGB grid `width` x `height`, top row first; any target can take one RGB triple per node (`format: "nodes"`). A grid smaller or larger than the model's own grid is resampled nearest-neighbour.
+
+Any model or submodel can also be painted through its own xLights render buffer (`format: "buffer"`): a `width` x `height` picture, top row first, in which each node reads the cell it sits in and cells with no node are ignored. This is how a custom model such as a spinner is addressed as a sparse grid, and it is the default for a submodel. A submodel's buffer is the one xLights builds for it: one row per strand (one column per strand when it is vertical), or the parent's own shape for "Keep XY" and sub-buffer submodels.
+
+Submodels are overlay targets only. They are not in the frame pool manifest and cannot be shown as a virtual matrix.
 
 Payloads travel over UDP (fast, lossy, meant for animation) or as a raw `PUT` (simple clients). Either one also renews the lease. A lease with no traffic for `ttlMs` is dropped.
 
 #### GET /api/ezp/overlays/targets
 
-Models that can take an overlay, with their grid sizes.
+Models that can take an overlay, with their grid sizes. `subModels` is how many submodels a model has, when it has any.
 
 ```json
 { "ok": true, "layoutVersion": 4232670734, "targets": [{ "model": "Matrix", "nodeCount": 2048, "width": 64, "height": 32 }] }
 ```
+
+A layout can hold thousands of submodels, so more is sent only when asked for:
+
+| Query              | Adds                                                                                  |
+| ------------------ | ------------------------------------------------------------------------------------- |
+| `model=NAME`       | Only that model, or only that `Model/Submodel`                                        |
+| `detail=submodels` | A row per submodel, and the shape of every row (below)                                |
+| `detail=nodes`     | The same plus per-node coordinates; needs `model=NAME`                                |
+
+```json
+{
+  "model": "Spinner", "subModel": "Arms", "target": "Spinner/Arms", "nodeCount": 96,
+  "kind": "multiEqual", "strands": [12, 12, 12, 12, 12, 12, 12, 12],
+  "buffer": { "width": 12, "height": 8 }, "overlaps": 0, "vertical": false, "bufferStyle": "Default"
+}
+```
+
+| Field         | Meaning                                                                                          |
+| ------------- | ------------------------------------------------------------------------------------------------ |
+| `target`      | The name to open a lease with                                                                    |
+| `kind`        | `single` (one strand), `multi` (strands of different lengths), `multiEqual` (strands of one length), or `area` (a crop of the parent's buffer, which has no strands) |
+| `strands`     | Nodes on each strand, as the submodel lists them                                                 |
+| `buffer`      | Size of the render buffer, which is the default size of a `buffer` lease                         |
+| `overlaps`    | Nodes that sit in more than one buffer cell (a strand that crosses itself or another)            |
+| `vertical`    | Submodels: strands run up the buffer's columns instead of along its rows                         |
+| `bufferStyle` | Submodels: the xLights buffer style, such as `Default`, `Keep XY` or `Stacked Strands`           |
+
+With `detail=nodes` each row also has `nodes`, three flat arrays in `nodes` payload order:
+
+- `world`: x, y, z of each node in the layout's world coordinates.
+- `local`: x, y, z of each node in its model's own coordinates.
+- `cells`: node, x, y for every buffer cell that has a node; y counts up from the bottom row, so the payload row is `height - 1 - y`. A node in several cells appears once for each, in the order the submodel lists them.
+
+A client can use these to draw by position: compute a color for each node from where it is and send it with `format: "nodes"`.
 
 #### POST /api/ezp/overlays
 
@@ -1219,10 +1257,12 @@ Open a lease. Body (all optional except that a grid needs a size when the model 
 
 | Field     | Meaning                                                          |
 | --------- | ---------------------------------------------------------------- |
-| `model`   | Model name; the whole display when omitted                       |
-| `format`  | `grid` (default for grid models) or `nodes`                      |
-| `width`   | Grid width; defaults to the model's grid                         |
-| `height`  | Grid height                                                      |
+| `model`   | Model name or `Model/Submodel`; the whole display when omitted   |
+| `subModel` | Submodel of `model`, as an alternative to naming it in `model`  |
+| `format`  | `grid` (default for grid models), `nodes`, or `buffer` (default for submodels) |
+| `width`   | Picture width; defaults to the target's grid or buffer           |
+| `height`  | Picture height                                                   |
+| `overlap` | `buffer` only: which cell colors a node that sits in several. `last` (default) takes the cell listed latest, as xLights does, so later passes of a strand lie on top; `first` takes the earliest; `max` takes the brightest of them, channel by channel |
 | `blend`   | `replace` (default), `max`, `underlay`, `add`, `subtract`, `multiply`, `screen`, `alpha`, `min` |
 | `opacity` | 0..1, default 1                                                  |
 | `ttlMs`   | Expiry after the last payload, default 30000                     |
@@ -1240,7 +1280,9 @@ Response:
 }
 ```
 
-`frameBytes` is the exact payload size the lease expects (`width * height * 3`, or `nodeCount * 3`). The `token` must accompany every payload and every later call.
+`frameBytes` is the exact payload size the lease expects (`width * height * 3`, or `nodeCount * 3`). The `token` must accompany every payload and every later call. A lease on a submodel also reports `subModel`, and its `nodeStart` is -1 when the submodel's nodes are not next to each other in the frame.
+
+With `format: "nodes"` a model takes its nodes in frame order and a submodel takes them in the order its lines list them, each node once. With `format: "grid"` a target that has no dense grid is treated as one strip in that same order.
 
 #### PUT /api/ezp/overlays/:id/frame?token=T[&seq=N]
 
