@@ -906,7 +906,6 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea, allowRe
                                 <FormControlLabel
                                     control={
                                         <Switch
-                                            size="small"
                                             checked={remoteControlEnabled}
                                             onChange={(e) => handleRemoteControlToggle(e.target.checked)}
                                         />
@@ -920,7 +919,12 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea, allowRe
                                 />
                             )}
                             {remoteControlEnabled && (
-                                <Tooltip title="When the player sends live audio to the cloud for browser listeners (viewer page, jukebox, preview). Auto streams only while someone is listening.">
+                                <Tooltip
+                                    placement="top"
+                                    enterDelay={600}
+                                    enterNextDelay={600}
+                                    title="When the player sends live audio to the cloud for browser listeners (viewer page, jukebox, preview). Auto streams only while someone is listening."
+                                >
                                     <FormControl size="small" sx={{ minWidth: 220 }}>
                                         <InputLabel id="cloud-audio-mode-label">Cloud audio</InputLabel>
                                         <Select
