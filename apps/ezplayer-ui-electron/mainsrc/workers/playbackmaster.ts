@@ -87,6 +87,7 @@ import {
     getControllersAndModelChannels,
     getLayoutSettings,
     GetNodeResult,
+    SubModelResult,
     type ControllersAndModelChannels,
     type MhFixtureInfo,
     type ModelParseOptions,
@@ -1892,6 +1893,7 @@ let modelRecs: ModelRec[] | undefined = undefined;
 let controllerStates: ControllerState[] | undefined = undefined;
 let modelCoordinates: Map<string, GetNodeResult> | undefined = undefined;
 let modelCoordinates2D: Map<string, GetNodeResult> | undefined = undefined;
+let modelSubModels = new Map<string, SubModelResult[]>();
 let parsedControllerDoc: ControllersAndModelChannels | undefined = undefined;
 
 let viewObjects: ViewObject[] = [];
@@ -2004,6 +2006,7 @@ async function loadXmlCoordinates() {
 
     modelCoordinates = new Map<string, GetNodeResult>();
     modelCoordinates2D = new Map<string, GetNodeResult>();
+    modelSubModels = new Map<string, SubModelResult[]>();
     movingHeads = [];
     layoutSettings = {};
     parsedControllerDoc = undefined;
@@ -2057,6 +2060,7 @@ async function loadXmlCoordinates() {
             for (const [name, mr] of gmc3d.models) {
                 if (!mr.active) continue;
                 modelCoordinates.set(name, mr.nodeResult);
+                if (mr.subModels?.length) modelSubModels.set(name, mr.subModels);
                 const nr2d = gmc2d.models.get(name)?.nodeResult;
                 if (nr2d) {
                     modelCoordinates2D.set(name, nr2d);
@@ -2888,6 +2892,7 @@ async function processQueue() {
         const pipeline = await PixelPipeline.create({
             models: parsedControllerDoc?.models ?? [],
             coords: modelCoordinates,
+            subModels: modelSubModels,
             controllers,
             nChannels,
             openOpts: { ddpPort: latestSettings?.advanced?.ddpPort, fpsOverrides, forceLocalIPs },
@@ -3634,12 +3639,14 @@ function overlayCommand(cmd: OverlayCommand): OverlayResult {
     try {
         switch (cmd.op) {
             case 'targets':
-                return { ok: true, targets: ov.targets(), layoutVersion: p.layout.layoutVersion };
+                // Per-node detail for a whole layout runs to tens of megabytes.
+                if (cmd.detail === 'nodes' && !cmd.model) return { ok: false, error: 'detail=nodes needs model=NAME' };
+                return { ok: true, targets: ov.targets({ model: cmd.model, detail: cmd.detail }), layoutVersion: p.layout.layoutVersion };
             case 'list':
                 return { ok: true, leases: ov.list() };
             case 'open': {
                 const lease = ov.open(cmd.request, Date.now());
-                emitInfo(`[overlay] lease ${lease.id} opened on ${lease.model ?? '<display>'} ${lease.width}x${lease.height} ${lease.format} ${lease.blend}`);
+                emitInfo(`[overlay] lease ${lease.id} opened on ${lease.model ?? '<display>'}${lease.subModel ? '/' + lease.subModel : ''} ${lease.width}x${lease.height} ${lease.format} ${lease.blend}`);
                 return { ok: true, lease, udpPort: p.overlayPort };
             }
             case 'close': {

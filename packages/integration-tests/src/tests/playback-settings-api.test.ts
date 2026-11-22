@@ -21,7 +21,7 @@ const BASE_SETTINGS = {
 const url = (p = '') => `${app.base}/api/ezp/playback-settings${p}`;
 const getJson = async (p = '') => {
     const res = await fetch(url(p));
-    return { status: res.status, body: res.status === 204 ? undefined : await res.json() };
+    return { status: res.status, body: (res.status === 204 ? undefined : await res.json()) as Record<string, unknown> };
 };
 const post = (p: string, value: unknown) =>
     fetch(url(p), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(value) });

@@ -9,9 +9,17 @@ import { createFixtureShow, type FixtureShow } from '../fixtures/showfolder.js';
 let show: FixtureShow;
 let app: EzPlayerProc;
 
+/** What the tests read from a response; a wrong shape fails the assertion. */
+interface Body {
+    level: number;
+    error: string;
+    warning: string;
+    brightness: { activeWindow: unknown; schedule: { id: string }[] };
+}
+
 const getJson = async (p: string) => {
     const res = await fetch(`${app.base}${p}`);
-    return { status: res.status, body: await res.json() };
+    return { status: res.status, body: (await res.json()) as Body };
 };
 const post = async (p: string, value: unknown) => {
     const res = await fetch(`${app.base}${p}`, {
@@ -19,7 +27,7 @@ const post = async (p: string, value: unknown) => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(value),
     });
-    return { status: res.status, body: await res.json() };
+    return { status: res.status, body: (await res.json()) as Body };
 };
 
 /** The live level from the status API, once the slew has reached `level`. */

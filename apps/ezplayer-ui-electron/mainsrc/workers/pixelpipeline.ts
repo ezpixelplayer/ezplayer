@@ -46,7 +46,7 @@ import {
     type OutputSpec,
     type SenderStats,
 } from '@ezplayer/epp';
-import type { GetNodeResult, XlModelChannelInfo } from 'xllayoutcalcs';
+import type { GetNodeResult, SubModelResult, XlModelChannelInfo } from 'xllayoutcalcs';
 import { OutputWorkerHandle, serializeOutput } from './outputparent';
 import { OUTPUT_STATS_COUNTERS, OUTPUT_STATS_GAUGES } from './outputprotocol';
 
@@ -59,6 +59,8 @@ interface FileLayoutLike {
 export interface PixelPipelineOptions {
     models: XlModelChannelInfo[];
     coords?: Map<string, GetNodeResult>;
+    /** Submodels by model name; they become overlay targets. */
+    subModels?: Map<string, SubModelResult[]>;
     controllers: ControllerState[];
     /** Channel-space extent the legacy export and controllers cover. */
     nChannels: number;
@@ -147,7 +149,7 @@ export class PixelPipeline {
         this.output.onSenderStats = (stats) => (this.latestSenderStats = stats);
         this.pinnedDescriptor = descriptorFromSpecs(specs, Math.max(opts.nChannels, layout.totalChannels));
         this.pinnedDescriptor.fingerprint = descriptorHash(this.pinnedDescriptor);
-        this.overlays = new OverlayManager(layout);
+        this.overlays = new OverlayManager(layout, specs);
     }
 
     /**
@@ -241,7 +243,7 @@ export class PixelPipeline {
     }
 
     static async create(opts: PixelPipelineOptions): Promise<PixelPipeline> {
-        const specs = layoutSpecsFromXlights(opts.models, opts.coords);
+        const specs = layoutSpecsFromXlights(opts.models, opts.coords, opts.subModels);
         const layout = compileLayout(specs, { channelCeiling: opts.nChannels, keepWorld: true });
         const p = new PixelPipeline(opts, layout, specs);
         const rawModels = layout.models.filter((m) => m.nodeStart < 0);
