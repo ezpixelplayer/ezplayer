@@ -33,7 +33,7 @@ class FakeWindow extends EventEmitter {
 function setup() {
     const win = new FakeWindow();
     watchRenderer(win as never, () => ['E boom']);
-    win.webContents.emit('did-start-loading');
+    win.webContents.emit('did-navigate');
     return win;
 }
 
@@ -71,6 +71,17 @@ describe('watchRenderer', () => {
         await vi.advanceTimersByTimeAsync(READY_TIMEOUT_MS * 3);
         expect(reportDiagEvent).not.toHaveBeenCalled();
         expect(injectRendererFaults).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps watching a page whose link became a download', async () => {
+        const win = setup();
+        ready(win);
+        win.webContents.emit('did-start-loading');
+        await vi.advanceTimersByTimeAsync(READY_TIMEOUT_MS * 2);
+        expect(reportDiagEvent).not.toHaveBeenCalled();
+        win.webContents.answering = false;
+        await vi.advanceTimersByTimeAsync(HANG_AFTER_MS + 10_000);
+        expect(kinds()).toEqual(['renderer-hang']);
     });
 
     it('reports a hang once, and again only after the renderer has recovered', async () => {

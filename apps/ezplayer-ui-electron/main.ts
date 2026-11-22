@@ -15,6 +15,7 @@ trustSystemCAs();
 import {
     flushDiagReports,
     isExpectedProcessExit,
+    noteQuitting,
     noteSessionEnding,
     reportDiagEvent,
     startOutboxRetry,
@@ -133,8 +134,8 @@ process.on('unhandledRejection', (reason) => {
 // optional: also force console logging
 app.commandLine.appendSwitch('enable-logging', 'js-flags');
 
-// Still logged locally either way; only real faults are uploaded — Windows
-// killing our processes at logoff/shutdown is not a crash.
+// Still logged locally either way; only real faults are uploaded — the OS
+// killing our processes at logoff/shutdown, or while we quit, is not a crash.
 app.on('render-process-gone', (_event, _webContents, details) => {
     console.error('app render-process-gone', details);
     if (isExpectedProcessExit(details)) return;
@@ -587,6 +588,7 @@ if (isToolVerb()) {
     });
 
 app.on('before-quit', async () => {
+    noteQuitting();
     cleanupAutoUpdate();
     await shutdownServerWorker();
     await closeShowFolder();
