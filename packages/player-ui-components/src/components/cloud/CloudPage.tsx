@@ -906,33 +906,6 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea, allowRe
                                 <FormControlLabel
                                     control={
                                         <Switch
-                                            sx={{
-                                                flexShrink: 0,
-                                                width: 44,
-                                                height: 24,
-                                                p: 0,
-                                                // Explicit geometry: the global theme's Switch overrides
-                                                // (height/padding) distort MUI's small size.
-                                                '& .MuiSwitch-switchBase': {
-                                                    p: '2px',
-                                                    top: 0,
-                                                    left: 0,
-                                                    '&.Mui-checked': { transform: 'translateX(20px)' },
-                                                },
-                                                '& .MuiSwitch-thumb': {
-                                                    width: 20,
-                                                    height: 20,
-                                                    boxShadow: 'none',
-                                                    boxSizing: 'border-box',
-                                                },
-                                                '& .MuiSwitch-track': {
-                                                    borderRadius: '12px',
-                                                    boxSizing: 'border-box',
-                                                },
-                                                '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': {
-                                                    opacity: 0.5,
-                                                },
-                                            }}
                                             checked={remoteControlEnabled}
                                             onChange={(e) => handleRemoteControlToggle(e.target.checked)}
                                         />
@@ -942,7 +915,7 @@ export const CloudPage: React.FC<CloudPageProps> = ({ title, statusArea, allowRe
                                             Enable Cloud Remote Control
                                         </Typography>
                                     }
-                                    sx={{ mr: 0, ml: 0, gap: 1, '& .MuiFormControlLabel-label': { lineHeight: 1 } }}
+                                    sx={{ mr: 0 }}
                                 />
                             )}
                             {remoteControlEnabled && (
