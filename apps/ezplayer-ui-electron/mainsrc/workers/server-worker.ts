@@ -2298,7 +2298,12 @@ async function startServer(config: ServerWorkerData) {
     };
     const overlayId = (ctx: Koa.Context) => Number(ctx.params.id);
     const overlayToken = (ctx: Koa.Context) => Number(ctx.query.token ?? ctx.get('x-ezp-token') ?? 0);
-    router.get('/api/ezp/overlays/targets', (ctx) => overlayCall(ctx, { op: 'targets' }));
+    // Models only by default; detail=submodels adds submodels, detail=nodes adds per-node coordinates.
+    router.get('/api/ezp/overlays/targets', (ctx) => {
+        const detail = ctx.query.detail === 'submodels' || ctx.query.detail === 'nodes' ? ctx.query.detail : undefined;
+        const model = typeof ctx.query.model === 'string' && ctx.query.model ? ctx.query.model : undefined;
+        return overlayCall(ctx, { op: 'targets', model, detail });
+    });
     router.get('/api/ezp/overlays', (ctx) => overlayCall(ctx, { op: 'list' }));
     router.post('/api/ezp/overlays', (ctx) =>
         overlayCall(ctx, { op: 'open', request: (ctx.request.body ?? {}) as OverlayLeaseRequest }),
