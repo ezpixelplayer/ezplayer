@@ -14,6 +14,9 @@ import { stringColorRgb } from './wiringColors';
  */
 export const DEFAULT_GAMMA = 1.0;
 
+/** The 2D (xy) view keeps this much of Z, so depth still orders what the flat view draws. */
+export const FLAT_DEPTH_SCALE = 0.01;
+
 /**
  * Extract gamma value from model configuration
  * Currently checks point metadata for gamma, but can be extended to check model-level configuration
@@ -156,8 +159,8 @@ void main() {
     // Apply 2D view plane projection if needed
     vec3 projectedPosition = position;
     if (viewPlane == 1) {
-        // xy plane: flatten z to 0
-        projectedPosition = vec3(position.x, position.y, 0.0);
+        // xy plane: squash z, keeping just enough for the depth test
+        projectedPosition = vec3(position.x, position.y, position.z * ${FLAT_DEPTH_SCALE.toFixed(4)});
     } else if (viewPlane == 2) {
         // xz plane: flatten y to 0
         projectedPosition = vec3(position.x, 0.0, position.z);

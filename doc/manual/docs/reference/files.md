@@ -133,6 +133,7 @@ envelope), pretty-printed with 2-space indentation:
     "backgroundSequence": "overlay",
     "viewerControl": { "enabled": false, "type": "disabled", "schedule": [] },
     "volumeControl": { "defaultVolume": 100, "schedule": [] },
+    "brightnessControl": { "defaultBrightness": 100, "schedule": [] },
     "jukebox": { "excludedTags": ["nojukebox"], "includedTags": [] }
 }
 ```

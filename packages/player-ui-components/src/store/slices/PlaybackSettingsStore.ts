@@ -5,7 +5,9 @@ import type {
     ViewerControlBackend,
     ViewerControlScheduleList,
 } from '@ezplayer/ezplayer-core';
-import { controllerRefreshSettingsFor } from '@ezplayer/ezplayer-core';
+import { controllerRefreshSettingsFor, COLOR_TEMPERATURE_NEUTRAL_K } from '@ezplayer/ezplayer-core';
+import { removeAudioBus, removeAudioListener, upsertAudioBus } from '@ezplayer/ezplayer-core';
+import type { AudioBusConfig, AudioBusOutput } from '@ezplayer/ezplayer-core';
 import { createAsyncThunk, createSlice, PayloadAction } from '@reduxjs/toolkit';
 import {
     AudioOutputConfig,
@@ -13,6 +15,8 @@ import {
     ViewerControlScheduleEntry,
     VolumeControlState,
     VolumeScheduleEntry,
+    BrightnessScheduleEntry,
+    VirtualMatrixOutput,
     withViewerControlBackends,
 } from '@ezplayer/ezplayer-core';
 import { DataStorageAPI } from '../api/DataStorageAPI';
@@ -110,6 +114,11 @@ function normalizePlaybackSettings(input: PlaybackSettings): PlaybackSettings {
             ...input.volumeControl,
             defaultVolume: input.volumeControl?.defaultVolume ?? 100,
             schedule: input.volumeControl?.schedule ?? [],
+        },
+        brightnessControl: {
+            ...input.brightnessControl,
+            defaultBrightness: input.brightnessControl?.defaultBrightness ?? 100,
+            schedule: input.brightnessControl?.schedule ?? [],
         },
         jukebox: {
             excludedTags: Array.from(new Set([...DEFAULT_JUKEBOX_EXCLUDED_TAGS, ...excludedNormalized])),
@@ -248,6 +257,19 @@ const playbackSettingsSlice = createSlice({
             state.settings.sendIdleBlackFrames = action.payload;
         },
 
+        // Virtual matrix outputs (machine-local)
+        addVirtualMatrixOutput(state, action: PayloadAction<VirtualMatrixOutput>) {
+            (state.settings.virtualMatrixOutputs ??= []).push(action.payload);
+        },
+        updateVirtualMatrixOutput(state, action: PayloadAction<{ id: string; patch: Partial<VirtualMatrixOutput> }>) {
+            const o = (state.settings.virtualMatrixOutputs ?? []).find((x) => x.id === action.payload.id);
+            if (o) Object.assign(o, action.payload.patch);
+        },
+        removeVirtualMatrixOutput(state, action: PayloadAction<string>) {
+            const next = (state.settings.virtualMatrixOutputs ?? []).filter((o) => o.id !== action.payload);
+            state.settings.virtualMatrixOutputs = next.length > 0 ? next : undefined;
+        },
+
         setControllerRefresh(state, action: PayloadAction<ControllerRefreshMode>) {
             state.settings.controllerRefresh = controllerRefreshSettingsFor(action.payload);
         },
@@ -338,6 +360,32 @@ const playbackSettingsSlice = createSlice({
             moveEntry(state.settings.volumeControl.schedule, action.payload.entryId, action.payload.delta);
         },
 
+        // Brightness control (output brightness and color temperature)
+        setDefaultBrightness(state, action: PayloadAction<number>) {
+            (state.settings.brightnessControl ??= { defaultBrightness: 100, schedule: [] }).defaultBrightness =
+                action.payload;
+        },
+        /** Kelvin; neutral (6500) is stored as absent. */
+        setDefaultColorTemperature(state, action: PayloadAction<number>) {
+            const control = (state.settings.brightnessControl ??= { defaultBrightness: 100, schedule: [] });
+            if (action.payload === COLOR_TEMPERATURE_NEUTRAL_K) delete control.defaultColorTemperature;
+            else control.defaultColorTemperature = action.payload;
+        },
+        addBrightnessScheduleEntry(state, action: PayloadAction<BrightnessScheduleEntry>) {
+            const control = (state.settings.brightnessControl ??= { defaultBrightness: 100, schedule: [] });
+            (control.schedule ??= []).push(action.payload);
+        },
+        removeBrightnessScheduleEntry(state, action: PayloadAction<string>) {
+            const control = state.settings.brightnessControl;
+            if (control) control.schedule = (control.schedule ?? []).filter((e) => e.id !== action.payload);
+        },
+        updateBrightnessScheduleEntry(state, action: PayloadAction<BrightnessScheduleEntry>) {
+            replaceEntry(state.settings.brightnessControl?.schedule, action.payload);
+        },
+        moveBrightnessScheduleEntry(state, action: PayloadAction<{ entryId: string; delta: number }>) {
+            moveEntry(state.settings.brightnessControl?.schedule, action.payload.entryId, action.payload.delta);
+        },
+
         /** Desktop: true = system default output with `volumeControl`; false = `audioOutputs`. */
         setUseDefaultAudioOutput(state, action: PayloadAction<boolean>) {
             state.settings.useDefaultAudioOutput = action.payload ? undefined : false;
@@ -384,6 +432,38 @@ const playbackSettingsSlice = createSlice({
         moveAudioOutputScheduleEntry(state, action: PayloadAction<{ id: string; entryId: string; delta: number }>) {
             const output = (state.settings.audioOutputs ?? []).find((o) => o.id === action.payload.id);
             moveEntry(output?.volumeControl.schedule, action.payload.entryId, action.payload.delta);
+        },
+
+        /** Add an injected-audio bus, or change the fields given on an existing one. */
+        upsertAudioBus(state, action: PayloadAction<AudioBusConfig>) {
+            state.settings.audioBuses = upsertAudioBus(state.settings, action.payload).audioBuses;
+        },
+        /** Where a bus plays; an empty list sends it back to the show outputs. */
+        setAudioBusOutputs(state, action: PayloadAction<{ name: string; outputs: AudioBusOutput[] }>) {
+            const { name, outputs } = action.payload;
+            if (!Array.isArray(state.settings.audioBuses)) state.settings.audioBuses = [];
+            const list = state.settings.audioBuses;
+            let bus = list.find((b) => b.name === name);
+            if (!bus) list.push((bus = { name }));
+            bus.outputs = outputs.length > 0 ? outputs : undefined;
+        },
+        removeAudioBus(state, action: PayloadAction<string>) {
+            state.settings.audioBuses = removeAudioBus(state.settings, action.payload).audioBuses;
+        },
+        /** The listeners a bus is sent to, by name. */
+        setAudioBusListeners(state, action: PayloadAction<{ name: string; listeners: string[] }>) {
+            const { name, listeners } = action.payload;
+            if (!Array.isArray(state.settings.audioBuses)) state.settings.audioBuses = [];
+            const list = state.settings.audioBuses;
+            let bus = list.find((b) => b.name === name);
+            if (!bus) list.push((bus = { name }));
+            bus.listeners = listeners.length > 0 ? listeners : undefined;
+        },
+        /** Forget a listener; it is listed again when it next connects. */
+        removeAudioListener(state, action: PayloadAction<string>) {
+            const next = removeAudioListener(state.settings, action.payload);
+            state.settings.audioBuses = next.audioBuses;
+            state.settings.audioListeners = next.audioListeners;
         },
     },
     extraReducers: (builder) => {
@@ -435,6 +515,12 @@ export const {
     setAdvancedDdpPort,
     setMediaFolder,
     setDefaultVolume,
+    setDefaultBrightness,
+    setDefaultColorTemperature,
+    addBrightnessScheduleEntry,
+    removeBrightnessScheduleEntry,
+    updateBrightnessScheduleEntry,
+    moveBrightnessScheduleEntry,
     addVolumeScheduleEntry,
     removeVolumeScheduleEntry,
     updateVolumeScheduleEntry,

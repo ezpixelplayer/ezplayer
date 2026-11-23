@@ -1,3 +1,4 @@
+import { setMatrixWindowsEnabled } from './mainsrc/matrixWindows.js';
 // earlycli must stay the first import: it applies --user-data-dir before
 // showfolder/webport/ipcautoupdate construct their electron-stores.
 import { cliUsage, getCliArgs, getResetArgs, getUnknownVerb, isHeadless, isToolVerb } from './mainsrc/earlycli.js';
@@ -416,6 +417,7 @@ async function startHeadless() {
         ensureAudioDeviceProbe();
         console.log('EZPlayer headless: local audio enabled');
     }
+    setMatrixWindowsEnabled(false);
 
     // persist:false — never write headless CLI values into stored preferences
     const portInfo = getWebPort({ persist: false });

@@ -42,7 +42,16 @@ export type {
     CloudPlayerSettings,
     ViewerControlScheduleEntry,
     VolumeScheduleEntry,
+    BrightnessScheduleEntry,
+    BrightnessControlState,
     AudioOutputConfig,
+    AudioBusConfig,
+    AudioBusOutput,
+    AudioListenerConfig,
+    VirtualMatrixOutput,
+    VirtualMatrixMode,
+    VirtualMatrixReader,
+    VirtualMatrixStatus,
     VolumeControlState,
     CloudPollScheduleEntry,
     PlayerWebSocketSnapshot,
@@ -277,15 +286,33 @@ export { isPhysicalAudioOutput, resolveAudioOutputDevice } from './util/audioOut
 export type { AudioOutputTarget } from './util/audioOutputs';
 
 export {
+    AUDIO_BUS_IMMEDIATE,
+    AUDIO_BUS_MAIN,
+    MAX_AUDIO_BUSES,
+    addAudioListener,
+    audioBusesFull,
+    audioListenerNames,
+    cleanAudioBus,
+    isAudioName,
+    removeAudioBus,
+    removeAudioListener,
+    resolveAudioBuses,
+    upsertAudioBus,
+} from './util/audioBuses';
+export type { ResolvedAudioBus } from './util/audioBuses';
+
+export {
     type PlayAction,
     type PlaybackActions,
     type PlaybackLogDetail,
     type PlaybackLogDetailType,
     type PlaybackStateSnapshot,
     type UpcomingPlaybackActions,
+    getNextStartEverySlot,
     getPlaylistDurationMS,
     getScheduleTimes,
     getSeqTimesMS,
+    getStartEveryMS,
     playlistsToMap,
     priorityToNumber,
     PlayerRunState,
@@ -294,6 +321,7 @@ export {
 
 export {
     getActiveVolumeSchedule,
+    getActiveBrightnessSchedule,
     getActiveViewerControlSchedule,
     findMatchingScheduleEntry,
 } from './util/SettingsScheduleUtils';
@@ -344,6 +372,15 @@ export {
     type VolumeTargets,
 } from './util/volumeTargets';
 export {
+    COLOR_TEMPERATURE_MIN_K,
+    COLOR_TEMPERATURE_NEUTRAL_K,
+    COLOR_TEMPERATURE_MAX_K,
+    clampBrightness,
+    clampColorTemperature,
+    scheduledBrightness,
+    type BrightnessTarget,
+} from './util/brightnessLevel';
+export {
     hasViewerControlBackend,
     primaryViewerControlType,
     viewerControlBackends,
@@ -358,3 +395,22 @@ export type {
     PlaySongSource,
 } from './types/DataTypes';
 export type { VcPickSource, VcDropReason } from './types/ViewerControlWire';
+
+export type {
+    SceneVec3,
+    ScenePlacement,
+    SceneAppearance,
+    SceneShapeKind,
+    SceneFileRef,
+    SceneContent,
+    SceneContentType,
+    SceneNode,
+    SceneView,
+    SceneObjectRequest,
+    SceneObjectPatch,
+    SceneAssetInfo,
+    SceneObjectInfo,
+    SceneObjectDelta,
+    SceneDelta,
+} from './types/SceneObjects';
+export { SCENE_OBJECTS_PATH, SCENE_FEED_PATH } from './types/SceneObjects';

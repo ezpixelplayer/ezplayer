@@ -14,6 +14,7 @@ import { getGammaFromModelConfiguration } from './pointShaders';
 import { HouseMesh } from './HouseMesh';
 import { ImagePlane } from './ImagePlane';
 import { MovingHeadBeams } from './MovingHeadBeams';
+import { SceneObjectsLayer } from './SceneObjectsLayer';
 import type { MhFixtureInfo } from 'xllayoutcalcs';
 import type { AssetResolver } from '../../services/assetResolver';
 
@@ -1284,6 +1285,9 @@ function SceneContent({
             {movingHeadFixtures && movingHeadFixtures.length > 0 && (
                 <MovingHeadBeams fixtures={movingHeadFixtures} liveData={liveData} />
             )}
+
+            {/* Objects injected through /api/ezp/objects */}
+            <SceneObjectsLayer mode="3d" frameServerUrl={frameServerUrl} assetResolver={assetResolver} />
         </>
     );
 }

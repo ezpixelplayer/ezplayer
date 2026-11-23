@@ -12,6 +12,7 @@ import { LatestFrameRingBuffer } from '@ezplayer/ezplayer-core';
 import { GeometryManager } from './geometryManager';
 import { getGammaFromModelConfiguration } from './pointShaders';
 import { MovingHeadMarkers2D } from './MovingHeadMarkers2D';
+import { SceneObjectsLayer } from './SceneObjectsLayer';
 import type { MhFixtureInfo } from 'xllayoutcalcs';
 import { type AssetResolver, createShowFileResolver } from '../../services/assetResolver';
 
@@ -585,13 +586,14 @@ function BackgroundImage2D({
         }
     }
 
-    // The plane spans (0,0) to (planeWidth, planeHeight), behind points at z=-1.
+    // The plane spans (0,0) to (planeWidth, planeHeight). Drawn first and out of
+    // the depth buffer, so it sits behind everything whatever its Z.
     return (
         <mesh position={[planeWidth / 2, planeHeight / 2, -1]} renderOrder={-1}>
             <planeGeometry args={[planeWidth, planeHeight]} />
             <meshBasicMaterial
                 map={texture}
-                depthWrite={true}
+                depthWrite={false}
                 side={THREE.FrontSide}
                 color={brightnessColor}
                 toneMapped={false}
@@ -999,6 +1001,11 @@ function Scene2DContent({
 
             {movingHeadFixtures && movingHeadFixtures.length > 0 && (
                 <MovingHeadMarkers2D fixtures={movingHeadFixtures} liveData={liveData} viewPlane={viewPlane} />
+            )}
+
+            {/* Objects injected through /api/ezp/objects; world X/Y only, so not for the side planes */}
+            {viewPlane === 'xy' && (
+                <SceneObjectsLayer mode="2d" frameServerUrl={frameServerUrl} assetResolver={assetResolver} />
             )}
         </>
     );

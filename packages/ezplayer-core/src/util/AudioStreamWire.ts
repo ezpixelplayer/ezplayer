@@ -55,6 +55,8 @@ export enum AudioWireCodec {
     PcmF32 = 0,
     Opus = 1,
     Silence = 2,
+    /** Interleaved 16-bit little-endian; injected-audio buses, for clients that ask. */
+    PcmS16 = 3,
 }
 
 export interface AudioWireHeader {
@@ -119,9 +121,7 @@ export function parseAudioWireFrame(data: ArrayBuffer | ArrayBufferView): AudioW
         const version = dv.getUint8(4);
         if (version !== AUDIO_WIRE_VERSION) return null;
         const codec = dv.getUint8(5) as AudioWireCodec;
-        if (codec !== AudioWireCodec.PcmF32 && codec !== AudioWireCodec.Opus && codec !== AudioWireCodec.Silence) {
-            return null;
-        }
+        if (!(codec in AudioWireCodec)) return null;
         const sampleRate = dv.getUint32(32, true);
         const channels = dv.getUint16(36, true);
         const frames = dv.getUint32(40, true);
@@ -129,6 +129,7 @@ export function parseAudioWireFrame(data: ArrayBuffer | ArrayBufferView): AudioW
         const payloadBytes = dv.getUint32(48, true);
         if (sampleRate <= 0 || channels <= 0 || bytes.byteLength < AUDIO_WIRE_HEADER_BYTES + payloadBytes) return null;
         if (codec === AudioWireCodec.PcmF32 && payloadBytes !== frames * channels * 4) return null;
+        if (codec === AudioWireCodec.PcmS16 && payloadBytes !== frames * channels * 2) return null;
         return {
             version: 2,
             codec,

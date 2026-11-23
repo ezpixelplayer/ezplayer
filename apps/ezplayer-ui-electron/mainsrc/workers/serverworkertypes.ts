@@ -1,9 +1,24 @@
+import type { LayoutManifest } from '@ezplayer/epp';
+
+export interface DisplayInfo {
+    index: number;
+    id: number;
+    label: string;
+    width: number;
+    height: number;
+    x: number;
+    y: number;
+    primary: boolean;
+}
+import type { OverlayCommand, OverlayResult } from './overlaytypes';
+import type { AudioCommand, AudioResult } from './audiotypes';
 /**
  * Types for communication between main thread and server worker
  */
 
 import { type ViewObject, type LayoutSettings, type MhFixtureInfo } from './playbacktypes';
 import type {
+    AudioChunk,
     AppSettingsCommand,
     CloudAudioMode,
     CloudCommand,
@@ -42,13 +57,18 @@ export type ServerWorkerToMainMessage =
           kioskPortSource?: string;
       }
     | { type: 'request'; id: string; method: string; args: unknown[] }
-    | { type: 'broadcast'; key: string; value: unknown };
+    | { type: 'broadcast'; key: string; value: unknown }
+    /** The buses that have subscribers; main forwards their chunks. */
+    | { type: 'busAudioWanted'; buses: string[] };
 
 export type MainToServerWorkerMessage =
     | { type: 'init'; data: ServerWorkerData }
     | { type: 'response'; id: string; result?: unknown; error?: string }
     | { type: 'updateFrameBuffer'; buffer: SharedArrayBuffer }
+    | { type: 'updatePixelPool'; buffer: SharedArrayBuffer | undefined; manifest: LayoutManifest | undefined }
     | { type: 'updateAudioBuffer'; buffer: SharedArrayBuffer }
+    /** A chunk of an injected-audio bus that has subscribers. */
+    | { type: 'busAudio'; chunk: AudioChunk }
     | { type: 'broadcast'; key: string; value: unknown }
     | {
           type: 'pushModelCoordinates';
@@ -119,6 +139,12 @@ export interface ServerWorkerRPCAPI {
     putSequences(recs: unknown[]): Promise<unknown[]>;
     applySettingsFromRenderer(settingsPath: string, settings: unknown): void;
     sendPlayerCommand(command: unknown): void;
+    /** Displays attached to the player computer, for virtual matrix outputs. */
+    listDisplays(): Promise<DisplayInfo[]>;
+    /** Overlay lease operations, forwarded to the playback worker. */
+    overlayCommand(cmd: OverlayCommand): Promise<OverlayResult>;
+    /** Audio bus operations, forwarded to the playback worker. */
+    audioCommand(cmd: AudioCommand): Promise<AudioResult>;
     /** The baked song order of a playback item, for the detailed playback view. */
     getPlaybackItemOrder(key: string): Promise<unknown>;
     sendPlaybackSettings(settings: unknown): void;

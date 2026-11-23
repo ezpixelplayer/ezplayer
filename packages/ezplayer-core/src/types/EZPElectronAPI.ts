@@ -32,6 +32,10 @@ export interface AudioDevice {
 }
 
 export interface AudioChunk {
+    /** Audio bus the chunk belongs to; absent is the show audio. */
+    bus?: string;
+    /** Bus chunks: `playAtRealTime` on the player clock, without the local speaker trim. */
+    clockTime?: number;
     playAtRealTime: number; // Sent in advance, adjustment already applied to compensate for display
     incarnation: number; // Increments if a break in the audio is convenient
     /** The player's RTC (the clock `playAtRealTime` is in — smoothed, follows the lights)
