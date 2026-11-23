@@ -28,6 +28,7 @@ import { Select } from '@ezplayer/shared-ui-components';
 import type { AudioDevice, AudioOutputConfig, VolumeScheduleEntry } from '@ezplayer/ezplayer-core';
 import { resolveAudioOutputDevice } from '@ezplayer/ezplayer-core';
 import { Box } from '../../box/Box';
+import { AudioBusSettings } from './AudioBusSettings';
 import { playbackSettingsActions } from '../../../store/slices/PlaybackSettingsStore';
 import type { AppDispatch, RootState } from '../../../store/Store';
 import {
@@ -535,6 +536,10 @@ export const AudioSettings: React.FC = () => {
             <Typography variant="body2" sx={{ mt: 1, fontWeight: 'medium' }}>
                 Current value: {draftSyncAdjust ?? settings.audioSyncAdjust}ms
             </Typography>
+
+            <Divider sx={{ my: 3 }} />
+
+            <AudioBusSettings />
 
             <Dialog open={addOpen} onClose={() => setAddOpen(false)}>
                 <DialogTitle>

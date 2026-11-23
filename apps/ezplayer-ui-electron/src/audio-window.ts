@@ -7,7 +7,7 @@ interface AudioWindowAPI {
     isAudioProbe?: () => boolean;
     reportAudioOutputDevices?: (devices: AudioDevice[]) => void;
     onAudioChunk?: (callback: (data: AudioChunk) => void) => void;
-    onAudioGain?: (callback: (gain: number) => void) => void;
+    onAudioGain?: (callback: (gain: number, bus?: string) => void) => void;
 }
 
 declare global {
@@ -62,6 +62,16 @@ export class RealTimeChunkPlayer {
             void this.rebind();
         }
         void this.audioCtx.resume().catch((err) => console.warn('[audio-window] AudioContext.resume failed', err));
+    }
+
+    /** The context injected-audio buses play through, on the same device. */
+    public context(): AudioContext | undefined {
+        return this.audioCtx;
+    }
+
+    /** False while nothing can sound: the device is absent or the context is stopped. */
+    public live(): boolean {
+        return this.routed && this.audioCtx?.state === 'running';
     }
 
     /** Linear amplitude 0..1 from main. */
@@ -256,6 +266,129 @@ export class RealTimeChunkPlayer {
     }
 }
 
+/**
+ * Where an audio context's clock stands against this computer's. The context
+ * clock moves a device buffer at a time (about 10 ms), so one reading is low
+ * by up to that much; the highest recent reading is the true one.
+ */
+export class ContextClock {
+    private offset?: number;
+    private readAt = 0;
+
+    constructor(private readonly ctx: AudioContext) {}
+
+    /** Context time minus Date.now(), ms. */
+    read(): number {
+        const wall = Date.now();
+        const seen = this.ctx.currentTime * 1000 - wall;
+        // An old high reading is let go at 1 ms a second, faster than a sound card drifts.
+        const held = this.offset === undefined ? -Infinity : this.offset - (wall - this.readAt) / 1000;
+        // Far above every new reading: the context stopped for a while.
+        if (seen >= held || held - seen > 100) {
+            this.offset = seen;
+            this.readAt = wall;
+            return seen;
+        }
+        return held;
+    }
+}
+
+/** A chunk cut short because it came late fades in over this many frames. */
+const LATE_FADE_FRAMES = 96;
+
+/**
+ * One injected-audio bus on this device. Its chunks are 48 kHz with no
+ * overlap, so they are placed on whole frames of the context: the first chunk
+ * of a run fixes where the run sits and the rest follow it exactly.
+ */
+export class BusChannel {
+    private readonly gainNode: GainNode;
+    private anchor?: { playAt: number; frame: number; incarnation: number };
+    private stats = { chunks: 0, late: 0, marginMin: Infinity, marginSum: 0 };
+    private lastLogAt = 0;
+    private readonly clock: ContextClock;
+
+    constructor(
+        private readonly ctx: AudioContext,
+        private readonly name: string,
+    ) {
+        this.gainNode = ctx.createGain();
+        this.gainNode.connect(ctx.destination);
+        this.clock = new ContextClock(ctx);
+        // Read often, so the clock is known when a sound starts.
+        window.setInterval(() => this.clock.read(), 200);
+    }
+
+    public setGain(gain: number): void {
+        this.gainNode.gain.value = Number.isFinite(gain) ? Math.max(0, Math.min(1, gain)) : 1;
+    }
+
+    public handleChunk(msg: AudioChunk, live: boolean): void {
+        const { playAtRealTime, sampleRate, channels, incarnation } = msg;
+        if (!live) {
+            this.anchor = undefined;
+            return;
+        }
+        const samples = new Float32Array(msg.buffer);
+        const frames = samples.length / channels;
+        if (frames <= 0) return;
+        const rate = this.ctx.sampleRate;
+        const margin = playAtRealTime - (Date.now() + (msg.rtcOffsetMs ?? 0));
+        const nowFrame = this.ctx.currentTime * rate;
+        const ideal = ((playAtRealTime - (msg.rtcOffsetMs ?? 0) + this.clock.read()) * rate) / 1000;
+        const a = this.anchor;
+        const placed = a ? a.frame + Math.round(((playAtRealTime - a.playAt) * rate) / 1000) : ideal;
+        // A new run, or the clocks have drifted 20 ms apart: fix the place again.
+        let start = placed;
+        if (!a || a.incarnation !== incarnation || Math.abs(placed - ideal) > rate / 50) {
+            start = Math.round(ideal);
+            this.anchor = { playAt: playAtRealTime, frame: start, incarnation };
+        }
+        this.note(margin, start < nowFrame);
+        const lateFrames = Math.max(0, Math.ceil(nowFrame - start));
+        if (lateFrames >= frames) return;
+
+        const buffer = this.ctx.createBuffer(channels, frames, sampleRate);
+        for (let ch = 0; ch < channels; ch++) {
+            const data = buffer.getChannelData(ch);
+            for (let i = 0; i < frames; i++) data[i] = samples[i * channels + ch];
+        }
+        const source = this.ctx.createBufferSource();
+        source.buffer = buffer;
+        source.connect(this.gainNode);
+        if (lateFrames > 0) {
+            // Late: play what is left at its own time, not the whole chunk shifted,
+            // and ease into it so the cut does not click.
+            const n = Math.min(LATE_FADE_FRAMES, frames - lateFrames);
+            for (let ch = 0; ch < channels; ch++) {
+                const data = buffer.getChannelData(ch);
+                for (let i = 0; i < n; i++) data[lateFrames + i] *= i / n;
+            }
+            source.start(0, lateFrames / sampleRate);
+        } else source.start(start / rate);
+    }
+
+    /** One line every few seconds a bus is in use: how much time its chunks arrive with. A warning when some came late. */
+    private note(margin: number, late: boolean): void {
+        const s = this.stats;
+        s.chunks++;
+        if (late) s.late++;
+        s.marginMin = Math.min(s.marginMin, margin);
+        s.marginSum += margin;
+        const now = Date.now();
+        if (this.lastLogAt === 0) this.lastLogAt = now;
+        if (now - this.lastLogAt < 5000) return;
+        const ctx = this.ctx as AudioContext & { outputLatency?: number };
+        (s.late > 0 ? console.warn : console.log)(
+            `[audio-window] bus ${this.name}: ${s.chunks} chunks, ${s.late} late, ` +
+                `arrival margin min ${Math.round(s.marginMin)} ms avg ${Math.round(s.marginSum / s.chunks)} ms, ` +
+                `device latency ${Math.round(((ctx.outputLatency ?? 0) + ctx.baseLatency) * 1000)} ms`,
+        );
+        this.lastLogAt = now;
+        this.stats = { chunks: 0, late: 0, marginMin: Infinity, marginSum: 0 };
+    }
+}
+
 const logEl = document.getElementById('log');
 
 function log(msg: string) {
@@ -313,6 +446,21 @@ if (api?.isAudioProbe?.()) {
     const player = new RealTimeChunkPlayer(target);
     log(`Audio engine ready (TS) output=${target.label || '(default)'}`);
 
-    api?.onAudioChunk?.((chunk) => player.handleChunk(chunk));
-    api?.onAudioGain?.((gain) => player.setGain(gain));
+    const buses = new Map<string, BusChannel>();
+    const busFor = (name: string): BusChannel | undefined => {
+        const ctx = player.context();
+        if (!ctx) return undefined;
+        let bus = buses.get(name);
+        if (!bus) buses.set(name, (bus = new BusChannel(ctx, name)));
+        return bus;
+    };
+
+    api?.onAudioChunk?.((chunk) => {
+        if (chunk.bus) busFor(chunk.bus)?.handleChunk(chunk, player.live());
+        else player.handleChunk(chunk);
+    });
+    api?.onAudioGain?.((gain, bus) => {
+        if (bus) busFor(bus)?.setGain(gain);
+        else player.setGain(gain);
+    });
 }

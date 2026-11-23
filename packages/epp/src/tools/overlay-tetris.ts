@@ -6,11 +6,13 @@
  *
  * Opens a lease on a grid model over the player's HTTP API, then paints each
  * game frame into it over UDP (the same protocol any external producer uses).
- * A nod to xSchedule, and a live check that the overlay path works end to end.
+ * Its sound effects go to an audio bus through the audio API.
+ * A nod to xSchedule, and a live check that both paths work end to end.
  *
  * Usage:
  *   tsx src/tools/overlay-tetris.ts --player http://127.0.0.1:8080 [--model Matrix]
  *                                   [--fps 20] [--blend replace] [--http]
+ *                                   [--bus immediate] [--volume 0.6] [--no-audio]
  *
  * Keys: left/right or a/d move, up or w rotates, down or s soft drops,
  * space hard drops, p pauses, q quits.
@@ -26,10 +28,22 @@ interface Args {
     fps: number;
     blend: string;
     http: boolean;
+    /** Audio bus for the sound effects. */
+    bus: string;
+    volume: number;
+    audio: boolean;
 }
 
 function parseArgs(argv: string[]): Args {
-    const a: Args = { player: 'http://127.0.0.1:8080', fps: 20, blend: 'replace', http: false };
+    const a: Args = {
+        player: 'http://127.0.0.1:8080',
+        fps: 20,
+        blend: 'replace',
+        http: false,
+        bus: 'immediate',
+        volume: 0.6,
+        audio: true,
+    };
     for (let i = 0; i < argv.length; ++i) {
         const k = argv[i];
         const v = argv[i + 1];
@@ -47,6 +61,14 @@ function parseArgs(argv: string[]): Args {
             ++i;
         } else if (k === '--http') {
             a.http = true;
+        } else if (k === '--bus') {
+            a.bus = v;
+            ++i;
+        } else if (k === '--volume') {
+            a.volume = Number(v);
+            ++i;
+        } else if (k === '--no-audio') {
+            a.audio = false;
         }
     }
     return a;
@@ -59,6 +81,101 @@ interface Lease {
     height: number;
     frameBytes: number;
     model?: string;
+}
+
+// Sound effects: mono floats at 48 kHz, uploaded once as clips and played by name.
+const RATE = 48000;
+const TAU = Math.PI * 2;
+
+/** `sec` of sound from fn(time, 0..1 through it), eased in and out so it cannot click. */
+function sound(sec: number, fn: (t: number, p: number) => number): Uint8Array<ArrayBuffer> {
+    const out = new Float32Array(Math.round(sec * RATE));
+    for (let i = 0; i < out.length; i++) {
+        const t = i / RATE;
+        out[i] = fn(t, i / out.length) * Math.min(1, t / 0.002, (sec - t) / 0.004);
+    }
+    return new Uint8Array(out.buffer);
+}
+
+/** Notes one after another, each `sec` long. */
+function notes(hz: number[], sec: number): Uint8Array<ArrayBuffer> {
+    return sound(hz.length * sec, (t) => {
+        const k = Math.min(hz.length - 1, Math.floor(t / sec));
+        const u = t - k * sec;
+        const wave = Math.sin(TAU * hz[k] * u) + 0.3 * Math.sin(TAU * hz[k] * 2 * u);
+        return wave * 0.6 * Math.min(1, u / 0.003) * (1 - u / sec) ** 0.7;
+    });
+}
+
+let noiseSeed = 1;
+const noise = () => (noiseSeed = (noiseSeed * 1103515245 + 12345) & 0x7fffffff) / 0x3fffffff - 1;
+
+const CLIPS: Record<string, Uint8Array<ArrayBuffer>> = {
+    move: sound(0.03, (t, p) => Math.sin(TAU * 880 * t) * 0.35 * (1 - p)),
+    rotate: sound(0.07, (t, p) => Math.sin(TAU * (600 * t + 2500 * t * t)) * 0.4 * (1 - p)),
+    lock: sound(0.09, (t, p) => (Math.sin(TAU * 110 * t) * 0.8 + noise() * 0.15) * (1 - p) ** 2),
+    drop: sound(0.16, (t, p) => (Math.sin(TAU * (90 * t - 150 * t * t)) + noise() * 0.3 * (1 - p) ** 6) * 0.8 * (1 - p) ** 2),
+    line1: notes([523, 784], 0.07),
+    line2: notes([523, 659, 784], 0.07),
+    line3: notes([523, 659, 784, 1047], 0.07),
+    line4: notes([523, 659, 784, 1047, 784, 1047, 1319], 0.08),
+    pause: notes([660, 440], 0.08),
+    over: notes([392, 330, 262, 196, 131], 0.16),
+};
+
+/** The game's sound effects on one of the player's audio buses. Does nothing when the player has no audio API. */
+class Sounds {
+    private constructor(
+        private readonly base: string,
+        private readonly id: number,
+        private readonly token: number,
+    ) {}
+
+    static async open(base: string, bus: string, volume: number): Promise<Sounds | undefined> {
+        try {
+            const res = await fetch(`${base}/api/ezp/audio/leases`, {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ bus, name: 'tetris', sampleRate: RATE, channels: 1, encoding: 'f32le', gain: volume, ttlMs: 10_000 }),
+            });
+            const opened = (await res.json()) as { ok: boolean; lease?: { id: number; token: number; bus: string; leadMs: number }; error?: string };
+            if (!opened.ok || !opened.lease) throw new Error(opened.error ?? `HTTP ${res.status}`);
+            const s = new Sounds(base, opened.lease.id, opened.lease.token);
+            for (const [name, pcm] of Object.entries(CLIPS)) {
+                const put = await fetch(s.url(`/clips/${name}`), { method: 'PUT', headers: { 'content-type': 'application/octet-stream' }, body: pcm });
+                if (!put.ok) throw new Error(`clip ${name}: HTTP ${put.status}`);
+            }
+            console.log(`Sound on audio bus ${opened.lease.bus} (${opened.lease.leadMs} ms lead)`);
+            return s;
+        } catch (e) {
+            console.log(`No sound: ${(e as Error).message}`);
+            return undefined;
+        }
+    }
+
+    private url(path: string): string {
+        return `${this.base}/api/ezp/audio/leases/${this.id}${path}?token=${this.token}`;
+    }
+
+    private post(path: string, body?: unknown): void {
+        void fetch(this.url(path), {
+            method: 'POST',
+            headers: body ? { 'content-type': 'application/json' } : undefined,
+            body: body ? JSON.stringify(body) : undefined,
+        }).catch(() => undefined);
+    }
+
+    play(clip: string): void {
+        this.post('/play', { clip });
+    }
+
+    keepalive(): void {
+        this.post('/keepalive');
+    }
+
+    async close(): Promise<void> {
+        await fetch(this.url(''), { method: 'DELETE' }).catch(() => undefined);
+    }
 }
 
 // Tetrominoes as rotation lists of [x, y] cells, y down.
@@ -109,6 +226,8 @@ class Tetris {
     over = false;
     paused = false;
     dropMs = 600;
+    /** Names of the sounds for what has happened since the caller last emptied it. */
+    events: string[] = [];
     private acc = 0;
 
     constructor(w: number, h: number) {
@@ -136,12 +255,17 @@ class Tetris {
         this.rot = 0;
         this.px = Math.floor(this.w / 2) - 2;
         this.py = -1;
-        if (!this.fits(this.piece, this.rot, this.px, this.py)) this.over = true;
+        if (!this.fits(this.piece, this.rot, this.px, this.py)) {
+            this.over = true;
+            this.events.push('over');
+        }
     }
 
     move(dx: number) {
         if (this.over || this.paused) return;
-        if (this.fits(this.piece, this.rot, this.px + dx, this.py)) this.px += dx;
+        if (!this.fits(this.piece, this.rot, this.px + dx, this.py)) return;
+        this.px += dx;
+        this.events.push('move');
     }
 
     rotate() {
@@ -151,6 +275,7 @@ class Tetris {
             if (this.fits(this.piece, r, this.px + kick, this.py)) {
                 this.rot = r;
                 this.px += kick;
+                this.events.push('rotate');
                 return;
             }
         }
@@ -166,6 +291,7 @@ class Tetris {
         for (const [x, y] of this.cells()) {
             if (y >= 0) this.board[y * this.w + x] = this.piece;
         }
+        this.events.push('lock');
         this.clearLines();
         this.spawn();
         return false;
@@ -173,9 +299,12 @@ class Tetris {
 
     hardDrop() {
         if (this.over || this.paused) return;
+        const before = this.events.length;
         while (this.step()) {
             /* fall */
         }
+        // The landing of a dropped piece sounds heavier.
+        if (this.events[before] === 'lock') this.events[before] = 'drop';
     }
 
     private clearLines() {
@@ -191,6 +320,7 @@ class Tetris {
         }
         if (cleared) {
             this.lines += cleared;
+            this.events.push(`line${Math.min(cleared, 4)}`);
             this.score += [0, 100, 300, 500, 800][cleared] ?? 800;
             this.dropMs = Math.max(120, 600 - this.lines * 15);
         }
@@ -265,6 +395,7 @@ async function main() {
     console.log(`Lease ${lease.id} on ${lease.model} ${lease.width}x${lease.height}; ${args.http ? 'HTTP frames' : `UDP ${host}:${udpPort}`}`);
     console.log('left/right move, up rotate, down soft drop, space hard drop, p pause, q quit');
 
+    const sounds = args.audio ? await Sounds.open(base, args.bus, args.volume) : undefined;
     const game = new Tetris(width, height);
     const payload = new Uint8Array(lease.frameBytes);
     const sock = dgram.createSocket('udp4');
@@ -294,17 +425,27 @@ async function main() {
         else if (key.name === 'up' || key.name === 'w') game.rotate();
         else if (key.name === 'down' || key.name === 's') game.step();
         else if (key.name === 'space') game.hardDrop();
-        else if (key.name === 'p') game.paused = !game.paused;
+        else if (key.name === 'p') {
+            game.paused = !game.paused;
+            game.events.push('pause');
+        }
         else if (key.name === 'r' && game.over) Object.assign(game, new Tetris(width, height));
     });
 
     const frameMs = 1000 / Math.max(1, args.fps);
     let last = performance.now();
     let lastStatus = '';
+    let lastKeepalive = last;
     while (!quit) {
         const now = performance.now();
         game.tick(now - last);
         last = now;
+        // The sound is asked for before the frame is sent: it takes longer to arrive.
+        for (const name of game.events.splice(0)) sounds?.play(name);
+        if (now - lastKeepalive > 3000) {
+            lastKeepalive = now;
+            sounds?.keepalive();
+        }
         await sendFrame();
         const status = `score ${game.score}  lines ${game.lines}${game.paused ? '  [paused]' : ''}${game.over ? '  GAME OVER (r restarts)' : ''}`;
         if (status !== lastStatus) {
@@ -315,6 +456,7 @@ async function main() {
     }
     process.stdout.write('\n');
     await fetch(`${base}/api/ezp/overlays/${lease.id}?token=${lease.token}`, { method: 'DELETE' }).catch(() => undefined);
+    await sounds?.close();
     sock.close();
     if (process.stdin.isTTY) process.stdin.setRawMode(false);
     process.exit(0);

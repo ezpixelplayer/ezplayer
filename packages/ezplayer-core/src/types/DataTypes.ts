@@ -852,6 +852,36 @@ export interface AudioOutputConfig {
     volumeControl: VolumeControlState;
 }
 
+/** A device an audio bus plays on; matched like `AudioOutputConfig`. */
+export interface AudioBusOutput {
+    deviceId: string;
+    label: string;
+    groupId?: string;
+}
+
+/** A named destination for injected audio. `main` (the show audio) and
+ *  `immediate` always exist; an entry named `immediate` adjusts it. */
+export interface AudioBusConfig {
+    name: string;
+    /** How far ahead of its play time audio is handed to the outputs, ms. */
+    leadMs?: number;
+    /** Length of the pieces the bus is cut into, ms. */
+    chunkMs?: number;
+    /** 0-100; absent is 100. */
+    volume?: number;
+    /** Devices it plays on; absent or empty plays on the show's outputs. */
+    outputs?: AudioBusOutput[];
+    /** False keeps it off this computer's speakers; subscribers still receive it. */
+    playLocally?: boolean;
+    /** Names of the listeners it is sent to. */
+    listeners?: string[];
+}
+
+/** A program on another computer that plays the buses sent to it; it gives its name when it connects. */
+export interface AudioListenerConfig {
+    name: string;
+}
+
 export interface JukeboxSettings {
     /**
      * Tags that always exclude a song from the jukebox.
@@ -938,6 +968,10 @@ export interface PlaybackSettings {
     /** Named outputs used when `useDefaultAudioOutput` is false. Machine-local,
      *  not part of cloud-managed settings groups. */
     audioOutputs?: AudioOutputConfig[];
+    /** Buses for injected audio beyond the built-in ones. Machine-local. */
+    audioBuses?: AudioBusConfig[];
+    /** Listeners that have connected, so buses can be sent to them. Machine-local. */
+    audioListeners?: AudioListenerConfig[];
     /** Models shown as pictures: on a display, in a window, or by URL. Machine-local. */
     virtualMatrixOutputs?: VirtualMatrixOutput[];
 }
@@ -1060,6 +1094,8 @@ export interface AdvancedPlaybackSettings {
     /** UDP port for overlay lease payloads (default 4049). Takes effect when the
      *  pipeline restarts (show folder reload or player restart). */
     overlayPort?: number;
+    /** UDP port for audio stream packets (default 4050); 0 turns the receiver off. */
+    audioPort?: number;
 }
 
 /** The "playback" cloud-managed settings group — the part of PlaybackSettings
