@@ -5,6 +5,10 @@ title: Brightness
 
 # Brightness
 
+:::note
+Requires EZPlayer 0.7 or later.
+:::
+
 The brightness feature can be used to dim your lights without changing your
 sequences or your controllers. Color temperature adjustment is also supported.
 Like [Volume](./volume.md), it has a default level and a schedule

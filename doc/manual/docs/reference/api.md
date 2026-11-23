@@ -1020,6 +1020,10 @@ curl -X POST http://127.0.0.1:8080/api/ezp/volume/default/schedule \
 
 ### GET /api/ezp/brightness
 
+:::note
+Requires EZPlayer 0.7 or later.
+:::
+
 Output brightness as the player automates it (see
 [Brightness](../advanced/brightness.md)): the **default brightness** and
 **default color temperature**, the **scheduled windows**, the window in effect
@@ -1200,6 +1204,10 @@ The 8-byte header is **not** compressed. Decompress the payload starting at offs
 
 ### Overlay leases (`/api/ezp/overlays`)
 
+:::note
+Requires EZPlayer 0.7 or later.
+:::
+
 An overlay lease lets an external program paint a model (or the whole display) while the player runs. The player composites the latest complete overlay payload into every frame it sends, on top of the sequence that is playing (or on top of black while idle), until the lease expires. Games, test tools, and GPU renderers on another machine all use the same path.
 
 A lease targets a **model** by name, or one of its **submodels** as `Model/Submodel`. Grid models (matrices, trees) take an RGB grid `width` x `height`, top row first; any target can take one RGB triple per node (`format: "nodes"`). A grid smaller or larger than the model's own grid is resampled nearest-neighbour.
@@ -1323,6 +1331,10 @@ Packets for a frame may arrive in any order; a packet for a new sequence number 
 
 ### Virtual matrix (`/matrix`, `/api/ezp/pool`)
 
+:::note
+Requires EZPlayer 0.7 or later.
+:::
+
 A [virtual matrix](../advanced/virtual-matrix.md) shows one model's pixels as a picture. The player's own windows and any browser use the same page and the same frame route.
 
 #### GET /matrix?model=NAME
@@ -1392,6 +1404,10 @@ The displays attached to the player computer, as the Virtual Matrix settings lis
 ---
 
 ### Scene objects (`/api/ezp/objects`)
+
+:::note
+Requires EZPlayer 0.7 or later.
+:::
 
 Scene objects let an external program put things into the Show View: a pointer beam, a cloud of sparkles, a prop mesh, a picture, or a group of those. They are display only. They never reach the controllers and never change what is playing. Every viewer of the Show View sees them, in the app, on the LAN web page, and through the cloud.
 
@@ -1640,6 +1656,10 @@ curl http://localhost:3000/api/ezp/audio?afterSeq=42 --output audio.bin
 ---
 
 ### Audio injection (`/api/ezp/audio/buses`, `/api/ezp/audio/leases`)
+
+:::note
+Requires EZPlayer 0.7 or later.
+:::
 
 Another program can send sound to the player: a stream of audio, or short clips it uploads once and then plays at times it chooses. Sound goes to a **bus**, through a **lease** the program opens on it.
 
