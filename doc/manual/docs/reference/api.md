@@ -861,7 +861,8 @@ and takes effect when controllers reopen.
 
 The example is not the whole object: `PlaybackSettings` also carries
 `normalizeNewSongs`, `jukebox`, `testSequenceTags`, `mediaFolder`, the
-machine-local audio-output choice (`useDefaultAudioOutput`, `audioOutputs`)
+machine-local audio-output choice (`useDefaultAudioOutput`, `audioOutputs`),
+the machine-local [audio buses](#audio-injection-apiezpaudiobuses-apiezpaudioleases) (`audioBuses`)
 and the machine-local [virtual matrix](../advanced/virtual-matrix.md) outputs
 (`virtualMatrixOutputs`).
 A POST **replaces** the stored object, so read the current one from the
@@ -1635,6 +1636,279 @@ curl http://localhost:3000/api/ezp/audio?afterSeq=0 --output audio.bin
 # Subsequent requests - only get new chunks
 curl http://localhost:3000/api/ezp/audio?afterSeq=42 --output audio.bin
 ```
+
+---
+
+### Audio injection (`/api/ezp/audio/buses`, `/api/ezp/audio/leases`)
+
+Another program can send sound to the player: a stream of audio, or short clips it uploads once and then plays at times it chooses. Sound goes to a **bus**, through a **lease** the program opens on it.
+
+Two buses always exist:
+
+| Bus         | What it is                                                                                                                                                                      |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `main`      | The show audio. Injected sound is mixed with the song, plays on the show's speakers at the show's volume, and is heard by listeners. It is published about 800 ms ahead of time |
+| `immediate` | Plays on the show's speakers only, with a short lead (40 ms by default), for sounds that must follow an event at once. Listeners do not hear it                                 |
+
+More buses can be added, each with its own lead, chunk length, volume and output devices: a speaker behind a prop, for instance. Any bus but `main` can also be played by another computer on its own speaker: it connects as a [listener](#listeners-and-subscribers) and buses are sent to it, or it subscribes to one bus by name. Buses are kept in playback settings (`audioBuses`), listeners in `audioListeners`, and both can be changed on the Audio settings page.
+
+All times are on the player's clock, in milliseconds. Every reply carries the clock as `now`, and [`GET /api/ezp/time`](#get-apiezptime) returns it too. Lights follow the same clock, so sound and an [overlay](#overlay-leases-apiezpoverlays) sent for the same time line up.
+
+How soon a sound can play is the bus's lead plus up to one chunk, plus the output device's own delay. A sound asked for sooner than that keeps its time and loses its beginning.
+
+Sound on `main` is only produced while the player is producing show audio; it is not while playback is paused.
+
+#### GET /api/ezp/audio/buses
+
+The buses, with their timing and a level meter.
+
+```json
+{
+    "ok": true,
+    "now": 1795408764340.19,
+    "udpPort": 4050,
+    "buses": [
+        {
+            "name": "main",
+            "leadMs": 800,
+            "chunkMs": 100,
+            "volume": 100,
+            "outputs": [],
+            "builtIn": true,
+            "leases": 0,
+            "chunks": 0,
+            "peak": 0
+        },
+        {
+            "name": "immediate",
+            "leadMs": 40,
+            "chunkMs": 20,
+            "volume": 100,
+            "outputs": [],
+            "builtIn": true,
+            "leases": 1,
+            "chunks": 250,
+            "peak": 0.5
+        }
+    ]
+}
+```
+
+| Field     | Meaning                                                                  |
+| --------- | ------------------------------------------------------------------------ |
+| `leadMs`  | How far ahead of its play time sound is handed to the outputs            |
+| `chunkMs` | Length of the pieces the bus is cut into                                 |
+| `volume`  | 0-100. `main` follows the show volume instead                            |
+| `outputs` | Devices the bus plays on; empty means the show's outputs                 |
+| `listeners` | Names of the listeners the bus is sent to                                |
+| `leases`  | Open leases on the bus                                                   |
+| `chunks`  | Pieces holding sound sent to the outputs since the player started        |
+| `peak`    | Largest sample in the last second of sound, 0-1; 0 when the bus is quiet |
+
+#### POST /api/ezp/audio/buses
+
+Add a bus, or change the fields given on an existing one. Answers like the GET.
+
+```json
+{
+    "name": "tree",
+    "leadMs": 100,
+    "chunkMs": 20,
+    "volume": 80,
+    "outputs": [{ "deviceId": "...", "label": "Speakers (USB Audio)" }]
+}
+```
+
+| Field         | Meaning                                                                                             |
+| ------------- | --------------------------------------------------------------------------------------------------- |
+| `name`        | 1-40 letters, digits, spaces, `_`, `.` or `-`. `main` cannot be changed                             |
+| `leadMs`      | 10-5000, default 40                                                                                 |
+| `chunkMs`     | 5-200, default 20                                                                                   |
+| `volume`      | 0-100, default 100                                                                                  |
+| `outputs`     | Output devices by `deviceId`, as listed under `audioOutputDevices` in the player state              |
+| `playLocally` | `false` keeps the bus off this computer's speakers, for a bus only subscribers play; default `true` |
+| `listeners`   | Names of the [listeners](#listeners-and-subscribers) the bus is sent to                             |
+
+A shorter lead plays sooner but leaves less time to deliver each piece; pieces that arrive late are cut short. On a busy player a 40 ms lead is about the least that delivers every piece.
+
+#### DELETE /api/ezp/audio/buses/:name
+
+Remove a bus and end its leases. A built-in bus can only be changed back to its defaults, which this does for `immediate`.
+
+#### POST /api/ezp/audio/leases
+
+Open a lease.
+
+```json
+{ "bus": "immediate", "name": "game sounds", "sampleRate": 48000, "channels": 2, "encoding": "s16le", "ttlMs": 30000 }
+```
+
+| Field        | Meaning                                                                                       |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| `bus`        | Bus name; `main` when omitted. A name not seen before adds that bus with default settings     |
+| `name`       | A label for listings                                                                          |
+| `sampleRate` | Rate of the PCM the lease will send, 8000-192000; default 48000. Other rates are converted    |
+| `channels`   | 1-8; default 2. Mono plays on both sides; beyond two, the first two are used                  |
+| `encoding`   | `s16le` (default) or `f32le`                                                                  |
+| `gain`       | Linear gain of everything on the lease, 0-4; default 1                                        |
+| `ttlMs`      | The lease closes after this long with no call or stream packet; default 30000, at most 1 hour |
+
+```json
+{
+    "ok": true,
+    "now": 1795408764340.19,
+    "udpPort": 4050,
+    "lease": {
+        "id": 3,
+        "token": 2914471032,
+        "bus": "immediate",
+        "leadMs": 40,
+        "chunkMs": 20,
+        "clips": [],
+        "voices": 0,
+        "bufferedMs": 0,
+        "lateMs": 0
+    }
+}
+```
+
+The `token` must accompany every later call, as `?token=` or an `x-ezp-token` header. A wrong id or token answers 404.
+
+#### GET /api/ezp/audio/leases
+
+Open leases, each with its clips, the number of sounds playing (`voices`), stream audio queued ahead (`bufferedMs`) and stream audio that arrived too late to play (`lateMs`, a running total).
+
+#### DELETE /api/ezp/audio/leases/:id
+
+Close the lease. Its sounds stop and its clips are freed.
+
+#### POST /api/ezp/audio/leases/:id/keepalive
+
+Keep an idle lease open.
+
+#### POST /api/ezp/audio/leases/:id/gain
+
+`{ "gain": 0.5 }` sets the lease's gain. The change is spread over one chunk.
+
+#### PUT /api/ezp/audio/leases/:id/clips/:name
+
+Store a clip under a name. The body is a WAV file (8, 16, 24 or 32-bit PCM, or float), or raw PCM in the lease's format. Sending a name again replaces the clip. A clip may be 120 s long and a lease may hold 600 s in all.
+
+```json
+{ "ok": true, "now": 1795408764340.19, "clip": { "name": "zap", "durationMs": 200 } }
+```
+
+`DELETE` on the same path removes the clip; sounds already playing finish.
+
+#### POST /api/ezp/audio/leases/:id/play
+
+Play a clip.
+
+```json
+{ "clip": "zap", "at": 1795408765000, "gain": 0.8, "loop": false }
+```
+
+| Field  | Meaning                                                               |
+| ------ | --------------------------------------------------------------------- |
+| `clip` | Name of a stored clip                                                 |
+| `at`   | Player clock time to start at; as soon as the bus allows when omitted |
+| `gain` | Linear gain of this sound, 0-4; default 1                             |
+| `loop` | Repeat until stopped                                                  |
+
+```json
+{ "ok": true, "now": 1795408764340.19, "play": { "voice": 12, "startsAt": 1795408765000, "lateMs": 0 } }
+```
+
+`startsAt` is when the sound begins. With `at` too soon, `lateMs` is how much of the clip's start was lost. Up to 64 sounds can play on a lease at once.
+
+#### POST /api/ezp/audio/leases/:id/stop
+
+`{ "voice": 12, "fadeMs": 50 }` fades out one sound; without `voice`, all of the lease's. `fadeMs` defaults to 10. The reply's `stopped` is how many were stopped.
+
+#### PUT /api/ezp/audio/leases/:id/stream
+
+Add PCM to the lease's stream. The body is raw PCM in the lease's format, whole frames.
+
+| Query | Meaning                                                                                             |
+| ----- | --------------------------------------------------------------------------------------------------- |
+| `at`  | Player clock time of the first frame. Omitted, the chunk follows the previous one                   |
+| `seq` | A number that rises with each chunk; a chunk whose number is not above the last one seen is dropped |
+
+```json
+{ "ok": true, "now": 1795408764340.19, "stream": { "bufferedMs": 840, "lateMs": 0 } }
+```
+
+A chunk whose `at` is within 1.5 ms of the end of the previous chunk joins it exactly, so a client can stamp every chunk from its own count of frames. A chunk timed elsewhere starts a new run there, replacing anything queued after that time. A stream sent with no times starts two chunks later than the bus's lead, to absorb uneven delivery. Audio can be queued up to 60 s ahead.
+
+For listeners to hear a stream on `main`, each part must arrive at least the bus's lead ahead of its time. Send ahead, not as the audio is made.
+
+#### UDP stream packets
+
+Stream chunks can also be sent to the player's audio port (`udpPort` in the replies; `advanced.audioPort` in playback settings, default 4050, 0 to turn it off). Each packet is one chunk. All integers are big-endian.
+
+| Offset | Size | Field                                                                         |
+| ------ | ---- | ----------------------------------------------------------------------------- |
+| 0      | 4    | Magic `EZA1`                                                                  |
+| 4      | 4    | Lease id                                                                      |
+| 8      | 4    | Token                                                                         |
+| 12     | 4    | Sequence (increment per packet)                                               |
+| 16     | 8    | Time of the first frame as a 64-bit float, or 0 to follow the previous packet |
+| 24     | N    | PCM in the lease's format, whole frames; keep N to 1400 or less               |
+
+A lost packet leaves a gap of its own length when packets carry times. `scripts/audio-inject-demo.mjs` is a complete example client. The two games in the source tree, `overlay-tetris.ts` and `scripts/scene-flashlight-tag.mjs`, play their sound effects this way; each takes the bus to use as `--bus`, `immediate` by default.
+
+#### Listeners and subscribers
+
+Another computer can play a bus on its own speaker in two ways, both over a WebSocket:
+
+- `ws://<player>/api/ezp/audiostream?listener=NAME` connects as a **listener** with a name of its choosing (the same characters as a bus name). The player remembers the name in settings, and the Audio settings page then offers it under each bus. The listener receives every bus that is sent to it, and plays them all.
+- `ws://<player>/api/ezp/audiostream?bus=NAME` **subscribes** to one bus, whatever the settings say.
+
+Add `&format=s16` to either for 16-bit samples instead of floats.
+
+Each binary message is one chunk of 48 kHz stereo sound, sent the bus's lead ahead of its time. Only chunks that hold sound are sent, so a quiet bus sends nothing. A message is a 52-byte header, little-endian, then the samples:
+
+| Offset | Type | Field                                                              |
+| ------ | ---- | ------------------------------------------------------------------ |
+| 0      | u32  | Magic `EZAU`                                                       |
+| 4      | u8   | Version, 2                                                         |
+| 5      | u8   | Codec, 0: interleaved 32-bit floats; 3: 16-bit integers            |
+| 6      | u16  | Flags, 0                                                           |
+| 8      | f64  | `serverNow`: the player clock when the message was sent            |
+| 16     | f64  | `playAt`: the player clock time of the first frame                 |
+| 24     | u32  | Run number; it changes when a chunk does not follow the one before |
+| 28     | u32  | Message sequence                                                   |
+| 32     | u32  | Sample rate, 48000                                                 |
+| 36     | u16  | Channels, 2                                                        |
+| 38     | u16  | Unused, 0                                                          |
+| 40     | u32  | Frames in the chunk                                                |
+| 44     | u32  | Frames until the next chunk; the same                              |
+| 48     | u32  | Payload bytes                                                      |
+| 52     | N    | Samples                                                            |
+
+The client plays each chunk at its `playAt` on the player's clock. The bus's lead has to cover the network and the client's own output delay; 150 ms is a comfortable start.
+
+`scripts/audio-bus-listen.py` is a complete listener for a Raspberry Pi or any Linux computer. It needs only Python 3 and `aplay`:
+
+```
+python3 audio-bus-listen.py http://<player>:3000 --name "Porch Pi" --device plughw:CARD=S3
+```
+
+It connects under that name (the computer's host name when none is given), keeps trying while the player is away, and plays what is sent to it. `--bus NAME` subscribes to one bus instead, and `--delay MS` tells it how long its sound card takes to make a sample heard.
+
+Without `bus` or `listener`, or with `bus=main`, the socket carries the show audio as before.
+
+#### GET /api/ezp/audio/listeners
+
+The listeners the player knows, connected or not.
+
+```json
+{ "ok": true, "listeners": [{ "name": "Porch Pi", "connected": true, "addresses": ["192.168.1.40"], "buses": ["tree"] }] }
+```
+
+#### DELETE /api/ezp/audio/listeners/:name
+
+Forget a listener and stop sending buses to it. It is listed again the next time it connects.
 
 ---
 

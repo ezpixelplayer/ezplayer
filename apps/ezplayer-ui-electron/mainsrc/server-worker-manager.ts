@@ -2,6 +2,7 @@ import type { LayoutManifest } from '@ezplayer/epp';
 import { listDisplays, setMatrixWindowsWebPort, syncMatrixWindowsFromSettings } from './matrixWindows.js';
 import type { OverlayCommand } from './workers/overlaytypes.js';
 import type { TestTweakCommand } from './workers/testtweak.js';
+import type { AudioCommand } from './workers/audiotypes.js';
 /**
  * Server Worker Manager - manages the Koa server running in a worker thread
  */
@@ -10,7 +11,7 @@ import { Worker } from 'node:worker_threads';
 import * as path from 'path';
 import * as fs from 'fs';
 import { fileURLToPath } from 'url';
-import type { CloudAudioMode } from '@ezplayer/ezplayer-core';
+import type { AudioChunk, CloudAudioMode } from '@ezplayer/ezplayer-core';
 import { app, BrowserWindow } from 'electron';
 import type {
     ServerWorkerToMainMessage,
@@ -27,6 +28,7 @@ import {
     putSequencesWithDurations,
     playWorkerOverlay,
     playWorkerTestTweak,
+    playWorkerAudio,
     getPlaybackItemOrder,
 } from './ipcezplayer.js';
 import { getCurrentShowFolder } from '../showfolder.js';
@@ -122,6 +124,7 @@ const rpcHandlers: ServerWorkerRPCAPI = {
     },
     overlayCommand: (cmd: unknown) => playWorkerOverlay(cmd as OverlayCommand),
     testTweakCommand: (cmd: unknown) => playWorkerTestTweak(cmd as TestTweakCommand),
+    audioCommand: (cmd: unknown) => playWorkerAudio(cmd as AudioCommand),
     listDisplays: async () => listDisplays(),
     sendPlayerCommand: (command: unknown) => {
         const cmd = command as EZPlayerCommand;
@@ -317,6 +320,9 @@ export async function setUpServerWorker(config: ServerWorkerConfig): Promise<voi
                     }
                 }
                 break;
+            case 'busAudioWanted':
+                wantedBuses = new Set(msg.buses);
+                break;
             case 'request':
                 // Handle RPC request from server worker
                 handleRPCRequest(msg.id, msg.method, msg.args);
@@ -501,6 +507,15 @@ export function updateFrameBuffer(buffer: SharedArrayBuffer) {
     // SharedArrayBuffer must NOT be in the transferList — it is automatically
     // shared (not transferred) via structured clone when referenced in the message.
     serverWorker.postMessage(message);
+}
+
+/** Buses somebody is subscribed to, as the server worker last reported. */
+let wantedBuses = new Set<string>();
+
+/** Pass a bus chunk to the server worker when that bus has subscribers. */
+export function forwardBusAudio(chunk: AudioChunk): void {
+    if (!serverWorker || !chunk.bus || !wantedBuses.has(chunk.bus)) return;
+    serverWorker.postMessage({ type: 'busAudio', chunk } satisfies MainToServerWorkerMessage);
 }
 
 /**

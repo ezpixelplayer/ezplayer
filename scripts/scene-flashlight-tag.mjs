@@ -11,10 +11,14 @@
  *   --center=x,y,z   Middle of the field; default fits the layout
  *   --size=n         Field width in world units; default fits the layout
  *   --figure=n       Figure height in world units; default fits the layout
+ *   --bus=name       Audio bus for the sound effects; default immediate
+ *   --volume=n       Loudness of the sound effects, 0-1; default 0.6
+ *   --no-audio       No sound effects
  *
  * It exercises uploaded meshes (figures, textured trees), uploaded images
  * (ghosts), beams, shapes, points, groups whose contents are replaced, leases,
- * keepalive and delete. Ctrl+C removes everything it made.
+ * keepalive and delete, and sound clips played on an audio bus. Ctrl+C removes
+ * everything it made.
  */
 
 import zlib from 'node:zlib';
@@ -301,6 +305,9 @@ let countdownUntil = 1.5;
 let tags = 0;
 /** The last tag, for the effect. */
 let burst = { at: -100, u: 0, v: 0, color: '#ffffff' };
+/** Names of the sounds for what happened in the last step. */
+const sfx = [];
+let chasing = false;
 
 /** Unit vector and length from a to b. */
 function toward(a, b) {
@@ -319,6 +326,8 @@ function lit(a, b, reach = BEAM_LENGTH) {
 function step(t, dt) {
     const chaser = players[it];
     const runner = players[1 - it];
+    if (t >= countdownUntil && !chasing) sfx.push('go');
+    chasing = t >= countdownUntil;
 
     for (const p of players) {
         let wu = 0;
@@ -375,10 +384,14 @@ function step(t, dt) {
         g.u = clamp(g.u + to.du * dir * SPEED * 0.42 * dt, -HALF_U * 1.15, HALF_U * 1.15);
         g.v = clamp(g.v + to.dv * dir * SPEED * 0.42 * dt, -HALF_V * 1.15, HALF_V * 1.15);
         g.faceLeft = to.du * dir < 0;
-        if (!stunned && t >= countdownUntil && lit(chaser, g)) g.stunnedUntil = t + 3;
+        if (!stunned && t >= countdownUntil && lit(chaser, g)) {
+            g.stunnedUntil = t + 3;
+            sfx.push('stun');
+        }
         if (!stunned && to.d < H * 0.5) {
             target.spookedUntil = t + 2;
             g.stunnedUntil = t + 2;
+            sfx.push('spook');
         }
     }
 
@@ -387,6 +400,7 @@ function step(t, dt) {
         burst = { at: t, u: runner.u, v: runner.v, color: chaser.color };
         it = 1 - it;
         countdownUntil = t + 2.5;
+        sfx.push('tag');
         console.log(`Tag ${tags}: ${chaser.key} caught ${runner.key}`);
     }
 }
@@ -569,6 +583,81 @@ async function create(o) {
 }
 
 // ---------------------------------------------------------------------------
+// Sound effects: mono floats at 48 kHz, uploaded once as clips to a lease on
+// an audio bus, then played by name
+// ---------------------------------------------------------------------------
+
+const RATE = 48000;
+const TAU = Math.PI * 2;
+
+/** `sec` of sound from fn(time, 0..1 through it), eased in and out so it cannot click. */
+function sound(sec, fn) {
+    const out = new Float32Array(Math.round(sec * RATE));
+    for (let i = 0; i < out.length; i++) {
+        const t = i / RATE;
+        out[i] = fn(t, i / out.length) * Math.min(1, t / 0.003, (sec - t) / 0.005);
+    }
+    return new Uint8Array(out.buffer);
+}
+
+const CLIPS = {
+    // The chase is on: two quick blips.
+    go: sound(0.2, (t) => Math.sin(TAU * (t < 0.1 ? 660 : 990) * t) * 0.5 * (1 - ((t * 10) % 1)) ** 0.5),
+    // Caught: a zap that falls, then three rising notes.
+    tag: sound(0.6, (t) => {
+        if (t < 0.18) return Math.sin(TAU * (1600 * t - 3200 * t * t)) * 0.6 * (1 - t / 0.18);
+        const u = (t - 0.18) % 0.14;
+        const hz = [523, 659, 784][Math.min(2, Math.floor((t - 0.18) / 0.14))];
+        return Math.sin(TAU * hz * u) * 0.55 * Math.min(1, u / 0.003) * (1 - u / 0.14) ** 0.6;
+    }),
+    // A ghost caught in the beam: a falling, wavering whoop.
+    stun: sound(0.5, (t, p) => Math.sin(TAU * (700 * t - 450 * t * t) + 3 * Math.sin(TAU * 9 * t)) * 0.4 * (1 - p)),
+    // A ghost touches a player: a low shiver.
+    spook: sound(0.7, (t, p) => Math.sin(TAU * 95 * t + 5 * Math.sin(TAU * 6 * t)) * 0.6 * Math.sin(Math.PI * p)),
+};
+
+const audioBus = opt('bus') ?? 'immediate';
+/** The lease the sounds play on; undefined when there is no sound. */
+let audioLease;
+
+async function audio(method, path, body) {
+    const raw = body instanceof Uint8Array;
+    const res = await fetch(`${base}/api/ezp/audio/${path}`, {
+        method,
+        headers: body ? { 'content-type': raw ? 'application/octet-stream' : 'application/json' } : undefined,
+        body: raw ? body : body ? JSON.stringify(body) : undefined,
+    });
+    if (!res.ok && res.status !== 404) throw new Error(`${method} audio/${path}: ${res.status} ${await res.text()}`);
+    return res.status === 404 ? undefined : await res.json();
+}
+
+async function openAudio() {
+    audioLease = undefined;
+    const opened = await audio('POST', 'leases', {
+        bus: audioBus,
+        name: 'flashlight-tag',
+        sampleRate: RATE,
+        channels: 1,
+        encoding: 'f32le',
+        gain: Number(opt('volume') ?? 0.6),
+        ttlMs: 5000,
+    });
+    if (!opened) throw new Error('this player has no audio API');
+    const at = `leases/${opened.lease.id}`;
+    for (const [name, pcm] of Object.entries(CLIPS))
+        await audio('PUT', `${at}/clips/${name}?token=${opened.lease.token}`, pcm);
+    audioLease = { at, token: opened.lease.token };
+    return opened.lease;
+}
+
+/** Play a clip or renew the lease; a lease that ran out (say the player restarted) is made again. */
+async function audioCall(what, body) {
+    if (!audioLease) return;
+    const reply = await audio('POST', `${audioLease.at}/${what}?token=${audioLease.token}`, body);
+    if (!reply && !stopping) await openAudio();
+}
+
+// ---------------------------------------------------------------------------
 // Run
 // ---------------------------------------------------------------------------
 
@@ -577,9 +666,21 @@ let stopping = false;
 process.on('SIGINT', async () => {
     if (stopping) process.exit(1);
     stopping = true;
-    await Promise.allSettled(keys.map((key) => send('DELETE', key)));
+    await Promise.allSettled([
+        ...keys.map((key) => send('DELETE', key)),
+        audioLease ? audio('DELETE', `${audioLease.at}?token=${audioLease.token}`) : undefined,
+    ]);
     process.exit(0);
 });
+
+if (!args.includes('--no-audio')) {
+    try {
+        const lease = await openAudio();
+        console.log(`Sound on audio bus ${lease.bus} (${lease.leadMs} ms lead).`);
+    } catch (err) {
+        console.log(`No sound: ${err.message}`);
+    }
+}
 
 for (const o of objects(0)) await create(o);
 console.log(
@@ -595,6 +696,9 @@ while (!stopping) {
     last = t;
     const keepalive = t - lastKeepalive > 1;
     if (keepalive) lastKeepalive = t;
+    // Sounds are asked for first and not waited on: they take longest to arrive.
+    for (const clip of sfx.splice(0)) void audioCall('play', { clip }).catch(() => {});
+    if (keepalive) void audioCall('keepalive').catch(() => {});
     await Promise.all(
         objects(t).map(async (o) => {
             // Things that never change just renew their lease now and then.

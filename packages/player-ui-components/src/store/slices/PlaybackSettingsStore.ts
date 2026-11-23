@@ -6,6 +6,8 @@ import type {
     ViewerControlScheduleList,
 } from '@ezplayer/ezplayer-core';
 import { controllerRefreshSettingsFor, COLOR_TEMPERATURE_NEUTRAL_K } from '@ezplayer/ezplayer-core';
+import { removeAudioBus, removeAudioListener, upsertAudioBus } from '@ezplayer/ezplayer-core';
+import type { AudioBusConfig, AudioBusOutput } from '@ezplayer/ezplayer-core';
 import { createAsyncThunk, createSlice, PayloadAction } from '@reduxjs/toolkit';
 import {
     AudioOutputConfig,
@@ -430,6 +432,38 @@ const playbackSettingsSlice = createSlice({
         moveAudioOutputScheduleEntry(state, action: PayloadAction<{ id: string; entryId: string; delta: number }>) {
             const output = (state.settings.audioOutputs ?? []).find((o) => o.id === action.payload.id);
             moveEntry(output?.volumeControl.schedule, action.payload.entryId, action.payload.delta);
+        },
+
+        /** Add an injected-audio bus, or change the fields given on an existing one. */
+        upsertAudioBus(state, action: PayloadAction<AudioBusConfig>) {
+            state.settings.audioBuses = upsertAudioBus(state.settings, action.payload).audioBuses;
+        },
+        /** Where a bus plays; an empty list sends it back to the show outputs. */
+        setAudioBusOutputs(state, action: PayloadAction<{ name: string; outputs: AudioBusOutput[] }>) {
+            const { name, outputs } = action.payload;
+            if (!Array.isArray(state.settings.audioBuses)) state.settings.audioBuses = [];
+            const list = state.settings.audioBuses;
+            let bus = list.find((b) => b.name === name);
+            if (!bus) list.push((bus = { name }));
+            bus.outputs = outputs.length > 0 ? outputs : undefined;
+        },
+        removeAudioBus(state, action: PayloadAction<string>) {
+            state.settings.audioBuses = removeAudioBus(state.settings, action.payload).audioBuses;
+        },
+        /** The listeners a bus is sent to, by name. */
+        setAudioBusListeners(state, action: PayloadAction<{ name: string; listeners: string[] }>) {
+            const { name, listeners } = action.payload;
+            if (!Array.isArray(state.settings.audioBuses)) state.settings.audioBuses = [];
+            const list = state.settings.audioBuses;
+            let bus = list.find((b) => b.name === name);
+            if (!bus) list.push((bus = { name }));
+            bus.listeners = listeners.length > 0 ? listeners : undefined;
+        },
+        /** Forget a listener; it is listed again when it next connects. */
+        removeAudioListener(state, action: PayloadAction<string>) {
+            const next = removeAudioListener(state.settings, action.payload);
+            state.settings.audioBuses = next.audioBuses;
+            state.settings.audioListeners = next.audioListeners;
         },
     },
     extraReducers: (builder) => {

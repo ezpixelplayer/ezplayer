@@ -59,10 +59,16 @@ export type DiagEventKind =
 const WIN_SESSION_END_EXIT_CODES = new Set([0x40010004, 0xc000013a]);
 
 let sessionEnding = false;
+let quitting = false;
 
 /** Call once the OS session is definitely ending (BrowserWindow 'session-end'). */
 export function noteSessionEnding(): void {
     sessionEnding = true;
+}
+
+/** Call from 'before-quit'. */
+export function noteQuitting(): void {
+    quitting = true;
 }
 
 /**
@@ -74,6 +80,9 @@ export function noteSessionEnding(): void {
 export function isExpectedProcessExit(details: { reason: string; exitCode: number }): boolean {
     if (sessionEnding) return true;
     if (details.reason === 'clean-exit') return true;
+    // Children killed while we quit (SIGTERM on Linux and macOS, exit code 1 on
+    // Windows), and the GPU process failing to relaunch after them.
+    if (quitting && (details.reason === 'killed' || details.reason === 'launch-failed')) return true;
     return (
         process.platform === 'win32' &&
         details.reason === 'killed' &&

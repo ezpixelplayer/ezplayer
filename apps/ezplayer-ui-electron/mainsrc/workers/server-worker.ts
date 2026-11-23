@@ -3,6 +3,8 @@ import { MATRIX_PAGE_HTML } from './matrixpage.js';
 import { MatrixReaders } from './matrix-readers.js';
 import type { OverlayCommand } from './overlaytypes.js';
 import type { TestTweakCommand } from './testtweak.js';
+import type { AudioCommand } from './audiotypes.js';
+import type { AudioLeaseRequest } from './audiobus.js';
 import type { OverlayLeaseRequest } from '@ezplayer/epp';
 /**
  * Server worker - runs Koa server in a worker thread
@@ -34,6 +36,22 @@ import type {
     SequenceRecord,
 } from '@ezplayer/ezplayer-core';
 import { LatestFrameRingBuffer, AudioChunkRingBuffer, isSupportBundleLevel } from '@ezplayer/ezplayer-core';
+import {
+    AUDIO_BUS_MAIN,
+    AudioWireCodec,
+    MAX_AUDIO_BUSES,
+    addAudioListener,
+    audioBusesFull,
+    audioListenerNames,
+    buildAudioWireFrame,
+    cleanAudioBus,
+    isAudioName,
+    removeAudioBus,
+    removeAudioListener,
+    resolveAudioBuses,
+    upsertAudioBus,
+} from '@ezplayer/ezplayer-core';
+import type { AudioBusConfig, AudioChunk } from '@ezplayer/ezplayer-core';
 import type { AudioBridgeControlMessage, CloudAudioMode, VirtualMatrixStatus } from '@ezplayer/ezplayer-core';
 import * as os from 'os';
 import {
@@ -314,6 +332,7 @@ async function applyPlaybackSettings(settings: PlaybackSettings): Promise<void> 
     }
     await rpc.call('sendPlaybackSettings', settings);
     wsBroadcaster.set('playbackSettings', settings);
+    reportBusAudioWanted();
 }
 
 /** Reply body for a volume write: the state after it, and whether the default
@@ -475,6 +494,8 @@ parentPort.on('message', async (msg: MainToServerWorkerMessage) => {
     } else if (msg.type === 'updateAudioBuffer') {
         curAudioRing = new AudioChunkRingBuffer(msg.buffer, false);
         audioPumpAfterSeq = curAudioRing.latestSeq;
+    } else if (msg.type === 'busAudio') {
+        sendBusAudio(msg.chunk);
     } else if (msg.type === 'cloudAudioMode') {
         setCloudAudioMode(msg.mode);
     } else if (msg.type === 'rtcOffset') {
@@ -489,6 +510,8 @@ parentPort.on('message', async (msg: MainToServerWorkerMessage) => {
         }
         // Forward broadcast from main thread to WebSocket clients
         wsBroadcaster.set(msg.key as keyof FullPlayerState, msg.value as FullPlayerState[keyof FullPlayerState]);
+        // The buses sent to listeners may have changed.
+        if (msg.key === 'playbackSettings') reportBusAudioWanted();
     } else if (msg.type === 'clearShowData') {
         // Show folder changed — clear all cached data so stale data is never served
         cachedModelCoordinates3D = {};
@@ -898,12 +921,164 @@ audioStreamWss.on('connection', (ws) => {
     ensureAudioPump();
 });
 
-/** LAN / kiosk listeners: `ws://<player>/api/ezp/audiostream`. Same trust
- *  level as the rest of the LAN API (none). */
+/**
+ * A client receiving injected-audio buses: a subscriber to one bus by name,
+ * or a listener that gave its own name and gets the buses settings send to it.
+ */
+interface BusAudioClient {
+    ws: WebSocket;
+    bus?: string;
+    listener?: string;
+    /** 16-bit samples asked for; floats otherwise. */
+    s16: boolean;
+    address: string;
+}
+const busAudioClients = new Set<BusAudioClient>();
+const busAudioWss = new WebSocketServer({ noServer: true });
+let busAudioSeq = 0;
+let busAudioWantedSent = '';
+
+function joinBusAudio(client: BusAudioClient): void {
+    busAudioClients.add(client);
+    const leave = () => {
+        if (busAudioClients.delete(client)) reportBusAudioWanted();
+    };
+    client.ws.on('close', leave);
+    client.ws.on('error', leave);
+    reportBusAudioWanted();
+    // A listener seen for the first time is kept in settings, so buses can be sent to it.
+    const name = client.listener;
+    if (!name) return;
+    void audioSettingsTurn(async () => {
+        const settings = currentPlaybackSettings();
+        if (!settings || audioListenerNames(settings).includes(name)) return;
+        await applyPlaybackSettings(addAudioListener(settings, name));
+    }).catch((err) => console.error('[server-worker] could not save audio listener:', err));
+}
+
+/** The tail of the audio settings changes in progress. */
+let audioSettingsQueue: Promise<unknown> = Promise.resolve();
+
+/**
+ * Run one change to the audio settings after those already under way. A
+ * change reads the settings inside its turn, so two made at once (two
+ * programs each naming a new bus, say) both end up stored.
+ */
+function audioSettingsTurn<T>(change: () => Promise<T>): Promise<T> {
+    const turn = audioSettingsQueue.then(change, change);
+    audioSettingsQueue = turn.catch(() => undefined);
+    return turn;
+}
+
+/** The names of the listeners each bus is sent to, as of the last settings change. */
+let busListeners = new Map<string, string[]>();
+
+/** Tell main which buses somebody receives, when that changes. */
+function reportBusAudioWanted(): void {
+    busListeners = new Map(resolveAudioBuses(currentPlaybackSettings()).map((b) => [b.name, b.listeners]));
+    const sentTo = busListeners;
+    const buses = new Set<string>();
+    for (const c of busAudioClients) {
+        if (c.bus) buses.add(c.bus);
+        else for (const [bus, names] of sentTo) if (names.includes(c.listener!)) buses.add(bus);
+    }
+    const list = [...buses].sort();
+    const key = list.join('\n');
+    if (key === busAudioWantedSent) return;
+    busAudioWantedSent = key;
+    parentPort?.postMessage({ type: 'busAudioWanted', buses: list } satisfies ServerWorkerToMainMessage);
+}
+
+/** Listeners known from settings or connected now, with the buses sent to each. */
+function audioListenerStatus() {
+    const sentTo = busListeners;
+    const names = new Set(audioListenerNames(currentPlaybackSettings()));
+    for (const c of busAudioClients) if (c.listener) names.add(c.listener);
+    return [...names].map((name) => {
+        const addresses = [...busAudioClients].filter((c) => c.listener === name).map((c) => c.address);
+        return {
+            name,
+            connected: addresses.length > 0,
+            addresses,
+            buses: [...sentTo].filter(([, to]) => to.includes(name)).map(([bus]) => bus),
+        };
+    });
+}
+
+/** One bus chunk to those who receive that bus, as uncompressed PCM: a bus is too sparse and too prompt for the opus stream. */
+function sendBusAudio(chunk: AudioChunk): void {
+    if (!chunk.bus || busAudioClients.size === 0) return;
+    const sentTo = busListeners.get(chunk.bus) ?? [];
+    const floats = new Float32Array(chunk.buffer);
+    const frames = floats.length / chunk.channels;
+    const header = {
+        serverNow: rtcNow(),
+        playAt: chunk.clockTime ?? chunk.playAtRealTime,
+        incarnation: chunk.incarnation,
+        seq: ++busAudioSeq,
+        sampleRate: chunk.sampleRate,
+        channels: chunk.channels,
+        preSkip: 0,
+        frames,
+        hopFrames: frames,
+    };
+    let f32: Uint8Array | undefined;
+    let s16: Uint8Array | undefined;
+    for (const client of busAudioClients) {
+        if (client.bus ? client.bus !== chunk.bus : !sentTo.includes(client.listener!)) continue;
+        const ws = client.ws;
+        if (ws.readyState !== WebSocket.OPEN || ws.bufferedAmount > AUDIO_MAX_BUFFERED_BYTES) continue;
+        let frame: Uint8Array;
+        if (client.s16) {
+            if (!s16) {
+                const ints = new Int16Array(floats.length);
+                for (let i = 0; i < floats.length; i++) {
+                    ints[i] = Math.round(Math.max(-1, Math.min(1, floats[i])) * 32767);
+                }
+                s16 = buildAudioWireFrame({ codec: AudioWireCodec.PcmS16, ...header }, new Uint8Array(ints.buffer));
+            }
+            frame = s16;
+        } else {
+            f32 ??= buildAudioWireFrame({ codec: AudioWireCodec.PcmF32, ...header }, new Uint8Array(chunk.buffer));
+            frame = f32;
+        }
+        try {
+            ws.send(frame, { binary: true });
+        } catch {
+            /* per-client */
+        }
+    }
+}
+
+/** LAN / kiosk listeners: `ws://<player>/api/ezp/audiostream`; with
+ *  `?bus=NAME` one injected-audio bus; with `?listener=NAME` the buses
+ *  settings send to that listener. Same trust level as the rest of the
+ *  LAN API (none). */
 function attachAudioStreamUpgrade(server: ReturnType<typeof createServer>): void {
     server.on('upgrade', (req, socket, head) => {
-        const pathname = (req.url ?? '').split('?')[0];
-        if (pathname !== '/api/ezp/audiostream') return; // leave for the other upgrade handlers
+        let url: URL;
+        try {
+            url = new URL(req.url ?? '', 'http://localhost');
+        } catch {
+            return; // not a target of ours; the other upgrade handlers see it too
+        }
+        if (url.pathname !== '/api/ezp/audiostream') return; // leave for the other upgrade handlers
+        const bus = url.searchParams.get('bus');
+        const listener = url.searchParams.get('listener');
+        const s16 = url.searchParams.get('format') === 's16';
+        const address = req.socket.remoteAddress ?? '';
+        if (bus && bus !== AUDIO_BUS_MAIN) {
+            busAudioWss.handleUpgrade(req, socket, head, (ws) => joinBusAudio({ ws, bus, s16, address }));
+            return;
+        }
+        if (listener !== null) {
+            if (!isAudioName(listener)) {
+                socket.end('HTTP/1.1 400 Bad Request\r\n\r\n');
+                return;
+            }
+            busAudioWss.handleUpgrade(req, socket, head, (ws) => joinBusAudio({ ws, listener, s16, address }));
+            return;
+        }
         audioStreamWss.handleUpgrade(req, socket, head, (ws) => audioStreamWss.emit('connection', ws, req));
     });
 }
@@ -1908,6 +2083,8 @@ async function startServer(config: ServerWorkerData) {
         'mediaFolder',
         'useDefaultAudioOutput',
         'audioOutputs',
+        'audioBuses',
+        'audioListeners',
         'virtualMatrixOutputs',
     ]);
     /** The player reads these unconditionally; a part write may not remove them. */
@@ -2324,6 +2501,152 @@ async function startServer(config: ServerWorkerData) {
             token: overlayToken(ctx),
             seq,
             data: new Uint8Array(raw),
+        });
+    });
+
+    // ----------------------------------------------
+    // Audio injection: an external producer streams PCM or plays uploaded
+    // clips into a named bus through a lease (see audiobus.ts). Buses beyond
+    // the built-in two are kept in playback settings.
+    // ----------------------------------------------
+    const audioCall = async (ctx: Koa.Context, cmd: AudioCommand) => {
+        try {
+            const res = await rpc.call('audioCommand', cmd);
+            if (!res.ok) {
+                ctx.status = res.error === 'player not running' ? 503 : /^unknown lease/.test(res.error) ? 404 : 400;
+            }
+            ctx.body = res;
+        } catch (error) {
+            console.error('[server-worker] audio command failed:', error);
+            ctx.status = 500;
+            ctx.body = { ok: false, error: 'Internal server error' };
+        }
+    };
+    const audioRef = (ctx: Koa.Context) => ({
+        id: Number(ctx.params.id),
+        token: Number(ctx.query.token ?? ctx.get('x-ezp-token') ?? 0),
+    });
+    const optionalNumber = (v: unknown) => (v === undefined || v === '' ? undefined : Number(v));
+    const audioBody = (ctx: Koa.Context) => (ctx.request.body ?? {}) as Record<string, unknown>;
+
+    router.get('/api/ezp/audio/buses', (ctx) => audioCall(ctx, { op: 'buses' }));
+    const refuse = (ctx: Koa.Context, status: number, error: string) => {
+        ctx.status = status;
+        ctx.body = { ok: false, error };
+        return false;
+    };
+    const busesFull = `the player has all ${MAX_AUDIO_BUSES} of its audio buses; remove one first`;
+
+    router.post('/api/ezp/audio/buses', async (ctx) => {
+        const r = cleanAudioBus(ctx.request.body);
+        if (!r.ok) return void refuse(ctx, 400, r.error);
+        const stored = await audioSettingsTurn(async () => {
+            const settings = settingsOr503(ctx);
+            if (!settings) return false;
+            if (audioBusesFull(settings, r.bus.name)) return refuse(ctx, 400, busesFull);
+            await applyPlaybackSettings(upsertAudioBus(settings, r.bus));
+            return true;
+        });
+        if (stored) await audioCall(ctx, { op: 'buses' });
+    });
+    router.delete('/api/ezp/audio/buses/:name', async (ctx) => {
+        const name = String(ctx.params.name);
+        const removed = await audioSettingsTurn(async () => {
+            const settings = settingsOr503(ctx);
+            if (!settings) return false;
+            const buses = resolveAudioBuses(settings);
+            const bus = buses.find((b) => b.name === name);
+            const stored = Array.isArray(settings.audioBuses) && settings.audioBuses.some((b) => b?.name === name);
+            if (!stored)
+                return refuse(ctx, bus ? 400 : 404, bus ? `${name} is built in` : `no audio bus named ${name}`);
+            await applyPlaybackSettings(removeAudioBus(settings, name));
+            return true;
+        });
+        if (removed) await audioCall(ctx, { op: 'buses' });
+    });
+
+    router.get('/api/ezp/audio/listeners', (ctx) => {
+        ctx.body = { ok: true, listeners: audioListenerStatus() };
+    });
+    router.delete('/api/ezp/audio/listeners/:name', async (ctx) => {
+        const name = String(ctx.params.name);
+        const removed = await audioSettingsTurn(async () => {
+            const settings = settingsOr503(ctx);
+            if (!settings) return false;
+            if (!audioListenerStatus().some((l) => l.name === name)) {
+                return refuse(ctx, 404, `no audio listener named ${name}`);
+            }
+            await applyPlaybackSettings(removeAudioListener(settings, name));
+            return true;
+        });
+        if (removed) ctx.body = { ok: true, listeners: audioListenerStatus() };
+    });
+
+    router.get('/api/ezp/audio/leases', (ctx) => audioCall(ctx, { op: 'list' }));
+    router.post('/api/ezp/audio/leases', async (ctx) => {
+        const request = audioBody(ctx) as AudioLeaseRequest;
+        // A lease on a bus nobody has defined registers it, so it shows in settings.
+        let newBus: AudioBusConfig | undefined;
+        const ready = await audioSettingsTurn(async () => {
+            const settings = currentPlaybackSettings();
+            const bus = request.bus;
+            if (bus === undefined || !settings || resolveAudioBuses(settings).some((b) => b.name === bus)) return true;
+            const r = cleanAudioBus({ name: bus });
+            if (!r.ok) return refuse(ctx, 400, `bus ${r.error}`);
+            if (audioBusesFull(settings, r.bus.name)) return refuse(ctx, 400, busesFull);
+            newBus = r.bus;
+            await applyPlaybackSettings(upsertAudioBus(settings, newBus));
+            return true;
+        });
+        if (ready) await audioCall(ctx, { op: 'open', request, newBus });
+    });
+    router.delete('/api/ezp/audio/leases/:id', (ctx) => audioCall(ctx, { op: 'close', ...audioRef(ctx) }));
+    router.post('/api/ezp/audio/leases/:id/keepalive', (ctx) => audioCall(ctx, { op: 'keepalive', ...audioRef(ctx) }));
+    router.post('/api/ezp/audio/leases/:id/gain', (ctx) =>
+        audioCall(ctx, { op: 'gain', ...audioRef(ctx), gain: Number(audioBody(ctx).gain) }),
+    );
+    router.put('/api/ezp/audio/leases/:id/stream', async (ctx) => {
+        const raw = await getRawBody(ctx.req, { limit: '8mb' });
+        await audioCall(ctx, {
+            op: 'stream',
+            ...audioRef(ctx),
+            data: new Uint8Array(raw),
+            at: optionalNumber(ctx.query.at),
+            seq: optionalNumber(ctx.query.seq),
+        });
+    });
+    router.put('/api/ezp/audio/leases/:id/clips/:name', async (ctx) => {
+        const raw = await getRawBody(ctx.req, { limit: '64mb' });
+        await audioCall(ctx, {
+            op: 'clip',
+            ...audioRef(ctx),
+            name: String(ctx.params.name),
+            data: new Uint8Array(raw),
+        });
+    });
+    router.delete('/api/ezp/audio/leases/:id/clips/:name', (ctx) =>
+        audioCall(ctx, { op: 'unclip', ...audioRef(ctx), name: String(ctx.params.name) }),
+    );
+    router.post('/api/ezp/audio/leases/:id/play', (ctx) => {
+        const b = audioBody(ctx);
+        return audioCall(ctx, {
+            op: 'play',
+            ...audioRef(ctx),
+            request: {
+                clip: String(b.clip ?? ''),
+                at: optionalNumber(b.at),
+                gain: optionalNumber(b.gain),
+                loop: b.loop === true,
+            },
+        });
+    });
+    router.post('/api/ezp/audio/leases/:id/stop', (ctx) => {
+        const b = audioBody(ctx);
+        return audioCall(ctx, {
+            op: 'stop',
+            ...audioRef(ctx),
+            voice: optionalNumber(b.voice),
+            fadeMs: optionalNumber(b.fadeMs),
         });
     });
 

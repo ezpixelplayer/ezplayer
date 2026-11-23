@@ -44,7 +44,9 @@ export function watchRenderer(win: BrowserWindow, recentErrors: () => string[]):
             new Promise((r) => setTimeout(() => r({ probe: `no answer in ${PROBE_TIMEOUT_MS} ms` }), PROBE_TIMEOUT_MS)),
         ]);
 
-    wc.on('did-start-loading', () => {
+    // A committed main-frame document, not 'did-start-loading': a link that
+    // turns into a download (the support bundle) starts loading but keeps the page.
+    wc.on('did-navigate', () => {
         ready = false;
         loadStartedAt = Date.now();
         clearTimeout(readyTimer);

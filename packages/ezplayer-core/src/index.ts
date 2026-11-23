@@ -45,6 +45,9 @@ export type {
     BrightnessScheduleEntry,
     BrightnessControlState,
     AudioOutputConfig,
+    AudioBusConfig,
+    AudioBusOutput,
+    AudioListenerConfig,
     VirtualMatrixOutput,
     VirtualMatrixMode,
     VirtualMatrixReader,
@@ -281,6 +284,22 @@ export {
 
 export { isPhysicalAudioOutput, resolveAudioOutputDevice } from './util/audioOutputs';
 export type { AudioOutputTarget } from './util/audioOutputs';
+
+export {
+    AUDIO_BUS_IMMEDIATE,
+    AUDIO_BUS_MAIN,
+    MAX_AUDIO_BUSES,
+    addAudioListener,
+    audioBusesFull,
+    audioListenerNames,
+    cleanAudioBus,
+    isAudioName,
+    removeAudioBus,
+    removeAudioListener,
+    resolveAudioBuses,
+    upsertAudioBus,
+} from './util/audioBuses';
+export type { ResolvedAudioBus } from './util/audioBuses';
 
 export {
     type PlayAction,

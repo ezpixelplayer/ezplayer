@@ -17,7 +17,7 @@ import path from 'path';
 import { pathToFileURL } from 'url';
 import { BrowserWindow, app } from 'electron';
 import type { AudioChunk, AudioOutputTarget, PlaybackSettings } from '@ezplayer/ezplayer-core';
-import { DEFAULT_VOLUME_TARGET_ID, isPhysicalAudioOutput } from '@ezplayer/ezplayer-core';
+import { DEFAULT_VOLUME_TARGET_ID, isPhysicalAudioOutput, resolveAudioBuses } from '@ezplayer/ezplayer-core';
 import { captureRendererConsole } from './applog.js';
 import { safeSend } from './safe-send.js';
 
@@ -27,7 +27,20 @@ interface AudioOutputWindow {
     win: BrowserWindow;
     target: AudioOutputTarget;
     lastGain?: number;
+    /** False for a device only injected-audio buses play on. */
+    show: boolean;
+    /** Gain last sent for each bus. */
+    busGains: Map<string, number>;
 }
+
+/** Where a bus plays: a window, and whether it also follows that output's show volume. */
+interface BusRoute {
+    key: string;
+    followShow: boolean;
+}
+
+/** Windows each bus with its own devices plays on; other buses play on the show's. */
+let busRoutes = new Map<string, BusRoute[]>();
 
 let preloadPath = '';
 let htmlFilePath = '';
@@ -98,6 +111,7 @@ function createAudioWindow(key: string, target: AudioOutputTarget): BrowserWindo
         const cur = outputs.get(key);
         if (cur?.win === win) {
             cur.lastGain = undefined;
+            cur.busGains.clear();
             pushGain(key, cur);
         }
     });
@@ -139,6 +153,29 @@ export function syncAudioOutputsFromSettings(settings: PlaybackSettings | null |
         }
     }
 
+    // A bus with devices of its own plays on the show's window for a device
+    // they share, and on a window of its own for any other.
+    const showKeys = new Set(desired.keys());
+    const routes = new Map<string, BusRoute[]>();
+    for (const bus of resolveAudioBuses(settings ?? undefined)) {
+        if (!bus.playLocally) {
+            routes.set(bus.name, []);
+            continue;
+        }
+        if (bus.outputs.length === 0) continue;
+        const list: BusRoute[] = [];
+        for (const o of bus.outputs) {
+            let key = [...desired].find(([, t]) => t.deviceId === o.deviceId)?.[0];
+            if (!key) {
+                key = `bus:${o.deviceId}`;
+                desired.set(key, { deviceId: o.deviceId, label: o.label, groupId: o.groupId });
+            }
+            if (!list.some((r) => r.key === key)) list.push({ key, followShow: false });
+        }
+        routes.set(bus.name, list);
+    }
+    busRoutes = routes;
+
     for (const key of [...outputs.keys()]) {
         const want = desired.get(key);
         const have = outputs.get(key)!;
@@ -147,9 +184,10 @@ export function syncAudioOutputsFromSettings(settings: PlaybackSettings | null |
     for (const [key, target] of desired) {
         let out = outputs.get(key);
         if (!out) {
-            out = { win: createAudioWindow(key, target), target };
+            out = { win: createAudioWindow(key, target), target, show: showKeys.has(key), busGains: new Map() };
             outputs.set(key, out);
         }
+        out.show = showKeys.has(key);
         pushGain(key, out);
     }
 
@@ -183,11 +221,37 @@ export function ensureAudioDeviceProbe(): void {
  * per output key (mute already applied). `volumeSF` is the legacy single gain
  * and stands in for the default output when `gains` is absent.
  */
-export function broadcastAudioChunk(chunk: AudioChunk, volumeSF = 1, gains?: Record<string, number>): void {
+export function broadcastAudioChunk(
+    chunk: AudioChunk,
+    volumeSF = 1,
+    gains?: Record<string, number>,
+    busGain = 1,
+): void {
     workerGains = gains ?? { [DEFAULT_VOLUME_TARGET_ID]: volumeSF };
+    if (chunk.bus) {
+        broadcastBusChunk(chunk, chunk.bus, busGain);
+        return;
+    }
     for (const [key, out] of outputs) {
-        if (out.win.isDestroyed()) continue;
+        if (out.win.isDestroyed() || !out.show) continue;
         pushGain(key, out);
+        safeSend(out.win, 'audio:chunk', chunk);
+    }
+}
+
+/** A chunk of an injected-audio bus goes to that bus's devices, at the bus's volume. */
+function broadcastBusChunk(chunk: AudioChunk, bus: string, busGain: number): void {
+    const routes =
+        busRoutes.get(bus) ??
+        [...outputs].filter(([, o]) => o.show).map(([key]) => ({ key, followShow: true }) satisfies BusRoute);
+    for (const { key, followShow } of routes) {
+        const out = outputs.get(key);
+        if (!out || out.win.isDestroyed()) continue;
+        const gain = busGain * (followShow ? gainFor(key) : 1);
+        if (out.busGains.get(bus) !== gain) {
+            out.busGains.set(bus, gain);
+            safeSend(out.win, 'audio:gain', gain, bus);
+        }
         safeSend(out.win, 'audio:chunk', chunk);
     }
 }

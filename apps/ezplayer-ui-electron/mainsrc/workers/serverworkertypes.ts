@@ -12,12 +12,14 @@ export interface DisplayInfo {
 }
 import type { OverlayCommand, OverlayResult } from './overlaytypes';
 import type { TestTweakCommand, TestTweakResult } from './testtweak';
+import type { AudioCommand, AudioResult } from './audiotypes';
 /**
  * Types for communication between main thread and server worker
  */
 
 import { type ViewObject, type LayoutSettings, type MhFixtureInfo } from './playbacktypes';
 import type {
+    AudioChunk,
     AppSettingsCommand,
     CloudAudioMode,
     CloudCommand,
@@ -56,7 +58,9 @@ export type ServerWorkerToMainMessage =
           kioskPortSource?: string;
       }
     | { type: 'request'; id: string; method: string; args: unknown[] }
-    | { type: 'broadcast'; key: string; value: unknown };
+    | { type: 'broadcast'; key: string; value: unknown }
+    /** The buses that have subscribers; main forwards their chunks. */
+    | { type: 'busAudioWanted'; buses: string[] };
 
 export type MainToServerWorkerMessage =
     | { type: 'init'; data: ServerWorkerData }
@@ -64,6 +68,8 @@ export type MainToServerWorkerMessage =
     | { type: 'updateFrameBuffer'; buffer: SharedArrayBuffer }
     | { type: 'updatePixelPool'; buffer: SharedArrayBuffer | undefined; manifest: LayoutManifest | undefined }
     | { type: 'updateAudioBuffer'; buffer: SharedArrayBuffer }
+    /** A chunk of an injected-audio bus that has subscribers. */
+    | { type: 'busAudio'; chunk: AudioChunk }
     | { type: 'broadcast'; key: string; value: unknown }
     | {
           type: 'pushModelCoordinates';
@@ -140,6 +146,8 @@ export interface ServerWorkerRPCAPI {
     overlayCommand(cmd: OverlayCommand): Promise<OverlayResult>;
     /** Test + Tweak operations, forwarded to the playback worker. */
     testTweakCommand(cmd: TestTweakCommand): Promise<TestTweakResult>;
+    /** Audio bus operations, forwarded to the playback worker. */
+    audioCommand(cmd: AudioCommand): Promise<AudioResult>;
     /** The baked song order of a playback item, for the detailed playback view. */
     getPlaybackItemOrder(key: string): Promise<unknown>;
     sendPlaybackSettings(settings: unknown): void;
