@@ -16,9 +16,12 @@ expected.
 
 The schedule plays:
 
-1. The intro playlist (if any)
+1. The intro (if any)
 2. The main playlist, applying loop / shuffle to fill time, if so requested
-3. The outro playlist (if any)
+3. The outro (if any)
+
+The **Intro** and **Outro** can each be a playlist or a single song. Type in the box to
+search; playlists are listed first, then songs.
 
 ## Filling the time window
 
@@ -31,6 +34,44 @@ If you set a **To** time longer than the main playlist (plus intro/outro), **Loo
 is enabled automatically so the window stays filled. A short warning appears when
 that happens. If you clear both Loop and Shuffle while the playlist is still too
 short, the editor warns that the playlist will not fill the whole schedule.
+
+## Start every
+
+With **Loop** or **Shuffle** on, the playlist normally starts again the moment it
+finishes. Enter a number of minutes in **Start every** to start it on a fixed spacing
+instead: with a 10-minute playlist and "start every 15 minutes", the playlist plays
+at :00, :15, :30 and :45, with 5 minutes between.
+
+- Start times are counted from the schedule's **From** time.
+- The intro and outro play at every start.
+- Nothing from this schedule plays in the gaps. A lower-priority schedule covering
+  the same window plays there, and gives way again at the next start.
+- A start can be late if something else is playing (a request, or a higher-priority
+  schedule). The starts after it are back on the original times.
+- If a start time arrives while the playlist is still playing, that start is skipped.
+  The editor warns when the playlist is longer than the spacing.
+- With **Shuffle**, each start plays every song once, in a new order.
+- If the player starts up, or the schedule is changed, part way through the window,
+  it waits for the next start time. Changes to a schedule that is playing apply from
+  the next start.
+
+## Interstitial
+
+An **Interstitial** is a playlist or single song (an announcement, a station ID, a
+"tune to 88.1" reminder) played between songs of the main playlist.
+
+- **Every (songs)** — how many songs play between interstitials.
+- **First after song** — how many songs play before the first one. Leave it empty to
+  use the same number as **Every**; enter 0 to play one before the first song.
+
+For example, _Every 3, First after song 1_ plays: song 1, interstitial, songs 2–4,
+interstitial, songs 5–7, interstitial, and so on.
+
+The count carries on when a looped playlist wraps around, and begins again at each
+**Start every** start. An interstitial is never the last thing before the outro or
+the end of the schedule: when there is not room for both it and the song after it, the
+interstitial is left out.
+(With **Finish exactly at end time**, it can be cut off like any song.)
 
 ## End Time Behavior
 
