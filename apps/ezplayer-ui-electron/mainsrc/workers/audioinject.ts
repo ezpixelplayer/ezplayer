@@ -104,7 +104,8 @@ export class AudioInject {
         if (now - this.lastSweep >= SWEEP_INTERVAL_MS) {
             this.lastSweep = now;
             for (const id of this.engine.sweep(now)) this.opts.log('info', `[audio] lease ${id} expired`);
-            if (this.timer && this.engine.list(now).length === 0) {
+            // Closed leases are served until their fade has been sent.
+            if (this.timer && this.engine.held === 0) {
                 clearInterval(this.timer);
                 this.timer = undefined;
             }

@@ -12,7 +12,11 @@ const MAIN_LEAD_MS = 700;
 const MAIN_CHUNK_MS = 100;
 const DEFAULT_LEAD_MS = 40;
 const DEFAULT_CHUNK_MS = 20;
-const MAX_BUSES = 16;
+/** Buses the player takes, the built-in two included. */
+export const MAX_AUDIO_BUSES = 16;
+
+/** A list from settings; a value of any other shape, which a client may have stored, counts as empty. */
+const asList = <T>(v: T[] | undefined): T[] => (Array.isArray(v) ? v : []);
 
 export interface ResolvedAudioBus {
     name: string;
@@ -80,12 +84,12 @@ export function resolveAudioBuses(settings: Pick<PlaybackSettings, 'audioBuses'>
         leadMs: clampInt(c.leadMs, 10, 5000, DEFAULT_LEAD_MS),
         chunkMs: clampInt(c.chunkMs, 5, 200, DEFAULT_CHUNK_MS),
         volume: clampInt(c.volume, 0, 100, 100),
-        outputs: (c.outputs ?? []).filter((o) => !!o?.deviceId),
+        outputs: asList(c.outputs).filter((o) => !!o?.deviceId),
         playLocally: c.playLocally !== false,
-        listeners: (c.listeners ?? []).filter(isAudioName),
+        listeners: asList(c.listeners).filter(isAudioName),
         builtIn,
     });
-    const configured = (settings?.audioBuses ?? []).filter((c) => c && typeof c.name === 'string');
+    const configured = asList(settings?.audioBuses).filter((c) => c && typeof c.name === 'string');
     const out: ResolvedAudioBus[] = [
         {
             name: AUDIO_BUS_MAIN,
@@ -100,16 +104,29 @@ export function resolveAudioBuses(settings: Pick<PlaybackSettings, 'audioBuses'>
         resolve(configured.find((c) => c.name === AUDIO_BUS_IMMEDIATE) ?? { name: AUDIO_BUS_IMMEDIATE }, true),
     ];
     for (const c of configured) {
-        if (out.length >= MAX_BUSES) break;
+        if (out.length >= MAX_AUDIO_BUSES) break;
         if (c.name === AUDIO_BUS_MAIN || out.some((b) => b.name === c.name)) continue;
         out.push(resolve(c, false));
     }
     return out;
 }
 
+/** True when the player has all the buses it takes and `name` is not one of them. */
+export function audioBusesFull(settings: Pick<PlaybackSettings, 'audioBuses'> | undefined, name: string): boolean {
+    const buses = resolveAudioBuses(settings);
+    return buses.length >= MAX_AUDIO_BUSES && !buses.some((b) => b.name === name);
+}
+
+/** The names of the listeners settings hold. */
+export function audioListenerNames(settings: Pick<PlaybackSettings, 'audioListeners'> | undefined): string[] {
+    return asList(settings?.audioListeners)
+        .filter((l) => l && isAudioName(l.name))
+        .map((l) => l.name);
+}
+
 /** Settings with `bus` added, or merged over the entry of the same name. */
 export function upsertAudioBus<S extends Pick<PlaybackSettings, 'audioBuses'>>(settings: S, bus: AudioBusConfig): S {
-    const list = settings.audioBuses ?? [];
+    const list = asList(settings.audioBuses);
     const at = list.findIndex((b) => b.name === bus.name);
     const audioBuses = at < 0 ? [...list, bus] : list.map((b, i) => (i === at ? { ...b, ...bus } : b));
     return { ...settings, audioBuses };
@@ -117,24 +134,30 @@ export function upsertAudioBus<S extends Pick<PlaybackSettings, 'audioBuses'>>(s
 
 /** Settings without the named bus; a built-in bus goes back to its defaults. */
 export function removeAudioBus<S extends Pick<PlaybackSettings, 'audioBuses'>>(settings: S, name: string): S {
-    const audioBuses = (settings.audioBuses ?? []).filter((b) => b.name !== name);
+    const audioBuses = asList(settings.audioBuses).filter((b) => b.name !== name);
     return { ...settings, audioBuses: audioBuses.length ? audioBuses : undefined };
 }
 
 /** Settings with the listener known; unchanged when it already is. */
 export function addAudioListener<S extends ListenerSettings>(settings: S, name: string): S {
-    const list = settings.audioListeners ?? [];
+    const list = asList(settings.audioListeners).filter((l) => l && isAudioName(l.name));
     if (list.some((l) => l.name === name)) return settings;
     return { ...settings, audioListeners: [...list, { name }] };
 }
 
 /** Settings without the listener, and with no bus sent to it. */
 export function removeAudioListener<S extends ListenerSettings>(settings: S, name: string): S {
-    const audioListeners = (settings.audioListeners ?? []).filter((l) => l.name !== name);
-    const audioBuses = settings.audioBuses?.map((b) => {
-        if (!b.listeners?.includes(name)) return b;
-        const listeners = b.listeners.filter((n) => n !== name);
+    const audioListeners = audioListenerNames(settings)
+        .filter((n) => n !== name)
+        .map((n) => ({ name: n }));
+    const audioBuses = asList(settings.audioBuses).map((b) => {
+        if (!asList(b?.listeners).includes(name)) return b;
+        const listeners = asList(b.listeners).filter((n) => n !== name);
         return { ...b, listeners: listeners.length ? listeners : undefined };
     });
-    return { ...settings, audioBuses, audioListeners: audioListeners.length ? audioListeners : undefined };
+    return {
+        ...settings,
+        audioBuses: settings.audioBuses === undefined ? undefined : audioBuses,
+        audioListeners: audioListeners.length ? audioListeners : undefined,
+    };
 }

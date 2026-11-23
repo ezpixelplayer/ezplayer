@@ -14,7 +14,14 @@ import {
 import React, { useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import type { AudioBusOutput, ResolvedAudioBus } from '@ezplayer/ezplayer-core';
-import { AUDIO_BUS_MAIN, cleanAudioBus, isPhysicalAudioOutput, resolveAudioBuses } from '@ezplayer/ezplayer-core';
+import {
+    AUDIO_BUS_MAIN,
+    MAX_AUDIO_BUSES,
+    audioListenerNames,
+    cleanAudioBus,
+    isPhysicalAudioOutput,
+    resolveAudioBuses,
+} from '@ezplayer/ezplayer-core';
 import { Box } from '../../box/Box';
 import { playbackSettingsActions } from '../../../store/slices/PlaybackSettingsStore';
 import type { AppDispatch, RootState } from '../../../store/Store';
@@ -57,9 +64,10 @@ export const AudioBusSettings: React.FC = () => {
     const [draftVolumes, setDraftVolumes] = useState<Record<string, number | null>>({});
 
     const buses = resolveAudioBuses(settings);
-    const stored = new Set((settings.audioBuses ?? []).map((b) => b.name));
+    const stored = new Set((Array.isArray(settings.audioBuses) ? settings.audioBuses : []).map((b) => b?.name));
     const physical = (devices ?? []).filter(isPhysicalAudioOutput);
-    const listeners = (settings.audioListeners ?? []).map((l) => l.name);
+    const listeners = audioListenerNames(settings);
+    const full = buses.length >= MAX_AUDIO_BUSES;
     const candidate = cleanAudioBus({ name: newName.trim() });
     const nameTaken = buses.some((b) => b.name === newName.trim());
 
@@ -243,19 +251,21 @@ export const AudioBusSettings: React.FC = () => {
                     onChange={(e) => setNewName(e.target.value)}
                     error={newName.trim() !== '' && (!candidate.ok || nameTaken)}
                     helperText={
-                        newName.trim() === ''
-                            ? undefined
-                            : nameTaken
-                              ? 'That name is in use'
-                              : candidate.ok
-                                ? undefined
-                                : candidate.error
+                        full
+                            ? `The player takes ${MAX_AUDIO_BUSES - 1} buses besides the show audio; remove one first`
+                            : newName.trim() === ''
+                              ? undefined
+                              : nameTaken
+                                ? 'That name is in use'
+                                : candidate.ok
+                                  ? undefined
+                                  : candidate.error
                     }
                 />
                 <Button
                     variant="contained"
                     startIcon={<Add />}
-                    disabled={!candidate.ok || nameTaken}
+                    disabled={!candidate.ok || nameTaken || full}
                     onClick={() => {
                         if (!candidate.ok) return;
                         dispatch(playbackSettingsActions.upsertAudioBus(candidate.bus));

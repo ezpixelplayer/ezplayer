@@ -59,6 +59,7 @@ export const NowPlayingCard = ({
     const dispatch = useDispatch<AppDispatch>();
     const [audioSettingsOpen, setAudioSettingsOpen] = useState(false);
     const [detailOpen, setDetailOpen] = useState(false);
+    const [brightnessSettingsOpen, setBrightnessSettingsOpen] = useState(false);
     // Reloading clears controller state, so it waits for controller operations
     // that are running or queued.
     const controllerOpRunning = useSelector((s: RootState) =>
@@ -103,7 +104,6 @@ export const NowPlayingCard = ({
             : [{ id: 'default', label: '', level: Math.round(volume) }];
     const silent = muted || volumeRows.every((r) => r.level === 0);
     const openAudioSettings = () => setAudioSettingsOpen(true);
-    const [brightnessSettingsOpen, setBrightnessSettingsOpen] = useState(false);
     const openBrightnessSettings = () => setBrightnessSettingsOpen(true);
     const brightness = player.brightness;
     const brightnessTitle = brightness

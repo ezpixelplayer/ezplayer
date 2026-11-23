@@ -288,7 +288,10 @@ export type { AudioOutputTarget } from './util/audioOutputs';
 export {
     AUDIO_BUS_IMMEDIATE,
     AUDIO_BUS_MAIN,
+    MAX_AUDIO_BUSES,
     addAudioListener,
+    audioBusesFull,
+    audioListenerNames,
     cleanAudioBus,
     isAudioName,
     removeAudioBus,

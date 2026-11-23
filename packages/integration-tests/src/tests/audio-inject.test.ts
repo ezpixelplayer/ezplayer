@@ -4,6 +4,7 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import dgram from 'node:dgram';
+import net from 'node:net';
 import { AudioWireCodec, parseAudioWireFrame, splitOpusPackets, type AudioWireFrame } from '@ezplayer/ezplayer-core';
 import OpusScript from 'opusscript';
 import { startEzPlayer, type EzPlayerProc } from '../harness/ezplayer-proc.js';
@@ -371,6 +372,52 @@ describe('audio injection', () => {
         expect((await ok('GET', '/buses')).buses.find((b) => b.name === 'porch')).toMatchObject({ listeners: [] });
         expect((await call('DELETE', '/listeners/it-pi')).status).toBe(404);
         await ok('DELETE', '/buses/porch');
+    });
+
+    it('stays up through a malformed upgrade request', async () => {
+        const port = Number(new URL(app.base).port);
+        await new Promise<void>((resolve, reject) => {
+            const s = net.connect(port, '127.0.0.1', () => {
+                s.write(
+                    'GET //[ HTTP/1.1\r\nHost: x\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n' +
+                        'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n',
+                );
+                setTimeout(() => {
+                    s.destroy();
+                    resolve();
+                }, 300);
+            });
+            s.on('error', reject);
+        });
+        expect((await ok('GET', '/buses')).ok).toBe(true);
+    });
+
+    it('keeps both buses when two programs name new ones at once, and stops at the limit', async () => {
+        const [a, b] = await Promise.all([
+            ok('POST', '/leases', { bus: 'raceA' }),
+            ok('POST', '/leases', { bus: 'raceB' }),
+        ]);
+        const names = (await ok('GET', '/buses')).buses.map((x) => x.name);
+        expect(names).toEqual(expect.arrayContaining(['raceA', 'raceB']));
+        // Neither lease was lost to the other's settings write.
+        await ok('POST', at(a.lease, '/keepalive'));
+        await ok('POST', at(b.lease, '/keepalive'));
+
+        // Sixteen in all: the built-in two, these two, and twelve more.
+        for (let i = 0; i < 12; i++) await ok('POST', '/buses', { name: `cap${i}` });
+        const full = await call('POST', '/buses', { name: 'cap12' });
+        expect(full.status).toBe(400);
+        expect(full.body.error).toMatch(/all 16/);
+        expect((await call('POST', '/leases', { bus: 'cap13' })).status).toBe(400);
+        const stored = await fetch(`${app.base}/api/ezp/playback-settings/audioBuses`);
+        expect(((await stored.json()) as unknown[]).length).toBe(14);
+        // One that exists can still be changed.
+        await ok('POST', '/buses', { name: 'cap3', volume: 10 });
+        for (const name of ['raceA', 'raceB', ...Array.from({ length: 12 }, (_, i) => `cap${i}`)]) {
+            await ok('DELETE', `/buses/${name}`);
+        }
+        // A number sent as text is refused.
+        expect((await call('POST', '/leases', { gain: '0.8' })).status).toBe(400);
     });
 
     it('drops a lease nobody keeps alive', async () => {
