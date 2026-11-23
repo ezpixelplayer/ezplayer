@@ -84,3 +84,58 @@ it is listed again the next time it connects.
 
 The trash can removes a bus and ends whatever is playing on it. The reset arrow
 puts **immediate** back to its defaults.
+
+### Setting up a Raspberry Pi listener
+
+Any Linux computer with Python 3 and `aplay` will do; both come with Raspberry
+Pi OS and with FPP.
+
+1. Copy `scripts/audio-bus-listen.py` from the source tree to the Pi.
+2. Find the sound card's name with `aplay -L`. Use its `plughw:` line, such as
+   `plughw:CARD=S3,DEV=0` for a USB sound card.
+3. Try it, with the player's address and web port:
+
+    ```
+    python3 audio-bus-listen.py http://192.168.1.20:3000 --device plughw:CARD=S3,DEV=0
+    ```
+
+    It prints `connected` once it reaches the player. Its name is the Pi's host
+    name unless you give one with `--name`.
+
+4. On this page, add a bus, turn **Play on this computer** off, set its lead to
+   150 ms, and check the Pi under **Send to listeners**. Sound sent to that bus
+   now plays on the Pi.
+
+To start it whenever the Pi starts, save this as
+`/etc/systemd/system/ezplayer-audio-listener.service`, with your own user, path,
+address and device:
+
+```
+[Unit]
+Description=EZPlayer audio listener
+After=network-online.target sound.target
+Wants=network-online.target
+
+[Service]
+User=pi
+ExecStart=/usr/bin/python3 -u /home/pi/audio-bus-listen.py http://192.168.1.20:3000 --device plughw:CARD=S3,DEV=0
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Then run `sudo systemctl enable --now ezplayer-audio-listener`. Its messages are
+in `journalctl -u ezplayer-audio-listener`. It keeps trying while the player is
+off, so the two can start in either order.
+
+Things to know:
+
+- The Pi's clock does not have to be right; the listener follows the player's.
+- If the sound is late against the lights, raise `--delay` (60 ms by default):
+  it is how long the Pi's sound card takes to make a sample heard.
+- Every few seconds of use the listener prints how many pieces arrived late. If
+  any did, raise the bus's lead.
+- Only one program can use a sound card at a time. On a Pi that also runs FPP,
+  give the listener a card FPP does not play through.
