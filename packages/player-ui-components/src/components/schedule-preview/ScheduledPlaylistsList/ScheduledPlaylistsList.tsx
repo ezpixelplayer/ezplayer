@@ -50,6 +50,7 @@ export interface LogEvent {
     sequenceId?: string;
     entryIntoPlaylist: [number, number];
     timeIntoSeqMS: number;
+    interstitial?: boolean;
 }
 
 export interface ScheduleData {
@@ -430,6 +431,9 @@ const ScheduledPlaylistsList = forwardRef<ScheduledPlaylistsListRef, ScheduledPl
                     eventTime: number;
                     sequenceId: string;
                     playlistId?: string;
+                    /** 0 intro, 1 main, 2 outro */
+                    part?: number;
+                    interstitial?: boolean;
                 }> = [];
 
                 data.logs.forEach((event) => {
@@ -440,6 +444,8 @@ const ScheduledPlaylistsList = forwardRef<ScheduledPlaylistsListRef, ScheduledPl
                                 eventTime: event.eventTime,
                                 sequenceId: event.sequenceId,
                                 playlistId: event.playlistId,
+                                part: event.entryIntoPlaylist?.[0],
+                                interstitial: event.interstitial,
                             });
                         } else if (event.eventType === 'Sequence Ended') {
                             sequenceEvents.push({
@@ -447,6 +453,8 @@ const ScheduledPlaylistsList = forwardRef<ScheduledPlaylistsListRef, ScheduledPl
                                 eventTime: event.eventTime,
                                 sequenceId: event.sequenceId,
                                 playlistId: event.playlistId,
+                                part: event.entryIntoPlaylist?.[0],
+                                interstitial: event.interstitial,
                             });
                         }
                     }
@@ -474,65 +482,44 @@ const ScheduledPlaylistsList = forwardRef<ScheduledPlaylistsListRef, ScheduledPl
                     } else if (event.type === 'end') {
                         const startEvent = pendingStarts.get(event.sequenceId);
                         if (startEvent) {
-                            // Find sequence details and determine playlist type using playlistId from event
-                            let sequenceDetails: {
-                                name: string;
-                                artist: string;
-                                order: number;
-                                playlistType: 'intro' | 'main' | 'outro';
-                            } | null = null;
-
-                            // Determine playlist type based on the playlistId from the event
+                            // The section comes from the event's position; an intro or outro that is
+                            // a single song has no playlist id to go by.
                             const reduxSchedule = schedulesList.find((s) => s.id === schedule.scheduleId);
                             let playlistType: 'intro' | 'main' | 'outro' = 'main';
-
-                            if (reduxSchedule && event.playlistId) {
+                            if (startEvent.part === 0) {
+                                playlistType = 'intro';
+                            } else if (startEvent.part === 2) {
+                                playlistType = 'outro';
+                            } else if (startEvent.part === undefined && reduxSchedule && event.playlistId) {
                                 if (event.playlistId === reduxSchedule.prePlaylistId) {
                                     playlistType = 'intro';
                                 } else if (event.playlistId === reduxSchedule.postPlaylistId) {
                                     playlistType = 'outro';
-                                } else if (event.playlistId === reduxSchedule.playlistId) {
-                                    playlistType = 'main';
                                 }
                             }
 
-                            // Find sequence in the appropriate playlist based on determined type
-                            if (playlistType === 'intro' && schedule.introPlaylist) {
-                                const introSequence = schedule.introPlaylist.sequences.find(
-                                    (s) => s.id === event.sequenceId,
-                                );
-                                if (introSequence) {
-                                    sequenceDetails = {
-                                        name: getSequenceName(event.sequenceId),
-                                        artist: introSequence.artist || 'Unknown Artist',
-                                        order: introSequence.order,
-                                        playlistType: 'intro',
-                                    };
-                                }
-                            } else if (playlistType === 'outro' && schedule.outroPlaylist) {
-                                const outroSequence = schedule.outroPlaylist.sequences.find(
-                                    (s) => s.id === event.sequenceId,
-                                );
-                                if (outroSequence) {
-                                    sequenceDetails = {
-                                        name: getSequenceName(event.sequenceId),
-                                        artist: outroSequence.artist || 'Unknown Artist',
-                                        order: outroSequence.order,
-                                        playlistType: 'outro',
-                                    };
-                                }
-                            } else {
-                                // Default to main playlist
-                                const mainSequence = schedule.sequences.find((s) => s.id === event.sequenceId);
-                                if (mainSequence) {
-                                    sequenceDetails = {
-                                        name: getSequenceName(event.sequenceId),
-                                        artist: mainSequence.artist || 'Unknown Artist',
-                                        order: mainSequence.order,
-                                        playlistType: 'main',
-                                    };
-                                }
-                            }
+                            // Order within its playlist, when it is from one; a lone song or an
+                            // interstitial has none, and does not mark the start of a loop.
+                            const fromPlaylist = startEvent.interstitial
+                                ? undefined
+                                : (playlistType === 'intro'
+                                      ? schedule.introPlaylist?.sequences
+                                      : playlistType === 'outro'
+                                        ? schedule.outroPlaylist?.sequences
+                                        : schedule.sequences
+                                  )?.find((s) => s.id === event.sequenceId);
+                            const record = sequences.find((s) => s.id === event.sequenceId);
+                            const sequenceDetails =
+                                fromPlaylist || record
+                                    ? {
+                                          name:
+                                              getSequenceName(event.sequenceId) +
+                                              (startEvent.interstitial ? ' (interstitial)' : ''),
+                                          artist: fromPlaylist?.artist || record?.work?.artist || 'Unknown Artist',
+                                          order: fromPlaylist?.order ?? 0,
+                                          playlistType,
+                                      }
+                                    : null;
 
                             if (sequenceDetails) {
                                 tempInstances.push({

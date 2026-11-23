@@ -488,6 +488,23 @@ export function getScheduleTimes(sched: ScheduledPlaylist) {
     };
 }
 
+/** Spacing (ms) between starts of a "start every" schedule; 0 when it has none. */
+export function getStartEveryMS(sched: ScheduledPlaylist): number {
+    const m = sched.startEveryMinutes;
+    if (!m || !Number.isFinite(m) || m <= 0) return 0;
+    return Math.max(1000, Math.round(m * 60_000));
+}
+
+/** The first start of a "start every" schedule at or after `atOrAfter`; undefined once none is left. */
+export function getNextStartEverySlot(sched: ScheduledPlaylist, atOrAfter: number): number | undefined {
+    const every = getStartEveryMS(sched);
+    if (!every) return undefined;
+    const { startTimeMS, endTimeMS } = getScheduleTimes(sched);
+    const k = Math.max(0, Math.ceil((atOrAfter - startTimeMS) / every));
+    const slot = startTimeMS + k * every;
+    return slot < endTimeMS ? slot : undefined;
+}
+
 export type PlaybackLogDetailType =
     | 'Schedule Started'
     | 'Schedule Ended'
@@ -539,6 +556,8 @@ export interface PlaybackLogDetail {
     entryIntoPlaylist?: [number, number];
     /* If this is a resume, this will be nonzero */
     timeIntoSeqMS?: number;
+    /** Set on sequence events of an interstitial rather than a playlist song. */
+    interstitial?: boolean;
 }
 
 /** A simplified version of what play actions the player takes */
@@ -721,7 +740,7 @@ class PlaybackStateEntry {
         // Only this entry's own cursor, while it runs, is playback; other cursors are readahead.
         if (et === 'Sequence Started' && c === this && this.suspendTime === undefined) {
             const id = this.seqIdAt(c);
-            if (id) this.repeatGuard?.noteStart(id, c.item.itemType === 'Scheduled');
+            if (id && !this.isInterstitialAt(c)) this.repeatGuard?.noteStart(id, c.item.itemType === 'Scheduled');
         }
         log?.push({
             eventType: et,
@@ -734,7 +753,38 @@ class PlaybackStateEntry {
             sequenceId: this.seqIdAt(c),
             entryIntoPlaylist: [c.itemPart, c.itemCursor],
             timeIntoSeqMS: c.offsetInto,
+            ...(et.startsWith('Sequence') && this.isInterstitialAt(c) ? { interstitial: true } : {}),
         });
+    }
+
+    /** Whether the cursor is on an interstitial of the main section. */
+    private isInterstitialAt(c: PlaybackCursor): boolean {
+        if (c.itemPart !== 1 || c.itemCursor < 0) return false;
+        const flags = c.item.mainSectionInterstitial;
+        return !!flags.length && !!flags[c.itemCursor % flags.length];
+    }
+
+    /**
+     * Whether the interstitial under the cursor would be the last thing before the outro:
+     * the song it leads into would not get to start. Such an interstitial is not played.
+     */
+    private interstitialStrands(c: PlaybackCursor, curTime: number): boolean {
+        const it = c.item;
+        const n = it.mainSection.length;
+        let at = curTime;
+        let i = c.itemCursor;
+        for (let seen = 0; seen < n; ++seen) {
+            if (i >= n) {
+                if (!it.mainSectionLoop) return true;
+                i = 0;
+            }
+            if (!it.mainSectionInterstitial[i]) {
+                return this.shouldStartOutro(at, it.mainSectionDurs[i], 0) !== undefined;
+            }
+            at += it.mainSectionDurs[i];
+            ++i;
+        }
+        return true;
     }
 
     private seqIdAt(c: PlaybackCursor): string | undefined {
@@ -745,6 +795,7 @@ class PlaybackStateEntry {
     private shouldSkipRepeat(c: PlaybackCursor): boolean {
         const g = this.repeatGuard;
         if (!g || g.spacing <= 0 || c.item.itemType !== 'Scheduled' || this.suspendTime !== undefined) return false;
+        if (this.isInterstitialAt(c)) return false;
         const id = this.seqIdAt(c);
         return !!id && g.playlistShouldSkip(id, c.item.distinctMainCount());
     }
@@ -923,6 +974,20 @@ class PlaybackStateEntry {
                 const itime = c.item.mainSectionDurs[c.itemCursor % c.item.mainSectionDurs.length];
 
                 // Advanced outro calculation
+                const strands =
+                    c.offsetInto === 0 &&
+                    c.item.endPolicy !== 'hardcut' &&
+                    this.isInterstitialAt(c) &&
+                    this.interstitialStrands(c, curTime);
+                if (strands) {
+                    // Step over it; the song after it is then judged on its own.
+                    const flags = c.item.mainSectionInterstitial;
+                    while (c.itemCursor < flags.length && flags[c.itemCursor]) {
+                        ++c.itemCursor;
+                        if (c.item.mainSectionLoop && c.itemCursor >= flags.length) c.itemCursor = 0;
+                    }
+                    continue;
+                }
                 const shouldStartOutro = this.shouldStartOutro(c.baseTime + c.offsetInto, itime, c.offsetInto);
                 if (shouldStartOutro === undefined) {
                     // No effect from outro yet
@@ -1202,6 +1267,10 @@ class PlaybackItem implements SchedulerHeapItem {
 
     schedStart: number = 0;
     schedEnd: number = 0;
+    /** The schedule's own start; `schedStart` is later for a "start every" pass after the first. */
+    baseStart: number = 0;
+    /** Spacing of a "start every" schedule, of which this item is one pass; 0 otherwise. */
+    startEveryMS: number = 0;
 
     endPolicy?: ScheduleEndPolicy; // For schedules over alotted time, how to end?
     keepToScheduleWhenPreempted?: boolean; // Keep "running" when overriden
@@ -1228,10 +1297,15 @@ class PlaybackItem implements SchedulerHeapItem {
     mainSection: SequenceRecord[] = [];
     mainSectionDurs: number[] = [];
     mainSectionLoop: boolean = false;
+    /** Most songs a looped playlist is laid out to when interstitials are spliced in. */
+    static readonly MAX_LAID_OUT_SONGS = 20000;
+    /** Parallel to `mainSection`: true where the entry is an interstitial. Empty when there are none. */
+    mainSectionInterstitial: boolean[] = [];
 
     /** Distinct songs in the main section. */
     distinctMainCount(): number {
-        return new Set(this.mainSection.map((s) => s.id)).size;
+        const inter = this.mainSectionInterstitial;
+        return new Set(this.mainSection.filter((_s, i) => !inter[i]).map((s) => s.id)).size;
     }
 }
 
@@ -1241,6 +1315,8 @@ export function createShuffleList(
     seed: number,
     minMS: number,
     smap: Map<string, SequenceRecord>,
+    /** Stop at this many picks even if `minMS` is not reached. */
+    maxCount: number = Infinity,
 ): string[] {
     const rng = new Xoroshiro128Plus(BigInt(seed).valueOf() + Xoroshiro128Plus.uuidToseed(plist.id));
     for (let i = 0; i < 10; ++i) rng.nextInt(100);
@@ -1257,7 +1333,7 @@ export function createShuffleList(
 
     const selections: string[] = [];
     let totalMS = 0;
-    while (totalMS < minMS) {
+    while (totalMS < minMS && selections.length < maxCount) {
         // Put back in the mix
         while (doNotUse.size > ndontuse) {
             doNotUse.delete(selections[selections.length - doNotUse.size]);
@@ -1510,7 +1586,7 @@ export class PlayerRunState {
                 continue;
             }
             const times = getScheduleTimes(sched);
-            if (times.startTimeMS !== entry.item.schedStart) continue; // start moved → reload
+            if (times.startTimeMS !== entry.item.baseStart) continue; // start moved → reload
             // A graceful stop works by bringing the end in; the schedule's own end must not undo it.
             if (this.stoppedIds.has(entry.item.itemId)) continue;
             if (times.endTimeMS !== entry.item.schedEnd) {
@@ -1573,13 +1649,26 @@ export class PlayerRunState {
         this.stack.push(e);
     }
 
-    #populatePlaybackScheduleItem(sc: PlaybackItem, s: ScheduledPlaylist) {
+    /** The sequences of a schedule section: a playlist's, or else a single sequence. */
+    #resolveSection(playlistId?: string, sequenceId?: string): SequenceRecord[] {
+        const pl = playlistId ? this.playlistsById.get(playlistId) : undefined;
+        if (pl) {
+            return pl.items.map((i) => this.sequencesById.get(i.id)).filter((seq): seq is SequenceRecord => !!seq);
+        }
+        const seq = !playlistId && sequenceId ? this.sequencesById.get(sequenceId) : undefined;
+        return seq ? [seq] : [];
+    }
+
+    /** `slotStart`: the start of this pass of a "start every" schedule, when it is not the first. */
+    #populatePlaybackScheduleItem(sc: PlaybackItem, s: ScheduledPlaylist, slotStart?: number) {
         const times = getScheduleTimes(s);
         sc.itemType = 'Scheduled';
         sc.priorityTier = priorityToNumber[s.priority ?? 'medium'];
-        sc.timeBasedPri = times.startTimeMS;
-        sc.schedStart = times.startTimeMS;
+        sc.baseStart = times.startTimeMS;
+        sc.schedStart = slotStart ?? times.startTimeMS;
+        sc.timeBasedPri = sc.schedStart;
         sc.schedEnd = times.endTimeMS;
+        sc.startEveryMS = getStartEveryMS(s);
         sc.scheduleId = s.id;
         sc.itemId = s.id;
         sc.playlistIds = [s.prePlaylistId, s.playlistId, s.postPlaylistId];
@@ -1589,60 +1678,67 @@ export class PlayerRunState {
         sc.endPolicy = s.endPolicy;
         sc.keepToScheduleWhenPreempted = s.keepToScheduleWhenPreempted;
 
-        sc.preSection = [];
-        sc.postSection = [];
-        sc.postSectionTotal = 0;
+        const dur = (seq: SequenceRecord) => getSeqTimesMS(seq).totalSeqTimeMS || 1000;
 
-        const prepl = s.prePlaylistId ? this.playlistsById.get(s.prePlaylistId) : undefined;
-        if (prepl) {
-            for (let i = 0; i < prepl.items.length; ++i) {
-                const seq = this.sequencesById.get(prepl.items[i].id);
-                if (!seq) continue;
-                sc.preSection.push(seq);
-                const it = getSeqTimesMS(seq).totalSeqTimeMS || 1000;
-                sc.preSectionDurs.push(it);
-            }
-        }
-        const postl = s.postPlaylistId ? this.playlistsById.get(s.postPlaylistId) : undefined;
-        if (postl) {
-            for (let i = 0; i < postl.items.length; ++i) {
-                const seq = this.sequencesById.get(postl.items[i].id);
-                if (!seq) continue;
-                sc.postSection.push(seq);
-                const it = getSeqTimesMS(seq).totalSeqTimeMS || 1000;
-                sc.postSectionDurs.push(it);
-                sc.postSectionTotal += it;
-            }
-        }
+        sc.preSection = this.#resolveSection(s.prePlaylistId, s.preSequenceId);
+        sc.preSectionDurs = sc.preSection.map(dur);
+        sc.postSection = this.#resolveSection(s.postPlaylistId, s.postSequenceId);
+        sc.postSectionDurs = sc.postSection.map(dur);
+        sc.postSectionTotal = sc.postSectionDurs.reduce((a, b) => a + b, 0);
 
-        sc.mainSection = [];
-        sc.mainSectionLoop = !!(s.loop || s.shuffle);
+        // A "start every" pass plays the playlist once; the next pass is armed when it ends.
+        const onePass = sc.startEveryMS > 0;
+        sc.mainSectionLoop = !onePass && !!(s.loop || s.shuffle);
 
+        let songs: SequenceRecord[] = [];
         const mainpl = this.playlistsById.get(s.playlistId);
         if (mainpl) {
             if (s.shuffle) {
-                sc.mainSection = createShuffleList(
+                songs = createShuffleList(
                     mainpl,
                     sc.schedStart,
                     sc.schedEnd - sc.schedStart,
                     this.sequencesById,
+                    onePass ? mainpl.items.length : Infinity,
                 )
                     .map((id) => this.sequencesById.get(id))
                     .filter((seq): seq is SequenceRecord => !!seq);
-                // Durations track the shuffled order.
-                for (const seq of sc.mainSection) {
-                    sc.mainSectionDurs.push(getSeqTimesMS(seq).totalSeqTimeMS || 1000);
-                }
             } else {
-                for (let i = 0; i < mainpl.items.length; ++i) {
-                    const seq = this.sequencesById.get(mainpl.items[i].id);
-                    if (!seq) continue;
-                    sc.mainSection.push(seq);
-                    const it = getSeqTimesMS(seq).totalSeqTimeMS || 1000;
-                    sc.mainSectionDurs.push(it);
-                }
+                songs = this.#resolveSection(s.playlistId);
             }
         }
+
+        const every = Math.floor(s.interstitialEvery ?? 0);
+        const inter = every >= 1 ? this.#resolveSection(s.interstitialPlaylistId, s.interstitialSequenceId) : [];
+        if (!inter.length || !songs.length) {
+            sc.mainSection = songs;
+            sc.mainSectionInterstitial = [];
+        } else {
+            // The count of songs runs through the whole schedule, so a looped playlist is laid
+            // out for the full duration instead of wrapping (a shuffle already is).
+            if (sc.mainSectionLoop && !s.shuffle) {
+                const onceMS = songs.reduce((a, seq) => a + dur(seq), 0);
+                const reps = Math.ceil((sc.schedEnd - sc.schedStart) / Math.max(onceMS, 1));
+                const maxReps = Math.max(1, Math.floor(PlaybackItem.MAX_LAID_OUT_SONGS / songs.length));
+                const once = songs;
+                songs = [];
+                for (let r = 0; r < Math.min(Math.max(reps, 1), maxReps); ++r) songs.push(...once);
+            }
+            const first = Math.max(0, Math.floor(s.interstitialFirstAfter ?? every));
+            sc.mainSection = [];
+            sc.mainSectionInterstitial = [];
+            songs.forEach((song, j) => {
+                if (j >= first && (j - first) % every === 0) {
+                    for (const i of inter) {
+                        sc.mainSection.push(i);
+                        sc.mainSectionInterstitial.push(true);
+                    }
+                }
+                sc.mainSection.push(song);
+                sc.mainSectionInterstitial.push(false);
+            });
+        }
+        sc.mainSectionDurs = sc.mainSection.map(dur);
     }
 
     #populatePlaybackInteractiveItem(sc: PlaybackItem, ipc: InteractivePlayCommand, ct: number) {
@@ -1727,22 +1823,52 @@ export class PlayerRunState {
                 continue;
             }
 
+            // "Start every": only starts still to come are loaded, so loading (or reloading
+            // after an edit) part way through never adds a start of its own.
+            let slot: number | undefined = undefined;
+            if (getStartEveryMS(s)) {
+                slot = getNextStartEverySlot(s, this.currentTime);
+                if (slot === undefined) continue;
+            }
+
             const pi = new PlaybackItem();
-            this.#populatePlaybackScheduleItem(pi, s);
+            this.#populatePlaybackScheduleItem(pi, s, slot);
             pi.itemType = 'Scheduled';
             pi.cutOffPrevious = preferStartingNew;
+            this.#addScheduledItem(pi);
+        }
+    }
 
-            if (pi.schedStart > this.currentTime) {
-                if (!this.upcomingById.has(pi.itemId)) {
-                    this.upcomingOccurrences.push(pi);
-                    this.upcomingById.set(pi.itemId, pi);
-                }
-            } else {
-                if (!this.heapById.has(pi.itemId)) {
-                    this.#addToHeap(pi);
-                }
+    #addScheduledItem(pi: PlaybackItem) {
+        if (pi.schedStart > this.currentTime) {
+            if (!this.upcomingById.has(pi.itemId)) {
+                // Kept in start order: the head is the next decision time.
+                let at = this.upcomingOccurrences.length;
+                while (at > 0 && this.upcomingOccurrences[at - 1].schedStart > pi.schedStart) --at;
+                this.upcomingOccurrences.splice(at, 0, pi);
+                this.upcomingById.set(pi.itemId, pi);
+            }
+        } else {
+            if (!this.heapById.has(pi.itemId)) {
+                this.#addToHeap(pi);
             }
         }
+    }
+
+    /** When a pass of a "start every" schedule ends, load its next start, read from the
+     *  schedule as it is now. Starts that came due during the pass are skipped. */
+    #armNextStartEvery(ended: PlaybackItem) {
+        if (ended.itemType !== 'Scheduled' || !ended.startEveryMS || !ended.scheduleId) return;
+        if (this.isAlreadyLoaded(ended.itemId)) return; // includes stopped by hand
+        const s = this.schedulesById.get(ended.scheduleId);
+        if (!s) return;
+        const slot = getNextStartEverySlot(s, Math.max(this.currentTime, ended.schedStart + 1));
+        if (slot === undefined) return;
+
+        const pi = new PlaybackItem();
+        this.#populatePlaybackScheduleItem(pi, s, slot);
+        pi.cutOffPrevious = ended.cutOffPrevious;
+        this.#addScheduledItem(pi);
     }
 
     get depth() {
@@ -1849,6 +1975,7 @@ export class PlayerRunState {
 
                     st.stopAtTime(this.depth, this.currentTime, log);
                     this.#stackPop();
+                    this.#armNextStartEvery(st.item);
 
                     const nst = this.#stackTop;
                     if (nst) {

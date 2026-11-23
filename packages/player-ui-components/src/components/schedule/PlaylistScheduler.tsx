@@ -1,7 +1,15 @@
-import { PlaylistRecord, ScheduledPlaylist, getPlaylistDurationMS, priorityToNumber } from '@ezplayer/ezplayer-core';
+import {
+    PlaylistRecord,
+    ScheduledPlaylist,
+    getPlaylistDurationMS,
+    getSeqTimesMS,
+    isSequencePlayable,
+    priorityToNumber,
+} from '@ezplayer/ezplayer-core';
 import { ToastMsgs, convertDateToMilliseconds, timestampToDate } from '@ezplayer/shared-ui-components';
 import { ScheduleChip, type CalendarViewMode } from './ScheduleChip/ScheduleChip';
 import { ScheduleColorPicker } from './ScheduleColorPicker/ScheduleColorPicker';
+import { ScheduleSectionPicker, type ScheduleSectionOption } from './ScheduleSectionPicker';
 import {
     CalendarViewDay,
     CalendarViewMonth,
@@ -149,6 +157,13 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
         playlistId: '',
         prePlaylistId: '',
         postPlaylistId: '',
+        preSequenceId: '',
+        postSequenceId: '',
+        interstitialPlaylistId: '',
+        interstitialSequenceId: '',
+        interstitialEvery: '',
+        interstitialFirstAfter: '',
+        startEveryMinutes: '',
         recurrence: 'once' as RecurrenceOption,
         selectedDays: [] as string[],
         selectAllDays: false,
@@ -310,6 +325,14 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                 playlistId: schedule.playlistId,
                 prePlaylistId: schedule.prePlaylistId || '',
                 postPlaylistId: schedule.postPlaylistId || '',
+                preSequenceId: schedule.preSequenceId || '',
+                postSequenceId: schedule.postSequenceId || '',
+                interstitialPlaylistId: schedule.interstitialPlaylistId || '',
+                interstitialSequenceId: schedule.interstitialSequenceId || '',
+                interstitialEvery: schedule.interstitialEvery ? String(schedule.interstitialEvery) : '',
+                interstitialFirstAfter:
+                    schedule.interstitialFirstAfter === undefined ? '' : String(schedule.interstitialFirstAfter),
+                startEveryMinutes: schedule.startEveryMinutes ? String(schedule.startEveryMinutes) : '',
                 title: schedule.title || '',
                 fromTime: schedule.fromTime,
                 toTime: schedule.toTime,
@@ -346,6 +369,13 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
             playlistId: '',
             prePlaylistId: '',
             postPlaylistId: '',
+            preSequenceId: '',
+            postSequenceId: '',
+            interstitialPlaylistId: '',
+            interstitialSequenceId: '',
+            interstitialEvery: '',
+            interstitialFirstAfter: '',
+            startEveryMinutes: '',
             recurrence: 'once',
             selectedDays: [],
             selectAllDays: false,
@@ -404,10 +434,14 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
         try {
             const selectedPlaylist = availablePlaylists.find((p) => p.id === formData.playlistId);
             let { totalDuration } = calculatePlaylistDuration(formData.playlistId);
-            if (formData.prePlaylistId)
-                totalDuration += calculatePlaylistDuration(formData.prePlaylistId).totalDuration;
-            if (formData.postPlaylistId)
-                totalDuration += calculatePlaylistDuration(formData.postPlaylistId).totalDuration;
+            totalDuration += calculatePlaylistDuration(introRef(formData)).totalDuration;
+            totalDuration += calculatePlaylistDuration(outroRef(formData)).totalDuration;
+
+            const interstitialEvery = Math.floor(Number(formData.interstitialEvery));
+            const hasInterstitial =
+                !!(formData.interstitialPlaylistId || formData.interstitialSequenceId) && interstitialEvery >= 1;
+            const interstitialFirstAfter = Math.floor(Number(formData.interstitialFirstAfter));
+            const startEveryMinutes = Number(formData.startEveryMinutes);
 
             const schedulesToSubmit: ScheduledPlaylist[] = [];
             let schedulesToUpdateLocally: ScheduledPlaylist[] = [];
@@ -455,6 +489,20 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                 playlistId: formData.playlistId,
                 prePlaylistId: formData.prePlaylistId,
                 postPlaylistId: formData.postPlaylistId,
+                // Written even when empty so an edit can clear what was saved before.
+                preSequenceId: (!formData.prePlaylistId && formData.preSequenceId) || undefined,
+                postSequenceId: (!formData.postPlaylistId && formData.postSequenceId) || undefined,
+                interstitialPlaylistId: (hasInterstitial && formData.interstitialPlaylistId) || undefined,
+                interstitialSequenceId:
+                    (hasInterstitial && !formData.interstitialPlaylistId && formData.interstitialSequenceId) ||
+                    undefined,
+                interstitialEvery: hasInterstitial ? interstitialEvery : undefined,
+                interstitialFirstAfter:
+                    hasInterstitial && formData.interstitialFirstAfter.trim() !== '' && interstitialFirstAfter >= 0
+                        ? interstitialFirstAfter
+                        : undefined,
+                startEveryMinutes:
+                    (formData.loop || formData.shuffle) && startEveryMinutes > 0 ? startEveryMinutes : undefined,
                 title: formData.title || selectedPlaylist?.title || '',
                 fromTime: formData.fromTime,
                 toTime: formData.toTime,
@@ -721,42 +769,45 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
             playlistId,
             title: updatedTitle,
             // Only calculate toTime if loop is not enabled or if toTime is not already set
-            toTime:
-                prev.loop && prev.toTime
-                    ? prev.toTime
-                    : calcToTime(playlistId, prev.prePlaylistId, prev.postPlaylistId),
+            toTime: prev.loop && prev.toTime ? prev.toTime : calcToTime(playlistId, introRef(prev), outroRef(prev)),
         }));
         return;
     };
 
-    const handleIntroPlaylistChange = (event: SelectChangeEvent) => {
-        const prePlaylistId = event.target.value;
-
-        setFormData((prev) => ({
-            ...prev,
-            prePlaylistId,
+    const handleIntroChange = (v: { playlistId: string; sequenceId: string }) => {
+        setFormData((prev) => {
+            const next = { ...prev, prePlaylistId: v.playlistId, preSequenceId: v.sequenceId };
             // Only calculate toTime if loop is not enabled or if toTime is not already set
-            toTime:
-                prev.loop && prev.toTime
-                    ? prev.toTime
-                    : calcToTime(prev.playlistId, prePlaylistId, prev.postPlaylistId),
-        }));
-        return;
+            return {
+                ...next,
+                toTime:
+                    prev.loop && prev.toTime
+                        ? prev.toTime
+                        : calcToTime(prev.playlistId, introRef(next), outroRef(next)),
+            };
+        });
     };
 
-    const handleOutroPlaylistChange = (event: SelectChangeEvent) => {
-        const postPlaylistId = event.target.value;
+    const handleOutroChange = (v: { playlistId: string; sequenceId: string }) => {
+        setFormData((prev) => {
+            const next = { ...prev, postPlaylistId: v.playlistId, postSequenceId: v.sequenceId };
+            return {
+                ...next,
+                toTime:
+                    prev.loop && prev.toTime
+                        ? prev.toTime
+                        : calcToTime(prev.playlistId, introRef(next), outroRef(next)),
+            };
+        });
+    };
 
+    const handleInterstitialChange = (v: { playlistId: string; sequenceId: string }) => {
         setFormData((prev) => ({
             ...prev,
-            postPlaylistId,
-            // Only calculate toTime if loop is not enabled or if toTime is not already set
-            toTime:
-                prev.loop && prev.toTime
-                    ? prev.toTime
-                    : calcToTime(prev.playlistId, prev.prePlaylistId, postPlaylistId),
+            interstitialPlaylistId: v.playlistId,
+            interstitialSequenceId: v.sequenceId,
+            interstitialEvery: (v.playlistId || v.sequenceId) && !prev.interstitialEvery ? '3' : prev.interstitialEvery,
         }));
-        return;
     };
 
     // Separate handler for title field to allow free text input
@@ -840,8 +891,8 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
         // Auto-calculate toTime when fromTime changes and playlist is selected
         if (name === 'fromTime' && formData.playlistId) {
             const { totalDuration: totalDuration2 } = calculatePlaylistDuration(formData.playlistId);
-            const { totalDuration: totalDuration1 } = calculatePlaylistDuration(formData.prePlaylistId ?? '');
-            const { totalDuration: totalDuration3 } = calculatePlaylistDuration(formData.postPlaylistId ?? '');
+            const { totalDuration: totalDuration1 } = calculatePlaylistDuration(introRef(formData));
+            const { totalDuration: totalDuration3 } = calculatePlaylistDuration(outroRef(formData));
             // Calculate duration in minutes (use Math.ceil to round up any fractional minutes)
             const totalDurationMinutes = Math.max(
                 1,
@@ -1050,11 +1101,17 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
         }));
     };
 
-    // Calculate total duration for a playlist
-    const calculatePlaylistDuration = (playlistId: string): { totalDuration: number } => {
-        const playlist = availablePlaylists.find((p) => p.id === playlistId);
-        if (!playlist) return { totalDuration: 0 };
-        return { totalDuration: getPlaylistDurationMS(sequenceData ?? [], playlist, []).totalMS / 1000 };
+    // The intro / outro of a schedule is a playlist or else a single song; either id serves below.
+    const introRef = (fd: { prePlaylistId: string; preSequenceId: string }) => fd.prePlaylistId || fd.preSequenceId;
+    const outroRef = (fd: { postPlaylistId: string; postSequenceId: string }) => fd.postPlaylistId || fd.postSequenceId;
+
+    // Total duration (seconds) of a playlist, or of a single song when the id is a song's
+    const calculatePlaylistDuration = (id: string): { totalDuration: number } => {
+        if (!id) return { totalDuration: 0 };
+        const playlist = availablePlaylists.find((p) => p.id === id);
+        if (playlist) return { totalDuration: getPlaylistDurationMS(sequenceData ?? [], playlist, []).totalMS / 1000 };
+        const song = (sequenceData ?? []).find((q) => q.id === id);
+        return { totalDuration: song ? getSeqTimesMS(song).totalSeqTimeMS / 1000 : 0 };
     };
 
     const getScheduleDurationMinutes = (mpid: string, prepid?: string, postpid?: string): number | null => {
@@ -1073,7 +1130,7 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
         if (!fromTime || !toTime) return false;
         if (!isTimeValid(fromTime) || !isExtendedTimeValid(toTime)) return false;
 
-        const totalDurationMinutes = getScheduleDurationMinutes(fd.playlistId, fd.prePlaylistId, fd.postPlaylistId);
+        const totalDurationMinutes = getScheduleDurationMinutes(fd.playlistId, introRef(fd), outroRef(fd));
         if (totalDurationMinutes === null) return false;
 
         const [fromHours, fromMinutes] = fromTime.split(':').map(Number);
@@ -1119,6 +1176,56 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
         }
         return `${minutes}m ${remainingSeconds}s`;
     };
+
+    const hasInterstitialChoice = !!(formData.interstitialPlaylistId || formData.interstitialSequenceId);
+
+    const interstitialNote = (() => {
+        const every = Math.floor(Number(formData.interstitialEvery));
+        if (!(every >= 1)) return 'Enter how many songs play between interstitials.';
+        const firstText = formData.interstitialFirstAfter.trim();
+        const first = firstText === '' ? every : Math.max(0, Math.floor(Number(firstText)) || 0);
+        const where = first === 0 ? 'before the first song' : `after song ${first}`;
+        return `Plays ${where}, then every ${every === 1 ? 'song' : `${every} songs`}. Never the last thing before the outro or the end.`;
+    })();
+
+    const startEveryNote = (() => {
+        const every = Number(formData.startEveryMinutes);
+        if (!(formData.loop || formData.shuffle) || !(every > 0)) return null;
+        const passSeconds =
+            calculatePlaylistDuration(formData.playlistId).totalDuration +
+            calculatePlaylistDuration(introRef(formData)).totalDuration +
+            calculatePlaylistDuration(outroRef(formData)).totalDuration;
+        if (passSeconds > every * 60) {
+            return {
+                warn: true,
+                text: `NOTE: The playlist with its intro and outro runs ${formatDuration(passSeconds)}, longer than ${every} minutes. A start that comes due while it is still playing is skipped.`,
+            };
+        }
+        return {
+            warn: false,
+            text: `Starts every ${every} minutes counted from the From time, intro and outro included, with nothing from this schedule in between.`,
+        };
+    })();
+
+    // Playlists, then songs: what an intro, outro or interstitial can be
+    const sectionOptions: ScheduleSectionOption[] = [
+        ...availablePlaylists.map((pl): ScheduleSectionOption => ({
+            kind: 'playlist',
+            id: pl.id,
+            label: pl.title,
+            durationText: formatDuration(calculatePlaylistDuration(pl.id).totalDuration),
+        })),
+        ...(sequenceData ?? [])
+            .filter(isSequencePlayable)
+            .map((q): ScheduleSectionOption => ({
+                kind: 'sequence',
+                id: q.id,
+                label: q.work.title,
+                detail: q.work.artist || undefined,
+                durationText: formatDuration(getSeqTimesMS(q).totalSeqTimeMS / 1000),
+            }))
+            .sort((x, y) => x.label.localeCompare(y.label)),
+    ];
 
     const deletePlaylist = async (selectedSchedule: ScheduledPlaylist, mode: EditMode) => {
         try {
@@ -1762,7 +1869,29 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                                 control={<Checkbox checked={formData.loop} onChange={handleLoopChange} />}
                                 label="Loop"
                             />
+                            <TextField
+                                label="Start every (minutes)"
+                                type="number"
+                                size="small"
+                                value={formData.startEveryMinutes}
+                                disabled={!formData.loop && !formData.shuffle}
+                                onChange={(e) =>
+                                    setFormData((prev) => ({ ...prev, startEveryMinutes: e.target.value }))
+                                }
+                                InputLabelProps={{ shrink: true }}
+                                inputProps={{ min: 1, step: 1 }}
+                                placeholder="Back to back"
+                                sx={{ width: 200 }}
+                            />
                         </FormGroup>
+                        {startEveryNote && (
+                            <Typography
+                                variant="body2"
+                                sx={{ mt: 1, color: startEveryNote.warn ? 'warning.main' : 'text.secondary' }}
+                            >
+                                {startEveryNote.text}
+                            </Typography>
+                        )}
                         {isLoopAutoEnabled &&
                             formData.loop &&
                             isToTimeLongerThanScheduleDuration(formData.fromTime, formData.toTime, formData) && (
@@ -1781,88 +1910,59 @@ const PlaylistScheduler: React.FC<PlaylistSchedulerProps> = ({
                                 </Typography>
                             )}
 
-                        <Box sx={{ display: 'flex', gap: 2 }}>
-                            <FormControl fullWidth sx={{ mt: 1 }}>
-                                <InputLabel id="pre-playlist-select-label">Intro Playlist</InputLabel>
-                                <Select
-                                    labelId="pre-playlist-select-label"
-                                    name="prePlaylistId"
-                                    value={formData.prePlaylistId || ''}
-                                    label="Intro Playlist"
-                                    onChange={handleIntroPlaylistChange}
-                                >
-                                    {[
-                                        <MenuItem key="" value="">
-                                            <Box
-                                                sx={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}
-                                            >
-                                                <span>None</span>
-                                                <Typography variant="body2" color="text.secondary"></Typography>
-                                            </Box>
-                                        </MenuItem>,
-                                    ].concat(
-                                        availablePlaylists.map((playlist) => (
-                                            <MenuItem key={playlist.id} value={playlist.id}>
-                                                <Box
-                                                    sx={{
-                                                        display: 'flex',
-                                                        justifyContent: 'space-between',
-                                                        width: '100%',
-                                                    }}
-                                                >
-                                                    <span>{playlist.title}</span>
-                                                    <Typography variant="body2" color="text.secondary">
-                                                        {formatDuration(
-                                                            calculatePlaylistDuration(playlist?.id || '').totalDuration,
-                                                        )}
-                                                    </Typography>
-                                                </Box>
-                                            </MenuItem>
-                                        )),
-                                    )}
-                                </Select>
-                            </FormControl>
-                            <FormControl fullWidth sx={{ mt: 1 }}>
-                                <InputLabel id="post-playlist-select-label">Outro Playlist</InputLabel>
-                                <Select
-                                    labelId="post-playlist-select-label"
-                                    name="postPlaylistId"
-                                    value={formData.postPlaylistId || ''}
-                                    label="Outro Playlist"
-                                    onChange={handleOutroPlaylistChange}
-                                >
-                                    {[
-                                        <MenuItem key="" value="">
-                                            <Box
-                                                sx={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}
-                                            >
-                                                <span>None</span>
-                                                <Typography variant="body2" color="text.secondary"></Typography>
-                                            </Box>
-                                        </MenuItem>,
-                                    ].concat(
-                                        availablePlaylists.map((playlist) => (
-                                            <MenuItem key={playlist.id} value={playlist.id}>
-                                                <Box
-                                                    sx={{
-                                                        display: 'flex',
-                                                        justifyContent: 'space-between',
-                                                        width: '100%',
-                                                    }}
-                                                >
-                                                    <span>{playlist.title}</span>
-                                                    <Typography variant="body2" color="text.secondary">
-                                                        {formatDuration(
-                                                            calculatePlaylistDuration(playlist?.id || '').totalDuration,
-                                                        )}
-                                                    </Typography>
-                                                </Box>
-                                            </MenuItem>
-                                        )),
-                                    )}
-                                </Select>
-                            </FormControl>
+                        <Box sx={{ display: 'flex', gap: 2, mt: 1 }}>
+                            <ScheduleSectionPicker
+                                label="Intro"
+                                options={sectionOptions}
+                                value={{ playlistId: formData.prePlaylistId, sequenceId: formData.preSequenceId }}
+                                onChange={handleIntroChange}
+                            />
+                            <ScheduleSectionPicker
+                                label="Outro"
+                                options={sectionOptions}
+                                value={{ playlistId: formData.postPlaylistId, sequenceId: formData.postSequenceId }}
+                                onChange={handleOutroChange}
+                            />
                         </Box>
+
+                        <Box sx={{ display: 'flex', gap: 2, mt: 1, alignItems: 'flex-start' }}>
+                            <ScheduleSectionPicker
+                                label="Interstitial (between songs)"
+                                options={sectionOptions}
+                                value={{
+                                    playlistId: formData.interstitialPlaylistId,
+                                    sequenceId: formData.interstitialSequenceId,
+                                }}
+                                onChange={handleInterstitialChange}
+                            />
+                            <TextField
+                                label="Every (songs)"
+                                type="number"
+                                value={formData.interstitialEvery}
+                                disabled={!hasInterstitialChoice}
+                                onChange={(e) =>
+                                    setFormData((prev) => ({ ...prev, interstitialEvery: e.target.value }))
+                                }
+                                InputLabelProps={{ shrink: true }}
+                                inputProps={{ min: 1, step: 1 }}
+                                error={hasInterstitialChoice && !(Math.floor(Number(formData.interstitialEvery)) >= 1)}
+                                sx={{ width: 150, flexShrink: 0 }}
+                            />
+                            <TextField
+                                label="First after song"
+                                type="number"
+                                value={formData.interstitialFirstAfter}
+                                disabled={!hasInterstitialChoice}
+                                onChange={(e) =>
+                                    setFormData((prev) => ({ ...prev, interstitialFirstAfter: e.target.value }))
+                                }
+                                InputLabelProps={{ shrink: true }}
+                                inputProps={{ min: 0, step: 1 }}
+                                placeholder={formData.interstitialEvery || ''}
+                                sx={{ width: 150, flexShrink: 0 }}
+                            />
+                        </Box>
+                        {hasInterstitialChoice && <FormHelperText sx={{ mx: 1.75 }}>{interstitialNote}</FormHelperText>}
 
                         <Box
                             sx={{
