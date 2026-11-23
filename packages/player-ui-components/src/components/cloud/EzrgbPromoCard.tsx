@@ -1,9 +1,13 @@
-import { Box as MuiBox, Button, Card, CardContent, Typography, useTheme } from '@mui/material';
-import HowToRegIcon from '@mui/icons-material/HowToReg';
-import React from 'react';
+import { alpha, Box as MuiBox, Button, Card, CardContent, Typography, useTheme } from '@mui/material';
+import CloudDownloadOutlined from '@mui/icons-material/CloudDownloadOutlined';
+import CloudOutlined from '@mui/icons-material/CloudOutlined';
+import DevicesOutlined from '@mui/icons-material/DevicesOutlined';
+import QueueMusicOutlined from '@mui/icons-material/QueueMusicOutlined';
+import React, { useId } from 'react';
 import { useSelector } from 'react-redux';
-import { Box } from '../box/Box';
 import type { RootState } from '../../store/Store';
+import { Box } from '../box/Box';
+import { EZRGB_LOGO_URL } from './ezrgbLogo';
 
 /**
  * True when this player should be offered EZRGB registration: the cloud worker
@@ -14,66 +18,46 @@ import type { RootState } from '../../store/Store';
 export const useShowEzrgbPromo = (): boolean =>
     useSelector((s: RootState) => s.cloudConfig.cloudEnabled !== false && !s.cloudStatus.playerIdIsRegistered);
 
-const BENEFITS: { title: string; short: string; points: string[] }[] = [
+const BENEFITS: { title: string; short: string; long: string; Icon: typeof CloudOutlined }[] = [
     {
-        title: 'Automatic sequence mapping & downloads',
-        short: 'mapped to your layout, downloaded for you, plus free xLights Around The World sequences',
-        points: [
-            'Sequences are mapped to your layout automatically',
-            'Downloaded to your player for you',
-            'Free xLights Around The World sequences',
-        ],
+        title: 'Automatic sequence downloads',
+        short: 'Sequences tailored for your layout, downloaded for you.',
+        long: 'Get sequences tailored for your layout, downloaded straight to your player, plus free xLights Around The World sequences.',
+        Icon: CloudDownloadOutlined,
     },
     {
-        title: 'Remote cloud management',
-        short: 'manage your player and show from the EZRGB cloud',
-        points: ['Manage your player and show remotely from the EZRGB cloud UI'],
+        title: 'Manage your show from anywhere',
+        short: 'Control your player and show remotely.',
+        long: 'Manage your player and show remotely from the EZRGB cloud.',
+        Icon: DevicesOutlined,
     },
     {
-        title: 'Show viewer page',
-        short: 'show info, audio (non-commercial use) and song choices for visitors',
-        points: [
-            'A viewer page for your show with show information',
-            'Visitors can listen to the show audio (non-commercial use)',
-            'Visitors can choose songs',
-        ],
+        title: 'Give visitors an interactive experience',
+        short: 'Show info, song choices and audio (non-commercial use).',
+        long: 'A viewer page with your show information, where visitors can choose songs and listen to the show audio (non-commercial use).',
+        Icon: QueueMusicOutlined,
     },
 ];
 
-/** Decorative illustration: a player linked through the cloud to a lit house. Uses theme colors. */
-const PromoGraphic: React.FC = () => {
-    const theme = useTheme();
-    const primary = theme.palette.primary.main;
-    const secondary = theme.palette.secondary.main;
-    const bulbs = [primary, secondary, theme.palette.success.main, theme.palette.warning.main];
+/** The EZRGB logo in an outlined cloud. Decorative; the heading names the service. */
+const CloudLogo: React.FC<{ width: number }> = ({ width }) => {
+    const { palette } = useTheme();
     return (
-        <svg
-            viewBox="0 0 240 150"
-            role="img"
-            aria-label="Player connected to the EZRGB cloud and a lit show"
-            style={{ width: '100%', maxWidth: 240, height: 'auto' }}
-        >
-            {/* cloud */}
-            <path
-                d="M70 62a22 22 0 0 1 42-8 18 18 0 0 1 30 12 16 16 0 0 1-4 31H78a18 18 0 0 1-8-35z"
-                fill={primary}
-                opacity={0.9}
+        <Box aria-hidden sx={{ position: 'relative', width, aspectRatio: '112 / 68', mx: 'auto', mb: 1 }}>
+            <svg viewBox="0 0 112 68" width="100%" height="100%" focusable="false">
+                <path
+                    d="M27 56a16 16 0 0 1-1-32 23 23 0 0 1 43-5 16 16 0 0 1 23 9 14 14 0 0 1-3 28Z"
+                    fill={palette.background.default}
+                    stroke={palette.primary.main}
+                    strokeWidth="2.5"
+                />
+            </svg>
+            <img
+                src={EZRGB_LOGO_URL}
+                alt=""
+                style={{ position: 'absolute', top: '17%', left: '50%', height: '58%', transform: 'translateX(-50%)' }}
             />
-            <text x="106" y="82" textAnchor="middle" fontSize="13" fontWeight="bold" fill="#fff">
-                EZRGB
-            </text>
-            {/* links */}
-            <path d="M52 112 L88 92" stroke={secondary} strokeWidth="2" strokeDasharray="4 4" fill="none" />
-            <path d="M168 112 L134 92" stroke={secondary} strokeWidth="2" strokeDasharray="4 4" fill="none" />
-            {/* player */}
-            <rect x="22" y="108" width="46" height="30" rx="4" fill="none" stroke={primary} strokeWidth="3" />
-            <path d="M40 116l14 7-14 7z" fill={primary} />
-            {/* house + lights */}
-            <path d="M150 138v-24l28-22 28 22v24z" fill="none" stroke={primary} strokeWidth="3" strokeLinejoin="round" />
-            {bulbs.map((c, i) => (
-                <circle key={i} cx={156 + i * 14} cy={i === 1 || i === 2 ? 102 : 108} r="3.5" fill={c} />
-            ))}
-        </svg>
+        </Box>
     );
 };
 
@@ -82,7 +66,7 @@ interface EzrgbPromoCardProps {
     onRegister?: () => void;
     /** Label for the call-to-action. */
     registerLabel?: string;
-    /** `compact` shows the headline with one-line benefits (Show Status); `full` lists the details (Cloud page). */
+    /** `compact` has one-line benefits side by side (Show Status); `full` stacks the details (Cloud page). */
     variant?: 'full' | 'compact';
     /** Card sizing; the Cloud page's cards cap at 720px and carry a bottom margin. */
     sx?: React.ComponentProps<typeof Card>['sx'];
@@ -94,59 +78,104 @@ export const EzrgbPromoCard: React.FC<EzrgbPromoCardProps> = ({
     variant = 'full',
     sx,
 }) => {
-    const theme = useTheme();
+    const { palette } = useTheme();
+    const headingId = useId();
     const compact = variant === 'compact';
+    const accent = palette.primary.main;
+
     return (
-        <Card sx={sx}>
+        <Card
+            component="section"
+            aria-labelledby={headingId}
+            sx={[
+                {
+                    border: 1,
+                    borderColor: alpha(accent, 0.5),
+                    backgroundImage: `radial-gradient(ellipse at top, ${alpha(accent, 0.1)}, transparent 70%)`,
+                },
+                ...(Array.isArray(sx) ? sx : sx ? [sx] : []),
+            ]}
+        >
             <CardContent>
-                <Box sx={{ display: 'flex', gap: 3, alignItems: 'center', flexWrap: 'wrap' }}>
-                    <Box sx={{ flex: '0 1 200px', minWidth: 140, display: 'flex', justifyContent: 'center' }}>
-                        <PromoGraphic />
-                    </Box>
-                    <Box sx={{ flex: '1 1 280px', minWidth: 0 }}>
-                        <Typography
-                            variant={compact ? 'h3' : 'h6'}
-                            fontWeight="bold"
-                            color={compact ? theme.palette.secondary.main : 'primary.main'}
-                        >
-                            Get more from your show with EZRGB
-                        </Typography>
-                        <MuiBox component="ul" sx={{ m: 0, mt: 1, pl: 2.5 }}>
-                            {BENEFITS.map((b) => (
-                                <MuiBox component="li" key={b.title} sx={{ mb: compact ? 0.25 : 1 }}>
-                                    <Typography variant="body1" fontWeight="bold" component="span">
-                                        {b.title}
-                                    </Typography>
-                                    {compact ? (
-                                        <Typography variant="body2" component="span" color="text.secondary">
-                                            {' — '}
-                                            {b.short}
-                                        </Typography>
-                                    ) : (
-                                        <MuiBox component="ul" sx={{ m: 0, pl: 2 }}>
-                                            {b.points.map((p) => (
-                                                <Typography key={p} variant="body2" component="li" color="text.secondary">
-                                                    {p}
-                                                </Typography>
-                                            ))}
-                                        </MuiBox>
-                                    )}
-                                </MuiBox>
-                            ))}
+                <MuiBox component="header" sx={{ textAlign: 'center', mb: compact ? 2 : 3 }}>
+                    <CloudLogo width={compact ? 132 : 180} />
+                    <Typography
+                        id={headingId}
+                        component="h2"
+                        variant={compact ? 'h3' : 'h2'}
+                        fontWeight={800}
+                        color={palette.secondary.main}
+                    >
+                        Make your light show even{' '}
+                        <MuiBox component="span" sx={{ color: accent, fontStyle: 'italic', whiteSpace: 'nowrap' }}>
+                            EZier!
                         </MuiBox>
-                        {onRegister && (
-                            <Button
-                                startIcon={<HowToRegIcon />}
-                                variant="contained"
-                                size="small"
-                                onClick={onRegister}
-                                sx={{ mt: 2, textTransform: 'none' }}
+                    </Typography>
+                    {!compact && (
+                        <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                            Connect EZPlayer to the EZRGB cloud to unlock more for your show.
+                        </Typography>
+                    )}
+                </MuiBox>
+
+                <MuiBox
+                    component="ul"
+                    sx={{
+                        listStyle: 'none',
+                        p: 0,
+                        m: 0,
+                        mx: 'auto',
+                        maxWidth: compact ? undefined : 600,
+                        display: 'grid',
+                        gap: 2,
+                        gridTemplateColumns: compact ? 'repeat(auto-fit, minmax(min(100%, 14rem), 1fr))' : '1fr',
+                    }}
+                >
+                    {BENEFITS.map(({ title, short, long, Icon }) => (
+                        <MuiBox component="li" key={title} sx={{ display: 'flex', gap: 1.5, alignItems: 'flex-start' }}>
+                            <Box
+                                aria-hidden
+                                sx={{
+                                    flex: 'none',
+                                    display: 'grid',
+                                    placeItems: 'center',
+                                    width: 40,
+                                    height: 40,
+                                    borderRadius: '50%',
+                                    border: 1,
+                                    borderColor: alpha(accent, 0.5),
+                                    bgcolor: alpha(accent, 0.12),
+                                    color: accent,
+                                }}
                             >
-                                {registerLabel}
-                            </Button>
-                        )}
+                                <Icon fontSize="small" />
+                            </Box>
+                            <Box sx={{ minWidth: 0 }}>
+                                <Typography component="h3" variant="subtitle1" fontWeight="bold" color={accent}>
+                                    {title}
+                                </Typography>
+                                <Typography variant="body2" color="text.secondary">
+                                    {compact ? short : long}
+                                </Typography>
+                            </Box>
+                        </MuiBox>
+                    ))}
+                </MuiBox>
+
+                {onRegister && (
+                    <Box sx={{ display: 'flex', justifyContent: 'center', mt: compact ? 2 : 3 }}>
+                        <Button
+                            variant="contained"
+                            size={compact ? 'small' : 'medium'}
+                            startIcon={<CloudOutlined />}
+                            onClick={onRegister}
+                            disableElevation
+                            sx={{ textTransform: 'none', fontWeight: 'bold', borderRadius: 8, px: 2.5 }}
+                        >
+                            {registerLabel}
+                        </Button>
                     </Box>
-                </Box>
+                )}
             </CardContent>
         </Card>
     );
