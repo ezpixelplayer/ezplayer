@@ -112,6 +112,8 @@ import { totalmem } from 'node:os';
 import { OverallFrameSendStats, resetFrameSendStats, xbusySleep } from './framesend';
 import { PixelPipeline, blendModeFromSettings } from './pixelpipeline';
 import type { OverlayCommand, OverlayResult } from './overlaytypes';
+import { AudioInject } from './audioinject';
+import type { AudioCommand, AudioResult } from './audiotypes';
 import { MultiSyncSender, type MultiSyncConfig, type SyncFrameInfo } from './multisync';
 import { fileBaseName } from './pathnames';
 
@@ -323,6 +325,7 @@ const handlers: PlayWorkerRPCAPI = {
         return frameExportBuffer;
     },
     overlay: async (cmd: OverlayCommand): Promise<OverlayResult> => overlayCommand(cmd),
+    audio: async (cmd: AudioCommand): Promise<AudioResult> => audioInject.command(cmd),
     getPlaybackItemOrder: async ({ key }) => {
         return foregroundPlayerRunState.getItemOrder(key) ?? backgroundPlayerRunState.getItemOrder(key);
     },
@@ -1687,6 +1690,8 @@ function dispatchSettings(settings: PlaybackSettings) {
         playbackParams.audioTimeAdjMs = nasa;
         ++curAudioSyncNum;
     }
+    audioInject.configure(settings, nasa);
+    audioInject.listen(settings.advanced?.audioPort ?? 4050);
     // Only reconfigure the RF worker when the input it cares about actually
     // changes. Settings get pushed on every auto-save (often), and each call
     // would otherwise reset the RF worker's cached state and log.
@@ -2681,6 +2686,37 @@ function applyCrossfadeRamp(interleaved: Float32Array, channels: number, overlap
     }
 }
 
+/** Injected audio: clients stream and play sounds into named buses (see audiobus.ts). */
+const audioInject = new AudioInject({
+    mainLeadMs: playbackParams.sendAudioInAdvanceMs + playbackParams.sendAudioChunkMs,
+    now: () => rtcConverter.computeTime(performance.now()),
+    log: (level, msg) => (level === 'warn' ? emitWarning(msg) : emitInfo(msg)),
+    emit: (chunk, gain) => {
+        const buf = chunk.samples.buffer as ArrayBuffer;
+        send(
+            {
+                type: 'audioChunk',
+                volumeSF,
+                outputGains,
+                busGain: muted ? 0 : gain,
+                chunk: {
+                    bus: chunk.bus,
+                    sampleRate: 48000,
+                    channels: 2,
+                    buffer: buf,
+                    // Stamped like the show audio: the speaker trim moves it with the lights.
+                    playAtRealTime: chunk.playAt + playbackParams.audioTimeAdjMs,
+                    clockTime: chunk.playAt,
+                    incarnation: chunk.incarnation,
+                    advanceSamples: chunk.samples.length,
+                    rtcOffsetMs: rtcConverter.computeTime(performance.now()) - Date.now(),
+                },
+            },
+            [buf],
+        );
+    },
+});
+
 /**
  * Publish unity-gain samples to the ring buffer (web/cloud listeners, who set
  * their own volume), then send the same PCM to main for the Electron audio
@@ -2694,6 +2730,22 @@ function sendAudioChunk(
     channels: number,
     advanceSamples: number,
 ) {
+    // Sound injected into the show audio joins here, so the speakers and the
+    // listeners both get it, crossfaded at the seams like the song.
+    const lightsTime = playAtRealTime - playbackParams.audioTimeAdjMs;
+    if (audioInject.engine.mainPending(lightsTime)) {
+        if (channels === 1) {
+            const stereo = new Float32Array(samplesUnity.length * 2);
+            for (let i = 0; i < samplesUnity.length; i++) stereo[i * 2] = stereo[i * 2 + 1] = samplesUnity[i];
+            samplesUnity = stereo;
+            channels = 2;
+            advanceSamples *= 2;
+        }
+        audioInject.engine.mixMain(samplesUnity, channels, sampleRate, lightsTime, advanceSamples / channels);
+    } else {
+        const frames = samplesUnity.length / channels;
+        audioInject.engine.mainSent(lightsTime, sampleRate, advanceSamples / channels, frames);
+    }
     // Web/cloud listeners are an independent path: they get the song at unity, never
     // modulated by the local output schedules or mute (they have their own volume).
     // Nor by the local speaker sync adjustment: `playAtRealTime` arrives with
