@@ -37,6 +37,10 @@ short, the editor warns that the playlist will not fill the whole schedule.
 
 ## Start every
 
+:::note
+Requires EZPlayer 0.7 or later.
+:::
+
 With **Loop** or **Shuffle** on, the playlist normally starts again the moment it
 finishes. Enter a number of minutes in **Start every** to start it on a fixed spacing
 instead: with a 10-minute playlist and "start every 15 minutes", the playlist plays
@@ -56,6 +60,10 @@ at :00, :15, :30 and :45, with 5 minutes between.
   the next start.
 
 ## Interstitial
+
+:::note
+Requires EZPlayer 0.7 or later.
+:::
 
 An **Interstitial** is a playlist or single song (an announcement, a station ID, a
 "tune to 88.1" reminder) played between songs of the main playlist.

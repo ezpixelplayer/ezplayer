@@ -47,6 +47,10 @@ setup.
 
 ## Audio Buses
 
+:::note
+Requires EZPlayer 0.7 or later.
+:::
+
 Other programs can send sound to the player: a game that makes sound effects,
 or a prop that talks. Each **bus** is a place that sound can go. The programs
 use the [audio injection API](../reference/api.md#audio-injection-apiezpaudiobuses-apiezpaudioleases).

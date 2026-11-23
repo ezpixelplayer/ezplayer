@@ -61,6 +61,10 @@ clicking the meter or the tune icon — see [Volume](../advanced/volume.md).
 
 ### Brightness
 
+:::note
+Requires EZPlayer 0.7 or later.
+:::
+
 Below the volume meter, a second meter shows the output brightness the player
 is sending right now (0–100%), with the color temperature in kelvin when it is
 not neutral. It follows your brightness schedule, so it too is read-only;

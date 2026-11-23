@@ -5,6 +5,10 @@ title: Virtual Matrix
 
 # Virtual Matrix
 
+:::note
+Requires EZPlayer 0.7 or later.
+:::
+
 A virtual matrix shows one model of your layout as a picture: every pixel of the model becomes one block of the picture, updated as the show plays. Use it to drive anything that takes a picture instead of pixel data:
 
 - a projector, TV or monitor plugged into the player computer,
