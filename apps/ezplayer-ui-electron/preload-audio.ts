@@ -31,8 +31,8 @@ export interface AudioWindowAPI {
     /** Sends the output-device list to main. */
     reportAudioOutputDevices(devices: AudioDevice[]): void;
     onAudioChunk(callback: (data: AudioChunk) => void): void;
-    /** Linear amplitude 0..1 for this window's GainNode. */
-    onAudioGain(callback: (gain: number) => void): void;
+    /** Linear amplitude 0..1 for the show audio, or for the named bus. */
+    onAudioGain(callback: (gain: number, bus?: string) => void): void;
 }
 
 contextBridge.exposeInMainWorld('electronAPI', {
@@ -63,9 +63,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
             callback(data);
         });
     },
-    onAudioGain: (callback: (gain: number) => void) => {
-        ipcRenderer.on('audio:gain', (_event: IpcRendererEvent, gain: number) => {
-            callback(gain);
+    onAudioGain: (callback: (gain: number, bus?: string) => void) => {
+        ipcRenderer.on('audio:gain', (_event: IpcRendererEvent, gain: number, bus?: string) => {
+            callback(gain, bus);
         });
     },
 } satisfies Partial<EZPElectronAPI> & AudioWindowAPI);

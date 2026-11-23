@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { useSelector } from 'react-redux';
 import {
     AudioSettings,
+    BrightnessSettings,
     CloudPage,
     ControllersScreen,
     DiagnosticsSettings,
@@ -11,6 +12,8 @@ import {
     MediaFolderSettings,
     PlayerCloudRegistrationDialog,
     PlayerSettings,
+    VirtualMatrixSettings,
+    VIRTUAL_MATRIX_SETTINGS_SECTION_KEY,
     ContentSyncSettings,
     CONTENT_SYNC_SETTINGS_SECTION_KEY,
     ShowStatusScreen,
@@ -48,7 +51,9 @@ import ContrastIcon from '@mui/icons-material/Contrast';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import LibraryMusicIcon from '@mui/icons-material/LibraryMusic';
 import VolumeUpIcon from '@mui/icons-material/VolumeUp';
+import Brightness6Icon from '@mui/icons-material/Brightness6';
 import TuneIcon from '@mui/icons-material/Tune';
+import GridOnIcon from '@mui/icons-material/GridOn';
 import TroubleshootIcon from '@mui/icons-material/Troubleshoot';
 import SyncAltIcon from '@mui/icons-material/SyncAlt';
 import FolderIcon from '@mui/icons-material/Folder';
@@ -119,6 +124,12 @@ const EmbeddedSettingsPage = () => {
             content: <AudioSettings />,
         },
         {
+            key: 'brightness',
+            label: 'Brightness',
+            icon: <Brightness6Icon sx={{ fontSize: 56 }} />,
+            content: <BrightnessSettings />,
+        },
+        {
             key: 'cloud',
             label: 'Cloud',
             icon: <CloudIcon sx={{ fontSize: 56 }} />,
@@ -130,6 +141,13 @@ const EmbeddedSettingsPage = () => {
             icon: <TuneIcon sx={{ fontSize: 56 }} />,
             title: 'Player Settings',
             content: <PlayerSettings />,
+        },
+        {
+            key: VIRTUAL_MATRIX_SETTINGS_SECTION_KEY,
+            label: 'Virtual Matrix',
+            icon: <GridOnIcon sx={{ fontSize: 56 }} />,
+            title: 'Virtual Matrix',
+            content: <VirtualMatrixSettings />,
         },
         {
             key: CONTENT_SYNC_SETTINGS_SECTION_KEY,

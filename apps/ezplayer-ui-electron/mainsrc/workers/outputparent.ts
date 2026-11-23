@@ -1,0 +1,105 @@
+/* Conductor-side handle on the output worker. */
+
+import { Worker } from 'node:worker_threads';
+import * as path from 'path';
+import { fileURLToPath } from 'node:url';
+import type { CompiledOutput, OpenControllerReport, SenderStats } from '@ezplayer/epp';
+import type { OutputWorkerInMsg, OutputWorkerOpenMsg, OutputWorkerOutMsg, SerializedOutput } from './outputprotocol';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+/** Copy an output's tables into SharedArrayBuffers so the worker receives them without a copy. */
+export function serializeOutput(o: CompiledOutput): SerializedOutput {
+    const shareI = (a: Int32Array) => {
+        const v = new Int32Array(new SharedArrayBuffer(Math.max(4, a.byteLength)));
+        v.set(a);
+        return a.length ? v : new Int32Array(new SharedArrayBuffer(0));
+    };
+    const shareU = (a: Uint8Array) => {
+        const v = new Uint8Array(new SharedArrayBuffer(Math.max(1, a.byteLength)));
+        v.set(a);
+        return a.length ? v : new Uint8Array(new SharedArrayBuffer(0));
+    };
+    return { id: o.id, wireBytes: o.wireBytes, ops: shareI(o.ops), luts: shareU(o.luts), perms: shareI(o.perms), policy: o.policy };
+}
+
+export class OutputWorkerHandle {
+    private worker: Worker;
+    private ready: Promise<void>;
+    private closed: Promise<void>;
+    private resolveClosed: () => void = () => {};
+    private pendingOpen: ((r: { reports: (OpenControllerReport | undefined)[] }) => void) | undefined;
+    private pendingReopen: ((r: Map<number, OpenControllerReport | undefined>) => void)[] = [];
+    onLog: (level: 'info' | 'warn' | 'error', msg: string) => void = () => {};
+    onSenderStats: (stats: Record<string, SenderStats>) => void = () => {};
+
+    constructor() {
+        this.worker = new Worker(path.join(__dirname, './outputworker.js'), { workerData: { name: 'output' } });
+        this.closed = new Promise<void>((r) => (this.resolveClosed = r));
+        this.ready = new Promise<void>((resolve) => {
+            const onMsg = (msg: OutputWorkerOutMsg) => {
+                if (msg.type === 'ready') {
+                    this.worker.off('message', onMsg);
+                    resolve();
+                }
+            };
+            this.worker.on('message', onMsg);
+        });
+        this.worker.on('message', (msg: OutputWorkerOutMsg) => {
+            switch (msg.type) {
+                case 'opened':
+                    this.pendingOpen?.({ reports: msg.reports });
+                    this.pendingOpen = undefined;
+                    break;
+                case 'reopened': {
+                    const next = this.pendingReopen.shift();
+                    next?.(new Map(msg.results.map((r) => [r.index, r.report])));
+                    break;
+                }
+                case 'senderStats':
+                    this.onSenderStats(msg.stats);
+                    break;
+                case 'log':
+                    this.onLog(msg.level, msg.msg);
+                    break;
+                case 'closed':
+                    this.resolveClosed();
+                    break;
+            }
+        });
+        this.worker.on('error', (e) => this.onLog('error', `[output worker] ${e.message}`));
+        this.worker.on('exit', () => this.resolveClosed());
+    }
+
+    async open(msg: Omit<OutputWorkerOpenMsg, 'type'>) {
+        await this.ready;
+        return new Promise<{ reports: (OpenControllerReport | undefined)[] }>((resolve) => {
+            this.pendingOpen = resolve;
+            this.post({ type: 'open', ...msg });
+        });
+    }
+
+    settings(s: { outputEnabled?: boolean; blackFramesEnabled?: boolean; maxSlotFraction?: number }) {
+        this.post({ type: 'settings', ...s });
+    }
+
+    /** Open or replace the senders of these controllers; resolves with each one's report. */
+    reopen(indices: number[]): Promise<Map<number, OpenControllerReport | undefined>> {
+        return new Promise((resolve) => {
+            this.pendingReopen.push(resolve);
+            this.post({ type: 'reopen', indices });
+        });
+    }
+
+    /** Ask the worker to finish, send a final black, and exit. */
+    async close(timeoutMs = 2000) {
+        this.post({ type: 'close' });
+        await Promise.race([this.closed, new Promise((r) => setTimeout(r, timeoutMs))]);
+        await this.worker.terminate();
+    }
+
+    private post(msg: OutputWorkerInMsg) {
+        this.worker.postMessage(msg);
+    }
+}

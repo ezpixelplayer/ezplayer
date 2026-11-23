@@ -186,6 +186,7 @@ export class ZSTDDecoder {
  */
 
 import { parentPort } from 'node:worker_threads';
+import { runDecompPost, type DecompPost } from '@ezplayer/epp';
 import { inflateSync } from 'node:zlib';
 
 //import { setThreadAffinity } from '../affinity/affinity.js';
@@ -200,11 +201,13 @@ type InMsg = {
     // Raw buffers only (no Uint8Array), so they are transferable
     decompBuf: ArrayBuffer; // target buffer to fill
     compBuf: ArrayBuffer; // compressed data
+    // Optional canonicalization: Input Map program (SharedArrayBuffer-backed) and its output buffer.
+    post?: DecompPost;
 };
 
 type OutMsg =
-    | { id: number; ok: true; decompBuf: ArrayBuffer; compBuf: ArrayBuffer; decompTime: number }
-    | { id: number; ok: false; error: string; decompBuf: ArrayBuffer; compBuf: ArrayBuffer };
+    | { id: number; ok: true; decompBuf: ArrayBuffer; compBuf: ArrayBuffer; outBuf?: ArrayBuffer; decompTime: number }
+    | { id: number; ok: false; error: string; decompBuf: ArrayBuffer; compBuf: ArrayBuffer; outBuf?: ArrayBuffer };
 
 let decoder: ZSTDDecoder | null = null;
 
@@ -220,35 +223,40 @@ if (!parentPort) {
 }
 
 parentPort.on('message', async (msg: InMsg) => {
-    const { id, codec, expLen, decompBuf, compBuf, compOff, compLen } = msg;
+    const { id, codec, expLen, decompBuf, compBuf, compOff, compLen, post } = msg;
+    const outBuf = post?.outBuf;
+    const transfer = outBuf ? [decompBuf, compBuf, outBuf] : [decompBuf, compBuf];
 
     try {
-        await ensureDecoder();
-
         const startTime = performance.now();
-        // Recreate views on the transferred buffers
-        const decompView = new Uint8Array(decompBuf, 0, expLen);
         const compView = new Uint8Array(compBuf, compOff, compLen);
-
-        if (codec === 'zlib') {
-            const inflated = inflateSync(compView);
-            if (inflated.length < expLen) throw new Error(`zlib block inflated to ${inflated.length}, expected ${expLen}`);
-            decompView.set(inflated.subarray(0, expLen));
+        if (post?.raw) {
+            // Uncompressed file: the "compressed" bytes are the frames; only the Input Map runs.
+            runDecompPost(compView, post);
         } else {
-            // Decode into a temporary view, then copy into caller-provided decompView since zstd does not
-            //  accept a passed-in buffer
-            const decodedLen = decoder!.decode(compView, decompView, expLen);
-            if (decodedLen > decompView.byteLength) {
-                throw new Error(
-                    `Decoded output (${decodedLen}) exceeds provided decomp buffer (${decompView.byteLength})`,
-                );
+            await ensureDecoder();
+            // Recreate views on the transferred buffers
+            const decompView = new Uint8Array(decompBuf, 0, expLen);
+
+            if (codec === 'zlib') {
+                const inflated = inflateSync(compView);
+                if (inflated.length < expLen) throw new Error(`zlib block inflated to ${inflated.length}, expected ${expLen}`);
+                decompView.set(inflated.subarray(0, expLen));
+            } else {
+                // Decode into a temporary view, then copy into caller-provided decompView since zstd does not
+                //  accept a passed-in buffer
+                const decodedLen = decoder!.decode(compView, decompView, expLen);
+                if (decodedLen > decompView.byteLength) {
+                    throw new Error(`Decoded output (${decodedLen}) exceeds provided decomp buffer (${decompView.byteLength})`);
+                }
             }
+            if (post) runDecompPost(decompView, post);
         }
 
-        const out: OutMsg = { id, ok: true, decompBuf, compBuf, decompTime: performance.now() - startTime };
+        const out: OutMsg = { id, ok: true, decompBuf, compBuf, outBuf, decompTime: performance.now() - startTime };
 
         // Transfer buffers back so the parent can recycle them
-        parentPort!.postMessage(out, [decompBuf, compBuf]);
+        parentPort!.postMessage(out, transfer);
     } catch (e) {
         console.error(e);
         const err = e as Error;
@@ -258,8 +266,9 @@ parentPort.on('message', async (msg: InMsg) => {
             error: String(err?.message ?? err),
             decompBuf,
             compBuf,
+            outBuf,
         };
         // Still transfer buffers back so the parent can recycle them
-        parentPort!.postMessage(out, [decompBuf, compBuf]);
+        parentPort!.postMessage(out, transfer);
     }
 });

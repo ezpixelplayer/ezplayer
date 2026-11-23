@@ -52,6 +52,8 @@ import {
     portIntentFromModelIntents,
     songVolumeScale,
     resolveVolumeTargets,
+    scheduledBrightness,
+    COLOR_TEMPERATURE_NEUTRAL_K,
     type VolumeTarget,
     viewerControlBackends,
     viewerControlSchedule,
@@ -61,9 +63,6 @@ import {
 if (!parentPort) throw new Error('No parentPort in worker');
 
 import {
-    openControllersForDataSend,
-    openControllerForDataSend,
-    SenderJob,
     FSeqPrefetchCache,
     ModelRec,
     controllersFromParsedXlights,
@@ -88,6 +87,7 @@ import {
     getControllersAndModelChannels,
     getLayoutSettings,
     GetNodeResult,
+    SubModelResult,
     type ControllersAndModelChannels,
     type MhFixtureInfo,
     type ModelParseOptions,
@@ -109,7 +109,11 @@ import { begin as hirezTimerBegin } from '../win-hirez-timer/winhirestimer';
 
 import process from 'node:process';
 import { totalmem } from 'node:os';
-import { avgFrameSendTime, FrameSender, OverallFrameSendStats, resetFrameSendStats } from './framesend';
+import { OverallFrameSendStats, resetFrameSendStats, xbusySleep } from './framesend';
+import { PixelPipeline, blendModeFromSettings } from './pixelpipeline';
+import type { OverlayCommand, OverlayResult } from './overlaytypes';
+import { AudioInject } from './audioinject';
+import type { AudioCommand, AudioResult } from './audiotypes';
 import { MultiSyncSender, type MultiSyncConfig, type SyncFrameInfo } from './multisync';
 import { fileBaseName } from './pathnames';
 
@@ -320,6 +324,8 @@ const handlers: PlayWorkerRPCAPI = {
     getFrameExportBuffer: async () => {
         return frameExportBuffer;
     },
+    overlay: async (cmd: OverlayCommand): Promise<OverlayResult> => overlayCommand(cmd),
+    audio: async (cmd: AudioCommand): Promise<AudioResult> => audioInject.command(cmd),
     getPlaybackItemOrder: async ({ key }) => {
         return foregroundPlayerRunState.getItemOrder(key) ?? backgroundPlayerRunState.getItemOrder(key);
     },
@@ -406,6 +412,11 @@ function sendPlayerStateUpdate() {
                       }))
                     : undefined,
         },
+        brightness: {
+            level: Math.round(brightnessNow),
+            colorTemperature: Math.round(colorTemperatureNow),
+            scheduled: brightnessScheduled,
+        },
     };
     playStatus.engine_time = foregroundPlayerRunState.currentTime;
     if (ps.curPLActions?.actions?.length) {
@@ -465,11 +476,6 @@ function pingTargetFor(address: string, proxy?: string): PingTarget {
     return { address, icmp: true, webUrl: `http://${host(address)}/` };
 }
 
-/** The options the show's data senders were opened with, for a later retry. */
-let openForDataSendOpts:
-    { ddpPort?: number; fpsOverrides?: Record<string, number>; forceLocalIPs?: Record<string, string> } | undefined;
-/** The job the playback loop is sending, so a late sender can join it. */
-let activeSendJob: { senders: SenderJob[] } | undefined;
 const lastSenderOpen = new Map<string, number>();
 /** How often one controller's sender is opened or reopened. */
 const SENDER_OPEN_GAP_MS = 30_000;
@@ -484,47 +490,42 @@ const recoveredAddresses = new Set<string>();
  *  - it has been away and is reachable again, where a fresh socket and a fresh
  *    DDP stream are what reloading the schedule would give the whole show.
  *
- * The scheduler sizes its per-sender state from the job each frame, so a sender
- * that appears or is replaced is picked up on the next one.
+ * The senders live in the output worker; this thread decides which
+ * controllers are due and asks the worker to open them, then records the
+ * worker's reports. The worker's scheduler sizes its per-sender state from
+ * the job each frame, so a sender that appears or is replaced is picked up on
+ * the next one.
  */
 async function openOrReopenSenders(): Promise<void> {
-    const job = activeSendJob;
-    if (!job || !controllerStates) return;
+    const pipeline = curPipeline;
+    if (!pipeline || !controllerStates) return;
+    const states = controllerStates;
 
     const now = Date.now();
-    for (const c of controllerStates) {
-        if (!c.setup.usable) continue;
-
+    const wanted: { index: number; why: string }[] = [];
+    states.forEach((c, index) => {
+        if (!c.setup.usable) return;
         const key = c.setup.address?.trim() ?? '';
         const failed = c.report?.status === 'error';
         const recovered = recoveredAddresses.has(key);
-        if (!failed && !recovered) continue;
+        if (!failed && !recovered) return;
         recoveredAddresses.delete(key);
-
-        if (now - (lastSenderOpen.get(key) ?? 0) < SENDER_OPEN_GAP_MS) continue;
+        if (now - (lastSenderOpen.get(key) ?? 0) < SENDER_OPEN_GAP_MS) return;
         lastSenderOpen.set(key, now);
+        wanted.push({ index, why: failed ? 'opened on retry' : 'reopened after coming back' });
+    });
+    if (!wanted.length) return;
 
-        const previous = c.sender;
-        try {
-            const jobSender = await openControllerForDataSend(c, openForDataSendOpts);
-            if (!jobSender) continue;
-
-            const at = previous ? job.senders.findIndex((js) => js.sender === previous) : -1;
-            if (at >= 0) job.senders[at] = jobSender;
-            else job.senders.push(jobSender);
-
-            emitInfo(
-                `Controller ${c.setup.name} (${key}) ${failed ? 'opened on retry' : 'reopened after coming back'}; ` +
-                    'it is now getting data',
-            );
-
-            // Drop the old socket once nothing is sending on it any more.
-            if (previous && previous !== c.sender) {
-                void previous.disconnect?.().catch(() => undefined);
-            }
-        } catch (e) {
+    const results = await pipeline.reopenControllers(wanted.map((w) => w.index));
+    for (const w of wanted) {
+        const c = states[w.index];
+        const report = results.get(w.index);
+        if (report) c.report = report;
+        if (report?.status === 'open') {
+            emitInfo(`Controller ${c.setup.name} (${c.setup.address}) ${w.why}; it is now getting data`);
+        } else {
             // c.report carries the reason; the next window tries again.
-            emitWarning(`Controller ${c.setup.name} (${key}) could not be opened: ${String(e)}`);
+            emitWarning(`Controller ${c.setup.name} (${c.setup.address}) could not be opened: ${report?.error ?? 'unknown'}`);
         }
     }
 }
@@ -629,7 +630,7 @@ function sendControllerStateUpdate() {
             errors: c.report?.error ? [c.report!.error!] : [],
             connectivity,
             reachedVia: pstat?.via,
-            senderStats: c.sender?.stats?.(),
+            senderStats: curPipeline?.senderStats(c.setup.name),
             pingSummary: pss,
             reported_time: stats.latestUpdate,
             startCh: c.setup.startCh,
@@ -1065,6 +1066,32 @@ function doVolumeAdjust(dn: number) {
     recomputeVolumeGains();
 }
 
+// Brightness slews like volume: 1% per 10 ms, and 100 K per 10 ms for color
+// temperature, so a full swing of either takes about a second. Unlike volume
+// there is one control for the whole display.
+const BRIGHTNESS_SLEW_INTERVAL_MS = 10;
+const COLOR_TEMPERATURE_SLEW_K = 100;
+let lastBrightnessCheck: number = Date.now();
+function doBrightnessAdjust(dn: number) {
+    const target = scheduledBrightness(latestSettings?.brightnessControl);
+    brightnessScheduled = target.window !== null;
+    const levelDiff = target.brightness - brightnessNow;
+    const tempDiff = target.colorTemperature - colorTemperatureNow;
+    if (levelDiff === 0 && tempDiff === 0) {
+        lastBrightnessCheck = dn;
+        return;
+    }
+    const elapsed = dn - lastBrightnessCheck;
+    if (elapsed < BRIGHTNESS_SLEW_INTERVAL_MS) return;
+    const maxSteps = Math.floor(elapsed / BRIGHTNESS_SLEW_INTERVAL_MS);
+    const levelStep = Math.min(Math.abs(levelDiff), maxSteps);
+    const tempStep = Math.min(Math.abs(tempDiff), maxSteps * COLOR_TEMPERATURE_SLEW_K);
+    brightnessNow += Math.sign(levelDiff) * levelStep;
+    colorTemperatureNow += Math.sign(tempDiff) * tempStep;
+    const used = Math.max(levelStep, Math.ceil(tempStep / COLOR_TEMPERATURE_SLEW_K));
+    lastBrightnessCheck += used * BRIGHTNESS_SLEW_INTERVAL_MS;
+}
+
 /** Derive the per-output gains, the headline `volume`, and the listener-ring
  *  gain from the current levels and mute. */
 function recomputeVolumeGains() {
@@ -1288,7 +1315,7 @@ function processCommand(cmd: EZPlayerCommand) {
             // only the controller output (UDP) is gated. Used for dry-run/benchmark
             // playback where no controllers are reachable.
             outputSuppressed = cmd.command === 'suppressoutput';
-            if (curSender) curSender.outputEnabled = !outputSuppressed;
+            curPipeline?.settings({ outputEnabled: !outputSuppressed });
             emitInfo(outputSuppressed ? 'Controller output suppressed' : 'Controller output active');
             break;
         }
@@ -1483,6 +1510,8 @@ const playbackParams = {
     backgroundFseqPrefetchTime: 2 * 1000,
     dontSleepIfDurationLessThan: 2,
     skipFrameIfLateByMoreThan: 5,
+    // Frames are composed this far ahead of their wire time so the output worker can pace the send.
+    composeLeadMs: 50,
 };
 
 type ResolvedPlay = {
@@ -1651,7 +1680,7 @@ function dispatchSettings(settings: PlaybackSettings) {
     latestSettings = settings;
     multiSync.configure(multisyncConfigFor(settings.sync?.multisync));
     sendIdleBlackFrames = settings.sendIdleBlackFrames !== false;
-    if (curSender) curSender.blackFramesEnabled = sendIdleBlackFrames;
+    curPipeline?.settings({ blackFramesEnabled: sendIdleBlackFrames });
     foregroundPlayerRunState.repeatGuard.spacing = Math.max(
         0,
         Math.floor(settings.viewerControl?.minSongsBetweenRepeats ?? 0),
@@ -1661,6 +1690,8 @@ function dispatchSettings(settings: PlaybackSettings) {
         playbackParams.audioTimeAdjMs = nasa;
         ++curAudioSyncNum;
     }
+    audioInject.configure(settings, nasa);
+    audioInject.listen(settings.advanced?.audioPort ?? 4050);
     // Only reconfigure the RF worker when the input it cares about actually
     // changes. Settings get pushed on every auto-save (often), and each call
     // would otherwise reset the RF worker's cached state and log.
@@ -1794,6 +1825,7 @@ function resetCumulativeCounters() {
 
     playbackStats.lastError = undefined;
 
+    resetOutputStatsBase();
     resetZstdStats();
 
     // Temp diagnostic
@@ -1850,6 +1882,11 @@ let volumeMode: 'default' | 'outputs' = 'default';
 let volumeTargetsNow: VolumeTarget[] = [];
 /** Linear gain per output key, mute applied; shipped with every audio chunk. */
 let outputGains: Record<string, number> = {};
+/** Live (slewed) output brightness 0..100 and color temperature in kelvin. */
+let brightnessNow = 100;
+let colorTemperatureNow = COLOR_TEMPERATURE_NEUTRAL_K;
+/** True while a schedule window, not the default, sets the brightness targets. */
+let brightnessScheduled = false;
 let curAudioSyncNum = 1;
 let pendingSchedule: PlayerCommand | undefined = undefined;
 /** The newest schedupdate received. A handler still awaiting may hold an older one. */
@@ -1861,6 +1898,7 @@ let modelRecs: ModelRec[] | undefined = undefined;
 let controllerStates: ControllerState[] | undefined = undefined;
 let modelCoordinates: Map<string, GetNodeResult> | undefined = undefined;
 let modelCoordinates2D: Map<string, GetNodeResult> | undefined = undefined;
+let modelSubModels = new Map<string, SubModelResult[]>();
 let parsedControllerDoc: ControllersAndModelChannels | undefined = undefined;
 
 let viewObjects: ViewObject[] = [];
@@ -1887,7 +1925,7 @@ const multiSync = new MultiSyncSender();
 let sendIdleBlackFrames = true;
 /** `suppressoutput` command: frames are produced but no packets go to controllers. */
 let outputSuppressed = false;
-let curSender: FrameSender | undefined;
+let curPipeline: PixelPipeline | undefined;
 
 // Set when the next installNewSchedule() must do a full rebuild of the run states
 // (folder change or an explicit forceRestart / "reload" from the UI) rather than a
@@ -1973,6 +2011,7 @@ async function loadXmlCoordinates() {
 
     modelCoordinates = new Map<string, GetNodeResult>();
     modelCoordinates2D = new Map<string, GetNodeResult>();
+    modelSubModels = new Map<string, SubModelResult[]>();
     movingHeads = [];
     layoutSettings = {};
     parsedControllerDoc = undefined;
@@ -2026,6 +2065,7 @@ async function loadXmlCoordinates() {
             for (const [name, mr] of gmc3d.models) {
                 if (!mr.active) continue;
                 modelCoordinates.set(name, mr.nodeResult);
+                if (mr.subModels?.length) modelSubModels.set(name, mr.subModels);
                 const nr2d = gmc2d.models.get(name)?.nodeResult;
                 if (nr2d) {
                     modelCoordinates2D.set(name, nr2d);
@@ -2619,7 +2659,6 @@ function buildPortIntent(models: XlModelChannelInfo[]): Map<string, ControllerPo
 }
 
 let frameExportBuffer: SharedArrayBuffer | undefined = undefined;
-let frameExportRing: LatestFrameRingBuffer | undefined = undefined;
 
 let audioExportBuffer: SharedArrayBuffer | undefined = undefined;
 let audioExportRing: AudioChunkRingBuffer | undefined = undefined;
@@ -2647,6 +2686,37 @@ function applyCrossfadeRamp(interleaved: Float32Array, channels: number, overlap
     }
 }
 
+/** Injected audio: clients stream and play sounds into named buses (see audiobus.ts). */
+const audioInject = new AudioInject({
+    mainLeadMs: playbackParams.sendAudioInAdvanceMs + playbackParams.sendAudioChunkMs,
+    now: () => rtcConverter.computeTime(performance.now()),
+    log: (level, msg) => (level === 'warn' ? emitWarning(msg) : emitInfo(msg)),
+    emit: (chunk, gain) => {
+        const buf = chunk.samples.buffer as ArrayBuffer;
+        send(
+            {
+                type: 'audioChunk',
+                volumeSF,
+                outputGains,
+                busGain: muted ? 0 : gain,
+                chunk: {
+                    bus: chunk.bus,
+                    sampleRate: 48000,
+                    channels: 2,
+                    buffer: buf,
+                    // Stamped like the show audio: the speaker trim moves it with the lights.
+                    playAtRealTime: chunk.playAt + playbackParams.audioTimeAdjMs,
+                    clockTime: chunk.playAt,
+                    incarnation: chunk.incarnation,
+                    advanceSamples: chunk.samples.length,
+                    rtcOffsetMs: rtcConverter.computeTime(performance.now()) - Date.now(),
+                },
+            },
+            [buf],
+        );
+    },
+});
+
 /**
  * Publish unity-gain samples to the ring buffer (web/cloud listeners, who set
  * their own volume), then send the same PCM to main for the Electron audio
@@ -2660,6 +2730,22 @@ function sendAudioChunk(
     channels: number,
     advanceSamples: number,
 ) {
+    // Sound injected into the show audio joins here, so the speakers and the
+    // listeners both get it, crossfaded at the seams like the song.
+    const lightsTime = playAtRealTime - playbackParams.audioTimeAdjMs;
+    if (audioInject.engine.mainPending(lightsTime)) {
+        if (channels === 1) {
+            const stereo = new Float32Array(samplesUnity.length * 2);
+            for (let i = 0; i < samplesUnity.length; i++) stereo[i * 2] = stereo[i * 2 + 1] = samplesUnity[i];
+            samplesUnity = stereo;
+            channels = 2;
+            advanceSamples *= 2;
+        }
+        audioInject.engine.mixMain(samplesUnity, channels, sampleRate, lightsTime, advanceSamples / channels);
+    } else {
+        const frames = samplesUnity.length / channels;
+        audioInject.engine.mainSent(lightsTime, sampleRate, advanceSamples / channels, frames);
+    }
     // Web/cloud listeners are an independent path: they get the song at unity, never
     // modulated by the local output schedules or mute (they have their own volume).
     // Nor by the local speaker sync adjustment: `playAtRealTime` arrives with
@@ -2725,39 +2811,20 @@ async function processQueue() {
         });
     }
 
-    if (!fseqCache) {
-        fseqCache = new FSeqPrefetchCache(
-            {
-                now: performance.now(),
-                fseqSpace: playbackParams.fseqSpace,
-                decompZstd: decompressZStdWithWorker,
-                decompZlib: decompressZlibWithWorker,
-            },
-            emitError,
-            emitWarning,
-            emitInfo,
-        );
-    }
-
-    const sender: FrameSender = new FrameSender();
-    sender.emitError = (e) => emitError(e.message);
-    sender.emitWarning = emitWarning;
     // Override for the paced-send slot fraction (0 = pacing off, one burst
     // per frame); the built-in default otherwise applies.
+    let maxSlotFraction = 0.5;
     {
         const f = Number(process.env.EZP_SEND_SLOT_FRACTION);
         if (process.env.EZP_SEND_SLOT_FRACTION !== undefined && Number.isFinite(f) && f >= 0 && f <= 0.95) {
-            sender.maxSlotFraction = f;
+            maxSlotFraction = f;
         }
         emitInfo(
-            sender.maxSlotFraction > 0
-                ? `Paced send: slot fraction ${sender.maxSlotFraction}`
+            maxSlotFraction > 0
+                ? `Paced send: slot fraction ${maxSlotFraction}`
                 : 'Paced send off: each frame goes out as one burst',
         );
     }
-    sender.blackFramesEnabled = sendIdleBlackFrames;
-    sender.outputEnabled = !outputSuppressed;
-    curSender = sender;
 
     try {
         if (!modelCoordinates || modelCoordinates.size === 0) {
@@ -2780,14 +2847,6 @@ async function processQueue() {
                   },
                   roles,
               );
-        // Kept so a controller that failed to open can be retried on the same
-        // terms as the rest of the show.
-        openForDataSendOpts = {
-            ddpPort: latestSettings?.advanced?.ddpPort,
-            fpsOverrides,
-            forceLocalIPs,
-        };
-        const sendJob = await openControllersForDataSend(controllers, openForDataSendOpts);
         showSyncRemotes = syncRemotesFromXlights(controllers);
         // Watched: every controller the layout gives an address, except one it
         // marks Inactive. Being unusable as a *sender* is not the same as
@@ -2811,8 +2870,6 @@ async function processQueue() {
             maxSamples: 10,
             intervalS: 5,
         });
-        sender.job = sendJob;
-        activeSendJob = sendJob;
         modelRecs = models;
         controllerStates = controllers;
 
@@ -2841,14 +2898,12 @@ async function processQueue() {
         for (const c of controllers) {
             const xc = c.xlRecord;
             const cs = c.setup;
-            const r = c.report;
             emitInfo(
                 `Controller: ${xc?.name} ${xc?.address} ${xc?.activeState} ${xc?.type} ${xc?.universeNumbers} ${xc?.universeSizes} ${xc?.keepChannelNumbers}`,
             );
             emitInfo(
-                `Setup: ${cs.usable ? 'Usable' : 'Unusable'} ${cs.name} - ${cs.address} - ${cs?.proto} - ${cs?.nCh}@${cs?.startCh}; ${c.sender?.minFrameTime()} ms frame time`,
+                `Setup: ${cs.usable ? 'Usable' : 'Unusable'} ${cs.name} - ${cs.address} - ${cs?.proto} - ${cs?.nCh}@${cs?.startCh}`,
             );
-            emitInfo(`Status: ${r?.name}: ${r?.status}(${r?.error})${r?.notice ? ` ${r.notice}` : ''}`);
             emitInfo('');
         }
         // Start with the channel ceiling implied by the configured DMX controllers.
@@ -2877,24 +2932,49 @@ async function processQueue() {
             nChannels = modelChannelMax;
         }
 
-        sender.nChannels = nChannels;
-        sender.blackFrame = new Uint8Array(nChannels);
-        sender.mixFrame = new Uint8Array(nChannels);
+        // The output worker is the writer; this thread only hands the buffer out.
+        // No models or controllers: there is no frame to export.
+        frameExportBuffer = undefined;
         if (nChannels > 0) {
             frameExportBuffer = LatestFrameRingBuffer.allocate(nChannels, 4, true) as SharedArrayBuffer;
-            frameExportRing = new LatestFrameRingBuffer({
-                buffer: frameExportBuffer,
-                frameSize: nChannels,
-                slotCount: 4,
-                isWriter: true,
-            });
-        } else {
-            // No models or controllers: there is no frame to export.
-            frameExportBuffer = undefined;
-            frameExportRing = undefined;
+            new LatestFrameRingBuffer({ buffer: frameExportBuffer, frameSize: nChannels, slotCount: 4, isWriter: true });
         }
-        sender.exportBuffer = frameExportRing;
+
+        // The pipeline owns the layout, the frame pool, and the output worker (sockets included).
+        const pipeline = await PixelPipeline.create({
+            models: parsedControllerDoc?.models ?? [],
+            coords: modelCoordinates,
+            subModels: modelSubModels,
+            controllers,
+            nChannels,
+            openOpts: { ddpPort: latestSettings?.advanced?.ddpPort, fpsOverrides, forceLocalIPs },
+            settings: { outputEnabled: !outputSuppressed, blackFramesEnabled: sendIdleBlackFrames, maxSlotFraction },
+            legacyRing: frameExportBuffer,
+            overlayPort: latestSettings?.advanced?.overlayPort ?? 4049,
+            log: (level, msg) => (level === 'error' ? emitError(msg) : level === 'warn' ? emitWarning(msg) : emitInfo(msg)),
+        });
+        curPipeline = pipeline;
+        for (const c of controllers) {
+            const r = c.report;
+            emitInfo(`Status: ${r?.name}: ${r?.status}(${r?.error})${r?.notice ? ` ${r.notice}` : ''}`);
+        }
+
+        // Frames are cached in canonical form for this layout; a new layout means a new cache.
+        if (fseqCache) await fseqCache.shutdown();
+        fseqCache = new FSeqPrefetchCache(
+            {
+                now: performance.now(),
+                fseqSpace: playbackParams.fseqSpace,
+                decompZstd: decompressZStdWithWorker,
+                decompZlib: decompressZlibWithWorker,
+                canonicalizer: pipeline.canonicalizer,
+            },
+            emitError,
+            emitWarning,
+            emitInfo,
+        );
         send({ type: 'pixelbuffer', buffer: frameExportBuffer });
+        send({ type: 'pixelpool', buffer: pipeline.pool.buffer, manifest: pipeline.manifest });
 
         // Allocate audio ring buffer: 50 slots × 12000 max samples ≈ 2.3 MB
         audioExportBuffer = AudioChunkRingBuffer.allocate(50, 12000);
@@ -2908,6 +2988,14 @@ async function processQueue() {
         console.error(`[processQueue] Full error object:`, e);
         playbackStats.lastError = err.message;
     }
+
+    if (!curPipeline || !fseqCache) {
+        emitError('[processQueue] pipeline did not start; playback loop not entered');
+        return;
+    }
+    const pipeline = curPipeline;
+    // Narrowed for the loop body; the cache is only replaced by a fresh processQueue.
+    const fseqCacheNow = fseqCache;
 
     emitInfo(`Player running`);
 
@@ -2930,11 +3018,7 @@ async function processQueue() {
         while (true) {
             // Check if playback has been stopped - exit loop to prevent further frame sending
             if (isStopped) {
-                await sleepms(60); // TODO clean shutdown
-                sender?.sendBlackFrame({
-                    targetFramePN: rtcConverter.computePerfNow(targetFrameRTC),
-                    onlyIfEnabled: true,
-                });
+                await sleepms(60); // the output worker sends a final black as it closes
                 multiSync.onIdle();
                 emitInfo('Playback stopped - exiting playback loop');
                 break;
@@ -3007,10 +3091,9 @@ async function processQueue() {
             }
             if (curPN - lastPStatusUpdatePN >= 1000 && iteration % 4 === 1) {
                 playbackStats.iteration = iteration;
-                playbackStats.avgSendTime = avgFrameSendTime(playbackStatsAgg);
+                pullOutputStats(pipeline);
                 playbackStats.measurementPeriod = curPN - playbackStatsAgg.intervalStart;
                 playbackStats.idleTimePeriod = playbackStatsAgg.totalIdleTime;
-                playbackStats.sendTimePeriod = playbackStatsAgg.totalSendTime;
                 // Histogram values are ns; max is 0 while no sample landed.
                 playbackStats.loopDelay = {
                     p50: loopDelayHist.percentile(50) / 1e6,
@@ -3020,6 +3103,7 @@ async function processQueue() {
                 loopDelayHist.reset();
                 sendPlayerStateUpdate();
                 playbackStats.maxSendTimeHistorical = 0;
+                pipeline.resetPeriodGauges();
                 resetFrameSendStats(playbackStatsAgg, curPN);
                 lastPStatusUpdatePN += 1000 * Math.floor((curPN - lastPStatusUpdatePN) / 1000);
             }
@@ -3030,6 +3114,7 @@ async function processQueue() {
             }
             if (iteration % 4 === 3) {
                 doVolumeAdjust(Date.now());
+                doBrightnessAdjust(Date.now());
                 if (curPN - lastRFUpdatePN >= 1000) {
                     sendRemoteUpdate();
                     sendEzvcUpdate();
@@ -3448,11 +3533,8 @@ async function processQueue() {
                     `No foreground actions ${targetFrameRTC - Date.now()} ${foregroundPlayerRunState.currentTime - Date.now()}`,
                 );
                 multiSync.onIdle();
-                await sender.sendBlackFrame({
-                    targetFramePN: rtcConverter.computePerfNow(targetFrameRTC),
-                    onlyIfEnabled: true,
-                });
-                targetFrameRTC += playbackParams.idleSleepInterval;
+                presentIdleBlack(pipeline, targetFrameRTC);
+                targetFrameRTC += pipeline.idleIntervalMs(playbackParams.idleSleepInterval);
 
                 await sleepUntil(targetFrameRTC - 50);
                 continue;
@@ -3462,11 +3544,8 @@ async function processQueue() {
             if (isPaused || !foregroundAction?.seqId) {
                 emitFrameDebug(isPaused ? `Paused - sending black` : `No foreground action seq`);
                 multiSync.onIdle();
-                await sender.sendBlackFrame({
-                    targetFramePN: rtcConverter.computePerfNow(targetFrameRTC),
-                    onlyIfEnabled: true,
-                });
-                targetFrameRTC += playbackParams.idleSleepInterval;
+                presentIdleBlack(pipeline, targetFrameRTC);
+                targetFrameRTC += pipeline.idleIntervalMs(playbackParams.idleSleepInterval);
                 await sleepUntil(targetFrameRTC - 50);
                 continue;
             }
@@ -3482,7 +3561,7 @@ async function processQueue() {
             }
 
             const frameTimeOffset = contentTimeMS(curForegroundSeq, foregroundAction.offsetMS ?? 0);
-            const header = fseqCache.getHeaderInfo({ fseqfile: fsf });
+            const header = fseqCacheNow.getHeaderInfo({ fseqfile: fsf });
             if (!header?.ref) {
                 emitError(`Sequence header for ${fsf} was not ready.`);
                 ++playbackStats.missedHeadersCumulative;
@@ -3509,7 +3588,7 @@ async function processQueue() {
                     emitError(`Error: No FSEQ in scheduled background item`);
                 } else {
                     const bframeTimeOffset = contentTimeMS(curBackgroundSeq, backgroundAction.offsetMS ?? 0);
-                    const header = fseqCache.getHeaderInfo({ fseqfile: bsf });
+                    const header = fseqCacheNow.getHeaderInfo({ fseqfile: bsf });
                     if (!header?.ref) {
                         emitError(`Sequence header for ${bsf} was not ready.`);
                         ++playbackStats.missedHeadersCumulative;
@@ -3517,7 +3596,7 @@ async function processQueue() {
                         bframeTimeOffset >= 0 &&
                         bframeTimeOffset < header.ref.header.frames * header.ref.header.msperframe
                     ) {
-                        const bres = fseqCache.getFrame(bsf, { time: bframeTimeOffset });
+                        const bres = fseqCacheNow.getFrame(bsf, { time: bframeTimeOffset });
                         bframeRef = bres?.ref;
                         bframeNum = Math.floor(bframeTimeOffset / header.ref.header.msperframe);
                         if (!bres?.ref?.frame) {
@@ -3533,27 +3612,21 @@ async function processQueue() {
                 // sync, but the audio may still be inside the file (sync adjust).
                 const padSync = syncFrameInfo(fsf, curForegroundSeq, frameTimeOffset, header.ref.header);
                 if (bframeRef?.frame) {
-                    targetFrameRTC += await sender.sendNextFrameAt({
-                        frame: bframeRef,
-                        bframe: undefined,
-                        targetFramePN: rtcConverter.computePerfNow(targetFrameRTC),
-                        targetFrameNum: bframeNum,
-                        playbackStats,
-                        playbackStatsAgg,
+                    targetFrameRTC += await presentFrame(pipeline, {
+                        fg: bframeRef,
+                        targetRTC: targetFrameRTC,
+                        frameNumber: bframeNum,
                         frameInterval,
-                        skipFrameIfLateByMoreThan: playbackParams.skipFrameIfLateByMoreThan,
-                        dontSleepIfDurationLessThan: playbackParams.dontSleepIfDurationLessThan,
                         onFrameDue: () => multiSync.onFrame(padSync),
                     });
                 } else {
-                    multiSync.onFrame(padSync);
-                    await sender.sendBlackFrame({
-                        targetFramePN: rtcConverter.computePerfNow(targetFrameRTC),
-                        playbackStats,
-                        playbackStatsAgg,
+                    bframeRef?.release();
+                    targetFrameRTC += await presentFrame(pipeline, {
+                        targetRTC: targetFrameRTC,
+                        frameNumber: -1,
+                        frameInterval,
+                        onFrameDue: () => multiSync.onFrame(padSync),
                     });
-                    targetFrameRTC += frameInterval;
-                    await sleepUntil(targetFrameRTC - 50);
                 }
                 continue;
             }
@@ -3561,25 +3634,172 @@ async function processQueue() {
             // At this point, all housekeeping is done.
             // Let's see if we're in time to spit out a frame, or if we have to skip
             //emitFrameDebug(`${iteration} - play the frame?`);
-            const frameRef = fseqCache.getFrame(fsf, { num: targetFrameNum });
+            const frameRef = fseqCacheNow.getFrame(fsf, { num: targetFrameNum });
+            if (!frameRef?.ref?.frame) ++playbackStats.missedFramesCumulative;
             // Sync packets describe the frame as it goes out, not as it is prepared:
-            // the sender sleeps until the frame's deadline before calling back.
+            // presentFrame calls back at the frame's deadline.
             const syncInfo = syncFrameInfo(fsf, curForegroundSeq, frameTimeOffset, header.ref.header);
-            targetFrameRTC += await sender.sendNextFrameAt({
-                frame: frameRef?.ref,
-                bframe: bframeRef,
-                targetFramePN: rtcConverter.computePerfNow(targetFrameRTC),
-                targetFrameNum,
-                playbackStats,
-                playbackStatsAgg,
+            targetFrameRTC += await presentFrame(pipeline, {
+                fg: frameRef?.ref,
+                bg: bframeRef,
+                targetRTC: targetFrameRTC,
+                frameNumber: targetFrameNum,
                 frameInterval,
-                skipFrameIfLateByMoreThan: playbackParams.skipFrameIfLateByMoreThan,
-                dontSleepIfDurationLessThan: playbackParams.dontSleepIfDurationLessThan,
                 onFrameDue: () => multiSync.onFrame(syncInfo),
             });
         }
     } finally {
-        sender.close();
+        curPipeline = undefined;
+        await pipeline.close();
+    }
+}
+
+/**
+ * Copy the output worker's counters into the reported statistics. The worker's
+ * counters only grow; a stats reset moves the baseline they are reported against.
+ */
+let lastOutputSent = 0;
+let lastOutputActiveMs = 0;
+const outputBase = { framesSent: 0, cframesSkippedDirective: 0, cframesSkippedIncompletePrior: 0, packetsDroppedBySender: 0 };
+function resetOutputStatsBase() {
+    const snap = curPipeline?.outputStats();
+    outputBase.framesSent = snap?.counters.framesSent ?? 0;
+    outputBase.cframesSkippedDirective = snap?.counters.cframesSkippedDirective ?? 0;
+    outputBase.cframesSkippedIncompletePrior = snap?.counters.cframesSkippedIncompletePrior ?? 0;
+    outputBase.packetsDroppedBySender = snap?.gauges.packetsDroppedBySender ?? 0;
+}
+function pullOutputStats(pipeline: PixelPipeline) {
+    const { counters, gauges } = pipeline.outputStats();
+    playbackStats.sentFramesCumulative = counters.framesSent - outputBase.framesSent;
+    playbackStats.cframesSkippedDueToDirectiveCumulative = counters.cframesSkippedDirective - outputBase.cframesSkippedDirective;
+    playbackStats.cframesSkippedDueToIncompletePriorCumulative = counters.cframesSkippedIncompletePrior - outputBase.cframesSkippedIncompletePrior;
+    playbackStats.cpacketsDroppedBySenderCumulative = gauges.packetsDroppedBySender - outputBase.packetsDroppedBySender;
+    playbackStats.maxSendTimeHistorical = Math.max(playbackStats.maxSendTimeHistorical, gauges.maxSendMs);
+    const sent = counters.framesSent - lastOutputSent;
+    const active = gauges.sendActiveMsTotal - lastOutputActiveMs;
+    playbackStats.avgSendTime = sent > 0 ? active / sent : 0;
+    playbackStats.sendTimePeriod = active;
+    lastOutputSent = counters.framesSent;
+    lastOutputActiveMs = gauges.sendActiveMsTotal;
+}
+
+/** Overlay lease operations from the HTTP API. */
+function overlayCommand(cmd: OverlayCommand): OverlayResult {
+    const p = curPipeline;
+    if (!p) return { ok: false, error: 'player not running' };
+    const ov = p.overlays;
+    try {
+        switch (cmd.op) {
+            case 'targets':
+                // Per-node detail for a whole layout runs to tens of megabytes.
+                if (cmd.detail === 'nodes' && !cmd.model) return { ok: false, error: 'detail=nodes needs model=NAME' };
+                return { ok: true, targets: ov.targets({ model: cmd.model, detail: cmd.detail }), layoutVersion: p.layout.layoutVersion };
+            case 'list':
+                return { ok: true, leases: ov.list() };
+            case 'open': {
+                const lease = ov.open(cmd.request, Date.now());
+                emitInfo(`[overlay] lease ${lease.id} opened on ${lease.model ?? '<display>'}${lease.subModel ? '/' + lease.subModel : ''} ${lease.width}x${lease.height} ${lease.format} ${lease.blend}`);
+                return { ok: true, lease, udpPort: p.overlayPort };
+            }
+            case 'close': {
+                const info = ov.get(cmd.id);
+                if (!info) return { ok: false, error: 'no such lease' };
+                if (cmd.token !== undefined && cmd.token !== 0 && cmd.token !== info.token) return { ok: false, error: 'bad token' };
+                ov.close(cmd.id);
+                emitInfo(`[overlay] lease ${cmd.id} closed`);
+                return { ok: true };
+            }
+            case 'keepalive': {
+                const info = ov.get(cmd.id);
+                if (!info || info.token !== cmd.token) return { ok: false, error: 'no such lease' };
+                ov.touch(cmd.id, Date.now());
+                return { ok: true };
+            }
+            case 'frame': {
+                const info = ov.get(cmd.id);
+                if (!info || info.token !== cmd.token) return { ok: false, error: 'no such lease' };
+                if (cmd.data.length !== info.frameBytes) return { ok: false, error: `payload must be ${info.frameBytes} bytes` };
+                ov.write(cmd.id, cmd.token, cmd.seq, 0, cmd.data, true, Date.now());
+                return { ok: true };
+            }
+        }
+    } catch (e) {
+        return { ok: false, error: (e as Error).message };
+    }
+    return { ok: false, error: 'unknown op' };
+}
+
+/** An idle black frame: previews see it, and the output worker sends it only when idle black is enabled. */
+function presentIdleBlack(pipeline: PixelPipeline, targetRTC: number) {
+    pipeline.compose({ timeMs: targetRTC, frameIntervalMs: playbackParams.idleSleepInterval, frameNumber: -1, idle: true });
+}
+
+/**
+ * Compose the frame due on the wire at targetRTC, one lead ahead, and publish
+ * it for the output worker. No sources means a black frame. Returns the ms of
+ * frame advance (0 when the target is still far off and the loop should come back).
+ */
+async function presentFrame(
+    pipeline: PixelPipeline,
+    args: {
+        fg?: FrameReference;
+        bg?: FrameReference;
+        targetRTC: number;
+        frameNumber: number;
+        frameInterval: number;
+        /** Called at the frame's deadline, when it goes out (not when it is composed, one lead earlier);
+         *  skipped and deferred frames never call it. */
+        onFrameDue?: () => void;
+    },
+): Promise<number> {
+    try {
+        const lead = Math.min(args.frameInterval, playbackParams.composeLeadMs);
+        const targetPN = rtcConverter.computePerfNow(args.targetRTC);
+        const composeAtPN = targetPN - lead;
+        const nowPN = performance.now();
+        if (composeAtPN - nowPN > args.frameInterval * 2) {
+            // Far ahead: keep the display black and come back around.
+            playbackStatsAgg.totalIdleTime += args.frameInterval;
+            await xbusySleep(nowPN + args.frameInterval, emitWarning);
+            presentIdleBlack(pipeline, rtcConverter.computeTime(performance.now()));
+            return 0;
+        }
+        if (nowPN - targetPN > playbackParams.skipFrameIfLateByMoreThan) {
+            ++playbackStats.skippedFramesCumulative;
+            return args.frameInterval;
+        }
+        const sleep = composeAtPN - nowPN;
+        if (sleep > playbackParams.dontSleepIfDurationLessThan) {
+            playbackStatsAgg.totalIdleTime += sleep;
+            await xbusySleep(composeAtPN, emitWarning);
+        }
+        const t = performance.now();
+        if (t < composeAtPN) {
+            playbackStats.worstAdvanceHistorical = Math.max(playbackStats.worstAdvanceHistorical, composeAtPN - t);
+        } else {
+            playbackStats.worstLagHistorical = Math.max(playbackStats.worstLagHistorical, t - composeAtPN);
+        }
+        const ok = pipeline.compose({
+            fg: args.fg?.frame,
+            bg: args.bg?.frame,
+            bgMode: blendModeFromSettings(latestSettings?.backgroundSequence === 'underlay' ? 'underlay' : 'max'),
+            brightness: brightnessNow / 100,
+            colorTemperature: colorTemperatureNow,
+            timeMs: args.targetRTC,
+            frameIntervalMs: args.frameInterval,
+            frameNumber: args.frameNumber,
+        });
+        playbackStatsAgg.totalMixTime += performance.now() - t;
+        if (!ok) ++playbackStats.framesSkippedDueToManyOutstandingFramesCumulative;
+        if (args.onFrameDue) {
+            const wait = targetPN - performance.now();
+            if (wait <= 0.5) args.onFrameDue();
+            else setTimeout(args.onFrameDue, wait);
+        }
+        return args.frameInterval;
+    } finally {
+        args.fg?.release();
+        args.bg?.release();
     }
 }
 

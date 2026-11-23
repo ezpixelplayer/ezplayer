@@ -141,10 +141,19 @@ export class FSEQHeader {
     compblocklist: CompBlock[] = [];
     chranges: SparseRange[] = [];
 
+    /** Inline variable headers (string values). */
     headers: { [key: string]: string } = {};
+    /** Extended variable headers: an `ED` entry points at data stored after the channel data. */
+    extendedHeaders: { [key: string]: ExtendedHeaderRef } = {};
 
     /** Where a 2.3 'SR' table in extended data is, until it is read (applySparseRangeTable). */
     extsparse?: { offset: number; length: number };
+}
+
+export interface ExtendedHeaderRef {
+    /** Absolute file offset of the data. */
+    offset: number;
+    length: number;
 }
 
 class CompBlockIndex {
@@ -271,6 +280,7 @@ export class FSEQReaderSync {
         const compblocklist: CompBlock[] = []; // Bit about reading the file and decompressing
         const chrangelist: SparseRange[] = [];
         const v1headers: { [key: string]: string } = {};
+        const extHeaders: { [key: string]: ExtendedHeaderRef } = {};
         let comp = 0;
         let ccount: number;
         let stepms = 50;
@@ -395,6 +405,7 @@ export class FSEQReaderSync {
                 const hdata = toUint8Array(await this.read(hlen));
                 if (hname === 'ED') {
                     const ed = hlen >= 14 ? extendedData(hdata) : undefined;
+                    if (ed) extHeaders[ed.code] = { offset: ed.offset, length: ed.length };
                     if (ed?.code === 'SR') {
                         const at = this.fdo;
                         srTable = toUint8Array(await this.readAt(ed.length, ed.offset));
@@ -436,6 +447,7 @@ export class FSEQReaderSync {
             compblocklist: compblocklist,
             chranges: chrangelist,
             headers: v1headers,
+            extendedHeaders: extHeaders,
         };
         if (srTable) applySparseRangeTable(this.header, srTable);
     }
@@ -612,6 +624,7 @@ export class FSEQReaderAsync {
         const compblocklist: CompBlock[] = []; // Bit about reading the file and decompressing
         const chrangelist: SparseRange[] = [];
         const v1headers: { [key: string]: string } = {};
+        const extHeaders: { [key: string]: ExtendedHeaderRef } = {};
         let comp = 0;
         let ccount: number;
         let stepms = 50;
@@ -761,6 +774,7 @@ export class FSEQReaderAsync {
                     off += hlen;
                     if (hname === 'ED') {
                         const ed = hlen >= 14 ? extendedData(hdata) : undefined;
+                        if (ed) extHeaders[ed.code] = { offset: ed.offset, length: ed.length };
                         if (ed?.code === 'SR') extsparse = { offset: ed.offset, length: ed.length };
                         continue;
                     }
@@ -800,6 +814,7 @@ export class FSEQReaderAsync {
             compblocklist: compblocklist,
             chranges: chrangelist,
             headers: v1headers,
+            extendedHeaders: extHeaders,
         };
         if (srTable) applySparseRangeTable(header, srTable);
         else if (extsparse) header.extsparse = extsparse;
