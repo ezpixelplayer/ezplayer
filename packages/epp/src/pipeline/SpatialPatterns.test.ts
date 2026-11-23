@@ -252,6 +252,65 @@ describe('submodels, strands and local space', () => {
     });
 });
 
+describe('alignment grid', () => {
+    // A 5x5 sheet at z 0, one unit apart, with its corner far from the origin.
+    const n = 25;
+    const world = new Float32Array(n * 3);
+    for (let i = 0; i < n; ++i) world.set([200 + (i % 5), 70 + Math.floor(i / 5), 0], i * 3);
+    const sheet: LayoutModelSpec = {
+        name: 'Sheet',
+        startChannel: 0,
+        nodeCount: n,
+        channelsPerNode: 3,
+        roles: RGB,
+        world,
+    };
+    const layout = compileLayout([sheet], { keepWorld: true });
+    const m = layout.models[0];
+    const paint = (params: Partial<SpatialPatternParams>) => {
+        const r = new SpatialPatternRenderer(layout, [patternTargetOfModel(m)], {
+            kind: 'grid',
+            colors: ['#ff0000', '#00ff00', '#000000'],
+            spacing: 0.5,
+            thickness: 0.2,
+            ...params,
+        });
+        const frame = new Uint8Array(layout.frameBytes);
+        r.render(frame, 3, 0);
+        return (x: number, y: number) => nodeRgb(frame, m.nodeStart + y * 5 + x);
+    };
+
+    it('lights the planes through the centre and every spacing from it, an axis a color', () => {
+        const at = paint({});
+        // The extent is 4, so planes are 2 apart: columns and rows 0, 2 and 4.
+        expect(at(1, 1)).toEqual([0, 0, 0]);
+        expect(at(2, 1)).toEqual([255, 0, 0]);
+        expect(at(1, 2)).toEqual([0, 255, 0]);
+        expect(at(0, 3)).toEqual([255, 0, 0]);
+        // On both: the brightest of each channel.
+        expect(at(2, 2)).toEqual([255, 255, 0]);
+    });
+
+    it('slides with the offset, one axis at a time', () => {
+        const at = paint({ offsetY: 0.5 });
+        expect(at(1, 2)).toEqual([0, 0, 0]);
+        expect(at(1, 1)).toEqual([0, 255, 0]);
+        expect(at(1, 3)).toEqual([0, 255, 0]);
+        expect(at(2, 3)).toEqual([255, 255, 0]);
+    });
+
+    it('turns about the upright axis with the angle, leaving level lines level', () => {
+        // The sheet is flat at z 0. A quarter turn about y puts the depth planes where the upright ones were.
+        const flat = paint({ colors: ['#000000', '#00ff00', '#0000ff'] });
+        expect(flat(1, 1)).toEqual([0, 0, 255]);
+        const at = paint({ angleDeg: 90, colors: ['#000000', '#00ff00', '#0000ff'] });
+        expect(at(2, 1)).toEqual([0, 0, 255]);
+        expect(at(1, 1)).toEqual([0, 0, 0]);
+        expect(at(1, 2)).toEqual([0, 255, 0]);
+        expect(at(2, 2)).toEqual([0, 255, 255]);
+    });
+});
+
 describe('OutputMap adjust', () => {
     const lut = (v: number, gamma: number, bright: number) =>
         Math.min(255, Math.round(255 * bright * Math.pow(v / 255, gamma)));

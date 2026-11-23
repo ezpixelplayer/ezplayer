@@ -48,7 +48,7 @@ async function waitForWire(pred: (bytes: Uint8Array) => boolean, label: string, 
     }
 }
 
-const emptyDoc = (): TestTweakDoc => ({ version: 1, models: {}, groups: [], presets: [] });
+const emptyDoc = (): TestTweakDoc => ({ version: 2, models: {}, profiles: [], groups: [], presets: [] });
 const solid = { kind: 'solid', colors: ['#204060'], intensity: 1 };
 
 beforeAll(async () => {
@@ -56,6 +56,12 @@ beforeAll(async () => {
     show = await createFixtureShow({
         channels: CHANNELS,
         subModelsXml: '<subModel name="Tail" layout="horizontal" type="ranges" line0="46-50"/>',
+        modelGroupsXml:
+            '<modelGroups>' +
+            '<modelGroup name="Inner" models="Line1/Tail,Gone"/>' +
+            '<modelGroup name="Outer" models="Inner,Line1"/>' +
+            '<modelGroup name="Stale" models="Gone"/>' +
+            '</modelGroups>',
     });
     app = await startEzPlayer(show.dir);
 });
@@ -75,6 +81,29 @@ describe('test + tweak', () => {
         ]);
         expect(snap.controllers.length).toBe(1);
         expect(snap.status.active).toBeUndefined();
+    });
+
+    it('lists the xLights groups flat, and only when asked', async () => {
+        expect((await ok('GET')).xlGroups).toBeUndefined();
+        const snap = await ok('GET', '?xlgroups=1');
+        // Groups inside groups are resolved; members the layout lacks, and groups left empty by that, are dropped.
+        expect(snap.xlGroups).toEqual([
+            { name: 'Inner', models: [], subModels: ['Line1/Tail'] },
+            { name: 'Outer', models: ['Line1'], subModels: ['Line1/Tail'] },
+        ]);
+    });
+
+    it('tests a group that holds a submodel', async () => {
+        await ok('PUT', '/doc', {
+            ...emptyDoc(),
+            groups: [{ id: 'tail', name: 'Tail only', models: [], subModels: ['Line1/Tail'] }],
+        });
+        const snap = await ok('POST', '/test', { targets: { groups: ['tail'] }, pattern: solid });
+        expect(snap.status.activeModels).toEqual(['Line1/Tail']);
+        const wire = await waitForWire((b) => px(b, 49).join() === '32,64,96', 'solid on the grouped submodel');
+        expect(px(wire, 0)).toEqual([0, 0, 0]);
+        await ok('DELETE', '/test');
+        await ok('PUT', '/doc', emptyDoc());
     });
 
     it('refuses a test with nothing to paint', async () => {
@@ -111,11 +140,12 @@ describe('test + tweak', () => {
         await waitForWire((b) => b[0] === 0x20 && b[1] === 0x40 && b[2] === 0x60, 'solid test back on the model');
     });
 
-    it('applies a saved tweak to what goes out, through a group too', async () => {
+    it('applies a model setting and its profile to what goes out', async () => {
         const doc: TestTweakDoc = {
             ...emptyDoc(),
-            models: { Line1: { colorOrder: 'BGR' } },
-            groups: [{ id: 'g1', name: 'Everything', models: ['Line1'], tweak: { brightness: 50 } }],
+            profiles: [{ id: 'p1', name: 'Half', brightness: 50, colorOrder: 'GRB' }],
+            models: { Line1: { profile: 'p1', colorOrder: 'BGR' } },
+            groups: [{ id: 'g1', name: 'Everything', models: ['Line1'] }],
         };
         const snap = await ok('PUT', '/doc', doc);
         expect(snap.doc).toEqual(doc);
@@ -143,7 +173,7 @@ describe('test + tweak', () => {
         };
         await setBrightness(50);
         try {
-            // Half from the show, half again from the group tweak, blue first.
+            // Half from the show, half again from the profile, blue first.
             await waitForWire((b) => b[0] === 0x18 && b[1] === 0x10 && b[2] === 0x08, 'test dimmed by the show', 8000);
         } finally {
             await setBrightness(100);

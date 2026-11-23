@@ -2618,7 +2618,10 @@ async function startServer(config: ServerWorkerData) {
             ctx.body = { ok: false, error: 'Internal server error' };
         }
     };
-    scanRouter.get('/api/ezp/testtweak', (ctx) => testTweakCall(ctx, { op: 'get' }));
+    // ?xlgroups=1 adds the show's xLights model groups, flattened to models and submodels.
+    scanRouter.get('/api/ezp/testtweak', (ctx) =>
+        testTweakCall(ctx, { op: 'get', ...(ctx.query.xlgroups === '1' ? { xlGroups: true } : {}) }),
+    );
     scanRouter.put('/api/ezp/testtweak/doc', (ctx) => testTweakCall(ctx, { op: 'setDoc', doc: ctx.request.body }));
     scanRouter.post('/api/ezp/testtweak/test', (ctx) => testTweakCall(ctx, { op: 'start', test: ctx.request.body }));
     scanRouter.delete('/api/ezp/testtweak/test', (ctx) => testTweakCall(ctx, { op: 'stop' }));

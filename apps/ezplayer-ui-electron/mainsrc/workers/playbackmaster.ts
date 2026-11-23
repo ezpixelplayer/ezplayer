@@ -80,6 +80,8 @@ import {
 
 import {
     getAllLayoutGroups,
+    getAllModelGroups,
+    flattenModelGroups,
     getAllModelCoordinates,
     getAllMovingHeads,
     getAllViewObjects,
@@ -2067,7 +2069,12 @@ async function loadXmlCoordinates() {
             });
             parsedControllerDoc = parsed;
             lastVerticalMatrices = verticalMatrixNames(xrgb);
-            testTweak.setShow(parsed.models, parsed.controllers);
+            // xLights groups, offered to Test + Tweak as flat lists; groups that reach no model of this show are left out.
+            const modelNames = new Set(parsed.models.map((m) => m.name));
+            const xlGroups = flattenModelGroups(getAllModelGroups(xrgb), (n) => modelNames.has(n))
+                .filter((g) => g.models.length + g.subModels.length > 0)
+                .map((g) => ({ name: g.name, models: g.models, subModels: g.subModels }));
+            testTweak.setShow(parsed.models, parsed.controllers, xlGroups);
             knownControllers = deriveKnownControllers(parsed);
             emitInfo(`[loadXmlCoordinates] Found ${knownControllers.length} xLights controller(s)`);
         } catch (cErr) {

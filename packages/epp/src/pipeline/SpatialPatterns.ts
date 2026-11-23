@@ -28,7 +28,12 @@ export type SpatialPatternKind =
     /** Every Nth node along the wiring lit, with the first and last node marked (pixel counting). */
     | 'markers'
     /** Each strand in one color of the palette, in turn (string order check). */
-    | 'strands';
+    | 'strands'
+    /**
+     * Evenly spaced planes across x, y and z, each axis in its own color
+     * (alignment check: nodes at one height light together).
+     */
+    | 'grid';
 
 export type PatternSpace =
     /** Project world coordinates onto the direction; the pattern spans all targets as one picture. */
@@ -61,6 +66,14 @@ export interface SpatialPatternParams {
     space?: PatternSpace;
     /** 0..1 scale on every color. */
     intensity?: number;
+    /** Grid: distance between planes, as a fraction of the largest extent of the targets. */
+    spacing?: number;
+    /** Grid: thickness of a plane, as a fraction of the spacing. */
+    thickness?: number;
+    /** Grid: slide the planes along each axis, in spacings. */
+    offsetX?: number;
+    offsetY?: number;
+    offsetZ?: number;
 }
 
 /** What a pattern paints: a model or a submodel, as its nodes in wiring order. */
@@ -84,6 +97,8 @@ const DEFAULT_PALETTES: Record<SpatialPatternKind, string[]> = {
     colorCycle: ['#ff0000', '#00ff00', '#0000ff', '#ffffff'],
     markers: ['#ffffff', '#00ff00', '#ff0000'],
     strands: ['#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff', '#00ffff'],
+    // Planes across x (they show as vertical lines from the front), across y (level lines), across z.
+    grid: ['#ff0000', '#00ff00', '#0000ff'],
 };
 
 function clamp01(v: number): number {
@@ -175,6 +190,11 @@ export class SpatialPatternRenderer {
     private readonly len: Int32Array;
     /** and the strand it is on. */
     private readonly strand: Int32Array;
+    /**
+     * Grid only: x, y, z per painted node, about the centre of the targets (or of each
+     * target in local space), turned by the angle and in units of the largest extent.
+     */
+    private readonly xyz?: Float32Array;
 
     constructor(layout: DisplayLayout, targets: SpatialPatternTarget[], params: SpatialPatternParams) {
         this.params = params;
@@ -248,6 +268,57 @@ export class SpatialPatternRenderer {
             base += n;
         }
         if (space === 'world') normalize(0, total);
+        if (params.kind === 'grid') this.xyz = this.gridCoords(usable, world, space === 'local', az);
+    }
+
+    private gridCoords(
+        targets: SpatialPatternTarget[],
+        world: Float32Array | undefined,
+        perTarget: boolean,
+        turn: number,
+    ): Float32Array {
+        const xyz = new Float32Array(this.nodeCount * 3);
+        const cos = Math.cos(turn);
+        const sin = Math.sin(turn);
+        // Centre a run of nodes on its bounding box, turn it about y (the upright axis, so level stays level), and scale by its largest extent.
+        const settle = (from: number, to: number) => {
+            const lo = [Infinity, Infinity, Infinity];
+            const hi = [-Infinity, -Infinity, -Infinity];
+            for (let i = from * 3; i < to * 3; ++i) {
+                const a = i % 3;
+                if (xyz[i] < lo[a]) lo[a] = xyz[i];
+                if (xyz[i] > hi[a]) hi[a] = xyz[i];
+            }
+            const extent = Math.max(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]);
+            const k = extent > 1e-9 ? 1 / extent : 0;
+            const c = [(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2];
+            for (let i = from; i < to; ++i) {
+                const x = (xyz[i * 3] - c[0]) * k;
+                const y = (xyz[i * 3 + 1] - c[1]) * k;
+                const z = (xyz[i * 3 + 2] - c[2]) * k;
+                xyz[i * 3] = x * cos + z * sin;
+                xyz[i * 3 + 1] = y;
+                xyz[i * 3 + 2] = z * cos - x * sin;
+            }
+        };
+        let base = 0;
+        for (const t of targets) {
+            const n = t.nodes.length;
+            const own = perTarget && t.local && t.local.length >= n * 3 ? t.local : undefined;
+            for (let k = 0; k < n; ++k) {
+                const o = (base + k) * 3;
+                if (own) {
+                    xyz.set(own.subarray(k * 3, k * 3 + 3), o);
+                } else if (world) {
+                    const w = this.idx[base + k] * 3;
+                    xyz.set(world.subarray(w, w + 3), o);
+                }
+            }
+            if (perTarget) settle(base, base + n);
+            base += n;
+        }
+        if (!perTarget) settle(0, this.nodeCount);
+        return xyz;
     }
 
     /** Paint the targets of a canonical frame for time tMs. */
@@ -344,6 +415,32 @@ export class SpatialPatternRenderer {
                 }
                 break;
             }
+            case 'grid': {
+                const xyz = this.xyz;
+                if (!xyz) break;
+                const spacing = Math.max(1e-4, p.spacing ?? 0.1);
+                const half = clamp01(p.thickness ?? 0.15) / 2;
+                const off = [p.offsetX ?? 0, p.offsetY ?? 0, p.offsetZ ?? 0];
+                for (let k = 0; k < n; ++k) {
+                    const d = idx[k] * stride;
+                    let r = 0;
+                    let g = 0;
+                    let b = 0;
+                    // A node on several planes takes the brightest of their colors, channel by channel.
+                    for (let a = 0; a < 3 && a < np; ++a) {
+                        const ph = xyz[k * 3 + a] / spacing - off[a];
+                        if (Math.abs(ph - Math.round(ph)) > half) continue;
+                        const c = a * 3;
+                        if (pal[c] > r) r = pal[c];
+                        if (pal[c + 1] > g) g = pal[c + 1];
+                        if (pal[c + 2] > b) b = pal[c + 2];
+                    }
+                    frame[d] = r;
+                    frame[d + 1] = g;
+                    frame[d + 2] = b;
+                }
+                break;
+            }
             case 'strands': {
                 for (let k = 0; k < n; ++k) {
                     const d = idx[k] * stride;
@@ -364,6 +461,7 @@ export function patternAnimates(p: SpatialPatternParams): boolean {
         case 'solid':
         case 'markers':
         case 'strands':
+        case 'grid':
             return false;
         case 'strobe':
         case 'colorCycle':

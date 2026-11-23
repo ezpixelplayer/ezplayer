@@ -58,6 +58,11 @@ const KINDS: { kind: TestPatternKind; label: string; hint: string }[] = [
         label: 'Strand colors',
         hint: 'Each strand in its own color, in turn: shows which string is which and where each one ends.',
     },
+    {
+        kind: 'grid',
+        label: 'Alignment grid',
+        hint: 'Evenly spaced planes in a color per axis: level lines should look level, and line up from prop to prop.',
+    },
     { kind: 'strobe', label: 'Flash', hint: 'On and off: for finding a prop in the yard.' },
 ];
 
@@ -69,6 +74,7 @@ const DEFAULT_COLORS: Record<TestPatternKind, string[]> = {
     chase: ['#ffffff'],
     markers: [],
     strands: ['#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff', '#00ffff'],
+    grid: ['#ff0000', '#00ff00', '#0000ff'],
     strobe: ['#ffffff'],
 };
 
@@ -76,7 +82,9 @@ const DEFAULT_COLORS: Record<TestPatternKind, string[]> = {
 const FIELDS: Record<
     TestPatternKind,
     {
-        colors?: 'one' | 'many';
+        /** 'axes' is exactly three, one per axis of the grid. */
+        colors?: 'one' | 'many' | 'axes';
+        grid?: boolean;
         angle?: boolean;
         width?: boolean;
         speed?: boolean;
@@ -93,6 +101,7 @@ const FIELDS: Record<
     chase: { colors: 'one', angle: true, width: true, speed: true, spaces: ['node', 'strand', 'world', 'local'] },
     markers: { every: true, spaces: ['node', 'strand'] },
     strands: { colors: 'many' },
+    grid: { colors: 'axes', angle: true, grid: true, spaces: ['world', 'local'] },
     strobe: { colors: 'one', period: true },
 };
 
@@ -103,12 +112,16 @@ const SPACE_LABELS: Record<TestPatternSpace, string> = {
     strand: 'Each strand, restarting on every one',
 };
 
+/** What each of the grid's three colors draws, as seen from the front. */
+const AXIS_LABELS = ['Upright lines (across x)', 'Level lines (across y)', 'Depth (across z)'];
+
 const STORAGE_KEY = 'ezpTestTweakPattern';
 /** Marks the pass on which the controls are being set from a test found running. */
 const ADOPTING = '\u0000adopting';
 const DEFAULT_PATTERN: TestPatternSpec = { kind: 'solid', colors: ['#ffffff'], intensity: 0.5 };
 
-function loadPattern(): TestPatternSpec {
+/** The pattern last set up here, kept between visits. */
+export function loadPattern(): TestPatternSpec {
     try {
         const raw = localStorage.getItem(STORAGE_KEY);
         if (raw) {
@@ -124,10 +137,12 @@ function loadPattern(): TestPatternSpec {
 const Labeled: React.FC<{ label: string; value: string; children: React.ReactNode }> = ({ label, value, children }) => (
     <Box>
         <Stack direction="row" justifyContent="space-between">
-            <Typography variant="caption" color="text.secondary">
+            <Typography variant="body2" color="text.secondary" sx={{ fontSize: 12 }}>
                 {label}
             </Typography>
-            <Typography variant="caption">{value}</Typography>
+            <Typography variant="body2" sx={{ fontSize: 12 }}>
+                {value}
+            </Typography>
         </Stack>
         {children}
     </Box>
@@ -232,7 +247,15 @@ export const TestPanel: React.FC<TestPanelProps> = ({
     };
 
     return (
-        <Stack spacing={1.5}>
+        <Box
+            sx={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
+                columnGap: 3,
+                rowGap: 1.5,
+                alignItems: 'start',
+            }}
+        >
             <Stack direction="row" spacing={1} alignItems="center">
                 {running ? (
                     <Button
@@ -279,9 +302,43 @@ export const TestPanel: React.FC<TestPanelProps> = ({
                 ))}
             </TextField>
 
-            {fields.colors && (
+            {fields.colors === 'axes' && (
+                <Box>
+                    {AXIS_LABELS.map((label, i) => (
+                        <Stack key={label} direction="row" spacing={1} alignItems="center">
+                            <input
+                                type="color"
+                                value={colors[i] ?? '#000000'}
+                                aria-label={label}
+                                onChange={(e) =>
+                                    set({
+                                        colors: AXIS_LABELS.map((_, k) =>
+                                            k === i ? e.target.value : (colors[k] ?? '#000000'),
+                                        ),
+                                    })
+                                }
+                                style={{
+                                    width: 36,
+                                    height: 24,
+                                    padding: 0,
+                                    border: 'none',
+                                    background: 'none',
+                                    cursor: 'pointer',
+                                }}
+                            />
+                            <Typography variant="body2" color="text.secondary" sx={{ fontSize: 12 }}>
+                                {label}
+                            </Typography>
+                        </Stack>
+                    ))}
+                    <Typography variant="body2" color="text.secondary" sx={{ fontSize: 12 }}>
+                        Black turns an axis off.
+                    </Typography>
+                </Box>
+            )}
+            {fields.colors && fields.colors !== 'axes' && (
                 <Stack direction="row" spacing={0.5} alignItems="center" sx={{ flexWrap: 'wrap', rowGap: 0.5 }}>
-                    <Typography variant="caption" color="text.secondary" sx={{ mr: 0.5 }}>
+                    <Typography variant="body2" color="text.secondary" sx={{ fontSize: 12, mr: 0.5 }}>
                         {fields.colors === 'one' ? 'Color' : 'Colors'}
                     </Typography>
                     {(fields.colors === 'one' ? colors.slice(0, 1) : colors).map((c, i) => (
@@ -380,7 +437,7 @@ export const TestPanel: React.FC<TestPanelProps> = ({
                 </TextField>
             )}
             {fields.angle && directed && (
-                <Labeled label="Direction" value={`${Math.round(pattern.angleDeg ?? 0)}°`}>
+                <Labeled label={fields.grid ? 'Turn (about the upright axis)' : 'Direction'} value={`${Math.round(pattern.angleDeg ?? 0)}°`}>
                     <Slider
                         size="small"
                         min={0}
@@ -390,6 +447,52 @@ export const TestPanel: React.FC<TestPanelProps> = ({
                         onChange={(_, v) => set({ angleDeg: v as number })}
                     />
                 </Labeled>
+            )}
+            {fields.grid && (
+                <>
+                    <Labeled
+                        label="Spacing"
+                        value={`${Math.round((pattern.spacing ?? 0.1) * 100)}% of the largest extent`}
+                    >
+                        <Slider
+                            size="small"
+                            min={0.02}
+                            max={1}
+                            step={0.01}
+                            value={pattern.spacing ?? 0.1}
+                            onChange={(_, v) => set({ spacing: v as number })}
+                        />
+                    </Labeled>
+                    <Labeled
+                        label="Thickness"
+                        value={`${Math.round((pattern.thickness ?? 0.15) * 100)}% of the spacing`}
+                    >
+                        <Slider
+                            size="small"
+                            min={0.02}
+                            max={0.6}
+                            step={0.01}
+                            value={pattern.thickness ?? 0.15}
+                            onChange={(_, v) => set({ thickness: v as number })}
+                        />
+                    </Labeled>
+                    {(['offsetX', 'offsetY', 'offsetZ'] as const).map((key, i) => (
+                        <Labeled
+                            key={key}
+                            label={`Slide ${['left / right', 'up / down', 'front / back'][i]}`}
+                            value={`${Math.round((pattern[key] ?? 0) * 100)}% of a step`}
+                        >
+                            <Slider
+                                size="small"
+                                min={-0.5}
+                                max={0.5}
+                                step={0.01}
+                                value={pattern[key] ?? 0}
+                                onChange={(_, v) => set({ [key]: v as number })}
+                            />
+                        </Labeled>
+                    ))}
+                </>
             )}
             {fields.width && (
                 <Labeled
@@ -450,7 +553,7 @@ export const TestPanel: React.FC<TestPanelProps> = ({
                 />
             )}
 
-            <Stack direction="row" spacing={1} alignItems="center">
+            <Stack direction="row" spacing={1} alignItems="center" sx={{ gridColumn: '1 / -1' }}>
                 <TextField
                     select
                     size="small"
@@ -465,13 +568,13 @@ export const TestPanel: React.FC<TestPanelProps> = ({
                     <MenuItem value={60}>1 hour</MenuItem>
                     <MenuItem value={0}>Never</MenuItem>
                 </TextField>
-                <Typography variant="caption" color="text.secondary">
+                <Typography variant="body2" color="text.secondary" sx={{ fontSize: 12 }}>
                     Goes out through the show brightness and every tweak, as the show does.
                 </Typography>
             </Stack>
 
-            <Box>
-                <Typography variant="caption" color="text.secondary">
+            <Box sx={{ gridColumn: '1 / -1' }}>
+                <Typography variant="body2" color="text.secondary" sx={{ fontSize: 12 }}>
                     Saved patterns
                 </Typography>
                 <Stack direction="row" spacing={0.5} sx={{ flexWrap: 'wrap', rowGap: 0.5, mt: 0.5 }}>
@@ -526,6 +629,6 @@ export const TestPanel: React.FC<TestPanelProps> = ({
                     </Button>
                 </Stack>
             </Box>
-        </Stack>
+        </Box>
     );
 };

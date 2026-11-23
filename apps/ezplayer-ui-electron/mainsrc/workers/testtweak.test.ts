@@ -40,8 +40,13 @@ describe('adjustFromDoc', () => {
     it('turns effective tweaks into output trims and leaves neutral models out', () => {
         const doc: TestTweakDoc = {
             ...emptyTestTweakDoc(),
-            models: { A: { brightness: 50, colorOrder: 'GRB' }, B: { brightness: 100, gamma: 1, colorTempK: 6500 }, C: { colorTempK: 3000 } },
-            groups: [{ id: 'g', name: 'G', models: ['A', 'D'], tweak: { brightness: 50, gamma: 2 } }],
+            profiles: [{ id: 'p', name: 'P', brightness: 50, gamma: 2 }],
+            models: {
+                A: { profile: 'p', brightness: 25, colorOrder: 'GRB' },
+                B: { brightness: 100, gamma: 1, colorTempK: 6500 },
+                C: { colorTempK: 3000 },
+                D: { profile: 'p' },
+            },
         };
         const adj = adjustFromDoc(doc);
         expect(Object.keys(adj).sort()).toEqual(['A', 'C', 'D']);

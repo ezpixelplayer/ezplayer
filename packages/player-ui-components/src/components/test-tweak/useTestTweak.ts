@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { emptyTestTweakDoc, type ActiveTest, type TestTweakDoc, type TestTweakSnapshot } from '@ezplayer/ezplayer-core';
+import {
+    emptyTestTweakDoc,
+    type ActiveTest,
+    type TestTweakDoc,
+    type TestTweakSnapshot,
+    type XlModelGroup,
+} from '@ezplayer/ezplayer-core';
 
 type Reply = ({ ok: true } & TestTweakSnapshot) | { ok: false; error: string };
 
@@ -17,6 +23,8 @@ export interface UseTestTweak {
     updateDoc: (change: (doc: TestTweakDoc) => TestTweakDoc) => void;
     startTest: (test: ActiveTest) => Promise<void>;
     stopTest: () => Promise<void>;
+    /** The show's xLights model groups, flattened to models and submodels. Asked for each time: the layout may have been reloaded. */
+    loadXlGroups: () => Promise<XlModelGroup[]>;
     error?: string;
     saving: boolean;
 }
@@ -122,7 +130,13 @@ export function useTestTweak(baseUrl: string | undefined): UseTestTweak {
     );
     const stopTest = useCallback(async () => adopt(await call('DELETE', '/test'), false), [call, adopt]);
 
-    return { snapshot, doc, updateDoc, startTest, stopTest, error, saving };
+    const loadXlGroups = useCallback(async () => {
+        const reply = await call('GET', '?xlgroups=1');
+        if (!reply?.ok) throw new Error('no answer');
+        return reply.xlGroups ?? [];
+    }, [call]);
+
+    return { snapshot, doc, updateDoc, startTest, stopTest, loadXlGroups, error, saving };
 }
 
 export function newId(): string {

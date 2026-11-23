@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+    assignProfile,
+    deleteProfile,
     effectiveTweak,
+    ownTweakKeys,
+    profileMembers,
+    setModelTweak,
     emptyTestTweakDoc,
     isNeutralTweak,
     mergeChunkWithNext,
@@ -37,7 +42,8 @@ describe('normalizeTestTweakDoc', () => {
         const doc = normalizeTestTweakDoc({
             version: 99,
             models: {
-                Arch: { colorOrder: 'grb', brightness: 250, gamma: 'x', colorTempK: 3000, junk: 1 },
+                Arch: { colorOrder: 'grb', brightness: 250, gamma: 'x', colorTempK: 3000, junk: 1, profile: 'p1' },
+                Star: { profile: 'gone' },
                 Empty: {},
                 Tree: {
                     chunks: [
@@ -47,8 +53,19 @@ describe('normalizeTestTweakDoc', () => {
                     ],
                 },
             },
+            profiles: [
+                { id: 'p1', name: 'Bullets', gamma: 2.2, brightness: 500, junk: 1 },
+                { id: 'p1', name: 'dup' },
+                { id: 'p2' },
+            ],
             groups: [
-                { id: 'g1', name: 'Roof', models: ['Arch', 'Arch', 3], tweak: { brightness: 50 } },
+                {
+                    id: 'g1',
+                    name: 'Roof',
+                    models: ['Arch', 'Arch', 3],
+                    subModels: ['Tree/Star', 'NoSlash'],
+                    tweak: { brightness: 50 },
+                },
                 { id: 'g1', name: 'dup' },
                 { name: 'no id' },
             ],
@@ -57,11 +74,13 @@ describe('normalizeTestTweakDoc', () => {
                 { id: 'p2', name: 'bad', pattern: { kind: 'nope' } },
             ],
         });
-        expect(doc.version).toBe(1);
-        expect(doc.models.Arch).toEqual({ colorOrder: 'GRB', brightness: 100, colorTempK: 3000 });
+        expect(doc.version).toBe(2);
+        expect(doc.profiles).toEqual([{ id: 'p1', name: 'Bullets', gamma: 2.2, brightness: 100 }]);
+        expect(doc.models.Star).toBeUndefined();
+        expect(doc.models.Arch).toEqual({ colorOrder: 'GRB', brightness: 100, colorTempK: 3000, profile: 'p1' });
         expect(doc.models.Empty).toBeUndefined();
         expect(doc.models.Tree.chunks!.map((c) => c.nodeStart)).toEqual([0, 50]);
-        expect(doc.groups).toEqual([{ id: 'g1', name: 'Roof', models: ['Arch'], tweak: { brightness: 50 } }]);
+        expect(doc.groups).toEqual([{ id: 'g1', name: 'Roof', models: ['Arch'], subModels: ['Tree/Star'] }]);
         expect(doc.presets).toEqual([
             { id: 'p1', name: 'Bars', pattern: { kind: 'bars', colors: ['#ff0000'], speed: 1 } },
         ]);
@@ -87,41 +106,58 @@ describe('normalizeTestTweakDoc', () => {
 describe('effectiveTweak', () => {
     const doc: TestTweakDoc = {
         ...emptyTestTweakDoc(),
-        models: { Arch: { brightness: 50, gamma: 2.2 }, Star: {} },
+        profiles: [
+            { id: 'p1', name: 'Bullets', brightness: 80, colorOrder: 'GRB', gamma: 1.8 },
+            { id: 'p2', name: 'Strip', colorTempK: 4000 },
+        ],
+        models: {
+            Arch: { profile: 'p1', brightness: 50, gamma: 2.2 },
+            Star: { profile: 'p1' },
+            Tree: { profile: 'p2' },
+            Loose: { brightness: 30 },
+        },
         groups: [
-            {
-                id: 'g1',
-                name: 'Roof',
-                models: ['Arch', 'Star'],
-                tweak: { brightness: 80, colorOrder: 'GRB', gamma: 1.8 },
-            },
-            {
-                id: 'g2',
-                name: 'All',
-                models: ['Arch', 'Star', 'Tree'],
-                tweak: { brightness: 50, colorOrder: 'BGR', colorTempK: 4000 },
-            },
-            { id: 'g3', name: 'No tweak', models: ['Arch'] },
+            { id: 'g1', name: 'Roof', models: ['Arch', 'Star'], subModels: ['Tree/Star'] },
+            { id: 'g2', name: 'All', models: ['Arch', 'Star', 'Tree'] },
         ],
     };
 
-    it('multiplies brightness through groups and the model', () => {
-        expect(effectiveTweak(doc, 'Arch').brightness).toBeCloseTo(0.2);
-        expect(effectiveTweak(doc, 'Tree').brightness).toBeCloseTo(0.5);
+    it('takes each setting from the model, else from its one profile', () => {
+        expect(effectiveTweak(doc, 'Arch')).toEqual({ brightness: 0.5, gamma: 2.2, colorOrder: 'GRB', profile: 'p1' });
+        expect(effectiveTweak(doc, 'Star')).toEqual({ brightness: 0.8, gamma: 1.8, colorOrder: 'GRB', profile: 'p1' });
+        expect(effectiveTweak(doc, 'Tree')).toEqual({ brightness: 1, colorTempK: 4000, profile: 'p2' });
+        expect(effectiveTweak(doc, 'Loose')).toEqual({ brightness: 0.3 });
     });
 
-    it("lets the model's own value win, then the first group that sets one", () => {
-        const arch = effectiveTweak(doc, 'Arch');
-        expect(arch.gamma).toBe(2.2);
-        expect(arch.colorOrder).toBe('GRB');
-        expect(arch.colorTempK).toBe(4000);
-        expect(arch.fromGroups).toEqual(['g1', 'g2']);
-        expect(effectiveTweak(doc, 'Star').gamma).toBe(1.8);
-    });
-
-    it('is neutral for a model nothing mentions', () => {
+    it('is neutral for a model nothing mentions, and groups change nothing', () => {
         expect(isNeutralTweak(effectiveTweak(doc, 'Nobody'))).toBe(true);
         expect(isNeutralTweak(effectiveTweak(doc, 'Tree'))).toBe(false);
+    });
+
+    it('moves models between profiles, one at a time each', () => {
+        expect(profileMembers(doc, 'p1')).toEqual(['Arch', 'Star']);
+        const moved = assignProfile(doc, ['Star', 'New', 'Tree'], 'p2');
+        expect(profileMembers(moved, 'p1')).toEqual(['Arch']);
+        expect(profileMembers(moved, 'p2')).toEqual(['New', 'Star', 'Tree']);
+        // Unassigning a model with nothing of its own drops it from the document.
+        const cleared = assignProfile(moved, ['New', 'Arch'], undefined);
+        expect(cleared.models.New).toBeUndefined();
+        expect(cleared.models.Arch).toEqual({ brightness: 50, gamma: 2.2 });
+        expect(assignProfile(doc, ['Star'], 'p1')).toBe(doc);
+    });
+
+    it("sets and clears a model's own settings", () => {
+        expect(ownTweakKeys(doc.models.Arch)).toEqual(['brightness', 'gamma']);
+        const set = setModelTweak(doc, 'Star', 'gamma', 2.5);
+        expect(set.models.Star).toEqual({ profile: 'p1', gamma: 2.5 });
+        expect(setModelTweak(doc, 'Loose', 'brightness', undefined).models.Loose).toBeUndefined();
+    });
+
+    it('unassigns the members of a deleted profile', () => {
+        const d = deleteProfile(doc, 'p1');
+        expect(d.profiles.map((p) => p.id)).toEqual(['p2']);
+        expect(d.models.Arch).toEqual({ brightness: 50, gamma: 2.2 });
+        expect(d.models.Star).toBeUndefined();
     });
 
     it('resolves targets through groups without duplicates', () => {
@@ -129,6 +165,7 @@ describe('effectiveTweak', () => {
             'Tree',
             'Arch',
             'Star',
+            'Tree/Star',
         ]);
         expect(resolveTestTargets(doc, { all: true, models: ['Arch'] }, ['A', 'Arch'])).toEqual(['A', 'Arch']);
         expect(resolveTestTargets(doc, { models: ['Arch'], subModels: ['Tree/Star'] })).toEqual(['Arch', 'Tree/Star']);

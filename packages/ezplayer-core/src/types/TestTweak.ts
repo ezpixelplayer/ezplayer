@@ -1,7 +1,8 @@
 /*
- * Test + Tweak: per-model output trims (color order, brightness, gamma,
- * color temperature), the split of models into port chunks, test groups, and
- * saved test patterns.  One JSON document per show; the active test itself
+ * Test + Tweak: output profiles (color order, brightness, gamma, color
+ * temperature) that models are assigned to, the split of models into port
+ * chunks, flat groups of models and submodels to aim tests at, and saved
+ * test patterns.  One JSON document per show; the active test itself
  * is runtime state and is never saved.
  */
 
@@ -19,7 +20,9 @@ export type TestPatternKind =
     | 'colorCycle'
     | 'markers'
     /** Each strand (string) in its own color. */
-    | 'strands';
+    | 'strands'
+    /** Evenly spaced planes across x, y and z in a color each: are level lines level? */
+    | 'grid';
 
 /**
  * What a pattern runs along: 'world' lays it across all targets as one
@@ -53,6 +56,14 @@ export interface TestPatternSpec {
     space?: TestPatternSpace;
     /** 0..1 */
     intensity?: number;
+    /** Grid: distance between planes, as a fraction of the largest extent of the targets. */
+    spacing?: number;
+    /** Grid: thickness of a plane, as a fraction of the spacing. */
+    thickness?: number;
+    /** Grid: slide the planes along each axis, in spacings (0..1 is one full step). */
+    offsetX?: number;
+    offsetY?: number;
+    offsetZ?: number;
 }
 
 export const TEST_PATTERN_KINDS: TestPatternKind[] = [
@@ -64,6 +75,7 @@ export const TEST_PATTERN_KINDS: TestPatternKind[] = [
     'colorCycle',
     'markers',
     'strands',
+    'grid',
 ];
 
 /** A saved pattern: "my favorite test pattern", and later the thing an API call names. */
@@ -141,31 +153,49 @@ export interface ModelPortChunk {
     reverse?: boolean;
 }
 
+/**
+ * A named set of output settings that models are assigned to: in practice a
+ * pixel type ("12V bullets", "SK6812 strip").  A setting the profile leaves
+ * out is left alone on its members.
+ */
+export interface OutputProfile extends OutputTweak {
+    id: string;
+    name: string;
+}
+
 export interface ModelTweak extends OutputTweak {
+    /** Id of the one profile the model is assigned to. The model's own settings override the profile's. */
+    profile?: string;
     /** Present when the model's wiring is overridden here rather than taken from the xLights layout. */
     chunks?: ModelPortChunk[];
 }
 
-/** Models that are tested or tweaked together. Not an xLights group. */
-export interface TweakGroup {
+/**
+ * Models and submodels to aim tests and effects at together.  Flat: a group
+ * never holds another group.  Carries no settings, and membership is free to
+ * overlap.  Not an xLights group, though one can be copied from there.
+ */
+export interface TestGroup {
     id: string;
     name: string;
     models: string[];
-    tweak?: OutputTweak;
+    /** As "Model/Submodel". */
+    subModels?: string[];
 }
 
-export const TEST_TWEAK_DOC_VERSION = 1;
+export const TEST_TWEAK_DOC_VERSION = 2;
 
 export interface TestTweakDoc {
     version: number;
     /** By model name. */
     models: Record<string, ModelTweak>;
-    groups: TweakGroup[];
+    profiles: OutputProfile[];
+    groups: TestGroup[];
     presets: TestPatternPreset[];
 }
 
 export function emptyTestTweakDoc(): TestTweakDoc {
-    return { version: TEST_TWEAK_DOC_VERSION, models: {}, groups: [], presets: [] };
+    return { version: TEST_TWEAK_DOC_VERSION, models: {}, profiles: [], groups: [], presets: [] };
 }
 
 // ---------------------------------------------------------------------------
@@ -252,6 +282,11 @@ export function normalizeTestPattern(v: unknown): TestPatternSpec | undefined {
     set('periodMs', num(v.periodMs, 20, 600000));
     set('every', int(v.every, 1, 100000));
     set('intensity', num(v.intensity, 0, 1));
+    set('spacing', num(v.spacing, 0.005, 10));
+    set('thickness', num(v.thickness, 0.005, 1));
+    set('offsetX', num(v.offsetX, -1, 1));
+    set('offsetY', num(v.offsetY, -1, 1));
+    set('offsetZ', num(v.offsetZ, -1, 1));
     if (TEST_PATTERN_SPACES.includes(v.space as TestPatternSpace)) p.space = v.space as TestPatternSpace;
     return p;
 }
@@ -285,10 +320,25 @@ export function normalizeActiveTest(v: unknown): ActiveTest | undefined {
 export function normalizeTestTweakDoc(v: unknown): TestTweakDoc {
     const doc = emptyTestTweakDoc();
     if (!isRecord(v)) return doc;
+    const names = (a: unknown) =>
+        Array.isArray(a) ? [...new Set(a.filter((s): s is string => typeof s === 'string' && s.length > 0))] : [];
+    const ids = new Set<string>();
+    if (Array.isArray(v.profiles)) {
+        for (const raw of v.profiles) {
+            if (!isRecord(raw)) continue;
+            const id = str(raw.id);
+            const name = str(raw.name);
+            if (!id || !name || ids.has(id)) continue;
+            ids.add(id);
+            doc.profiles.push({ id, name, ...normalizeOutputTweak(raw) });
+        }
+    }
     if (isRecord(v.models)) {
         for (const [name, raw] of Object.entries(v.models)) {
             if (!name || !isRecord(raw)) continue;
             const m: ModelTweak = normalizeOutputTweak(raw);
+            // A profile that is gone leaves the model unassigned.
+            if (typeof raw.profile === 'string' && ids.has(raw.profile)) m.profile = raw.profile;
             if (Array.isArray(raw.chunks)) {
                 const chunks = raw.chunks.map(normalizeChunk).filter((c): c is ModelPortChunk => !!c);
                 if (chunks.length) m.chunks = chunks.sort((a, b) => a.nodeStart - b.nodeStart);
@@ -296,7 +346,7 @@ export function normalizeTestTweakDoc(v: unknown): TestTweakDoc {
             if (Object.keys(m).length) doc.models[name] = m;
         }
     }
-    const ids = new Set<string>();
+    ids.clear();
     if (Array.isArray(v.groups)) {
         for (const raw of v.groups) {
             if (!isRecord(raw)) continue;
@@ -304,12 +354,9 @@ export function normalizeTestTweakDoc(v: unknown): TestTweakDoc {
             const name = str(raw.name);
             if (!id || !name || ids.has(id)) continue;
             ids.add(id);
-            const models = Array.isArray(raw.models)
-                ? [...new Set(raw.models.filter((s): s is string => typeof s === 'string' && s.length > 0))]
-                : [];
-            const g: TweakGroup = { id, name, models };
-            const tweak = normalizeOutputTweak(raw.tweak);
-            if (Object.keys(tweak).length) g.tweak = tweak;
+            const g: TestGroup = { id, name, models: names(raw.models) };
+            const subModels = names(raw.subModels).filter((s) => s.includes('/'));
+            if (subModels.length) g.subModels = subModels;
             doc.groups.push(g);
         }
     }
@@ -334,52 +381,35 @@ export function normalizeTestTweakDoc(v: unknown): TestTweakDoc {
 
 export interface EffectiveTweak {
     colorOrder?: string;
-    /** 0..1: the product of the model's and its groups' brightness. */
+    /** 0..1 */
     brightness: number;
     gamma?: number;
     colorTempK?: number;
-    /** Ids of the groups that contributed something. */
-    fromGroups: string[];
+    /** Id of the profile the model is assigned to, when it has one. */
+    profile?: string;
 }
 
+const TWEAK_KEYS = ['colorOrder', 'brightness', 'gamma', 'colorTempK'] as const;
+export type TweakKey = (typeof TWEAK_KEYS)[number];
+export const OUTPUT_TWEAK_KEYS: readonly TweakKey[] = TWEAK_KEYS;
+
 /**
- * What actually applies to a model.  Brightness multiplies through every
- * group the model is in and the model's own value.  For color order, gamma
- * and color temperature the model's own value wins; otherwise the first
- * group (in document order) that sets one.
+ * What actually applies to a model: for each setting the model's own value,
+ * else its profile's, else nothing.  Every setting works the same way; a
+ * model's own value replaces the profile's rather than combining with it.
  */
 export function effectiveTweak(doc: TestTweakDoc, model: string): EffectiveTweak {
     const own = doc.models[model];
-    const eff: EffectiveTweak = { brightness: 1, fromGroups: [] };
-    for (const g of doc.groups) {
-        const t = g.tweak;
-        if (!t || !g.models.includes(model)) continue;
-        let used = false;
-        if (t.brightness !== undefined) {
-            eff.brightness *= t.brightness / 100;
-            used = true;
-        }
-        if (eff.colorOrder === undefined && t.colorOrder !== undefined && own?.colorOrder === undefined) {
-            eff.colorOrder = t.colorOrder;
-            used = true;
-        }
-        if (eff.gamma === undefined && t.gamma !== undefined && own?.gamma === undefined) {
-            eff.gamma = t.gamma;
-            used = true;
-        }
-        if (eff.colorTempK === undefined && t.colorTempK !== undefined && own?.colorTempK === undefined) {
-            eff.colorTempK = t.colorTempK;
-            used = true;
-        }
-        if (used) eff.fromGroups.push(g.id);
-    }
-    if (own) {
-        if (own.brightness !== undefined) eff.brightness *= own.brightness / 100;
-        if (own.colorOrder !== undefined) eff.colorOrder = own.colorOrder;
-        if (own.gamma !== undefined) eff.gamma = own.gamma;
-        if (own.colorTempK !== undefined) eff.colorTempK = own.colorTempK;
-    }
-    eff.brightness = Math.min(1, Math.max(0, eff.brightness));
+    const profile = own?.profile ? doc.profiles.find((p) => p.id === own.profile) : undefined;
+    const pick = <K extends TweakKey>(k: K): OutputTweak[K] => own?.[k] ?? profile?.[k];
+    const eff: EffectiveTweak = { brightness: Math.min(1, Math.max(0, (pick('brightness') ?? 100) / 100)) };
+    const colorOrder = pick('colorOrder');
+    const gamma = pick('gamma');
+    const colorTempK = pick('colorTempK');
+    if (colorOrder !== undefined) eff.colorOrder = colorOrder;
+    if (gamma !== undefined) eff.gamma = gamma;
+    if (colorTempK !== undefined) eff.colorTempK = colorTempK;
+    if (profile) eff.profile = profile.id;
     return eff;
 }
 
@@ -395,9 +425,65 @@ export function isNeutralTweak(e: EffectiveTweak): boolean {
 
 /** Every model the document says anything about, tweak-wise. */
 export function tweakedModelNames(doc: TestTweakDoc): string[] {
-    const names = new Set<string>(Object.keys(doc.models));
-    for (const g of doc.groups) if (g.tweak) for (const m of g.models) names.add(m);
-    return [...names];
+    return Object.keys(doc.models);
+}
+
+/** Names of the models assigned to a profile, sorted. */
+export function profileMembers(doc: TestTweakDoc, profileId: string): string[] {
+    return Object.keys(doc.models)
+        .filter((m) => doc.models[m].profile === profileId)
+        .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+}
+
+/** The settings a model sets for itself, over whatever its profile says. */
+export function ownTweakKeys(t: ModelTweak | undefined): TweakKey[] {
+    return t ? TWEAK_KEYS.filter((k) => t[k] !== undefined) : [];
+}
+
+function withModel(doc: TestTweakDoc, model: string, change: (t: ModelTweak) => ModelTweak): TestTweakDoc {
+    const next = change({ ...(doc.models[model] ?? {}) });
+    const models = { ...doc.models };
+    if (Object.keys(next).length) models[model] = next;
+    else delete models[model];
+    return { ...doc, models };
+}
+
+/** Assign models to a profile (taking them out of any other), or to none with `undefined`. */
+export function assignProfile(
+    doc: TestTweakDoc,
+    models: Iterable<string>,
+    profileId: string | undefined,
+): TestTweakDoc {
+    let out = doc;
+    for (const m of models) {
+        if ((out.models[m]?.profile ?? undefined) === profileId) continue;
+        out = withModel(out, m, (t) => {
+            if (profileId) t.profile = profileId;
+            else delete t.profile;
+            return t;
+        });
+    }
+    return out;
+}
+
+/** Set, or with `undefined` clear, one of a model's own settings. */
+export function setModelTweak<K extends TweakKey>(
+    doc: TestTweakDoc,
+    model: string,
+    key: K,
+    value: OutputTweak[K] | undefined,
+): TestTweakDoc {
+    return withModel(doc, model, (t) => {
+        if (value === undefined) delete t[key];
+        else t[key] = value;
+        return t;
+    });
+}
+
+/** Remove a profile; its members become unassigned and keep their own settings. */
+export function deleteProfile(doc: TestTweakDoc, profileId: string): TestTweakDoc {
+    const out = assignProfile(doc, profileMembers(doc, profileId), undefined);
+    return { ...out, profiles: out.profiles.filter((p) => p.id !== profileId) };
 }
 
 /** Model and submodel names a set of targets covers, in first-seen order. `allModels` backs the `all` flag. */
@@ -407,7 +493,9 @@ export function resolveTestTargets(doc: TestTweakDoc, targets: TestTargets, allM
     for (const m of targets.models ?? []) out.add(m);
     for (const id of targets.groups ?? []) {
         const g = doc.groups.find((x) => x.id === id);
-        if (g) for (const m of g.models) out.add(m);
+        if (!g) continue;
+        for (const m of g.models) out.add(m);
+        for (const s of g.subModels ?? []) out.add(s);
     }
     for (const s of targets.subModels ?? []) out.add(s);
     return [...out];
@@ -604,6 +692,14 @@ export interface TweakModelInfo {
     xlGamma?: number;
 }
 
+/** An xLights model group with the groups inside it resolved away, offered for copying into a test group. */
+export interface XlModelGroup {
+    name: string;
+    models: string[];
+    /** As "Model/Submodel". */
+    subModels: string[];
+}
+
 export interface TweakControllerInfo {
     name: string;
     address?: string;
@@ -624,6 +720,8 @@ export interface TestTweakSnapshot {
     rewired: string[];
     /** Bumps whenever the document changes, so a client can tell its own save from someone else's. */
     revision: number;
+    /** The show's xLights model groups, flattened. Only when asked for: the list can be long. */
+    xlGroups?: XlModelGroup[];
 }
 
 // ---------------------------------------------------------------------------

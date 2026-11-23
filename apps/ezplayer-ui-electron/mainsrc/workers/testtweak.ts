@@ -26,13 +26,15 @@ import {
     type TweakModelInfo,
     type WiringModel,
     type WiringPlan,
+    type XlModelGroup,
 } from '@ezplayer/ezplayer-core';
 import { colorTemperatureScale, type OutputModelAdjust } from '@ezplayer/epp';
 import type { XlControllerInfo, XlModelChannelInfo } from 'xllayoutcalcs';
 import type { PixelPipeline } from './pixelpipeline';
 
 export type TestTweakCommand =
-    | { op: 'get' }
+    /** `xlGroups` adds the show's xLights model groups to the answer. */
+    | { op: 'get'; xlGroups?: boolean }
     /** Replace the whole document. */
     | { op: 'setDoc'; doc: unknown }
     /** Start, or replace, the running test. */
@@ -165,6 +167,7 @@ export class TestTweakService {
     private showFolder?: string;
     private models: XlModelChannelInfo[] = [];
     private controllers: XlControllerInfo[] = [];
+    private xlGroups: XlModelGroup[] = [];
     private pipeline?: PixelPipeline;
     private active?: ActiveTest;
 
@@ -205,9 +208,10 @@ export class TestTweakService {
     }
 
     /** The show as just parsed from the xLights files. */
-    setShow(models: XlModelChannelInfo[], controllers: XlControllerInfo[]): void {
+    setShow(models: XlModelChannelInfo[], controllers: XlControllerInfo[], xlGroups: XlModelGroup[] = []): void {
         this.models = models;
         this.controllers = controllers;
+        this.xlGroups = xlGroups;
         this.replan();
     }
 
@@ -322,6 +326,7 @@ export class TestTweakService {
         try {
             switch (cmd.op) {
                 case 'get':
+                    if (cmd.xlGroups) return { ok: true, ...this.snapshot(), xlGroups: this.xlGroups };
                     break;
                 case 'setDoc': {
                     if (!this.showFolder) return { ok: false, error: 'no show folder' };
