@@ -38,7 +38,10 @@ import { LatestFrameRingBuffer, AudioChunkRingBuffer, isSupportBundleLevel } fro
 import {
     AUDIO_BUS_MAIN,
     AudioWireCodec,
+    MAX_AUDIO_BUSES,
     addAudioListener,
+    audioBusesFull,
+    audioListenerNames,
     buildAudioWireFrame,
     cleanAudioBus,
     isAudioName,
@@ -943,23 +946,36 @@ function joinBusAudio(client: BusAudioClient): void {
     client.ws.on('error', leave);
     reportBusAudioWanted();
     // A listener seen for the first time is kept in settings, so buses can be sent to it.
-    const settings = currentPlaybackSettings();
     const name = client.listener;
-    if (name && settings && !(settings.audioListeners ?? []).some((l) => l.name === name)) {
-        void applyPlaybackSettings(addAudioListener(settings, name)).catch((err) =>
-            console.error('[server-worker] could not save audio listener:', err),
-        );
-    }
+    if (!name) return;
+    void audioSettingsTurn(async () => {
+        const settings = currentPlaybackSettings();
+        if (!settings || audioListenerNames(settings).includes(name)) return;
+        await applyPlaybackSettings(addAudioListener(settings, name));
+    }).catch((err) => console.error('[server-worker] could not save audio listener:', err));
 }
 
-/** The names of the listeners each bus is sent to. */
-function busListeners(): Map<string, string[]> {
-    return new Map(resolveAudioBuses(currentPlaybackSettings()).map((b) => [b.name, b.listeners]));
+/** The tail of the audio settings changes in progress. */
+let audioSettingsQueue: Promise<unknown> = Promise.resolve();
+
+/**
+ * Run one change to the audio settings after those already under way. A
+ * change reads the settings inside its turn, so two made at once (two
+ * programs each naming a new bus, say) both end up stored.
+ */
+function audioSettingsTurn<T>(change: () => Promise<T>): Promise<T> {
+    const turn = audioSettingsQueue.then(change, change);
+    audioSettingsQueue = turn.catch(() => undefined);
+    return turn;
 }
+
+/** The names of the listeners each bus is sent to, as of the last settings change. */
+let busListeners = new Map<string, string[]>();
 
 /** Tell main which buses somebody receives, when that changes. */
 function reportBusAudioWanted(): void {
-    const sentTo = busListeners();
+    busListeners = new Map(resolveAudioBuses(currentPlaybackSettings()).map((b) => [b.name, b.listeners]));
+    const sentTo = busListeners;
     const buses = new Set<string>();
     for (const c of busAudioClients) {
         if (c.bus) buses.add(c.bus);
@@ -974,8 +990,8 @@ function reportBusAudioWanted(): void {
 
 /** Listeners known from settings or connected now, with the buses sent to each. */
 function audioListenerStatus() {
-    const sentTo = busListeners();
-    const names = new Set((currentPlaybackSettings()?.audioListeners ?? []).map((l) => l.name));
+    const sentTo = busListeners;
+    const names = new Set(audioListenerNames(currentPlaybackSettings()));
     for (const c of busAudioClients) if (c.listener) names.add(c.listener);
     return [...names].map((name) => {
         const addresses = [...busAudioClients].filter((c) => c.listener === name).map((c) => c.address);
@@ -991,7 +1007,7 @@ function audioListenerStatus() {
 /** One bus chunk to those who receive that bus, as uncompressed PCM: a bus is too sparse and too prompt for the opus stream. */
 function sendBusAudio(chunk: AudioChunk): void {
     if (!chunk.bus || busAudioClients.size === 0) return;
-    const sentTo = busListeners().get(chunk.bus) ?? [];
+    const sentTo = busListeners.get(chunk.bus) ?? [];
     const floats = new Float32Array(chunk.buffer);
     const frames = floats.length / chunk.channels;
     const header = {
@@ -1039,7 +1055,12 @@ function sendBusAudio(chunk: AudioChunk): void {
  *  LAN API (none). */
 function attachAudioStreamUpgrade(server: ReturnType<typeof createServer>): void {
     server.on('upgrade', (req, socket, head) => {
-        const url = new URL(req.url ?? '', 'http://localhost');
+        let url: URL;
+        try {
+            url = new URL(req.url ?? '', 'http://localhost');
+        } catch {
+            return; // not a target of ours; the other upgrade handlers see it too
+        }
         if (url.pathname !== '/api/ezp/audiostream') return; // leave for the other upgrade handlers
         const bus = url.searchParams.get('bus');
         const listener = url.searchParams.get('listener');
@@ -2508,46 +2529,56 @@ async function startServer(config: ServerWorkerData) {
     const audioBody = (ctx: Koa.Context) => (ctx.request.body ?? {}) as Record<string, unknown>;
 
     router.get('/api/ezp/audio/buses', (ctx) => audioCall(ctx, { op: 'buses' }));
+    const refuse = (ctx: Koa.Context, status: number, error: string) => {
+        ctx.status = status;
+        ctx.body = { ok: false, error };
+        return false;
+    };
+    const busesFull = `the player has all ${MAX_AUDIO_BUSES} of its audio buses; remove one first`;
+
     router.post('/api/ezp/audio/buses', async (ctx) => {
-        const settings = settingsOr503(ctx);
-        if (!settings) return;
         const r = cleanAudioBus(ctx.request.body);
-        if (!r.ok) {
-            ctx.status = 400;
-            ctx.body = { ok: false, error: r.error };
-            return;
-        }
-        await applyPlaybackSettings(upsertAudioBus(settings, r.bus));
-        await audioCall(ctx, { op: 'buses' });
+        if (!r.ok) return void refuse(ctx, 400, r.error);
+        const stored = await audioSettingsTurn(async () => {
+            const settings = settingsOr503(ctx);
+            if (!settings) return false;
+            if (audioBusesFull(settings, r.bus.name)) return refuse(ctx, 400, busesFull);
+            await applyPlaybackSettings(upsertAudioBus(settings, r.bus));
+            return true;
+        });
+        if (stored) await audioCall(ctx, { op: 'buses' });
     });
     router.delete('/api/ezp/audio/buses/:name', async (ctx) => {
-        const settings = settingsOr503(ctx);
-        if (!settings) return;
         const name = String(ctx.params.name);
-        if (!(settings.audioBuses ?? []).some((b) => b.name === name)) {
-            const builtIn = resolveAudioBuses(settings).some((b) => b.name === name);
-            ctx.status = builtIn ? 400 : 404;
-            ctx.body = { ok: false, error: builtIn ? `${name} is built in` : `no audio bus named ${name}` };
-            return;
-        }
-        await applyPlaybackSettings(removeAudioBus(settings, name));
-        await audioCall(ctx, { op: 'buses' });
+        const removed = await audioSettingsTurn(async () => {
+            const settings = settingsOr503(ctx);
+            if (!settings) return false;
+            const buses = resolveAudioBuses(settings);
+            const bus = buses.find((b) => b.name === name);
+            const stored = Array.isArray(settings.audioBuses) && settings.audioBuses.some((b) => b?.name === name);
+            if (!stored)
+                return refuse(ctx, bus ? 400 : 404, bus ? `${name} is built in` : `no audio bus named ${name}`);
+            await applyPlaybackSettings(removeAudioBus(settings, name));
+            return true;
+        });
+        if (removed) await audioCall(ctx, { op: 'buses' });
     });
 
     router.get('/api/ezp/audio/listeners', (ctx) => {
         ctx.body = { ok: true, listeners: audioListenerStatus() };
     });
     router.delete('/api/ezp/audio/listeners/:name', async (ctx) => {
-        const settings = settingsOr503(ctx);
-        if (!settings) return;
         const name = String(ctx.params.name);
-        if (!audioListenerStatus().some((l) => l.name === name)) {
-            ctx.status = 404;
-            ctx.body = { ok: false, error: `no audio listener named ${name}` };
-            return;
-        }
-        await applyPlaybackSettings(removeAudioListener(settings, name));
-        ctx.body = { ok: true, listeners: audioListenerStatus() };
+        const removed = await audioSettingsTurn(async () => {
+            const settings = settingsOr503(ctx);
+            if (!settings) return false;
+            if (!audioListenerStatus().some((l) => l.name === name)) {
+                return refuse(ctx, 404, `no audio listener named ${name}`);
+            }
+            await applyPlaybackSettings(removeAudioListener(settings, name));
+            return true;
+        });
+        if (removed) ctx.body = { ok: true, listeners: audioListenerStatus() };
     });
 
     router.get('/api/ezp/audio/leases', (ctx) => audioCall(ctx, { op: 'list' }));
@@ -2555,18 +2586,18 @@ async function startServer(config: ServerWorkerData) {
         const request = audioBody(ctx) as AudioLeaseRequest;
         // A lease on a bus nobody has defined registers it, so it shows in settings.
         let newBus: AudioBusConfig | undefined;
-        const settings = currentPlaybackSettings();
-        if (request.bus !== undefined && settings && !resolveAudioBuses(settings).some((b) => b.name === request.bus)) {
-            const r = cleanAudioBus({ name: request.bus });
-            if (!r.ok) {
-                ctx.status = 400;
-                ctx.body = { ok: false, error: `bus ${r.error}` };
-                return;
-            }
+        const ready = await audioSettingsTurn(async () => {
+            const settings = currentPlaybackSettings();
+            const bus = request.bus;
+            if (bus === undefined || !settings || resolveAudioBuses(settings).some((b) => b.name === bus)) return true;
+            const r = cleanAudioBus({ name: bus });
+            if (!r.ok) return refuse(ctx, 400, `bus ${r.error}`);
+            if (audioBusesFull(settings, r.bus.name)) return refuse(ctx, 400, busesFull);
             newBus = r.bus;
             await applyPlaybackSettings(upsertAudioBus(settings, newBus));
-        }
-        await audioCall(ctx, { op: 'open', request, newBus });
+            return true;
+        });
+        if (ready) await audioCall(ctx, { op: 'open', request, newBus });
     });
     router.delete('/api/ezp/audio/leases/:id', (ctx) => audioCall(ctx, { op: 'close', ...audioRef(ctx) }));
     router.post('/api/ezp/audio/leases/:id/keepalive', (ctx) => audioCall(ctx, { op: 'keepalive', ...audioRef(ctx) }));

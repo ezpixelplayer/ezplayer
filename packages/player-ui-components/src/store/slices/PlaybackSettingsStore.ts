@@ -441,7 +441,8 @@ const playbackSettingsSlice = createSlice({
         /** Where a bus plays; an empty list sends it back to the show outputs. */
         setAudioBusOutputs(state, action: PayloadAction<{ name: string; outputs: AudioBusOutput[] }>) {
             const { name, outputs } = action.payload;
-            const list = (state.settings.audioBuses ??= []);
+            if (!Array.isArray(state.settings.audioBuses)) state.settings.audioBuses = [];
+            const list = state.settings.audioBuses;
             let bus = list.find((b) => b.name === name);
             if (!bus) list.push((bus = { name }));
             bus.outputs = outputs.length > 0 ? outputs : undefined;
@@ -452,7 +453,8 @@ const playbackSettingsSlice = createSlice({
         /** The listeners a bus is sent to, by name. */
         setAudioBusListeners(state, action: PayloadAction<{ name: string; listeners: string[] }>) {
             const { name, listeners } = action.payload;
-            const list = (state.settings.audioBuses ??= []);
+            if (!Array.isArray(state.settings.audioBuses)) state.settings.audioBuses = [];
+            const list = state.settings.audioBuses;
             let bus = list.find((b) => b.name === name);
             if (!bus) list.push((bus = { name }));
             bus.listeners = listeners.length > 0 ? listeners : undefined;

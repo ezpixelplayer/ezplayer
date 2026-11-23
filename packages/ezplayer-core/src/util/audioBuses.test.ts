@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
     addAudioListener,
+    audioBusesFull,
+    audioListenerNames,
     cleanAudioBus,
     removeAudioBus,
     removeAudioListener,
@@ -67,6 +69,29 @@ describe('audio buses', () => {
         s = upsertAudioBus(s, { name: 'tree', volume: 30 });
         expect(s).toEqual({ other: 1, audioBuses: [{ name: 'tree', leadMs: 100, volume: 30 }] });
         expect(removeAudioBus(s, 'tree')).toEqual({ other: 1, audioBuses: undefined });
+    });
+
+    it('reads settings a client stored in the wrong shape as empty', () => {
+        const bad = {
+            audioBuses: { name: 'fx' },
+            audioListeners: 'pi',
+        } as never;
+        expect(resolveAudioBuses(bad).map((b) => b.name)).toEqual(['main', 'immediate']);
+        expect(audioListenerNames(bad)).toEqual([]);
+        expect(addAudioListener(bad, 'pi')).toMatchObject({ audioListeners: [{ name: 'pi' }] });
+        expect(upsertAudioBus(bad, { name: 'tree' })).toMatchObject({ audioBuses: [{ name: 'tree' }] });
+        const odd = resolveAudioBuses({
+            audioBuses: [{ name: 'tree', outputs: 'usb', listeners: 'pi' }, null, 7],
+        } as never);
+        expect(odd[2]).toMatchObject({ name: 'tree', outputs: [], listeners: [] });
+    });
+
+    it('says when the player has all the buses it takes', () => {
+        const audioBuses = Array.from({ length: 14 }, (_, i) => ({ name: `bus${i}` }));
+        expect(audioBusesFull({ audioBuses: audioBuses.slice(1) }, 'new')).toBe(false);
+        expect(audioBusesFull({ audioBuses }, 'new')).toBe(true);
+        expect(audioBusesFull({ audioBuses }, 'bus3')).toBe(false);
+        expect(audioBusesFull({ audioBuses }, 'immediate')).toBe(false);
     });
 
     it('keeps the listeners that have connected and the buses sent to them', () => {

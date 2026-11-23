@@ -121,6 +121,40 @@ describe('AudioBusEngine clips', () => {
         expect(e.list(T0 + 1000)[0].voices).toBe(0);
     });
 
+    it('ends a stopped clip at its last frame, however long the fade', () => {
+        const e = engine();
+        const lease = e.open({ bus: 'tree', encoding: 'f32le' }, T0);
+        // 100 ms of clip, stopped halfway with a 2 s fade: it must not start over.
+        e.addClip(lease.id, lease.token, 'ones', f32(new Float32Array(4800 * 2).fill(0.5)), T0);
+        const played = e.play(lease.id, lease.token, { clip: 'ones' }, T0);
+        e.stop(lease.id, lease.token, undefined, 2000, played.startsAt - 100 + 50);
+        const { timeline } = run(e, T0, 3000);
+        let last = timeline.length - 1;
+        while (last > 0 && timeline[last] === 0) last--;
+        expect(Math.floor(last / 2)).toBe(Math.round((played.startsAt - T0) * 48) + 4799);
+        expect(e.list(T0 + 3000)[0].voices).toBe(0);
+    });
+
+    it('refuses a clip that is too long before reading its samples', () => {
+        const e = engine();
+        const lease = e.open({ bus: 'tree', sampleRate: 8000, channels: 1 }, T0);
+        expect(() => e.addClip(lease.id, lease.token, 'long', new Uint8Array(8000 * 2 * 121), T0)).toThrow(
+            /longer than 120 s/,
+        );
+        // A WAV header claiming 8-bit mono at 8 kHz: 121 s of it.
+        const wav = new Uint8Array(44 + 8000 * 121);
+        const dv = new DataView(wav.buffer);
+        wav.set([0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x41, 0x56, 0x45, 0x66, 0x6d, 0x74, 0x20]);
+        dv.setUint32(16, 16, true);
+        dv.setUint16(20, 1, true);
+        dv.setUint16(22, 1, true);
+        dv.setUint32(24, 8000, true);
+        dv.setUint16(34, 8, true);
+        wav.set([0x64, 0x61, 0x74, 0x61], 36);
+        dv.setUint32(40, 8000 * 121, true);
+        expect(() => e.addClip(lease.id, lease.token, 'long', wav, T0)).toThrow(/longer than 120 s/);
+    });
+
     it('converts clips to 48 kHz and reads WAV files', () => {
         const e = engine();
         const lease = e.open({ bus: 'tree', sampleRate: 24000, channels: 1, encoding: 's16le' }, T0);
@@ -205,11 +239,11 @@ describe('AudioBusEngine streams', () => {
         const late = e.stream(lease.id, lease.token, f32(a), T0 + 400, 3, T0 + 500);
         expect(late.lateMs).toBe(20);
         expect(() => e.stream(lease.id, lease.token, f32(a), T0 + 500_000, 4, T0)).toThrow(/too far ahead/);
-        // The same limit holds for chunks that follow on with no time.
+        // The same limit holds for the end of a chunk, and for chunks that follow on with no time.
         const big = f32(new Float32Array(48000 * 2 * 31));
         e.stream(lease.id, lease.token, big, T0 + 1000, 5, T0);
-        e.stream(lease.id, lease.token, big, undefined, 6, T0);
-        expect(() => e.stream(lease.id, lease.token, big, undefined, 7, T0)).toThrow(/too far ahead/);
+        expect(() => e.stream(lease.id, lease.token, big, undefined, 6, T0)).toThrow(/too far ahead/);
+        expect(e.list(T0)[0].bufferedMs).toBe(32000);
     });
 
     it('resamples a 44.1 kHz mono stream without breaks between chunks', () => {
@@ -350,9 +384,25 @@ describe('AudioBusEngine leases and buses', () => {
         expect(() => e.open({ bus: 'nowhere' }, T0)).toThrow(/no audio bus named nowhere/);
         expect(() => e.open({ encoding: 'mp3' as never }, T0)).toThrow(/encoding/);
         expect(() => e.open({ gain: 9 }, T0)).toThrow(/gain/);
+        // Numbers sent as text are refused, not used.
+        expect(() => e.open({ gain: '0.8' as never }, T0)).toThrow(/gain must be a number/);
+        expect(() => e.open({ ttlMs: '30s' as never }, T0)).toThrow(/ttlMs must be a number/);
+        expect(() => e.open({ sampleRate: '48000' as never }, T0)).toThrow(/sampleRate must be a number/);
         const lease = e.open({}, T0);
         expect(() => e.keepalive(lease.id, lease.token + 1, T0)).toThrow(/unknown lease/);
         expect(() => e.play(lease.id, lease.token, { clip: 'none' }, T0)).toThrow(/no clip named none/);
+    });
+
+    it('holds a closed lease until its fade is done, without counting it against the limit', () => {
+        const e = engine();
+        const leases = Array.from({ length: 64 }, () => e.open({ bus: 'tree' }, T0));
+        expect(() => e.open({ bus: 'tree' }, T0)).toThrow(/too many audio leases/);
+        for (const l of leases) e.close(l.id, l.token, T0);
+        expect(e.list(T0)).toEqual([]);
+        expect(e.held).toBe(64);
+        expect(e.open({ bus: 'tree' }, T0).bus).toBe('tree');
+        e.sweep(T0 + 5000);
+        expect(e.held).toBe(1);
     });
 
     it('expires idle leases and drops those of a removed bus', () => {

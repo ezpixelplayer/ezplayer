@@ -152,7 +152,20 @@ interface Bus {
 }
 
 const frameOf = (ms: number) => Math.round(ms * FRAMES_PER_MS);
+
+/** A number a client sent, or `dflt` when it sent none; anything else is refused. */
+function numberOr(v: unknown, name: string, dflt: number): number {
+    if (v === undefined || v === null) return dflt;
+    if (typeof v !== 'number' || !Number.isFinite(v)) throw new Error(`${name} must be a number`);
+    return v;
+}
 const msOf = (frame: number) => frame / FRAMES_PER_MS;
+
+/** Frame after the last one a voice sounds on: the end of its fade, or of a clip that does not loop. */
+function voiceEnd(v: Voice): number {
+    const clipEnd = v.loop ? Infinity : v.start + v.clip.length / 2;
+    return v.stopAt === undefined ? clipEnd : Math.min(v.stopAt + v.fadeFrames, clipEnd);
+}
 
 // ---------------------------------------------------------------------------
 // PCM in
@@ -175,8 +188,8 @@ export function pcmToStereo(data: Uint8Array, channels: number, encoding: PcmEnc
     return out;
 }
 
-/** The samples of a WAV file as interleaved stereo floats, with its rate. */
-export function decodeWav(file: Uint8Array): { rate: number; stereo: Float32Array } {
+/** The samples of a WAV file as interleaved stereo floats, with its rate. Refuses one longer than `maxSeconds`. */
+export function decodeWav(file: Uint8Array, maxSeconds = Infinity): { rate: number; stereo: Float32Array } {
     const dv = new DataView(file.buffer, file.byteOffset, file.byteLength);
     const tag = (o: number) => String.fromCharCode(file[o], file[o + 1], file[o + 2], file[o + 3]);
     if (file.byteLength < 12 || tag(0) !== 'RIFF' || tag(8) !== 'WAVE') throw new Error('not a WAV file');
@@ -208,6 +221,7 @@ export function decodeWav(file: Uint8Array): { rate: number; stereo: Float32Arra
                 throw new Error(`unsupported WAV encoding (format ${code}, ${bits} bit)`);
             }
             const frames = Math.floor(Math.min(size, file.byteLength - body) / (width * channels));
+            if (!(rate > 0) || frames > maxSeconds * rate) throw new Error(`clip is longer than ${maxSeconds} s`);
             const read = (p: number): number => {
                 if (float) return width === 4 ? dv.getFloat32(p, true) : dv.getFloat64(p, true);
                 if (width === 1) return (file[p] - 128) / 128;
@@ -400,6 +414,11 @@ export class AudioBusEngine {
         return [...this.leases.values()].filter((l) => !l.closing).map((l) => this.describe(l, now));
     }
 
+    /** Leases still held, counting closed ones that are fading out. */
+    get held(): number {
+        return this.leases.size;
+    }
+
     private describe(l: Lease, now: number): AudioLeaseInfo {
         return {
             ...l.info,
@@ -414,16 +433,18 @@ export class AudioBusEngine {
         const busName = req.bus ?? AUDIO_BUS_MAIN;
         const bus = this.buses.get(busName);
         if (!bus) throw new Error(`no audio bus named ${busName}`);
-        if (this.leases.size >= MAX_LEASES) throw new Error('too many audio leases');
+        let open = 0;
+        for (const l of this.leases.values()) if (!l.closing) open++;
+        if (open >= MAX_LEASES) throw new Error('too many audio leases');
         const encoding = req.encoding ?? 's16le';
         if (encoding !== 's16le' && encoding !== 'f32le') throw new Error('encoding must be s16le or f32le');
-        const sampleRate = req.sampleRate ?? BUS_RATE;
+        const sampleRate = numberOr(req.sampleRate, 'sampleRate', BUS_RATE);
         if (!(sampleRate >= 8000 && sampleRate <= 192000)) throw new Error('sampleRate must be 8000-192000');
         const channels = req.channels ?? 2;
         if (!Number.isInteger(channels) || channels < 1 || channels > 8) throw new Error('channels must be 1-8');
-        const gain = req.gain ?? 1;
+        const gain = numberOr(req.gain, 'gain', 1);
         if (!(gain >= 0 && gain <= 4)) throw new Error('gain must be 0-4');
-        const ttlMs = Math.min(MAX_TTL_MS, Math.max(1000, req.ttlMs ?? DEFAULT_TTL_MS));
+        const ttlMs = Math.min(MAX_TTL_MS, Math.max(1000, numberOr(req.ttlMs, 'ttlMs', DEFAULT_TTL_MS)));
         const id = this.nextLeaseId++;
         const lease: Lease = {
             info: {
@@ -569,7 +590,12 @@ export class AudioBusEngine {
             joined = live !== undefined && Math.abs(want - live) <= JOIN_TOLERANCE_FRAMES;
             start = live !== undefined && joined ? live : want;
         }
-        if (start > nowFrame + frameOf(MAX_STREAM_AHEAD_MS)) throw new Error('stream chunk is too far ahead');
+        // Its length is known from its size, before any of it is converted.
+        const width = l.info.encoding === 'f32le' ? 4 : 2;
+        const length = (data.byteLength / (width * l.info.channels)) * (BUS_RATE / l.info.sampleRate);
+        if (start + length > nowFrame + frameOf(MAX_STREAM_AHEAD_MS)) {
+            throw new Error('stream chunk reaches too far ahead');
+        }
         if (!joined) l.resampler = undefined;
         if (l.info.sampleRate !== BUS_RATE) l.resampler ??= new StereoResampler(l.info.sampleRate);
         let samples = pcmToStereo(data, l.info.channels, l.info.encoding);
@@ -604,8 +630,14 @@ export class AudioBusEngine {
         if (!name || name.length > 80) throw new Error('clip name must be 1-80 characters');
         const isWav =
             data.byteLength >= 12 && data[0] === 0x52 && data[1] === 0x49 && data[2] === 0x46 && data[3] === 0x46;
+        if (!isWav) {
+            const width = l.info.encoding === 'f32le' ? 4 : 2;
+            if (data.byteLength / (width * l.info.channels) > MAX_CLIP_SECONDS * l.info.sampleRate) {
+                throw new Error(`clip is longer than ${MAX_CLIP_SECONDS} s`);
+            }
+        }
         const src = isWav
-            ? decodeWav(data)
+            ? decodeWav(data, MAX_CLIP_SECONDS)
             : { rate: l.info.sampleRate, stereo: pcmToStereo(data, l.info.channels, l.info.encoding) };
         if (!(src.rate >= 8000 && src.rate <= 192000)) throw new Error('clip sample rate must be 8000-192000');
         const clip = new StereoResampler(src.rate).push(src.stereo, true);
@@ -636,7 +668,7 @@ export class AudioBusEngine {
         const bus = this.buses.get(l.info.bus)!;
         const clip = l.clips.get(req.clip);
         if (!clip) throw new Error(`no clip named ${req.clip}`);
-        const gain = req.gain ?? 1;
+        const gain = numberOr(req.gain, 'gain', 1);
         if (!(gain >= 0 && gain <= 4)) throw new Error('gain must be 0-4');
         if (l.voices.length >= MAX_VOICES) throw new Error('too many sounds playing on this lease');
         let start: number;
@@ -727,8 +759,7 @@ export class AudioBusEngine {
             for (const v of l.voices) {
                 const len = v.clip.length / 2;
                 const from = Math.max(start, v.start);
-                const last = v.stopAt !== undefined ? v.stopAt + v.fadeFrames : v.loop ? Infinity : v.start + len;
-                const to = Math.min(end, last);
+                const to = Math.min(end, voiceEnd(v));
                 for (let f = from; f < to; f++) {
                     const p = (f - v.start) % len;
                     const g =
@@ -738,10 +769,7 @@ export class AudioBusEngine {
                 }
                 if (to > from) sounded = true;
             }
-            l.voices = l.voices.filter((v) => {
-                if (v.stopAt !== undefined) return v.stopAt + v.fadeFrames > keepFrom;
-                return v.loop || v.start + v.clip.length / 2 > keepFrom;
-            });
+            l.voices = l.voices.filter((v) => voiceEnd(v) > keepFrom);
 
             if (sounded) {
                 // A gain change is spread over the piece so it does not click.
