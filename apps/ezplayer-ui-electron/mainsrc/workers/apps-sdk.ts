@@ -126,7 +126,9 @@ export const APPS_SDK_JS = String.raw`(function () {
     function poll() {
       if (closed) return;
       app.status().then(deliver, function () {}).then(function () {
-        pollTimer = setTimeout(poll, ws ? 15000 : 2000);
+        // With the socket up the poll is only a backstop, but a quiet socket should not
+        // leave the page stale for long.
+        pollTimer = setTimeout(poll, ws ? 5000 : 2000);
       });
     }
     function ensureFeed() {

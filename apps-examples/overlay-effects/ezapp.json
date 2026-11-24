@@ -1,0 +1,16 @@
+{
+    "id": "overlay-effects",
+    "name": "Overlay Effects",
+    "version": "1",
+    "description": "Paints effects onto the submodels of chosen models through overlay leases and reports the frame rate achieved",
+    "icon": "✨",
+    "runtime": "node",
+    "start": ["overlay-effects.mjs"],
+    "page": "page/",
+    "config": "config/",
+    "inputs": [
+        { "name": "start", "kind": "event" },
+        { "name": "stop", "kind": "event" }
+    ],
+    "platforms": ["win32", "darwin", "linux"]
+}
