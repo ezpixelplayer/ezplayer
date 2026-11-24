@@ -1,5 +1,6 @@
 import type { LayoutManifest } from '@ezplayer/epp';
 import type { OverlayCommand, OverlayResult } from './overlaytypes';
+import type { TestTweakCommand, TestTweakResult } from './testtweak';
 import type { AudioCommand, AudioResult } from './audiotypes';
 import {
     GetNodeResult,
@@ -103,6 +104,8 @@ export type PlayWorkerRPCAPI = {
     getFrameExportBuffer: () => Promise<SharedArrayBuffer | undefined>;
     /** Overlay lease operations (see overlaytypes.ts). */
     overlay: (cmd: OverlayCommand) => Promise<OverlayResult>;
+    /** Test + Tweak operations (see testtweak.ts). */
+    testTweak: (cmd: TestTweakCommand) => Promise<TestTweakResult>;
     /** Audio bus operations (see audiotypes.ts). */
     audio: (cmd: AudioCommand) => Promise<AudioResult>;
     /** The baked song order of a loaded item, for the detailed playback view. */
@@ -188,6 +191,8 @@ export type WorkerToMainMessage =
            *  side of the controller reconciliation grid. */
           controllers?: KnownController[];
       }
+    /** The known controllers again, after a wiring override changed their upload intent. */
+    | { type: 'knownControllers'; controllers: KnownController[] }
     | { type: 'audiobuffer'; buffer: SharedArrayBuffer }
     | { type: 'rpc'; rpc: RPCRequest }
     | { type: 'rpc-response'; response: RPCResponse };

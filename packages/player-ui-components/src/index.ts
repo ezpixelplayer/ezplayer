@@ -71,6 +71,8 @@ export { PlayerCloudRegistrationPanel } from './components/player-cloud-registra
 export { PlayerCloudWelcomePanel } from './components/player-cloud-registration/PlayerCloudWelcomePanel';
 export { CloudPage } from './components/cloud/CloudPage';
 export { ControllersScreen } from './components/controllers/ControllersScreen';
+export { TestTweakScreen, TEST_TWEAK_PREVIEW_STORAGE_KEY } from './components/test-tweak/TestTweakScreen';
+export type { TestTweakScreenProps } from './components/test-tweak/TestTweakScreen';
 export { ColorPaletteDialog } from './components/theme/ColorPaletteDialog';
 export { ConnectivityStatus } from './components/status/ConnectivityStatus';
 export { BridgeStatusOverlay } from './components/status/BridgeStatusOverlay';

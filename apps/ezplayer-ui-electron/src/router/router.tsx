@@ -10,6 +10,7 @@ import {
     BrightnessSettings,
     CloudPage,
     ControllersScreen,
+    TestTweakScreen,
     CreateEditPlaylist,
     JukeboxScreen,
     JukeboxFullScreen,
@@ -53,6 +54,7 @@ import ViewInArIcon from '@mui/icons-material/ViewInAr';
 import DisplaySettingsIcon from '@mui/icons-material/DisplaySettings';
 import CloudIcon from '@mui/icons-material/Cloud';
 import RouterIcon from '@mui/icons-material/Router';
+import ScienceIcon from '@mui/icons-material/Science';
 import FolderIcon from '@mui/icons-material/Folder';
 import AppsIcon from '@mui/icons-material/Apps';
 import ContrastIcon from '@mui/icons-material/Contrast';
@@ -241,6 +243,11 @@ const menuRoutes: MenuRoute[] = [
         path: ROUTES.CONTROLLERS,
         element: <ControllersScreen title="Controllers" statusArea={getStatusArea()} />,
         sidebar: { icon: <RouterIcon />, label: 'Controllers' },
+    },
+    {
+        path: ROUTES.TEST_TWEAK,
+        element: <TestTweakScreen title="Test + Tweak" statusArea={getStatusArea()} />,
+        sidebar: { icon: <ScienceIcon />, label: 'Test + Tweak' },
     },
     {
         path: ROUTES.PLAYBACKSETTINGS,

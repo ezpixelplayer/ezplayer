@@ -335,9 +335,9 @@ Main is merged through 0.6.12. The send-path fixes from main (#286, #288, #290) 
 ### Built but not wired to settings or an API
 
 - **Brightness and dynamic gamma.** Global brightness and color temperature are set from `brightnessControl` (default plus schedule windows, slewed in the conductor, applied in compose by `scaleNodesRgb`), with API, settings tile and player-screen meter (branch moc/brightness-schedule, 2026-11-16). Per-model brightness and dynamic gamma still have no setter.
-- **Dynamic port mapping.** The output map supports segments, nulls, grouping, reverse, color order and the player policy; the app only builds controller-policy outputs straight from the networks file.
+- **Dynamic port mapping.** The output map supports segments, nulls, grouping, reverse, color order and the player policy; the app builds controller-policy outputs from the networks file, plus the Test + Tweak overrides of section 17.
 - **Blend modes.** Nine modes in kernels; the background setting selects only max or underlay.
-- **Test patterns.** Kernel exists; no route or UI calls it.
+- **Test patterns.** The node-range kernel in `Kernels.ts` is still unused; the spatial patterns of section 17 are what the app runs.
 - **RGBX8.** Layout supports it; no setting selects it.
 - **Aliases.** Descriptor resolution does not yet consult the rgbeffects alias list for unmatched model names.
 
@@ -358,3 +358,26 @@ Main is merged through 0.6.12. The send-path fixes from main (#286, #288, #290) 
 - **Compose partition balance.** Static partition by node count is simple; an effect stage that owns a 500k-pixel matrix on one worker will be the long pole. A work-stealing split of large models across workers is the fix if it shows up.
 - **E1.31 with mixed universe sizes** is a prerequisite for Output Map segments landing at exact universe boundaries. It is a contained fix in `E131Sender` and should go in Phase 0.
 - **Renderer-process SAB access** for the window output and shader producer. The 3D preview already reads a SAB in the renderer, so cross-origin isolation is set; the window output needs the same wiring.
+
+## 17. Test + Tweak (branch `moc/testtunetweak`, 2026-11-16)
+
+A top-level screen and an HTTP API for testing models and trimming their output. One JSON document per show, `<showFolder>/.ezplayer/testtweak.json`, owned by the playback worker (`mainsrc/workers/testtweak.ts`); types and the pure logic are in `ezplayer-core/src/types/TestTweak.ts`.
+
+| Piece | Where | What it does |
+|---|---|---|
+| Profiles | the document, `OutputSpec.adjust` in `OutputMap.ts` | An output profile is a named set of color order, brightness, gamma and color temperature (the same `colorTemperatureScale` the show tint uses): in practice a pixel type. A model is assigned to at most one. A setting the profile leaves out is left alone on its members. A model can set any of the four for itself, and its own value replaces the profile's; nothing combines. The result is applied while encoding to the wire, under either policy, on top of what the policy does. The preview export is not trimmed. |
+| Test patterns | `SpatialPatterns.ts` | A per-node coordinate plus time: solid, color cycle, bars, rainbow, chase, count markers, strand colors, alignment grid, flash. The grid lights evenly spaced planes across x, y and z in a color each, with spacing, thickness, a slide per axis and a turn about y (the upright axis, so level lines stay level), so level lines can be checked across props. The coordinate is the world position projected on a direction (one picture across all targets), the target's own local coordinates (each target gets the whole pattern), the place along the wiring, or the place along each strand. Targets are models and submodels (`Model/Submodel`, from the `TargetCatalog` the overlays use), painted by node list. The pattern replaces its targets after overlays and before the show brightness and tint, so it goes through those and through the per-model tweaks like any other content, idle or playing. Nothing sends a test around them: a prop's brightness limit may be what keeps its fuse whole. |
+| Groups and presets | the document | A group is a flat list of models and submodels to aim tests at. It carries no settings, groups may overlap, and none holds another. xLights model groups can be copied in (`getAllModelGroups` / `flattenModelGroups` in xllayoutcalcs resolve groups inside groups to models and submodels); a copy does not follow xLights afterwards. A preset is a named pattern. |
+| Wiring overrides | `planChunkWiring`, `OutputSpec.place` / `skipModels` | A model is cut into chunks; each chunk has a controller, a port and a position number (ascending, gaps allowed). Channel space is not renumbered: the channels of the overridden models on a controller form a pool, and the chunks assigned to that controller are laid into it port by port in position order, so on a port ascending start channel is wire order. The output map sends each run at its planned channels, and the controllers' upload intent (`ControllerModelIntent`) is rewritten to match, so the existing Controllers upload and port map carry it. |
+
+The screen is one job per tab: Test (a group or ticked models and submodels, the layout, the pattern controls), Profiles (a profile's settings and the models that use it) and Wiring (one model's chunks). Group and profile membership are both edited as a list of every model to tick, with "add from" a group, a profile or an xLights group.
+
+API, on the web app only (not the kiosk port): `GET /api/ezp/testtweak` (document, status, models, controllers, wiring problems; `?xlgroups=1` adds the flattened xLights groups), `PUT /api/ezp/testtweak/doc`, `POST` and `DELETE /api/ezp/testtweak/test`.
+
+Not done:
+
+- Wiring overrides are checked against the mock controller for the data path and against the intent the upload reads, not against real hardware.
+- A chunk moved to a controller with no free channels is refused; the planner does not grow or renumber a controller's channel range.
+- Tweaks are player-side only. Pushing them to controllers that have their own brightness, gamma and color order (section 14) is not wired.
+- Effects beyond the formulas above (xlrender effects, coordinate shaders), an API to trigger a preset by name, and a view of the tweaked output in the preview.
+- Submodels are test targets and group members only: no profile or wiring of their own. Groups of groups, moving or adding models: out of scope here.

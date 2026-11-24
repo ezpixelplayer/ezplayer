@@ -1,6 +1,7 @@
 import type { LayoutManifest } from '@ezplayer/epp';
 import { listDisplays, setMatrixWindowsWebPort, syncMatrixWindowsFromSettings } from './matrixWindows.js';
 import type { OverlayCommand } from './workers/overlaytypes.js';
+import type { TestTweakCommand } from './workers/testtweak.js';
 import type { AudioCommand } from './workers/audiotypes.js';
 /**
  * Server Worker Manager - manages the Koa server running in a worker thread
@@ -26,6 +27,7 @@ import {
     dispatchCloudCommand,
     putSequencesWithDurations,
     playWorkerOverlay,
+    playWorkerTestTweak,
     playWorkerAudio,
     getPlaybackItemOrder,
 } from './ipcezplayer.js';
@@ -124,6 +126,7 @@ const rpcHandlers: ServerWorkerRPCAPI = {
         applySettingsFromRenderer(settingsPath, settings as PlaybackSettings);
     },
     overlayCommand: (cmd: unknown) => playWorkerOverlay(cmd as OverlayCommand),
+    testTweakCommand: (cmd: unknown) => playWorkerTestTweak(cmd as TestTweakCommand),
     audioCommand: (cmd: unknown) => playWorkerAudio(cmd as AudioCommand),
     appsCommand: (cmd) => appsCommand(cmd),
     appsSawStatus: (instance) => appsSawStatus(instance),

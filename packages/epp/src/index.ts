@@ -131,7 +131,16 @@ export {
 export type { ChannelDescriptor, ChannelDescriptorModel, InputMap, InputMapProgram } from './pipeline/InputMap';
 
 export { compileOutputMap, applyOutput, buildForwardLut, OUT_RAW, OUT_RGB, OUT_RGBW, OUT_MONO, OUT_OP_INTS } from './pipeline/OutputMap';
-export type { OutputSpec, OutputSegmentSpec, OutputPolicy, CompiledOutput, OutputMap } from './pipeline/OutputMap';
+export type { OutputSpec, OutputSegmentSpec, OutputModelAdjust, OutputPolicy, CompiledOutput, OutputMap } from './pipeline/OutputMap';
+
+export {
+    SpatialPatternRenderer,
+    patternTargets,
+    patternTargetOfModel,
+    patternTargetsForModels,
+    patternAnimates,
+} from './pipeline/SpatialPatterns';
+export type { SpatialPatternKind, SpatialPatternParams, SpatialPatternTarget, PatternSpace } from './pipeline/SpatialPatterns';
 
 export {
     blendNodes,
