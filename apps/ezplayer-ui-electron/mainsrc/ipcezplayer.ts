@@ -119,6 +119,7 @@ import {
     pickCloudShowFolder,
 } from '../showfolder.js';
 import { forwardBusAudio, getServerStatus, setCloudAudioMode, setRtcOffset } from './server-worker-manager.js';
+import { appsLoadShow } from './apps/apps.js';
 import {
     dispatchControllerCommand,
     cancelQueuedAutomaticReads,
@@ -878,6 +879,8 @@ async function loadShowData(showFolder: string, forceRestart?: boolean) {
 
     // Broadcast via WebSocket (for React web app)
     broadcastToWebSocket('showFolder', showFolder);
+    // Player apps belong to the show: stop the old show's, start this one's.
+    await appsLoadShow(showFolder);
     void publishRemoteAccessAvailability();
     broadcastToWebSocket(
         'sequences',

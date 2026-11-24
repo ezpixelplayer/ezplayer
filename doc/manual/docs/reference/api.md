@@ -2235,6 +2235,146 @@ WS   /proxy/ws://192.168.1.50:9090/ws
 
 ---
 
+### Player apps (`/api/ezp/apps`)
+
+:::note
+Requires EZPlayer 0.7 or later.
+:::
+
+Apps are programs the player installs into the show folder, starts and supervises. The player serves
+their pages, keeps their documents and delivers events to them. Everything an app does to the show
+goes through the other APIs on this page: overlays, scene objects, audio buses. See
+[Apps](../advanced/apps.md) for the owner's view.
+
+#### The package
+
+A package is a directory with `ezapp.json` at its root:
+
+```json
+{
+    "id": "tetris",
+    "name": "Tetris",
+    "version": "1",
+    "description": "Play on a matrix from your phone",
+    "icon": "🧱",
+    "runtime": "node",
+    "start": ["tetris.mjs"],
+    "page": "page/",
+    "config": "config/",
+    "inputs": [{ "name": "left", "kind": "event" }],
+    "platforms": ["win32", "darwin", "linux"],
+    "events": { "perMinute": 1200, "perClientPerSecond": 15 }
+}
+```
+
+| Field       | Meaning                                                                                                                                  |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`        | Lower-case letters, digits and dashes, up to 40. Also the directory name under `<show>/apps/`.                                           |
+| `runtime`   | `node` (the player's own Node), `python3` (found on the PATH or set on the Apps card) or `binary`.                                        |
+| `start`     | Arguments after the runtime. For `binary`, the first is the executable, relative to the package.                                         |
+| `page`      | The visitors' page: a directory inside the package served as static files, or `{"proxy": true}` to forward to the app's own HTTP server. |
+| `config`    | The owner's settings page, same forms. Served even while the instance is stopped.                                                        |
+| `inputs`    | Show inputs the app accepts: `kind` is `event` (a press), `value` (a level or open/closed) or `text`.                                     |
+| `platforms` | `process.platform` values the app runs on; absent means all.                                                                             |
+| `events`    | The event rate the app needs: `perMinute` across every phone (default 600, at most 6000) and `perClientPerSecond` for one phone (default 10, at most 60). A game that sends every tap asks here; a game that adds taps up on the phone and sends one number a second does not need to. The owner can still change an instance's per-minute rate on the Apps card. |
+
+Packages install from a folder, from an `https` `.tar.gz` (every directory with a manifest becomes an
+app) or from the contrib repository, with `POST /api/ezp/apps/command`.
+
+#### The process
+
+Each enabled instance is one process, started with the package directory as its working directory and
+this environment:
+
+| Variable           | Value                                                                       |
+| ------------------ | --------------------------------------------------------------------------- |
+| `EZP_API_URL`      | `http://127.0.0.1:<port>`, the player's web API                             |
+| `EZP_APP_ID`       | The package id                                                              |
+| `EZP_APP_INSTANCE` | The instance name                                                           |
+| `EZP_APP_TOKEN`    | A secret, new on every start, for the routes only the process may call      |
+| `EZP_APP_DATA_DIR` | `<show>/apps-data/<instance>`; the data API is the portable way to use it   |
+| `EZP_APP_PORT`     | A free port to bind, for an app that serves its own page                    |
+| `EZP_SHOW_FOLDER`  | The show folder                                                             |
+
+stdout and stderr go to `apps/<instance>.log` in the player's logs directory (rotating, and in the
+support bundle). The process is restarted with backoff after it exits (1, 5, 15, 60 s), then left
+failed. It is stopped with SIGTERM (the whole tree on Windows) and killed after 5 s. Outside the
+instance's availability window it is not running.
+
+#### Events in
+
+`POST /api/ezp/apps/:instance/events` — anyone. JSON `{ "client": "<id>", "data": <any> }`, up to 64 KB.
+The player stamps the event and answers `{ "ok": true, "id": n }`. Refused with 429 when the sender or
+the instance is over its rate (600 per minute per instance and ten a second per sender unless the manifest's
+`events` asks for more; the owner can set the per-minute rate on the Apps card; a sender gets a burst of
+three seconds' worth, never under 30), 503 when the instance is not running.
+
+`GET /api/ezp/apps/:instance/events?since=<id>&wait=<seconds>` — the process, with `x-ezp-app-token`
+(or `?token=`). Long poll: answers at once when events newer than `since` exist, otherwise holds up to
+`wait` seconds (60 at most) and answers `{ "events": [] }`. Events:
+
+```json
+{ "events": [{ "id": 12, "ts": 1700000000000, "source": "cloud", "client": "k3j2…", "data": { "type": "left" } }] }
+```
+
+`source` is `cloud` (through the show's cloud page), `lan`, `card`, or `input:<source>` for a show
+input. The last 1000 events of the current run are kept; a new process starts with an empty feed.
+
+#### Status out
+
+`PUT /api/ezp/apps/:instance/status` — the process, with the token. Any JSON up to 256 KB. The player
+numbers it and pushes it to every subscriber.
+
+`GET /api/ezp/apps/:instance/status` — anyone. `{ "seq": n, "at": ms, "state": <the JSON> }`, `seq` 0
+before the first.
+
+`WS /api/ezp/apps/:instance/live` — anyone. Push only: `{ "type": "status", "seq", "at", "state" }` on
+connect (when there is one) and after every change. Inbound frames are ignored.
+
+#### Documents
+
+`GET /api/ezp/apps/:instance/data/:scope` lists keys; `GET`, `PUT`, `DELETE
+/api/ezp/apps/:instance/data/:scope/:key` read, write and remove one. `scope` is `public` (anyone may
+read) or `private` (the process and the owner). Keys are letters, digits, dot, dash and underscore, up
+to 64. A document is stored as sent, with its content type; up to 4 MB each and 16 MB per instance. On
+the LAN both scopes are open, like the rest of the API; through the cloud only `public` reads are
+offered to visitors.
+
+#### Pages
+
+- `_sdk.js`, next to every page at any depth under an instance, loaded with a relative
+  `<script src="_sdk.js">`. `EZApp.connect()` gives an object with `ready` (a promise), `send(data)`,
+  `onStatus(cb)`, `status()`, `get(scope, key)`, `put(scope, key, value)`, `remove(scope, key)`,
+  `clientId`, and `apiBase` (`''` on the LAN, meaning the player is this origin; `null` through the
+  cloud). The SDK asks `_context.json` beside itself whether the page is on the LAN
+  (`{mode:'lan', instance}`, answered by the player) or on the show's cloud page
+  (`{mode:'cloud', slug, instance}`, answered by the cloud), and picks the endpoints.
+- `/apps/:instance/…` — the visitors' page. 503 with a short HTML page while the instance is not
+  running.
+- `/apps/:instance/config/…` — the owner's settings page.
+
+A `{"proxy": true}` page is forwarded to the instance's port with the original method, path and body
+(2 MB in, 8 MB out, 30 s), buffered; the app sees the mount path in `x-ezp-app-base`.
+
+#### Show inputs
+
+`POST /api/ezp/inputs/:source/:name` (or `GET`, for boards that cannot post) with an optional
+`{ "value": … }` body or `?value=`. The Apps card's mapping table says which instance inputs each one
+drives; the app receives `{ "type": "input", "input": "<name>", "source", "name", "value" }` as an
+event with source `input:<source>`. Answers `{ "ok": true, "delivered": n }`.
+
+#### Owner
+
+`GET /api/ezp/apps` returns the apps state: installed packages, instances with state, startup report
+and log tail, default schedule, Python path, input mappings. `POST /api/ezp/apps/command` takes one
+of: `rescan`, `install` (`source`: `{kind:"folder",path}`, `{kind:"url",url}` or `{kind:"contrib"}`),
+`uninstall`, `createInstance`, `removeInstance`, `setInstance` (patch `enabled`, `schedule`, `title`,
+`eventsPerMinute`), `start`, `stop`, `restart`, `setDefaultSchedule`, `setPythonPath`,
+`setInputMappings`. The same state is in the WebSocket snapshot under `apps`, and the latest status of
+every instance under `appStatuses`.
+
+---
+
 ## WebSocket API
 
 ### Connection

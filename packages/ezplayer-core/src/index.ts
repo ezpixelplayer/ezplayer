@@ -95,6 +95,23 @@ export type {
     ControllerRefreshSettings,
     ControllerRefreshMode,
     ContentDistributionSettings,
+    AppRuntime,
+    AppInputDecl,
+    AppPageSource,
+    AppManifest,
+    AppEventRate,
+    InstalledApp,
+    AppInstanceRecord,
+    AppInstanceState,
+    AppStartupReport,
+    AppInstanceStatus,
+    AppInputMapping,
+    AppsState,
+    AppStatusSnapshot,
+    AppStatuses,
+    AppEvent,
+    AppInstallSource,
+    AppsCommand,
 } from './types/DataTypes';
 
 export {

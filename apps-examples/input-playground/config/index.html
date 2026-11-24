@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Input Playground settings</title>
+<style>
+  :root { color-scheme: dark; --bg: #0b0d12; --panel: #161a24; --line: #2a3040; --text: #e8ebf2; --dim: #8b93a7; --accent: #4cc9f0; --ok: #2aff5a; --bad: #ff6b6b; }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 16px; background: var(--bg); color: var(--text); font: 15px/1.4 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; max-width: 900px; margin-inline: auto; }
+  h1 { font-size: 20px; margin: 0 0 8px; }
+  h2 { font-size: 14px; color: var(--dim); text-transform: uppercase; letter-spacing: 1px; margin: 24px 0 8px; }
+  label { display: block; margin: 12px 0 4px; color: var(--dim); font-size: 14px; }
+  input[type=text], textarea { width: 100%; font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
+  textarea { font-family: ui-monospace, Consolas, monospace; font-size: 12.5px; min-height: 320px; resize: vertical; white-space: pre; }
+  .buttons { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 12px; }
+  button { font: inherit; font-weight: 600; color: #0b0d12; background: var(--accent); border: 0; border-radius: 10px; padding: 10px 18px; cursor: pointer; }
+  button.quiet { background: var(--panel); color: var(--text); border: 1px solid var(--line); }
+  button:disabled { opacity: 0.5; }
+  #note { color: var(--dim); font-size: 14px; }
+  #note.bad { color: var(--bad); }
+  #note.ok { color: var(--ok); }
+  .hint { color: var(--dim); font-size: 13px; }
+  code { font-family: ui-monospace, Consolas, monospace; font-size: 12.5px; background: #10141c; padding: 1px 5px; border-radius: 4px; }
+  ul.problems { margin: 8px 0 0; padding-left: 20px; color: #ffb347; font-size: 13px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--dim); font-weight: 500; }
+  td code { white-space: nowrap; }
+  .none { color: var(--dim); }
+  .mapped { color: var(--ok); }
+  #alert { color: #ffb347; }
+</style>
+</head>
+<body>
+<h1>Input Playground settings</h1>
+<p class="hint">
+  The playground page is a screen of pretend show inputs. Each one makes the HTTP call a controller board would make,
+  <code>POST /api/ezp/inputs/&lt;source&gt;/&lt;name&gt;</code> with <code>{"value": ...}</code>. Map
+  <code>&lt;source&gt;/&lt;name&gt;</code> rows to instance inputs under Show inputs on the Apps card to try them out.
+</p>
+<p id="alert"></p>
+
+<label for="source">Source name (the <code>&lt;source&gt;</code> segment every call uses)</label>
+<input id="source" type="text" value="playground" pattern="[a-z0-9][a-z0-9-]{0,39}" spellcheck="false">
+
+<label for="layout">Layout (JSON)</label>
+<textarea id="layout" spellcheck="false"></textarea>
+<p class="hint">
+  <code>cols</code> is the grid width. Each control has a <code>type</code> (button, switch, slider or text), a <code>name</code>
+  (lower-case letters, digits and dashes, the <code>&lt;name&gt;</code> segment) and a <code>label</code>. Buttons take
+  <code>color</code>, <code>shape</code> (round, square or wide) and <code>mode</code> (press, or press-release to send 1 on
+  the way down and 0 on the way up). Sliders take <code>min</code>, <code>max</code> and <code>step</code>.
+</p>
+<ul id="problems" class="problems"></ul>
+
+<div class="buttons">
+  <button id="validate" class="quiet">Validate</button>
+  <button id="save" disabled>Save</button>
+  <button id="reset" class="quiet">Reset to default</button>
+  <span id="note"></span>
+</div>
+
+<h2>What each control is wired to</h2>
+<p class="hint" id="map-hint">Read from the player's Show inputs table, refreshed every few seconds. Edit the mappings on the Apps card.</p>
+<table>
+  <thead><tr><th>Control</th><th>Type</th><th>A controller would call</th><th>Mapped to</th></tr></thead>
+  <tbody id="wiring"></tbody>
+</table>
+<div id="others"></div>
+
+<script>
+  const el = (id) => document.getElementById(id);
+  let app = null;
+  let current = null; // the layout as last validated or loaded
+  let mappings = [];
+
+  // Kept in step with playground.mjs: the player's rule for :source and :name, and the same default.
+  const NAME_RE = /^[a-z0-9][a-z0-9-]{0,39}$/;
+  const TYPES = ['button', 'switch', 'slider', 'text'];
+  const SHAPES = ['round', 'square', 'wide'];
+  const MODES = ['press', 'press-release'];
+  const DEFAULT_LAYOUT = {
+    source: 'playground',
+    cols: 4,
+    controls: [
+      { type: 'button', name: 'button1', label: 'Start', color: '#ff2a2a', shape: 'round', mode: 'press' },
+      { type: 'button', name: 'button2', label: 'Stop', color: '#e8ebf2', shape: 'round', mode: 'press' },
+      { type: 'button', name: 'button3', label: 'Next', color: '#2a9dff', shape: 'square', mode: 'press' },
+      { type: 'button', name: 'button4', label: 'Back', color: '#2a9dff', shape: 'square', mode: 'press' },
+      { type: 'button', name: 'button5', label: 'Red', color: '#ff2a2a', shape: 'square', mode: 'press' },
+      { type: 'button', name: 'button6', label: 'Green', color: '#2aff5a', shape: 'square', mode: 'press' },
+      { type: 'button', name: 'button7', label: 'Blue', color: '#4a6aff', shape: 'square', mode: 'press' },
+      { type: 'button', name: 'button8', label: 'Hold to fire', color: '#ffb52a', shape: 'wide', mode: 'press-release' },
+      { type: 'switch', name: 'switch1', label: 'Snow machine' },
+      { type: 'switch', name: 'switch2', label: 'House lights' },
+      { type: 'slider', name: 'slider1', label: 'Brightness', min: 0, max: 1, step: 0.01 },
+      { type: 'slider', name: 'slider2', label: 'Speed', min: 0, max: 100, step: 1 },
+      { type: 'text', name: 'text1', label: 'Marquee message' },
+    ],
+  };
+  const num = (v, fallback) => (typeof v === 'number' && Number.isFinite(v) ? v : fallback);
+  const clone = (v) => JSON.parse(JSON.stringify(v));
+
+  function normalizeLayout(raw) {
+    const problems = [];
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      return { layout: clone(DEFAULT_LAYOUT), problems: ['layout must be a JSON object; using the default'] };
+    }
+    let source = DEFAULT_LAYOUT.source;
+    if (typeof raw.source === 'string' && NAME_RE.test(raw.source)) source = raw.source;
+    else if (raw.source !== undefined) problems.push(`source must be lower-case letters, digits and dashes (up to 40); using "${source}"`);
+    const cols = Math.min(8, Math.max(1, Math.round(num(raw.cols, DEFAULT_LAYOUT.cols))));
+    const controls = [];
+    const seen = new Set();
+    if (!Array.isArray(raw.controls)) problems.push('controls must be an array');
+    else raw.controls.forEach((c, i) => {
+      const where = `controls[${i}]`;
+      if (!c || typeof c !== 'object') return problems.push(`${where}: not an object; dropped`);
+      if (!TYPES.includes(c.type)) return problems.push(`${where}: type must be one of ${TYPES.join(', ')}; dropped`);
+      if (typeof c.name !== 'string' || !NAME_RE.test(c.name)) return problems.push(`${where}: name must be lower-case letters, digits and dashes (up to 40); dropped`);
+      if (seen.has(c.name)) return problems.push(`${where}: duplicate name "${c.name}"; dropped`);
+      seen.add(c.name);
+      const label = typeof c.label === 'string' && c.label.trim() ? c.label.trim().slice(0, 40) : c.name;
+      const out = { type: c.type, name: c.name, label };
+      if (c.type === 'button') {
+        out.color = typeof c.color === 'string' && /^(#[0-9a-f]{3,8}|[a-z]{3,20})$/i.test(c.color) ? c.color : '#4cc9f0';
+        out.shape = SHAPES.includes(c.shape) ? c.shape : 'square';
+        out.mode = MODES.includes(c.mode) ? c.mode : 'press';
+      } else if (c.type === 'slider') {
+        let min = num(c.min, 0), max = num(c.max, 1), step = num(c.step, 0.01);
+        if (!(max > min) || !(step > 0)) {
+          problems.push(`${where}: slider needs min < max and step > 0; using 0 to 1 by 0.01`);
+          [min, max, step] = [0, 1, 0.01];
+        }
+        Object.assign(out, { min, max, step });
+      }
+      controls.push(out);
+    });
+    if (!controls.length) {
+      problems.push('no usable controls; using the default layout');
+      return { layout: clone(DEFAULT_LAYOUT), problems };
+    }
+    return { layout: { source, cols, controls }, problems };
+  }
+
+  function note(text, cls = '') { el('note').textContent = text; el('note').className = cls; }
+
+  function showProblems(list) {
+    const ul = el('problems');
+    ul.replaceChildren();
+    for (const p of list) { const li = document.createElement('li'); li.textContent = p; ul.appendChild(li); }
+  }
+
+  /** Parses the textarea plus the source field; returns the normalized layout or null. */
+  function validate() {
+    let raw;
+    try {
+      raw = JSON.parse(el('layout').value);
+    } catch (e) {
+      showProblems([`Not valid JSON: ${e.message}`]);
+      note('Fix the JSON first.', 'bad');
+      return null;
+    }
+    if (raw && typeof raw === 'object' && !Array.isArray(raw)) raw.source = el('source').value.trim();
+    const { layout, problems } = normalizeLayout(raw);
+    showProblems(problems);
+    note(problems.length ? `${layout.controls.length} controls after ${problems.length} fix(es).` : `OK: ${layout.controls.length} controls, source "${layout.source}".`, problems.length ? '' : 'ok');
+    current = layout;
+    renderWiring();
+    return layout;
+  }
+
+  function fill(layout) {
+    el('source').value = layout.source;
+    const { source, ...rest } = layout;
+    el('layout').value = JSON.stringify({ source, ...rest }, null, 2);
+    current = layout;
+    showProblems([]);
+    renderWiring();
+  }
+
+  const inputUrl = (layout, name) => `${location.origin}${app?.apiBase || ''}/api/ezp/inputs/${layout.source}/${name}`;
+
+  function renderWiring() {
+    if (!current) return;
+    const tbody = el('wiring');
+    tbody.replaceChildren();
+    const used = new Set();
+    for (const c of current.controls) {
+      const hits = mappings.filter((m) => m.source === current.source && m.name === c.name);
+      hits.forEach((m) => used.add(m));
+      const tr = document.createElement('tr');
+      const shape = c.type === 'button' ? (c.mode === 'press-release' ? '{"value": 1} then {"value": 0}' : '{"value": 1}')
+        : c.type === 'switch' ? '{"value": true|false}'
+        : c.type === 'slider' ? `{"value": ${c.min}..${c.max}}`
+        : '{"value": "text"}';
+      tr.innerHTML = `<td><code></code><br><span class="hint"></span></td><td></td><td><code></code> <span class="hint"></span></td><td></td>`;
+      tr.children[0].querySelector('code').textContent = c.name;
+      tr.children[0].querySelector('span').textContent = c.label;
+      tr.children[1].textContent = c.type;
+      tr.children[2].querySelector('code').textContent = `POST ${inputUrl(current, c.name)}`;
+      tr.children[2].querySelector('span').textContent = shape;
+      if (app?.apiBase === null) tr.children[3].innerHTML = '<span class="none">unknown here</span>';
+      else if (!hits.length) tr.children[3].innerHTML = '<span class="none">not mapped</span>';
+      else tr.children[3].innerHTML = hits.map((m) => `<div class="mapped">${esc(m.instance)} / ${esc(m.input)}</div>`).join('');
+      tbody.appendChild(tr);
+    }
+    const others = mappings.filter((m) => !used.has(m));
+    const box = el('others');
+    box.replaceChildren();
+    if (others.length) {
+      const h = document.createElement('h2');
+      h.textContent = 'Other show-input mappings on this player';
+      box.appendChild(h);
+      const t = document.createElement('table');
+      t.innerHTML = '<thead><tr><th>Source / name</th><th>Instance / input</th></tr></thead><tbody></tbody>';
+      for (const m of others) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = '<td><code></code></td><td></td>';
+        tr.children[0].firstChild.textContent = `${m.source}/${m.name}`;
+        tr.children[1].textContent = `${m.instance} / ${m.input}`;
+        t.querySelector('tbody').appendChild(tr);
+      }
+      box.appendChild(t);
+    }
+  }
+
+  const esc = (s) => String(s).replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch]);
+
+  async function refreshMappings() {
+    if (!app || app.apiBase === null) return;
+    try {
+      const res = await fetch(`${app.apiBase}/api/ezp/apps`, { cache: 'no-store' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const state = await res.json();
+      mappings = Array.isArray(state.inputMappings) ? state.inputMappings : [];
+      el('map-hint').textContent = `Read from the player's Show inputs table (${mappings.length} row(s)), refreshed every few seconds. Edit the mappings on the Apps card.`;
+    } catch (e) {
+      el('map-hint').textContent = `Could not read the mappings: ${e.message}`;
+    }
+    renderWiring();
+  }
+
+  async function init() {
+    app = EZApp.connect();
+    try {
+      await app.ready;
+    } catch (e) {
+      note(`Could not reach the player: ${e.message}`, 'bad');
+      return;
+    }
+    if (app.apiBase === null) {
+      el('alert').textContent = 'This page is on the show\'s public cloud page: the layout cannot be saved and the mappings cannot be read from here. Open it on the home network or from the cloud console.';
+    }
+    let saved = null;
+    try { saved = await app.get('private', 'layout'); } catch { /* not readable here; the default is shown */ }
+    if (saved) {
+      const { layout, problems } = normalizeLayout(saved);
+      fill(layout);
+      showProblems(problems);
+      note(problems.length ? 'Loaded the saved layout; some parts were fixed, see above.' : 'Loaded the saved layout.');
+    } else {
+      fill(clone(DEFAULT_LAYOUT));
+      note('No layout saved yet; this is the default the app is using.');
+    }
+    el('save').disabled = app.apiBase === null;
+    await refreshMappings();
+    setInterval(refreshMappings, 5000);
+  }
+
+  el('validate').addEventListener('click', () => validate());
+  el('reset').addEventListener('click', () => { fill(clone(DEFAULT_LAYOUT)); note('Default layout filled in; Save to use it.'); });
+  el('save').addEventListener('click', async () => {
+    const layout = validate();
+    if (!layout) return;
+    el('save').disabled = true;
+    try {
+      await app.put('private', 'layout', layout);
+      fill(layout);
+      note('Saved. The app and its page pick it up within five seconds.', 'ok');
+    } catch (e) {
+      note(`Save failed: ${e.message}`, 'bad');
+    }
+    el('save').disabled = false;
+  });
+
+  // The player serves the SDK next to every app page, on the LAN and through the cloud.
+  const sdk = document.createElement('script');
+  sdk.src = '_sdk.js';
+  sdk.onload = init;
+  sdk.onerror = () => note('Could not load the app SDK.', 'bad');
+  document.head.appendChild(sdk);
+</script>
+</body>
+</html>

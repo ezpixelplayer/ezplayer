@@ -1,0 +1,23 @@
+{
+    "id": "audio-demo",
+    "name": "Audio Demo",
+    "version": "1",
+    "description": "Game-style sounds, a scheduled drum bar and a streamed tune on the player's audio buses",
+    "icon": "🔊",
+    "runtime": "node",
+    "start": ["audio-demo.mjs"],
+    "page": "page/",
+    "config": "config/",
+    "inputs": [
+        { "name": "kick", "kind": "event" },
+        { "name": "snare", "kind": "event" },
+        { "name": "hat", "kind": "event" },
+        { "name": "zap", "kind": "event" },
+        { "name": "coin", "kind": "event" },
+        { "name": "bar", "kind": "event" },
+        { "name": "tune", "kind": "event" },
+        { "name": "stop", "kind": "event" }
+    ],
+    "platforms": ["win32", "darwin", "linux"],
+    "events": { "perMinute": 1200, "perClientPerSecond": 15 }
+}

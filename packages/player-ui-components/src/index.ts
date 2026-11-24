@@ -65,6 +65,7 @@ export {
     SoftwareUpdateSettings,
     canControlUpdates,
 } from './components/playback-settings/sections/SoftwareUpdateSettings';
+export { AppsSettings, APPS_SETTINGS_SECTION_KEY } from './components/playback-settings/sections/AppsSettings';
 export { PlayerCloudRegistrationDialog } from './components/player-cloud-registration/PlayerCloudRegistrationDialog';
 export { PlayerCloudRegistrationPanel } from './components/player-cloud-registration/PlayerCloudRegistrationPanel';
 export { PlayerCloudWelcomePanel } from './components/player-cloud-registration/PlayerCloudWelcomePanel';

@@ -103,6 +103,13 @@ import { registerScanApiRoutes } from './scan-api.js';
 import { registerControllersApiRoutes } from './controllers-api.js';
 import { SceneObjectRegistry } from './scene-objects.js';
 import { dispatchSceneRead, registerSceneReadRoutes, registerSceneWriteRoutes } from './scene-objects-api.js';
+import {
+    AppsRuntime,
+    appsPagesMiddleware,
+    attachAppsLiveUpgrade,
+    registerAppsRoutes,
+    type AppsApiDeps,
+} from './apps-api.js';
 import { ViewObject, LayoutSettings, type MhFixtureInfo } from './playbacktypes.js';
 import { trustSystemCAs } from '../trustSystemCAs.js';
 import { throwLater } from '../faultinject.js';
@@ -248,6 +255,18 @@ const wsBroadcaster = new WebSocketBroadcaster();
 const sceneObjects = new SceneObjectRegistry();
 // Frees expired leases even when no viewer is polling.
 setInterval(() => sceneObjects.sweep(), 5_000).unref();
+
+// Player apps: events, status, documents and pages (see apps-api.ts). Main tells us
+// which instances exist through `appsAuth` messages.
+const appsDeps: AppsApiDeps = {
+    appsCommand: (cmd) => rpc.call('appsCommand', cmd),
+    sawStatus: (name) => {
+        void rpc.call('appsSawStatus', name).catch(() => {});
+    },
+    getState: (key) => wsBroadcaster.get(key) as FullPlayerState[typeof key] | undefined,
+    setState: (key, value) => wsBroadcaster.set(key, value),
+};
+const appsRuntime = new AppsRuntime(appsDeps);
 
 /** The port the web server actually bound (after any EADDRINUSE walk-up). Set
  *  once the listener is up; used to dial our own remote-access sockets from the
@@ -551,6 +570,8 @@ parentPort.on('message', async (msg: MainToServerWorkerMessage) => {
         }
     } else if (msg.type === 'shellEvent') {
         dispatchShellEvent(msg.event);
+    } else if (msg.type === 'appsAuth') {
+        appsRuntime.setInstances(msg.instances);
     } else if (msg.type === 'cloudBridgeOpen') {
         openCloudBridge(msg.wsUrl, msg.proxyWsUrl, msg.audioWsUrl, msg.sessionId, msg.ttlSeconds);
     } else if (msg.type === 'cloudBridgeClose') {
@@ -1582,6 +1603,66 @@ function findHeader(headers: Record<string, string>, name: string): string | und
     return entry?.[1];
 }
 
+/** Forward a proxied request to our own web server, buffered both ways. */
+function dispatchSelfForward(
+    pathStr: string,
+    query: Record<string, string> | undefined,
+    req?: { method?: string; headers?: Record<string, string>; bodyBase64?: string },
+): Promise<{ status: number; headers?: Record<string, string>; body?: Buffer }> {
+    if (!boundWebPort) return Promise.resolve({ status: 503 });
+    const body = req?.bodyBase64 ? Buffer.from(req.bodyBase64, 'base64') : undefined;
+    if (body && body.length > PROXY_MAX_BODY_BYTES) return Promise.resolve({ status: 413 });
+    const qs = query && Object.keys(query).length > 0 ? `?${new URLSearchParams(query).toString()}` : '';
+    const headers: Record<string, string> = {};
+    for (const [k, v] of Object.entries(req?.headers ?? {})) {
+        const lower = k.toLowerCase();
+        if (lower === 'host' || lower === 'connection' || lower === 'transfer-encoding' || lower === 'upgrade')
+            continue;
+        if (lower === 'x-ezp-source') continue; // ours to set
+        headers[k] = v;
+    }
+    headers['x-ezp-source'] = 'cloud';
+    headers['host'] = `127.0.0.1:${boundWebPort}`;
+    return new Promise((resolve) => {
+        const fwd = httpMod.request(
+            {
+                hostname: '127.0.0.1',
+                port: boundWebPort,
+                path: pathStr + qs,
+                method: (req?.method ?? 'GET').toUpperCase(),
+                headers,
+                timeout: 65_000,
+            },
+            (res) => {
+                const chunks: Buffer[] = [];
+                let size = 0;
+                res.on('data', (c: Buffer) => {
+                    size += c.length;
+                    if (size <= DEVICE_PROXY_MAX_RESPONSE_BYTES) chunks.push(c);
+                });
+                res.on('end', () => {
+                    if (size > DEVICE_PROXY_MAX_RESPONSE_BYTES) return resolve({ status: 502 });
+                    const out: Record<string, string> = {};
+                    for (const [k, v] of Object.entries(res.headers)) {
+                        if (v === undefined) continue;
+                        const lower = k.toLowerCase();
+                        if (lower === 'connection' || lower === 'transfer-encoding' || lower === 'keep-alive') continue;
+                        out[k] = Array.isArray(v) ? v.join(', ') : v;
+                    }
+                    resolve({ status: res.statusCode ?? 502, headers: out, body: Buffer.concat(chunks) });
+                });
+                res.on('error', () => resolve({ status: 502 }));
+            },
+        );
+        fwd.on('timeout', () => {
+            fwd.destroy();
+            resolve({ status: 504 });
+        });
+        fwd.on('error', () => resolve({ status: 502 }));
+        fwd.end(body);
+    });
+}
+
 /** Dispatch HTTP-over-WS proxy requests; mirrors the Koa route per path. */
 async function dispatchHttpProxy(
     pathStr: string,
@@ -1592,6 +1673,11 @@ async function dispatchHttpProxy(
     // Device web-UI bridge — must run before the method split so device POSTs
     // (login forms, config writes) work too.
     if (pathStr.startsWith('/proxy/')) return dispatchDeviceProxy(pathStr, query, req);
+    // App pages, events, status, documents and show inputs: our own Koa routes answer
+    // these, so forward to ourselves and mark the traffic as the cloud's.
+    if (pathStr.startsWith('/apps/') || pathStr.startsWith('/api/ezp/apps') || pathStr.startsWith('/api/ezp/inputs/')) {
+        return dispatchSelfForward(pathStr, query, req);
+    }
     if (method !== 'GET') return dispatchProxyWrite(pathStr, method, req);
 
     // GET /api/files/:dirName — show-folder name listing for the cloud file
@@ -1807,6 +1893,8 @@ async function startServer(config: ServerWorkerData) {
     // Proxy middleware must be before bodyParser so it can stream raw request bodies
     webApp.use(createProxyRefererRescue());
     webApp.use(createProxyMiddleware(proxyTargetAllowed));
+    // App pages (static or proxied to the instance) also stream bodies through.
+    webApp.use(appsPagesMiddleware(appsRuntime));
 
     // File-transfer routes stream raw bodies, so they also sit before jsonBody().
     // Deliberately NOT mounted on the kiosk app: the public jukebox port gets no
@@ -2940,6 +3028,8 @@ async function startServer(config: ServerWorkerData) {
     });
     // Scene object writes change what every viewer sees, so not on the kiosk.
     registerSceneWriteRoutes(scanRouter, sceneObjects);
+    // Player apps: owner commands, instance events/status/documents, show inputs. Web app only.
+    registerAppsRoutes(scanRouter, appsRuntime, appsDeps);
     // Test + Tweak: the show's tweak document (per-model output trims, wiring
     // overrides, test groups, saved patterns) and the running test pattern.
     // Web app only: these change what the lights do.
@@ -3131,6 +3221,7 @@ async function startServer(config: ServerWorkerData) {
     attachRemoteAccessUpgrade(httpServer, '/terminal', terminalWss, terminalEndpointEnabled);
     attachRemoteAccessUpgrade(httpServer, '/filemanager', fileManagerWss, fileManagerEndpointEnabled);
     attachAudioStreamUpgrade(httpServer);
+    attachAppsLiveUpgrade(httpServer, appsRuntime);
 
     // ----------------------------
     // Kiosk server — second port, same API, limited sidebar

@@ -1,0 +1,16 @@
+{
+    "id": "scene-objects-demo",
+    "name": "Scene Objects Demo",
+    "version": "1",
+    "description": "A beam, a cloud of sparkles and an orbiting group animated in the Show View",
+    "icon": "🧊",
+    "runtime": "node",
+    "start": ["scene-objects-demo.mjs"],
+    "page": "page/",
+    "config": "config/",
+    "inputs": [
+        { "name": "start", "kind": "event" },
+        { "name": "stop", "kind": "event" }
+    ],
+    "platforms": ["win32", "darwin", "linux"]
+}

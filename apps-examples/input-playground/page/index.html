@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0b0d12">
+<title>Input Playground</title>
+<style>
+  :root { color-scheme: dark; --bg: #0b0d12; --panel: #161a24; --line: #2a3040; --text: #e8ebf2; --dim: #8b93a7; --accent: #4cc9f0; --ok: #2aff5a; --bad: #ff6b6b; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.35 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+  body { padding: 12px 16px 24px; max-width: 1100px; margin-inline: auto; }
+  header { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: baseline; margin-bottom: 10px; }
+  h1 { margin: 0; font-size: 20px; letter-spacing: 1px; }
+  h2 { margin: 18px 0 8px; font-size: 14px; color: var(--dim); text-transform: uppercase; letter-spacing: 1px; }
+  .hint { color: var(--dim); font-size: 13px; }
+  code { font-family: ui-monospace, Consolas, monospace; font-size: 12.5px; background: #10141c; padding: 1px 5px; border-radius: 4px; }
+  #message { min-height: 1.3em; color: var(--dim); font-size: 13px; }
+  #message.alert { color: #ffb347; }
+
+  .grid { display: grid; grid-template-columns: repeat(var(--cols, 4), minmax(0, 1fr)); gap: 12px; user-select: none; }
+  .ctl { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; gap: 6px; min-height: 96px; position: relative; }
+  .ctl small.name { color: var(--dim); font-size: 11px; font-family: ui-monospace, Consolas, monospace; }
+  .ctl .key { position: absolute; top: 6px; right: 8px; font-size: 11px; color: var(--dim); border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; }
+  .ctl.flash { box-shadow: 0 0 0 2px var(--accent); }
+
+  .btn { align-items: center; justify-content: center; touch-action: none; cursor: pointer; }
+  .btn .cap { width: 64px; height: 64px; display: grid; place-items: center; background: var(--c); color: #0b0d12; font-weight: 700; font-size: 13px; text-align: center; line-height: 1.1; padding: 4px; box-shadow: inset 0 -5px 0 rgba(0,0,0,.35), 0 3px 0 rgba(0,0,0,.5); transition: transform .05s, box-shadow .05s; }
+  .btn.round .cap { border-radius: 50%; }
+  .btn.square .cap { border-radius: 10px; }
+  .btn.wide { grid-column: span 2; }
+  .btn.wide .cap { width: 100%; height: 56px; border-radius: 10px; }
+  .btn.down .cap { transform: translateY(3px); box-shadow: inset 0 -2px 0 rgba(0,0,0,.35), 0 0 0 rgba(0,0,0,.5); }
+  .btn .mode { font-size: 11px; color: var(--dim); }
+
+  .sw { justify-content: center; cursor: pointer; }
+  .sw .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .sw input { position: absolute; opacity: 0; width: 0; height: 0; }
+  .sw .track { width: 48px; height: 26px; border-radius: 13px; background: #2a3040; position: relative; flex: none; transition: background .15s; }
+  .sw .track::after { content: ''; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #e8ebf2; transition: left .15s; }
+  .sw input:checked + .track { background: var(--ok); }
+  .sw input:checked + .track::after { left: 25px; }
+
+  .sl { grid-column: span 2; justify-content: center; }
+  .sl .row { display: flex; justify-content: space-between; align-items: baseline; }
+  .sl output { font-variant-numeric: tabular-nums; color: var(--accent); }
+  .sl input { width: 100%; accent-color: var(--accent); touch-action: pan-y; }
+
+  .tx { grid-column: span 2; justify-content: center; }
+  .tx .row { display: flex; gap: 8px; }
+  .tx input { flex: 1; min-width: 0; font: inherit; color: var(--text); background: #10141c; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+  .tx button { font: inherit; font-weight: 600; color: #0b0d12; background: var(--accent); border: 0; border-radius: 8px; padding: 8px 14px; cursor: pointer; }
+
+  .counts { display: flex; gap: 16px; font-size: 13px; color: var(--dim); margin-bottom: 6px; flex-wrap: wrap; }
+  .counts b { color: var(--text); font-variant-numeric: tabular-nums; }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; font-family: ui-monospace, Consolas, monospace; }
+  th, td { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--line); vertical-align: top; white-space: nowrap; }
+  td.call { white-space: normal; word-break: break-all; }
+  th { color: var(--dim); font-weight: 500; }
+  .ok { color: var(--ok); }
+  .bad { color: var(--bad); }
+  .zero { color: #ffb347; }
+  #log:empty::after { content: 'Nothing sent yet. Tap a control.'; color: var(--dim); font-family: system-ui, sans-serif; }
+
+  @media (max-width: 640px) {
+    body { padding: 10px 16px 20px; }
+    .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .btn.wide, .sl, .tx { grid-column: span 2; }
+    th:nth-child(3), td:nth-child(3) { display: none; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Input Playground</h1>
+  <span class="hint">Each control calls <code id="shape">/api/ezp/inputs/&lt;source&gt;/&lt;name&gt;</code> on the player, like a real controller button.</span>
+</header>
+<div id="message">Connecting...</div>
+
+<div id="grid" class="grid"></div>
+<p class="hint">Keys 1 to 9 press the first nine buttons. Switches and sliders send their value; the text box sends on Enter.</p>
+
+<h2>What the player answered</h2>
+<div class="counts">
+  <span>Calls <b id="c-sent">0</b></span>
+  <span>Delivered to an input <b id="c-delivered">0</b></span>
+  <span>Failed <b id="c-failed">0</b></span>
+  <span id="layout-note"></span>
+</div>
+<table>
+  <thead><tr><th>Time</th><th>Control</th><th>Kind</th><th>Call</th><th>Answer</th></tr></thead>
+  <tbody id="log"></tbody>
+</table>
+
+<script>
+  const el = (id) => document.getElementById(id);
+  let app = null;
+  let status = null;
+  let layoutJson = '';
+  let buttons = []; // the button controls in grid order, for the number keys
+  const held = new Set(); // press-release buttons currently down
+  const sliders = new Map(); // name -> throttle state
+
+  function send(data) {
+    if (!app) return;
+    const c = document.querySelector(`.ctl[data-name="${data.name}"]`);
+    if (c) { c.classList.add('flash'); setTimeout(() => c.classList.remove('flash'), 120); }
+    app.send(data).catch((e) => { el('message').textContent = `Send to app failed: ${e.message}`; el('message').className = 'alert'; });
+  }
+
+  function press(control, down) {
+    const node = document.querySelector(`.ctl[data-name="${control.name}"]`);
+    if (down) {
+      node?.classList.add('down');
+      if (control.mode === 'press-release') {
+        if (held.has(control.name)) return;
+        held.add(control.name);
+      }
+      send({ type: 'press', name: control.name });
+      if (control.mode !== 'press-release') setTimeout(() => node?.classList.remove('down'), 120);
+    } else if (held.delete(control.name)) {
+      node?.classList.remove('down');
+      send({ type: 'release', name: control.name });
+    }
+  }
+
+  // About ten a second while dragging, then the value it was let go at.
+  function slide(control, value, final) {
+    let s = sliders.get(control.name);
+    if (!s) { s = { lastAt: 0, lastValue: undefined, timer: null }; sliders.set(control.name, s); }
+    const fire = (v) => { s.lastAt = Date.now(); s.lastValue = v; send({ type: 'set', name: control.name, value: v }); };
+    clearTimeout(s.timer);
+    s.timer = null;
+    if (final) { if (s.lastValue !== value) fire(value); return; }
+    const wait = 100 - (Date.now() - s.lastAt);
+    if (wait <= 0) fire(value);
+    else s.timer = setTimeout(() => fire(value), wait);
+  }
+
+  function makeButton(c, index) {
+    const d = document.createElement('div');
+    d.className = `ctl btn ${c.shape}`;
+    d.dataset.name = c.name;
+    d.style.setProperty('--c', c.color);
+    d.innerHTML = `<div class="cap"></div><small class="name"></small><span class="mode"></span>`;
+    d.querySelector('.cap').textContent = c.label;
+    d.querySelector('.name').textContent = c.name;
+    d.querySelector('.mode').textContent = c.mode === 'press-release' ? 'press and release' : 'press';
+    if (index < 9) { const k = document.createElement('span'); k.className = 'key'; k.textContent = String(index + 1); d.appendChild(k); }
+    d.addEventListener('pointerdown', (e) => { e.preventDefault(); d.setPointerCapture(e.pointerId); press(c, true); });
+    for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) d.addEventListener(ev, () => press(c, false));
+    d.addEventListener('contextmenu', (e) => e.preventDefault());
+    return d;
+  }
+
+  function makeSwitch(c) {
+    const d = document.createElement('label');
+    d.className = 'ctl sw';
+    d.dataset.name = c.name;
+    d.innerHTML = `<div class="row"><span class="label"></span><input type="checkbox"><span class="track"></span></div><small class="name"></small>`;
+    d.querySelector('.label').textContent = c.label;
+    d.querySelector('.name').textContent = c.name;
+    d.querySelector('input').addEventListener('change', (e) => send({ type: 'set', name: c.name, value: e.target.checked }));
+    return d;
+  }
+
+  function makeSlider(c) {
+    const d = document.createElement('div');
+    d.className = 'ctl sl';
+    d.dataset.name = c.name;
+    d.innerHTML = `<div class="row"><span class="label"></span><output></output></div><input type="range"><small class="name"></small>`;
+    d.querySelector('.label').textContent = c.label;
+    d.querySelector('.name').textContent = c.name;
+    const input = d.querySelector('input');
+    const out = d.querySelector('output');
+    input.min = c.min; input.max = c.max; input.step = c.step; input.value = c.min;
+    out.textContent = input.value;
+    input.addEventListener('input', () => { out.textContent = input.value; slide(c, Number(input.value), false); });
+    input.addEventListener('change', () => slide(c, Number(input.value), true));
+    return d;
+  }
+
+  function makeText(c) {
+    const d = document.createElement('div');
+    d.className = 'ctl tx';
+    d.dataset.name = c.name;
+    d.innerHTML = `<span class="label"></span><div class="row"><input type="text" maxlength="1000" placeholder="Type and press Enter"><button type="button">Send</button></div><small class="name"></small>`;
+    d.querySelector('.label').textContent = c.label;
+    d.querySelector('.name').textContent = c.name;
+    const input = d.querySelector('input');
+    const go = () => send({ type: 'text', name: c.name, value: input.value });
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); go(); } });
+    d.querySelector('button').addEventListener('click', go);
+    return d;
+  }
+
+  // Rebuilt only when the layout changes, so a status every two seconds does not interrupt a drag.
+  function renderLayout(layout) {
+    const json = JSON.stringify(layout);
+    if (json === layoutJson) return;
+    layoutJson = json;
+    held.clear();
+    sliders.clear();
+    const grid = el('grid');
+    grid.replaceChildren();
+    grid.style.setProperty('--cols', layout.cols || 4);
+    buttons = layout.controls.filter((c) => c.type === 'button');
+    for (const c of layout.controls) {
+      if (c.type === 'button') grid.appendChild(makeButton(c, buttons.indexOf(c)));
+      else if (c.type === 'switch') grid.appendChild(makeSwitch(c));
+      else if (c.type === 'slider') grid.appendChild(makeSlider(c));
+      else if (c.type === 'text') grid.appendChild(makeText(c));
+    }
+    el('shape').textContent = `/api/ezp/inputs/${layout.source}/<name>`;
+  }
+
+  const time = (ms) => { const d = new Date(ms); return d.toLocaleTimeString([], { hour12: false }) + '.' + String(d.getMilliseconds()).padStart(3, '0'); };
+
+  function renderLog() {
+    const rows = status.recent || [];
+    const tbody = el('log');
+    tbody.replaceChildren();
+    for (const r of rows) {
+      const tr = document.createElement('tr');
+      const answer = r.error
+        ? `<span class="bad">HTTP ${r.status || '-'}: ${r.error}</span>`
+        : `<span class="${r.delivered > 0 ? 'ok' : 'zero'}">HTTP ${r.status}, delivered: ${r.delivered}</span>`;
+      tr.innerHTML = `<td></td><td></td><td></td><td class="call"></td><td>${answer}</td>`;
+      tr.children[0].textContent = time(r.at);
+      tr.children[1].textContent = r.name;
+      tr.children[2].textContent = r.kind;
+      tr.children[3].textContent = r.call;
+      tbody.appendChild(tr);
+    }
+    const c = status.counts || {};
+    el('c-sent').textContent = c.sent ?? 0;
+    el('c-delivered').textContent = c.delivered ?? 0;
+    el('c-failed').textContent = c.failed ?? 0;
+  }
+
+  function render() {
+    if (!status) return;
+    if (status.layout) renderLayout(status.layout);
+    renderLog();
+    const m = el('message');
+    if (status.phase === 'stopped') { m.textContent = 'The app has stopped.'; m.className = 'alert'; }
+    else if (status.layoutError) { m.textContent = status.layoutError; m.className = 'alert'; }
+    else { m.textContent = `Source "${status.source}", ${status.controls?.length ?? 0} controls. Map ${status.source}/<name> to an instance input on the Apps card; "delivered: 0" means nothing is mapped yet.`; m.className = ''; }
+    const note = el('layout-note');
+    if (status.layoutFrom === 'default') note.textContent = 'Default layout (nothing saved yet)';
+    else if (status.layoutProblems?.length) note.textContent = `${status.layoutProblems.length} layout problem(s), see the settings page`;
+    else note.textContent = '';
+  }
+
+  // Number keys as buttons; keyup releases a press-release button.
+  const keyIndex = (e) => (e.key >= '1' && e.key <= '9' && !e.ctrlKey && !e.metaKey && !e.altKey ? Number(e.key) - 1 : -1);
+  const typing = (e) => ['INPUT', 'TEXTAREA'].includes(e.target.tagName) && e.target.type !== 'range' && e.target.type !== 'checkbox';
+  addEventListener('keydown', (e) => {
+    const i = keyIndex(e);
+    if (i < 0 || e.repeat || typing(e) || !buttons[i]) return;
+    e.preventDefault();
+    press(buttons[i], true);
+  });
+  addEventListener('keyup', (e) => {
+    const i = keyIndex(e);
+    if (i >= 0 && buttons[i]) press(buttons[i], false);
+  });
+  addEventListener('blur', () => { for (const c of buttons) press(c, false); });
+
+  async function init() {
+    app = EZApp.connect();
+    try {
+      await app.ready;
+    } catch (e) {
+      el('message').textContent = `Could not reach the player: ${e.message}`;
+      el('message').className = 'alert';
+      return;
+    }
+    el('message').textContent = 'Waiting for the app...';
+    app.onStatus((s) => { if (s) { status = s; render(); } });
+  }
+
+  // The player serves the SDK next to every app page, on the LAN and through the cloud.
+  const sdk = document.createElement('script');
+  sdk.src = '_sdk.js';
+  sdk.onload = init;
+  sdk.onerror = () => { el('message').textContent = 'Could not load the app SDK.'; el('message').className = 'alert'; };
+  document.head.appendChild(sdk);
+</script>
+</body>
+</html>

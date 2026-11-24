@@ -60,6 +60,9 @@ import {
 import { dispatchUpdateCommand, setAutoUpdateOpsBroadcaster, publishAutoUpdateOps } from './ipcautoupdate.js';
 import { dispatchAppSettingsCommand, setAppSettingsBroadcaster } from './appSettings.js';
 import { ezpVersions } from '../versions.js';
+import { appsCommand, appsSawStatus, appsServerReady } from './apps/apps.js';
+import type { AppsAuthEntry } from './workers/serverworkertypes.js';
+export type { AppsAuthEntry };
 import type {
     PlaybackSettings,
     EZPlayerCommand,
@@ -125,6 +128,8 @@ const rpcHandlers: ServerWorkerRPCAPI = {
     overlayCommand: (cmd: unknown) => playWorkerOverlay(cmd as OverlayCommand),
     testTweakCommand: (cmd: unknown) => playWorkerTestTweak(cmd as TestTweakCommand),
     audioCommand: (cmd: unknown) => playWorkerAudio(cmd as AudioCommand),
+    appsCommand: (cmd) => appsCommand(cmd),
+    appsSawStatus: (instance) => appsSawStatus(instance),
     listDisplays: async () => listDisplays(),
     sendPlayerCommand: (command: unknown) => {
         const cmd = command as EZPlayerCommand;
@@ -309,6 +314,9 @@ export async function setUpServerWorker(config: ServerWorkerConfig): Promise<voi
                     // Seed the broadcaster's key cache so late-joining LAN/cloud
                     // clients get update state in their first snapshot.
                     publishAutoUpdateOps();
+                    // App processes need the web port, and the worker needs their secrets.
+                    if (lastAppsAuth) setAppsAuth(lastAppsAuth);
+                    void appsServerReady();
                     // Record what we actually bound.
                     const showFolder = getCurrentShowFolder();
                     if (showFolder) {
@@ -544,6 +552,14 @@ export function broadcastToWebSocket(key: string, value: unknown) {
         value,
     };
     serverWorker.postMessage(message);
+}
+
+let lastAppsAuth: Record<string, AppsAuthEntry> | undefined;
+
+/** The app instances the worker serves, with their secrets. Remembered for a worker started later. */
+export function setAppsAuth(instances: Record<string, AppsAuthEntry>) {
+    lastAppsAuth = instances;
+    serverWorker?.postMessage({ type: 'appsAuth', instances } satisfies MainToServerWorkerMessage);
 }
 
 /**
