@@ -466,6 +466,21 @@ const matrixReaders = new MatrixReaders();
 /** Longest a frame request may wait for the next frame. */
 const MATRIX_MAX_WAIT_MS = 2000;
 const VIRTUAL_ADAPTER = /vethernet|vmware|virtualbox|hyper-v|wsl|docker|^br-|^veth|tailscale|zerotier|loopback/i;
+
+/** What the Virtual Matrix settings show: open readers, and this computer's LAN addresses. */
+function virtualMatrixStatus(port: number | string | undefined): VirtualMatrixStatus {
+    const suffix = port ? `:${port}` : '';
+    const real: string[] = [];
+    const virtual: string[] = [];
+    for (const [name, list] of Object.entries(os.networkInterfaces())) {
+        for (const a of list ?? []) {
+            if (a.family !== 'IPv4' || a.internal) continue;
+            (VIRTUAL_ADAPTER.test(name) ? virtual : real).push(`http://${a.address}${suffix}`);
+        }
+    }
+    // Adapters of virtual machines and tunnels last: other computers rarely reach those.
+    return { readers: matrixReaders.list(), lanUrls: [...real, ...virtual] };
+}
 let curAudioRing: AudioChunkRingBuffer | undefined = undefined;
 let serverStarted = false;
 
@@ -1647,6 +1662,17 @@ async function dispatchHttpProxy(
         return dispatchFramesZstd();
     }
 
+    // The Virtual Matrix settings tile reads these three when it is opened over the cloud.
+    if (pathStr === '/api/ezp/displays') return jsonResult({ displays: await rpc.call('listDisplays') });
+    if (pathStr === '/api/ezp/matrix/status') return jsonResult(virtualMatrixStatus(boundWebPort));
+    if (pathStr === '/api/ezp/overlays/targets') {
+        const detail = query?.detail === 'submodels' || query?.detail === 'nodes' ? query.detail : undefined;
+        const model = query?.model ? query.model : undefined;
+        const res = await rpc.call('overlayCommand', { op: 'targets', model, detail });
+        if (res.ok) return jsonResult(res);
+        return { ...jsonResult(res), status: res.error === 'player not running' ? 503 : 400 };
+    }
+
     // /api/ezp/time — server-clock sample for client RTT/offset estimation.
     if (pathStr === '/api/ezp/time') {
         return jsonResult({ now: rtcNow(), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone });
@@ -2740,19 +2766,7 @@ async function startServer(config: ServerWorkerData) {
     router.get('/api/ezp/matrix/status', (ctx) => {
         ctx.set('Access-Control-Allow-Origin', '*');
         ctx.set('Cache-Control', 'no-store');
-        const port = ctx.URL.port ? `:${ctx.URL.port}` : '';
-        const real: string[] = [];
-        const virtual: string[] = [];
-        for (const [name, list] of Object.entries(os.networkInterfaces())) {
-            for (const a of list ?? []) {
-                if (a.family !== 'IPv4' || a.internal) continue;
-                (VIRTUAL_ADAPTER.test(name) ? virtual : real).push(`http://${a.address}${port}`);
-            }
-        }
-        // Adapters of virtual machines and tunnels last: other computers rarely reach those.
-        const lanUrls = [...real, ...virtual];
-        const status: VirtualMatrixStatus = { readers: matrixReaders.list(), lanUrls };
-        ctx.body = status;
+        ctx.body = virtualMatrixStatus(ctx.URL.port);
     });
     router.get('/api/ezp/displays', async (ctx) => {
         try {
