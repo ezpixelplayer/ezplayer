@@ -111,7 +111,7 @@ export function findPythonCandidates(): { path: string; version: string }[] {
     const seen = new Set<string>();
     const out: { path: string; version: string }[] = [];
     for (const c of candidates) {
-        let real = c;
+        let real: string;
         try {
             real = fs.realpathSync(c);
         } catch {
