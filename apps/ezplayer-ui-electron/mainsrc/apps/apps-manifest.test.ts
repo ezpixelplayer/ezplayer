@@ -30,6 +30,12 @@ describe('parseManifest', () => {
         expect(() => parseManifest({ ...good, start: [] })).toThrow(/start/);
     });
 
+    it('takes an event rate request, capped at the ceilings', () => {
+        const m = parseManifest({ ...good, events: { perMinute: 100000, perClientPerSecond: 20 } });
+        expect(m.events).toEqual({ perMinute: 6000, perClientPerSecond: 20 });
+        expect(() => parseManifest({ ...good, events: { perMinute: -1 } })).toThrow(/perMinute/);
+    });
+
     it('keeps page directories inside the package', () => {
         expect(() => parseManifest({ ...good, page: '../elsewhere' })).toThrow(/inside the package/);
         expect(() => parseManifest({ ...good, page: '/abs' })).toThrow(/inside the package/);

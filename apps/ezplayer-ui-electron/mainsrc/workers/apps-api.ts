@@ -80,7 +80,8 @@ export class AppsRuntime {
     feed(name: string): AppEventFeed {
         let f = this.feeds.get(name);
         if (!f) {
-            f = new AppEventFeed(this.instances[name]?.eventsPerMinute);
+            const e = this.instances[name];
+            f = new AppEventFeed(e?.eventsPerMinute, e?.clientPerSecond);
             this.feeds.set(name, f);
         }
         return f;

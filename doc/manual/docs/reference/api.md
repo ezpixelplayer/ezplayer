@@ -2262,7 +2262,8 @@ A package is a directory with `ezapp.json` at its root:
     "page": "page/",
     "config": "config/",
     "inputs": [{ "name": "left", "kind": "event" }],
-    "platforms": ["win32", "darwin", "linux"]
+    "platforms": ["win32", "darwin", "linux"],
+    "events": { "perMinute": 1200, "perClientPerSecond": 15 }
 }
 ```
 
@@ -2275,6 +2276,7 @@ A package is a directory with `ezapp.json` at its root:
 | `config`    | The owner's settings page, same forms. Served even while the instance is stopped.                                                        |
 | `inputs`    | Show inputs the app accepts: `kind` is `event` (a press), `value` (a level or open/closed) or `text`.                                     |
 | `platforms` | `process.platform` values the app runs on; absent means all.                                                                             |
+| `events`    | The event rate the app needs: `perMinute` across every phone (default 600, at most 6000) and `perClientPerSecond` for one phone (default 10, at most 60). A game that sends every tap asks here; a game that adds taps up on the phone and sends one number a second does not need to. The owner can still change an instance's per-minute rate on the Apps card. |
 
 Packages install from a folder, from an `https` `.tar.gz` (every directory with a manifest becomes an
 app) or from the contrib repository, with `POST /api/ezp/apps/command`.
@@ -2303,8 +2305,9 @@ instance's availability window it is not running.
 
 `POST /api/ezp/apps/:instance/events` — anyone. JSON `{ "client": "<id>", "data": <any> }`, up to 64 KB.
 The player stamps the event and answers `{ "ok": true, "id": n }`. Refused with 429 when the sender or
-the instance is over its rate (default 20 per minute per instance; one sender gets a burst of 5 then
-one a second), 503 when the instance is not running.
+the instance is over its rate (600 per minute per instance and ten a second per sender unless the manifest's
+`events` asks for more; the owner can set the per-minute rate on the Apps card; a sender gets a burst of
+three seconds' worth, never under 30), 503 when the instance is not running.
 
 `GET /api/ezp/apps/:instance/events?since=<id>&wait=<seconds>` — the process, with `x-ezp-app-token`
 (or `?token=`). Long poll: answers at once when events newer than `since` exist, otherwise holds up to

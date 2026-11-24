@@ -374,11 +374,16 @@ const InstanceRow: React.FC<{
                         size="small"
                         type="number"
                         label="Events per minute accepted"
-                        defaultValue={inst.eventsPerMinute ?? 20}
-                        inputProps={{ min: 1, max: 600 }}
+                        defaultValue={inst.eventsPerMinute ?? manifest?.events?.perMinute ?? 600}
+                        inputProps={{ min: 1, max: 6000 }}
+                        helperText={`Taps from every phone together, ${
+                            manifest?.events?.perMinute
+                                ? `${manifest.events.perMinute} asked for by the app`
+                                : '600 unless the app asks for more'
+                        }. Each phone on its own is held to ${manifest?.events?.perClientPerSecond ?? 10} a second.`}
                         onBlur={(e) => {
                             const n = Number(e.target.value);
-                            if (n !== (inst.eventsPerMinute ?? 20)) {
+                            if (n !== (inst.eventsPerMinute ?? manifest?.events?.perMinute ?? 600)) {
                                 void command({ op: 'setInstance', name: inst.name, patch: { eventsPerMinute: n } });
                             }
                         }}

@@ -19,6 +19,7 @@ import { examplesDir, installApps, uninstallApp } from './apps-install.js';
 import { APP_NAME_RE, runsHere } from './apps-manifest.js';
 import { checkPython, findPythonCandidates, resetRuntimeCache } from './apps-runtime.js';
 import { appDataDir, loadAppsFile, saveAppsFile, scanInstalledApps, type AppsFile } from './apps-store.js';
+import { sweepStale, writeRunning, type RunningFile } from './apps-stale.js';
 import { AppProcess } from './apps-supervisor.js';
 
 const SCHEDULE_TICK_MS = 30_000;
@@ -109,6 +110,17 @@ function publish(): void {
 
 export function publishNow(): void {
     broadcastToWebSocket('apps', getAppsState());
+    // The pids on disk let the next player kill what this one leaves behind if it dies.
+    if (showFolder) {
+        const running: RunningFile = {};
+        for (const [name, p] of processes) {
+            const rec = file.instances.find((i) => i.name === name);
+            const script = appById(rec?.appId ?? '')?.manifest?.start[0];
+            if (p.view.pid && script)
+                running[name] = { pid: p.view.pid, script, startedAt: p.view.report.startedAt ?? 0 };
+        }
+        void writeRunning(showFolder, running);
+    }
     const auth: Record<string, AppsAuthEntry> = {};
     for (const rec of file.instances) {
         const app = appById(rec.appId);
@@ -127,7 +139,8 @@ export function publishNow(): void {
             title: rec.title ?? app.manifest.name,
             icon: app.manifest.icon,
             description: app.manifest.description,
-            eventsPerMinute: rec.eventsPerMinute,
+            eventsPerMinute: rec.eventsPerMinute ?? app.manifest.events?.perMinute,
+            clientPerSecond: app.manifest.events?.perClientPerSecond,
         };
     }
     setAppsAuth(auth);
@@ -184,6 +197,7 @@ export async function appsLoadShow(folder: string): Promise<void> {
     await appsStopAll();
     showFolder = folder;
     lastError = undefined;
+    await sweepStale(folder);
     file = await loadAppsFile(folder);
     installed = await scanInstalledApps(folder);
     await reconcile();
@@ -219,6 +233,9 @@ async function save(): Promise<void> {
 export async function appsCommand(cmd: AppsCommand): Promise<AppsState> {
     if (!showFolder) throw new Error('no show folder is open');
     lastError = undefined;
+    // Every verb is logged so a stopped or restarted instance can be traced to its cause.
+    const what = 'name' in cmd ? cmd.name : 'appId' in cmd ? cmd.appId : '';
+    console.log(`[apps] ${cmd.op}${what ? ` ${what}` : ''}`);
     try {
         await run(cmd);
     } catch (err) {

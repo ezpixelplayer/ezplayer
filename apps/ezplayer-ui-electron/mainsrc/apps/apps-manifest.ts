@@ -35,6 +35,7 @@ export function parseManifest(raw: unknown): AppManifest {
         throw new Error('start must be a list of arguments');
     }
     const inputs = m.inputs === undefined ? undefined : parseInputs(m.inputs);
+    const events = m.events === undefined ? undefined : parseEvents(m.events);
     const platforms =
         m.platforms === undefined
             ? undefined
@@ -53,6 +54,26 @@ export function parseManifest(raw: unknown): AppManifest {
         config: cleanDir(m.config, 'config'),
         inputs,
         platforms,
+        events,
+    };
+}
+
+/** Hard ceilings: an app can ask for a lot, not for everything. */
+export const EVENTS_PER_MINUTE_MAX = 6000;
+export const CLIENT_PER_SECOND_MAX = 60;
+
+function parseEvents(v: unknown): AppManifest['events'] {
+    if (typeof v !== 'object' || v === null) throw new Error('events must be an object');
+    const e = v as Record<string, unknown>;
+    const num = (x: unknown, what: string, max: number) => {
+        if (x === undefined) return undefined;
+        if (typeof x !== 'number' || !Number.isFinite(x) || x <= 0)
+            throw new Error(`events.${what} must be a positive number`);
+        return Math.min(max, x);
+    };
+    return {
+        perMinute: num(e.perMinute, 'perMinute', EVENTS_PER_MINUTE_MAX),
+        perClientPerSecond: num(e.perClientPerSecond, 'perClientPerSecond', CLIENT_PER_SECOND_MAX),
     };
 }
 

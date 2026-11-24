@@ -149,7 +149,10 @@ export interface AppsAuthEntry {
     title: string;
     icon?: string;
     description?: string;
+    /** The owner's setting, else what the app asked for in its manifest. */
     eventsPerMinute?: number;
+    /** What the app asked for in its manifest. */
+    clientPerSecond?: number;
 }
 
 /** pty → viewer events. `superseded` is what the displaced viewer sees when

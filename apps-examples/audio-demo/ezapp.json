@@ -18,5 +18,6 @@
         { "name": "tune", "kind": "event" },
         { "name": "stop", "kind": "event" }
     ],
-    "platforms": ["win32", "darwin", "linux"]
+    "platforms": ["win32", "darwin", "linux"],
+    "events": { "perMinute": 1200, "perClientPerSecond": 15 }
 }

@@ -53,15 +53,14 @@
     if (app.apiBase === null) throw new Error('open this page on the home network to list the models');
     const res = await fetch(`${app.apiBase}/api/ezp/overlays/targets`);
     const { targets = [] } = await res.json();
-    const grids = targets.filter((t) => t.width && t.height);
+    // Only grids the whole 10 x 20 board fits on, A to Z.
+    const grids = targets
+      .filter((t) => t.width >= 10 && t.height >= 20)
+      .sort((a, b) => a.model.localeCompare(b.model, undefined, { sensitivity: 'base' }));
     const sel = el('model');
     sel.replaceChildren();
-    if (!grids.length) sel.append(new Option('No grid models found', ''));
-    for (const t of grids) {
-      const o = new Option(`${t.model} (${t.width} x ${t.height})`, t.model);
-      o.disabled = t.width < 4 || t.height < 6;
-      sel.append(o);
-    }
+    if (!grids.length) sel.append(new Option('No grid model is big enough (10 x 20 or more)', ''));
+    for (const t of grids) sel.append(new Option(`${t.model} (${t.width} x ${t.height})`, t.model));
     if (selected) sel.value = selected;
   }
 

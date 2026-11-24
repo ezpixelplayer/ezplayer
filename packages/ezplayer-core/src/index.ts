@@ -99,6 +99,7 @@ export type {
     AppInputDecl,
     AppPageSource,
     AppManifest,
+    AppEventRate,
     InstalledApp,
     AppInstanceRecord,
     AppInstanceState,

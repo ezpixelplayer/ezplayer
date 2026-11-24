@@ -10,6 +10,11 @@ export const APPS_SDK_JS = String.raw`(function () {
   var src = (script && script.src) || (location.origin + location.pathname.replace(/[^/]*$/, '') + '_sdk.js');
   var dir = src.replace(/[^/]*$/, '');
   var ctxUrl = dir + '_context.json';
+  // Whatever sits before /apps/ in the page path is the player's mount: nothing on the LAN,
+  // the owner's proxy prefix when the page is opened from the cloud console.
+  var pagePath = new URL(dir).pathname;
+  var mount = pagePath.slice(0, pagePath.indexOf('/apps/'));
+  if (mount === '/' || mount.indexOf('/apps/') === 0) mount = '';
 
   function clientId() {
     try {
@@ -40,7 +45,8 @@ export const APPS_SDK_JS = String.raw`(function () {
       slug: null,
       mode: null,
       clientId: clientId(),
-      /** '' on the LAN (the player is this origin); null through the cloud. */
+      /** The player's API base for direct calls: '' on the LAN, the owner's proxy prefix from the
+       *  cloud console, null on the show's public page (visitors have no such access). */
       apiBase: null,
       /** Resolves once the SDK knows where it is; every call below waits for it. */
       ready: null,
@@ -106,8 +112,8 @@ export const APPS_SDK_JS = String.raw`(function () {
         app._appBase = '/api/show/' + encodeURIComponent(c.slug) + '/apps/' + inst;
         app.apiBase = null;
       } else {
-        app._appBase = '/api/ezp/apps/' + inst;
-        app.apiBase = '';
+        app._appBase = mount + '/api/ezp/apps/' + inst;
+        app.apiBase = mount;
       }
       return app;
     });

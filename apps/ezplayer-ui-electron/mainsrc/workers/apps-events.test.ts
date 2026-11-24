@@ -33,25 +33,27 @@ describe('AppEventFeed', () => {
         expect(Date.now() - t0).toBeGreaterThanOrEqual(15);
     });
 
-    it('limits one sender to a short burst', () => {
-        const f = new AppEventFeed(600);
+    it('limits one sender to a burst of 30, then ten a second', () => {
+        const f = new AppEventFeed(6000);
         const now = 1_000_000;
-        const results = Array.from({ length: 7 }, () => f.push('lan', 'same-phone', 1, now));
-        expect(results.filter((r) => 'refused' in r)).toHaveLength(2);
-        // A second later one more token has refilled.
-        expect('refused' in f.push('lan', 'same-phone', 1, now + 1_000)).toBe(false);
+        const results = Array.from({ length: 35 }, () => f.push('lan', 'same-phone', 1, now));
+        expect(results.filter((r) => 'refused' in r)).toHaveLength(5);
+        // A second later ten more have refilled.
+        const later = Array.from({ length: 11 }, () => f.push('lan', 'same-phone', 1, now + 1_000));
+        expect(later.filter((r) => 'refused' in r)).toHaveLength(1);
     });
 
     it('limits the whole instance to its events per minute', () => {
-        const f = new AppEventFeed(3);
+        // 60 a minute: a burst of 10, then one a second.
+        const f = new AppEventFeed(60);
         const now = 1_000_000;
-        expect('refused' in f.push('lan', 'p1', 1, now)).toBe(false);
-        expect('refused' in f.push('lan', 'p2', 1, now)).toBe(false);
-        expect('refused' in f.push('lan', 'p3', 1, now)).toBe(false);
-        const r = f.push('lan', 'p4', 1, now);
+        for (let i = 0; i < 10; i++) expect('refused' in f.push('lan', `p${i}`, 1, now)).toBe(false);
+        const r = f.push('lan', 'p-extra', 1, now);
         expect('refused' in r && r.refused).toMatch(/too many events/);
-        // Twenty seconds later the minute budget has one more.
-        expect('refused' in f.push('lan', 'p4', 1, now + 20_000)).toBe(false);
+        // Two seconds later the minute budget has two more.
+        expect('refused' in f.push('lan', 'p-extra', 1, now + 2_000)).toBe(false);
+        expect('refused' in f.push('lan', 'p-extra', 1, now + 2_000)).toBe(false);
+        expect('refused' in f.push('lan', 'p-extra', 1, now + 2_000)).toBe(true);
     });
 
     it('close lets waiters go with nothing', async () => {

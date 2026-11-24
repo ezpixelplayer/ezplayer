@@ -8,5 +8,6 @@
     "start": ["tetris.mjs"],
     "page": "page/",
     "config": "config/",
-    "platforms": ["win32", "darwin", "linux"]
+    "platforms": ["win32", "darwin", "linux"],
+    "events": { "perMinute": 1200, "perClientPerSecond": 15 }
 }

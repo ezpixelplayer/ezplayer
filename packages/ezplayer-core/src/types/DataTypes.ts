@@ -1352,6 +1352,16 @@ export interface AppManifest {
     inputs?: AppInputDecl[];
     /** process.platform values; absent means all. */
     platforms?: string[];
+    /** The event rate the app needs; the player's defaults otherwise. The owner can still override per instance. */
+    events?: AppEventRate;
+}
+
+/** Event rate limits, as an app asks for them or an owner sets them. */
+export interface AppEventRate {
+    /** Events per minute across every sender (default 600, at most 6000). */
+    perMinute?: number;
+    /** Sustained events per second from one phone (default 10, at most 60). */
+    perClientPerSecond?: number;
 }
 
 export interface InstalledApp {
