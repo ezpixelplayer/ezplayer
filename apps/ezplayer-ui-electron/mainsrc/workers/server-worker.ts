@@ -2,6 +2,7 @@ import { FramePool, type LayoutManifest } from '@ezplayer/epp';
 import { MATRIX_PAGE_HTML } from './matrixpage.js';
 import { MatrixReaders } from './matrix-readers.js';
 import type { OverlayCommand } from './overlaytypes.js';
+import type { TestTweakCommand } from './testtweak.js';
 import type { AudioCommand } from './audiotypes.js';
 import type { AudioLeaseRequest } from './audiobus.js';
 import type { OverlayLeaseRequest } from '@ezplayer/epp';
@@ -2939,6 +2940,29 @@ async function startServer(config: ServerWorkerData) {
     });
     // Scene object writes change what every viewer sees, so not on the kiosk.
     registerSceneWriteRoutes(scanRouter, sceneObjects);
+    // Test + Tweak: the show's tweak document (per-model output trims, wiring
+    // overrides, test groups, saved patterns) and the running test pattern.
+    // Web app only: these change what the lights do.
+    const testTweakCall = async (ctx: Koa.Context, cmd: TestTweakCommand) => {
+        try {
+            const res = await rpc.call('testTweakCommand', cmd);
+            // Not up yet (player starting) is a 503; a bad request is a 400.
+            if (!res.ok) ctx.status = res.error === 'player not running' ? 503 : 400;
+            ctx.body = res;
+        } catch (error) {
+            console.error('[server-worker] test+tweak command failed:', error);
+            ctx.status = 500;
+            ctx.body = { ok: false, error: 'Internal server error' };
+        }
+    };
+    // ?xlgroups=1 adds the show's xLights model groups, flattened to models and submodels.
+    scanRouter.get('/api/ezp/testtweak', (ctx) =>
+        testTweakCall(ctx, { op: 'get', ...(ctx.query.xlgroups === '1' ? { xlGroups: true } : {}) }),
+    );
+    scanRouter.put('/api/ezp/testtweak/doc', (ctx) => testTweakCall(ctx, { op: 'setDoc', doc: ctx.request.body }));
+    scanRouter.post('/api/ezp/testtweak/test', (ctx) => testTweakCall(ctx, { op: 'start', test: ctx.request.body }));
+    scanRouter.delete('/api/ezp/testtweak/test', (ctx) => testTweakCall(ctx, { op: 'stop' }));
+
     // Support zip; web app only, like the routes above. ?level= picks what it holds.
     scanRouter.get('/api/ezp/support/logs.zip', async (ctx) => {
         const level = ctx.query.level ?? 'logs';

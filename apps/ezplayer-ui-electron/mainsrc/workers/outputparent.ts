@@ -84,6 +84,11 @@ export class OutputWorkerHandle {
         this.post({ type: 'settings', ...s });
     }
 
+    /** Replace the compiled outputs; same count and order as at open. */
+    outputs(outputs: SerializedOutput[]) {
+        this.post({ type: 'outputs', outputs });
+    }
+
     /** Open or replace the senders of these controllers; resolves with each one's report. */
     reopen(indices: number[]): Promise<Map<number, OpenControllerReport | undefined>> {
         return new Promise((resolve) => {

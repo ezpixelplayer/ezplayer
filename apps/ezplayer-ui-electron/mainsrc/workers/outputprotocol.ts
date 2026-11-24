@@ -37,6 +37,8 @@ export type OutputWorkerInMsg =
     | ({ type: 'settings' } & Partial<OutputWorkerSettings>)
     /** Open (or replace) the senders of these controllers, by index into the open message's list. */
     | { type: 'reopen'; indices: number[] }
+    /** Replace the compiled outputs (same count and order as the open message's); takes effect on the next frame. */
+    | { type: 'outputs'; outputs: SerializedOutput[] }
     | { type: 'close' };
 
 export type OutputWorkerOutMsg =

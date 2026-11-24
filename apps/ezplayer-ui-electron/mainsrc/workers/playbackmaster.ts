@@ -80,6 +80,8 @@ import {
 
 import {
     getAllLayoutGroups,
+    getAllModelGroups,
+    flattenModelGroups,
     getAllModelCoordinates,
     getAllMovingHeads,
     getAllViewObjects,
@@ -112,6 +114,7 @@ import { totalmem } from 'node:os';
 import { OverallFrameSendStats, resetFrameSendStats, xbusySleep } from './framesend';
 import { PixelPipeline, blendModeFromSettings } from './pixelpipeline';
 import type { OverlayCommand, OverlayResult } from './overlaytypes';
+import { TestTweakService, type TestTweakCommand, type TestTweakResult } from './testtweak';
 import { AudioInject } from './audioinject';
 import type { AudioCommand, AudioResult } from './audiotypes';
 import { MultiSyncSender, type MultiSyncConfig, type SyncFrameInfo } from './multisync';
@@ -325,6 +328,7 @@ const handlers: PlayWorkerRPCAPI = {
         return frameExportBuffer;
     },
     overlay: async (cmd: OverlayCommand): Promise<OverlayResult> => overlayCommand(cmd),
+    testTweak: async (cmd: TestTweakCommand): Promise<TestTweakResult> => testTweak.command(cmd),
     audio: async (cmd: AudioCommand): Promise<AudioResult> => audioInject.command(cmd),
     getPlaybackItemOrder: async ({ key }) => {
         return foregroundPlayerRunState.getItemOrder(key) ?? backgroundPlayerRunState.getItemOrder(key);
@@ -1985,6 +1989,36 @@ async function buildShowFolderIndex(folder: string, maxDepth = 5): Promise<Map<s
 // refs that POSIX path.isAbsolute doesn't recognize as absolute.
 const resolveFilePathFromIndex = resolveShowAssetPath;
 
+/** Test + Tweak: the show's tweak document, its wiring overrides and the running test pattern. */
+const testTweak = new TestTweakService({
+    log: (level, msg) => (level === 'error' ? emitError(msg) : level === 'warn' ? emitWarning(msg) : emitInfo(msg)),
+    onWiringChanged: () => {
+        if (parsedControllerDoc) send({ type: 'knownControllers', controllers: deriveKnownControllers(parsedControllerDoc) });
+    },
+});
+
+/** Vertical matrices of the layout last loaded; the matrix intents need them and the XML is not kept. */
+let lastVerticalMatrices: ReadonlySet<string> = new Set<string>();
+
+/** The xLights controllers with their upload intent, wiring overrides applied. */
+function deriveKnownControllers(parsed: ControllersAndModelChannels): KnownController[] {
+    const { controllers, models } = parsed;
+    const portIntent = buildPortIntent(models);
+    const modelIntents = buildModelIntents(models);
+    const serialIntent = buildSerialIntent(models);
+    const matrixIntent = buildMatrixIntents(models, lastVerticalMatrices);
+    return controllers.map((c) =>
+        xlControllerToKnown(
+            c,
+            portIntent.get(c.name),
+            modelIntents.get(c.name),
+            serialIntent.get(c.name),
+            matrixIntent.panels.get(c.name),
+            matrixIntent.virtuals.get(c.name),
+        ),
+    );
+}
+
 ////////
 // Load XML coordinates independently (can be called before processQueue)
 ////////
@@ -1993,6 +2027,7 @@ async function loadXmlCoordinates() {
         emitWarning(`[loadXmlCoordinates] showFolder not set, skipping XML load`);
         return;
     }
+    await testTweak.load(showFolder);
 
     const xmlPath = path.join(showFolder, `xlights_rgbeffects.xml`);
     const netPath = path.join(showFolder, `xlights_networks.xml`);
@@ -2015,6 +2050,7 @@ async function loadXmlCoordinates() {
     movingHeads = [];
     layoutSettings = {};
     parsedControllerDoc = undefined;
+    testTweak.setShow([], []);
     let knownControllers: KnownController[] = [];
 
     if (xrgb && xnet) {
@@ -2037,21 +2073,14 @@ async function loadXmlCoordinates() {
                 logger: (msg) => emitWarning(msg),
             });
             parsedControllerDoc = parsed;
-            const { controllers, models } = parsed;
-            const portIntent = buildPortIntent(models);
-            const modelIntents = buildModelIntents(models);
-            const serialIntent = buildSerialIntent(models);
-            const matrixIntent = buildMatrixIntents(models, verticalMatrixNames(xrgb));
-            knownControllers = controllers.map((c) =>
-                xlControllerToKnown(
-                    c,
-                    portIntent.get(c.name),
-                    modelIntents.get(c.name),
-                    serialIntent.get(c.name),
-                    matrixIntent.panels.get(c.name),
-                    matrixIntent.virtuals.get(c.name),
-                ),
-            );
+            lastVerticalMatrices = verticalMatrixNames(xrgb);
+            // xLights groups, offered to Test + Tweak as flat lists; groups that reach no model of this show are left out.
+            const modelNames = new Set(parsed.models.map((m) => m.name));
+            const xlGroups = flattenModelGroups(getAllModelGroups(xrgb), (n) => modelNames.has(n))
+                .filter((g) => g.models.length + g.subModels.length > 0)
+                .map((g) => ({ name: g.name, models: g.models, subModels: g.subModels }));
+            testTweak.setShow(parsed.models, parsed.controllers, xlGroups);
+            knownControllers = deriveKnownControllers(parsed);
             emitInfo(`[loadXmlCoordinates] Found ${knownControllers.length} xLights controller(s)`);
         } catch (cErr) {
             emitWarning(`[loadXmlCoordinates] Error extracting controllers: ${cErr}`);
@@ -2633,6 +2662,7 @@ function buildModelIntents(models: XlModelChannelInfo[]): Map<string, Controller
         arr.push(modelIntentOf(m));
         by.set(m.controllerName, arr);
     }
+    testTweak.rewriteIntents(by, modelIntentOf);
     for (const arr of by.values()) arr.sort((a, b) => a.startChannel - b.startChannel);
     return by;
 }
@@ -2650,6 +2680,7 @@ function buildPortIntent(models: XlModelChannelInfo[]): Map<string, ControllerPo
         arr.push(modelIntentOf(m));
         byController.set(m.controllerName, arr);
     }
+    testTweak.rewriteIntents(byController, modelIntentOf);
     const out = new Map<string, ControllerPortIntent[]>();
     for (const [name, intents] of byController) {
         intents.sort((a, b) => a.startChannel - b.startChannel);
@@ -2954,6 +2985,7 @@ async function processQueue() {
             log: (level, msg) => (level === 'error' ? emitError(msg) : level === 'warn' ? emitWarning(msg) : emitInfo(msg)),
         });
         curPipeline = pipeline;
+        testTweak.attach(pipeline);
         for (const c of controllers) {
             const r = c.report;
             emitInfo(`Status: ${r?.name}: ${r?.status}(${r?.error})${r?.notice ? ` ${r.notice}` : ''}`);
@@ -3650,6 +3682,7 @@ async function processQueue() {
         }
     } finally {
         curPipeline = undefined;
+        testTweak.attach(undefined);
         await pipeline.close();
     }
 }
@@ -3731,7 +3764,15 @@ function overlayCommand(cmd: OverlayCommand): OverlayResult {
 
 /** An idle black frame: previews see it, and the output worker sends it only when idle black is enabled. */
 function presentIdleBlack(pipeline: PixelPipeline, targetRTC: number) {
-    pipeline.compose({ timeMs: targetRTC, frameIntervalMs: playbackParams.idleSleepInterval, frameNumber: -1, idle: true });
+    // Overlays and test patterns still light the display while idle, so the show brightness and tint apply.
+    pipeline.compose({
+        timeMs: targetRTC,
+        frameIntervalMs: playbackParams.idleSleepInterval,
+        frameNumber: -1,
+        idle: true,
+        brightness: brightnessNow / 100,
+        colorTemperature: colorTemperatureNow,
+    });
 }
 
 /**

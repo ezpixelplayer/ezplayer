@@ -32,6 +32,10 @@ import {
     scaleNodesRgb,
     colorTemperatureScale,
     COLOR_TEMP_NEUTRAL_K,
+    patternAnimates,
+    patternTargets,
+    SpatialPatternRenderer,
+    TargetCatalog,
     sharedInputMapProgram,
     StatsBlock,
     type BlendMode,
@@ -43,7 +47,9 @@ import {
     type LayoutModelSpec,
     type LayoutManifest,
     type OpenControllerReport,
+    type OutputModelAdjust,
     type OutputSpec,
+    type SpatialPatternParams,
     type SenderStats,
 } from '@ezplayer/epp';
 import type { GetNodeResult, SubModelResult, XlModelChannelInfo } from 'xllayoutcalcs';
@@ -99,6 +105,17 @@ export interface ComposeArgs {
     idle?: boolean;
 }
 
+/** A run of a model's nodes sent to a controller at channels other than the model's own. */
+export interface WiredRun {
+    model: string;
+    nodeStart: number;
+    nodeCount: number;
+    /** Controller name. */
+    controller: string;
+    /** Absolute 1-based channel of the first node. */
+    channel: number;
+}
+
 let nextPipelineId = 1;
 
 export class PixelPipeline {
@@ -127,6 +144,18 @@ export class PixelPipeline {
     private latestSenderStats: Record<string, SenderStats> = {};
     private readonly log: PixelPipelineOptions['log'];
     private closed = false;
+    /** Controller outputs as compiled at open, so the tweak layer can be recompiled over them. */
+    private outputSpecs: OutputSpec[] = [];
+    private adjust: Record<string, OutputModelAdjust> = {};
+    /** Rewired model runs, at the absolute 1-based channels the wiring plan gave them. */
+    private wired: WiredRun[] = [];
+    private skipModels: string[] = [];
+    /** What the output worker currently runs, so an unchanged configuration is not resent. */
+    private pushedKey = JSON.stringify([{}, [], []]);
+    /** Models and submodels a test can be aimed at. */
+    private readonly targets: TargetCatalog;
+    /** The running test pattern, painted over its targets ahead of the show brightness and the output trims. */
+    private test?: { renderer: SpatialPatternRenderer; models: string[]; startMs: number; expiresAt?: number; animates: boolean };
 
     private constructor(opts: PixelPipelineOptions, layout: DisplayLayout, specs: LayoutModelSpec[]) {
         this.layout = layout;
@@ -150,6 +179,7 @@ export class PixelPipeline {
         this.pinnedDescriptor = descriptorFromSpecs(specs, Math.max(opts.nChannels, layout.totalChannels));
         this.pinnedDescriptor.fingerprint = descriptorHash(this.pinnedDescriptor);
         this.overlays = new OverlayManager(layout, specs);
+        this.targets = new TargetCatalog(layout, specs);
     }
 
     /**
@@ -233,9 +263,88 @@ export class PixelPipeline {
         this.overlaySocket = sock;
     }
 
-    /** Idle frames can go slower unless an overlay is animating. */
+    /** Idle frames can go slower unless an overlay or a test pattern is running. */
     idleIntervalMs(fallback: number): number {
-        return this.overlays.size > 0 ? Math.min(fallback, 50) : fallback;
+        return this.overlays.size > 0 || this.test ? Math.min(fallback, 50) : fallback;
+    }
+
+    /**
+     * Set the per-model output trims (the tweak layer) and the rewired model
+     * runs, and recompile the controller outputs over them. The preview
+     * export is left as renderer intent in xLights channel space. Takes
+     * effect on the next frame.
+     */
+    configureOutputs(cfg: { adjust: Record<string, OutputModelAdjust>; strings: WiredRun[]; skipModels: string[] }) {
+        this.adjust = cfg.adjust;
+        this.wired = cfg.strings;
+        this.skipModels = cfg.skipModels;
+        this.pushOutputs();
+    }
+
+    private pushOutputs() {
+        if (this.closed || !this.outputSpecs.length) return;
+        const adjust = this.adjust;
+        const key = JSON.stringify([adjust, this.wired, this.skipModels]);
+        if (key === this.pushedKey) return;
+        this.pushedKey = key;
+        const has = Object.keys(adjust).length > 0;
+        const specs = this.outputSpecs.map((s): OutputSpec => {
+            const place = this.wired
+                .filter((w) => w.controller === s.id)
+                .map((w) => ({ model: w.model, nodeStart: w.nodeStart, nodeCount: w.nodeCount, dstOffset: w.channel - 1 - s.channelStart }))
+                .filter((seg) => seg.dstOffset >= 0);
+            return {
+                ...s,
+                ...(has ? { adjust } : {}),
+                ...(place.length ? { place } : {}),
+                ...(this.skipModels.length ? { skipModels: this.skipModels } : {}),
+            };
+        });
+        this.output.outputs(compileOutputMap(this.layout, specs).outputs.map(serializeOutput));
+    }
+
+    /** Pixel models a test may target. */
+    testableModels(): string[] {
+        return this.targets.modelNames();
+    }
+
+    /** How many submodels a model has. */
+    subModelCount(model: string): number {
+        return this.targets.subModelNames(model).length;
+    }
+
+    /**
+     * Start (or replace) the test pattern on these models and submodels
+     * ("Model/Submodel"). Returns the targets actually painted; names the
+     * layout does not have are dropped.
+     */
+    startTest(names: string[], pattern: SpatialPatternParams, opts: { ttlMs?: number } = {}): string[] {
+        const targets = patternTargets(this.targets, names);
+        const painted = targets.map((t) => t.name);
+        const prev = this.test;
+        // Keep the clock when only the pattern changed, so dragging a slider does not restart the motion.
+        const sameTargets = !!prev && prev.models.length === painted.length && prev.models.every((n, i) => n === painted[i]);
+        const now = Date.now();
+        this.test = targets.length
+            ? {
+                  renderer: new SpatialPatternRenderer(this.layout, targets, pattern),
+                  models: painted,
+                  startMs: sameTargets ? prev!.startMs : now,
+                  expiresAt: opts.ttlMs ? now + opts.ttlMs : undefined,
+                  animates: patternAnimates(pattern),
+              }
+            : undefined;
+        return painted;
+    }
+
+    stopTest(): boolean {
+        if (!this.test) return false;
+        this.test = undefined;
+        return true;
+    }
+
+    testModels(): string[] | undefined {
+        return this.test?.models;
     }
 
     overlayStats() {
@@ -264,6 +373,7 @@ export class PixelPipeline {
             senderOutput[i] = outputSpecs.length;
             outputSpecs.push({ id: c.setup.name, channelStart: c.setup.startCh - 1, channelCount: c.setup.nCh, policy: 'controller' });
         });
+        p.outputSpecs = outputSpecs;
         const legacySpec: OutputSpec = { id: '<preview>', channelStart: 0, channelCount: opts.nChannels, policy: 'controller' };
         const omap = compileOutputMap(layout, [...outputSpecs, legacySpec]);
         const legacyOutput = omap.outputs[omap.outputs.length - 1];
@@ -360,7 +470,18 @@ export class PixelPipeline {
             black = false;
             flags &= ~FRAME_FLAG_IDLE;
         }
-        if (black) flags |= FRAME_FLAG_BLACK;
+        // A test pattern replaces whatever its targets were showing. It is generated content like the
+        // rest, so the show brightness and tint below and the per-model output trims all apply to it.
+        if (this.test) {
+            if (this.test.expiresAt !== undefined && now >= this.test.expiresAt) {
+                this.log('info', '[test] test pattern timed out');
+                this.stopTest();
+            } else {
+                this.test.renderer.render(bytes, stride, Math.max(0, now - this.test.startMs));
+                black = false;
+                flags &= ~FRAME_FLAG_IDLE;
+            }
+        }
         if (!black) {
             const b = a.brightness ?? 1;
             const [kr, kg, kb] = this.tintFor(a.colorTemperature ?? COLOR_TEMP_NEUTRAL_K);
@@ -369,6 +490,7 @@ export class PixelPipeline {
                 scaleNodesRgb(bytes, stride, 0, L.nodeCount, kr * b, kg * b, kb * b, L.xMeaning === 2 ? b : 1);
             }
         }
+        if (black) flags |= FRAME_FLAG_BLACK;
         this.pool.publish(slot, {
             frameNumber: a.frameNumber,
             pipelineId: this.id,
