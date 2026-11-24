@@ -18,4 +18,5 @@ export type OverlayResult =
     | { ok: true; leases: OverlayLeaseInfo[] }
     | { ok: true; lease: OverlayLeaseInfo; udpPort: number }
     | { ok: true }
-    | { ok: false; error: string };
+    /** `conflict`: an exclusive lease holds the nodes; `heldBy` says which. */
+    | { ok: false; error: string; code?: 'conflict'; heldBy?: OverlayLeaseInfo };

@@ -438,6 +438,7 @@ for (const job of jobs) {
         const res = await api('POST', '', {
             model: job.target.target,
             format: job.format,
+            mode: 'layer',
             overlap: 'max',
             ttlMs: TTL_MS,
             name: 'overlay-submodels',

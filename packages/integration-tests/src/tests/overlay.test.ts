@@ -3,7 +3,7 @@
  *  controller while the player is idle. Closing the lease returns the wire
  *  to black. */
 
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import dgram from 'node:dgram';
 import { startMockController, type MockController } from '@ezplayer/epp-mock-controller';
 import { packetizeOverlayFrame } from '@ezplayer/epp';
@@ -45,6 +45,12 @@ afterAll(async () => {
     await show?.cleanup();
 });
 
+// A lease a failed attempt left behind would refuse the retry's exclusive open.
+beforeEach(async () => {
+    const { leases = [] } = (await (await fetch(`${app.base}/api/ezp/overlays`)).json()) as { leases?: Lease[] };
+    for (const l of leases) await fetch(`${app.base}/api/ezp/overlays/${l.id}?token=${l.token}`, { method: 'DELETE' });
+});
+
 describe('overlay leases', () => {
     it('lists the fixture model as a target', async () => {
         const res = await fetch(`${app.base}/api/ezp/overlays/targets`);
@@ -59,7 +65,7 @@ describe('overlay leases', () => {
         const open = await fetch(`${app.base}/api/ezp/overlays`, {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ model: 'Line1', format: 'nodes', name: 'it-overlay' }),
+            body: JSON.stringify({ model: 'Line1', format: 'nodes', mode: 'exclusive', name: 'it-overlay' }),
         });
         expect(open.status).toBe(200);
         const opened = (await open.json()) as { ok: boolean; lease: Lease; udpPort: number };
@@ -105,5 +111,51 @@ describe('overlay leases', () => {
         const close = await fetch(`${app.base}/api/ezp/overlays/${lease.id}?token=${lease.token}`, { method: 'DELETE' });
         expect(close.status).toBe(200);
         await waitForWire((b) => b.every((v) => v === 0), 'black after close');
+    });
+
+    it('refuses a second exclusive lease on the model with 409 and names the holder; a layer gets through', async () => {
+        const open = (body: object) =>
+            fetch(`${app.base}/api/ezp/overlays`, {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+        const close = (l: Lease) => fetch(`${app.base}/api/ezp/overlays/${l.id}?token=${l.token}`, { method: 'DELETE' });
+
+        const first = await open({ model: 'Line1', format: 'nodes', mode: 'exclusive', name: 'first game' });
+        expect(first.status).toBe(200);
+        const held = ((await first.json()) as { lease: Lease }).lease;
+
+        const second = await open({ model: 'Line1', format: 'nodes', mode: 'exclusive', name: 'second game' });
+        expect(second.status).toBe(409);
+        const refused = (await second.json()) as { ok: boolean; error: string; code?: string; heldBy?: { id: number; name: string } };
+        expect(refused.ok).toBe(false);
+        expect(refused.code).toBe('conflict');
+        expect(refused.error).toBe('Line1 is in use by first game');
+        expect(refused.heldBy?.id).toBe(held.id);
+        expect(refused.heldBy?.name).toBe('first game');
+
+        // A whole-display lease covers the model too.
+        const whole = await open({ format: 'nodes', mode: 'exclusive', name: 'everything' });
+        expect(whole.status).toBe(409);
+
+        const layer = await open({ model: 'Line1', format: 'nodes', mode: 'layer', name: 'glow' });
+        expect(layer.status).toBe(200);
+        const glow = ((await layer.json()) as { lease: Lease }).lease;
+
+        // Both fields are required.
+        const noMode = await open({ model: 'Line1', format: 'nodes', name: 'nameless mode' });
+        expect(noMode.status).toBe(400);
+        expect(await noMode.text()).toContain('mode');
+        const noName = await open({ model: 'Line1', format: 'nodes', mode: 'exclusive' });
+        expect(noName.status).toBe(400);
+        expect(await noName.text()).toContain('name');
+
+        // Closing the holder frees the model.
+        expect((await close(held)).status).toBe(200);
+        const again = await open({ model: 'Line1', format: 'nodes', mode: 'exclusive', name: 'second game' });
+        expect(again.status).toBe(200);
+        await close(((await again.json()) as { lease: Lease }).lease);
+        await close(glow);
     });
 });

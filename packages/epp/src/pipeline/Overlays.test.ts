@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { compileLayout, LayoutModelSpec } from './Layout';
-import { decodeOverlayPacket, OverlayManager, packetizeOverlayFrame } from './Overlays';
+import { decodeOverlayPacket, OverlayConflictError, OverlayManager, packetizeOverlayFrame } from './Overlays';
 
 const RGB = [
     { offset: 0, kind: 'red' as const },
@@ -8,9 +8,19 @@ const RGB = [
     { offset: 2, kind: 'blue' as const },
 ];
 
-function show() {
-    const specs: LayoutModelSpec[] = [
-        { name: 'Strip', startChannel: 0, nodeCount: 10, channelsPerNode: 3, roles: RGB },
+/** The strip's even nodes 0, 2 and 4 as a submodel, so its nodes are not one run. */
+const EVENS = {
+    name: 'Evens',
+    nodes: Int32Array.from([0, 2, 4]),
+    strands: [3],
+    vertical: false,
+    bufferStyle: 'Default',
+    buffer: { width: 3, height: 1, cells: Int32Array.from([0, 0, 0, 1, 1, 0, 2, 2, 0]) },
+};
+
+function specs(): LayoutModelSpec[] {
+    return [
+        { name: 'Strip', startChannel: 0, nodeCount: 10, channelsPerNode: 3, roles: RGB, subModels: [EVENS] },
         {
             name: 'Matrix',
             startChannel: 30,
@@ -21,8 +31,13 @@ function show() {
             grid: { width: 3, height: 2, xy: Int32Array.from([0, 0, 0, 1, 1, 0, 1, 1, 2, 0, 2, 1]) },
         },
     ];
-    return compileLayout(specs);
 }
+
+function show() {
+    return compileLayout(specs());
+}
+
+const X = { mode: 'exclusive' as const, name: 'test' };
 
 describe('OverlayManager', () => {
     it('opens a grid lease on a matrix and composites top-first rows into bottom-first canonical order', () => {
@@ -32,7 +47,7 @@ describe('OverlayManager', () => {
             { model: 'Strip', nodeCount: 10, width: undefined, height: undefined },
             { model: 'Matrix', nodeCount: 6, width: 3, height: 2 },
         ]);
-        const lease = ov.open({ model: 'Matrix' }, 1000);
+        const lease = ov.open({ ...X, model: 'Matrix' }, 1000);
         expect(lease.format).toBe('grid');
         expect(lease.width).toBe(3);
         expect(lease.height).toBe(2);
@@ -60,7 +75,7 @@ describe('OverlayManager', () => {
     it('rejects a bad token, expires, and blends with opacity', () => {
         const layout = show();
         const ov = new OverlayManager(layout);
-        const lease = ov.open({ model: 'Strip', format: 'nodes', blend: 'max', opacity: 0.5, ttlMs: 1000 }, 0);
+        const lease = ov.open({ ...X, model: 'Strip', format: 'nodes', blend: 'max', opacity: 0.5, ttlMs: 1000 }, 0);
         const payload = new Uint8Array(30).fill(200);
         expect(ov.write(lease.id, lease.token ^ 1, 1, 0, payload, true, 10)).toBe(false);
         expect(ov.write(lease.id, lease.token, 1, 0, payload, true, 10)).toBe(true);
@@ -77,7 +92,7 @@ describe('OverlayManager', () => {
     it('resamples a grid onto a strip and assembles fragments', () => {
         const layout = show();
         const ov = new OverlayManager(layout);
-        const lease = ov.open({ model: 'Strip', format: 'grid', width: 5, height: 1 }, 0);
+        const lease = ov.open({ ...X, model: 'Strip', format: 'grid', width: 5, height: 1 }, 0);
         const payload = new Uint8Array(15);
         for (let x = 0; x < 5; ++x) payload[x * 3 + 1] = (x + 1) * 40;
         const packets = packetizeOverlayFrame(lease.id, lease.token, 7, payload);
@@ -101,7 +116,7 @@ describe('OverlayManager', () => {
         const layout = show();
         const ov = new OverlayManager(layout);
         // 1x2 payload on the 3x2 matrix: top cell red, bottom cell green.
-        const lease = ov.open({ model: 'Matrix', width: 1, height: 2 }, 0);
+        const lease = ov.open({ ...X, model: 'Matrix', width: 1, height: 2 }, 0);
         expect(ov.write(lease.id, lease.token, 1, 0, Uint8Array.from([255, 0, 0, 0, 255, 0]), true, 0)).toBe(true);
         const frame = new Uint8Array(layout.frameBytes);
         ov.composite(frame, 3);
@@ -119,5 +134,75 @@ describe('OverlayManager', () => {
         expect(decoded.map((d) => d.last)).toEqual([false, false, true]);
         expect(decoded.map((d) => d.offset)).toEqual([0, 1400, 2800]);
         expect(decoded[2].data.length).toBe(200);
+    });
+});
+
+describe('exclusive leases', () => {
+    it('needs a mode and a name', () => {
+        const ov = new OverlayManager(show());
+        expect(() => ov.open({ model: 'Strip', name: 'x' } as never, 0)).toThrow(/mode/);
+        expect(() => ov.open({ model: 'Strip', mode: 'exclusive', name: '  ' }, 0)).toThrow(/name/);
+        expect(ov.size).toBe(0);
+    });
+
+    it('refuses a second exclusive lease on the model and names the holder', () => {
+        const ov = new OverlayManager(show());
+        const race = ov.open(
+            { model: 'Matrix', mode: 'exclusive', name: 'race-to-the-star', owner: { instance: 'race-front', title: 'Race Front Tree' } },
+            0,
+        );
+        let err: unknown;
+        try {
+            ov.open({ model: 'Matrix', mode: 'exclusive', name: 'tetris' }, 0);
+        } catch (e) {
+            err = e;
+        }
+        expect(err).toBeInstanceOf(OverlayConflictError);
+        const conflict = err as OverlayConflictError;
+        expect(conflict.heldBy.id).toBe(race.id);
+        expect(conflict.target).toBe('Matrix');
+        // The instance title names the holder; without an owner it would be the lease name.
+        expect(conflict.message).toBe('Matrix is in use by Race Front Tree');
+        expect(ov.size).toBe(1);
+        // Another model is free, and so is this one once the holder is gone.
+        ov.open({ model: 'Strip', mode: 'exclusive', name: 'other' }, 0);
+        ov.close(race.id);
+        const tetris = ov.open({ model: 'Matrix', mode: 'exclusive', name: 'tetris' }, 0);
+        expect(tetris.mode).toBe('exclusive');
+        expect(tetris.owner).toBeUndefined();
+        expect(() => ov.open({ model: 'Matrix', mode: 'exclusive', name: 'another' }, 0)).toThrow('Matrix is in use by tetris');
+    });
+
+    it('frees the nodes when the holder expires', () => {
+        const ov = new OverlayManager(show());
+        ov.open({ model: 'Matrix', mode: 'exclusive', name: 'crashed game', ttlMs: 1000 }, 0);
+        expect(() => ov.open({ model: 'Matrix', mode: 'exclusive', name: 'next' }, 500)).toThrow(OverlayConflictError);
+        expect(ov.expire(1001).length).toBe(1);
+        ov.open({ model: 'Matrix', mode: 'exclusive', name: 'next' }, 1001);
+    });
+
+    it('lets layers through in both directions', () => {
+        const ov = new OverlayManager(show());
+        ov.open({ model: 'Matrix', mode: 'layer', name: 'glow' }, 0);
+        ov.open({ model: 'Matrix', mode: 'exclusive', name: 'tetris' }, 0);
+        ov.open({ model: 'Matrix', mode: 'layer', name: 'sparkle' }, 0);
+        ov.open({ mode: 'layer', name: 'whole display wash' }, 0);
+        expect(ov.size).toBe(4);
+    });
+
+    it('counts the display, a model and its submodel as the same nodes', () => {
+        const layout = show();
+        const ov = new OverlayManager(layout, specs());
+        const evens = ov.open({ model: 'Strip/Evens', mode: 'exclusive', name: 'evens' }, 0);
+        expect(evens.nodeStart).toBe(-1);
+        expect(() => ov.open({ model: 'Strip', mode: 'exclusive', name: 'strip' }, 0)).toThrow('Strip is in use by evens');
+        expect(() => ov.open({ mode: 'exclusive', name: 'all' }, 0)).toThrow('The display is in use by evens');
+        // The matrix shares no node with the submodel.
+        const matrix = ov.open({ model: 'Matrix', mode: 'exclusive', name: 'matrix' }, 0);
+        ov.close(evens.id);
+        expect(() => ov.open({ mode: 'exclusive', name: 'all' }, 0)).toThrow('The display is in use by matrix');
+        ov.close(matrix.id);
+        ov.open({ mode: 'exclusive', name: 'all' }, 0);
+        expect(() => ov.open({ model: 'Strip/Evens', mode: 'exclusive', name: 'evens' }, 0)).toThrow('Strip/Evens is in use by all');
     });
 });

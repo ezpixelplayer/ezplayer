@@ -112,7 +112,7 @@ describe('overlay leases on submodels', () => {
     it('paints a submodel through its buffer, top row first', () => {
         const { layout, specs, spinner } = show();
         const ov = new OverlayManager(layout, specs);
-        const lease = ov.open({ model: 'Spinner/Arms' }, 0);
+        const lease = ov.open({ mode: 'layer', name: 't', model: 'Spinner/Arms' }, 0);
         expect(lease).toMatchObject({ model: 'Spinner', subModel: 'Arms', format: 'buffer', width: 2, height: 2, frameBytes: 12, nodeStart: -1, nodeCount: 4 });
         // Top row (the second arm) red, bottom row (the first arm) blue.
         const payload = Uint8Array.from([255, 0, 0, 255, 0, 0, 0, 0, 255, 0, 0, 255]);
@@ -130,7 +130,7 @@ describe('overlay leases on submodels', () => {
     it('takes one color per node in listed order', () => {
         const { layout, specs, spinner } = show();
         const ov = new OverlayManager(layout, specs);
-        const lease = ov.open({ model: 'Spinner', subModel: 'Arms', format: 'nodes' }, 0);
+        const lease = ov.open({ mode: 'layer', name: 't', model: 'Spinner', subModel: 'Arms', format: 'nodes' }, 0);
         expect(lease.frameBytes).toBe(12);
         ov.write(lease.id, lease.token, 1, 0, Uint8Array.from([1, 0, 0, 2, 0, 0, 3, 0, 0, 4, 0, 0]), true, 1);
         const node = composited(ov, layout.frameBytes);
@@ -143,7 +143,7 @@ describe('overlay leases on submodels', () => {
         const payload = Uint8Array.from([10, 200, 0, 20, 0, 0, 30, 0, 0, 40, 100, 0]);
         const crossing = (overlap?: 'last' | 'first' | 'max') => {
             const ov = new OverlayManager(layout, specs);
-            const lease = ov.open({ model: 'Spinner/Loop', overlap }, 0);
+            const lease = ov.open({ mode: 'layer', name: 't', model: 'Spinner/Loop', overlap }, 0);
             expect(lease.overlap).toBe(overlap ?? 'last');
             ov.write(lease.id, lease.token, 1, 0, payload, true, 1);
             return composited(ov, layout.frameBytes)(spinner + 1);
@@ -156,7 +156,7 @@ describe('overlay leases on submodels', () => {
     it('addresses a whole model as a sparse grid, and scales a smaller picture onto it', () => {
         const { layout, specs, spinner } = show();
         const ov = new OverlayManager(layout, specs);
-        const lease = ov.open({ model: 'Spinner', format: 'buffer' }, 0);
+        const lease = ov.open({ mode: 'layer', name: 't', model: 'Spinner', format: 'buffer' }, 0);
         expect(lease).toMatchObject({ width: 5, height: 5, frameBytes: 75, nodeStart: spinner });
         const payload = new Uint8Array(75);
         payload[2 * 3] = 99; // top row, middle: node 0 at (2, 4)
@@ -170,14 +170,14 @@ describe('overlay leases on submodels', () => {
 
         // 1 wide, 2 high: the top half green, the bottom half blue.
         const ov2 = new OverlayManager(layout, specs);
-        const half = ov2.open({ model: 'Spinner', format: 'buffer', width: 1, height: 2 }, 0);
+        const half = ov2.open({ mode: 'layer', name: 't', model: 'Spinner', format: 'buffer', width: 1, height: 2 }, 0);
         ov2.write(half.id, half.token, 1, 0, Uint8Array.from([0, 255, 0, 0, 0, 255]), true, 1);
         node = composited(ov2, layout.frameBytes);
         expect(node(spinner + 0)).toEqual([0, 255, 0]);
         expect(node(spinner + 4)).toEqual([0, 0, 255]);
         // A model with no known buffer cannot be opened this way.
-        expect(() => ov2.open({ model: 'Strip', format: 'buffer' }, 0)).toThrow(/buffer/);
-        expect(() => ov2.open({ model: 'Spinner/Nope' }, 0)).toThrow(/Spinner\/Nope/);
+        expect(() => ov2.open({ mode: 'layer', name: 't', model: 'Strip', format: 'buffer' }, 0)).toThrow(/buffer/);
+        expect(() => ov2.open({ mode: 'layer', name: 't', model: 'Spinner/Nope' }, 0)).toThrow(/Spinner\/Nope/);
     });
 });
 

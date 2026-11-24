@@ -11,10 +11,13 @@ import {
     DialogTitle,
     Divider,
     FormControl,
+    FormControlLabel,
     IconButton,
     InputLabel,
     MenuItem,
     Paper,
+    Radio,
+    RadioGroup,
     Select,
     Stack,
     Switch,
@@ -39,10 +42,12 @@ import type {
     AppInstanceStatus,
     AppsCommand,
     AppsState,
+    CloudPollScheduleEntry,
     InstalledApp,
 } from '@ezplayer/ezplayer-core';
 import { Box } from '../../box/Box';
 import { useFrameServerUrl } from '../../../hooks/useFrameServerUrl';
+import { WindowListEditor } from './WindowListEditor';
 
 export const APPS_SETTINGS_SECTION_KEY = 'apps';
 
@@ -147,6 +152,8 @@ export const AppsSettings: React.FC = () => {
             )}
 
             <InstancesSection state={state} appsById={appsById} busy={busy} playerUrl={url ?? ''} command={command} />
+            <Divider />
+            <AvailabilitySection state={state} busy={busy} command={command} />
             <Divider />
             <InstalledAppsSection state={state} busy={busy} command={command} />
             <Divider />
@@ -372,6 +379,26 @@ const InstanceRow: React.FC<{
                     />
                     <TextField
                         size="small"
+                        multiline
+                        minRows={2}
+                        label="Description shown to visitors"
+                        defaultValue={inst.description ?? ''}
+                        placeholder={manifest?.description}
+                        helperText="Say where to go to play, like “Tetris on the big tree by the nutcracker”. Blank uses the app's own words."
+                        inputProps={{ maxLength: 300 }}
+                        onBlur={(e) => {
+                            if ((e.target.value || '') !== (inst.description ?? '')) {
+                                void command({
+                                    op: 'setInstance',
+                                    name: inst.name,
+                                    patch: { description: e.target.value },
+                                });
+                            }
+                        }}
+                    />
+                    <InstanceAvailability inst={inst} busy={busy} command={command} />
+                    <TextField
+                        size="small"
                         type="number"
                         label="Events per minute accepted"
                         defaultValue={inst.eventsPerMinute ?? manifest?.events?.perMinute ?? 600}
@@ -463,6 +490,69 @@ const Report: React.FC<{ inst: AppInstanceStatus }> = ({ inst }) => {
                 >
                     {r.logTail.join('\n')}
                 </Typography>
+            )}
+        </Box>
+    );
+};
+
+// -- availability -------------------------------------------------------------------
+
+/** The default windows every instance follows unless it has its own. */
+const AvailabilitySection: React.FC<{ state: AppsState; busy: string | null; command: Command }> = ({
+    state,
+    busy,
+    command,
+}) => (
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+        <Typography variant="h6">Availability</Typography>
+        <Typography color="text.secondary" variant="body2">
+            When enabled instances run. Outside these windows an instance is stopped and the show page does not
+            list it. Each instance can follow this default or have its own windows.
+        </Typography>
+        <WindowListEditor
+            schedule={state.defaultSchedule}
+            noun="availability window"
+            emptyText="Always, whenever the instance is enabled. Add a window to limit that."
+            disabled={busy !== null}
+            onChange={(schedule) => void command({ op: 'setDefaultSchedule', schedule })}
+        />
+    </Box>
+);
+
+/** One instance's choice: the default windows, or its own (none means always). */
+const InstanceAvailability: React.FC<{ inst: AppInstanceStatus; busy: string | null; command: Command }> = ({
+    inst,
+    busy,
+    command,
+}) => {
+    const own = inst.schedule !== undefined;
+    const set = (schedule: CloudPollScheduleEntry[] | null) =>
+        void command({ op: 'setInstance', name: inst.name, patch: { schedule } });
+    return (
+        <Box>
+            <Typography variant="subtitle2">Availability</Typography>
+            <RadioGroup row value={own ? 'own' : 'default'} onChange={(e) => set(e.target.value === 'own' ? [] : null)}>
+                <FormControlLabel
+                    value="default"
+                    control={<Radio size="small" />}
+                    label="The Apps default"
+                    disabled={busy !== null}
+                />
+                <FormControlLabel
+                    value="own"
+                    control={<Radio size="small" />}
+                    label="Its own windows"
+                    disabled={busy !== null}
+                />
+            </RadioGroup>
+            {own && (
+                <WindowListEditor
+                    schedule={inst.schedule ?? []}
+                    noun="availability window"
+                    emptyText="Always, whenever enabled. Add a window to limit that."
+                    disabled={busy !== null}
+                    onChange={set}
+                />
             )}
         </Box>
     );

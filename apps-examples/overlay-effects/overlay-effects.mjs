@@ -41,7 +41,7 @@ const OPEN_CONCURRENCY = 8;
 async function api(method, path, body) {
     const res = await fetch(`${base}/api/ezp/overlays${path}`, {
         method,
-        headers: body ? { 'content-type': 'application/json' } : undefined,
+        headers: body ? { ...authHeaders, 'content-type': 'application/json' } : undefined,
         body: body ? JSON.stringify(body) : undefined,
     });
     const text = await res.text();
@@ -642,9 +642,11 @@ async function startRun() {
         const skipped = [];
         await pool(todo, OPEN_CONCURRENCY, async (tg) => {
             try {
+                // An effect is decoration: it layers over whatever else paints the model and never blocks a game.
                 const body = {
                     model: tg.target,
                     format: tg.format,
+                    mode: 'layer',
                     blend: settings.blend,
                     ttlMs: TTL_MS,
                     name: 'overlay-effects',

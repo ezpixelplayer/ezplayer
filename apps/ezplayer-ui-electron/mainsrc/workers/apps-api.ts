@@ -73,6 +73,15 @@ export class AppsRuntime {
         this.deps.setState('appStatuses', { ...this.statuses });
     }
 
+    /** The running instance behind an app token, for leases the process opens in its own name. */
+    ownerOf(token: string | undefined): { instance: string; title: string } | undefined {
+        if (!token) return undefined;
+        for (const [instance, entry] of Object.entries(this.instances)) {
+            if (entry.token === token) return { instance, title: entry.title };
+        }
+        return undefined;
+    }
+
     entry(name: string): AppsAuthEntry | undefined {
         return INSTANCE_RE.test(name) ? this.instances[name] : undefined;
     }

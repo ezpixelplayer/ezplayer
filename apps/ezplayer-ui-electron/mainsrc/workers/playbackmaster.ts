@@ -76,6 +76,8 @@ import {
     resolveShowAssetPath,
     ExplicitControllerDesc,
     readControllerRecordOverrides,
+    OverlayConflictError,
+    overlayHolderLabel,
 } from '@ezplayer/epp';
 
 import {
@@ -3731,7 +3733,7 @@ function overlayCommand(cmd: OverlayCommand): OverlayResult {
                 return { ok: true, leases: ov.list() };
             case 'open': {
                 const lease = ov.open(cmd.request, Date.now());
-                emitInfo(`[overlay] lease ${lease.id} opened on ${lease.model ?? '<display>'}${lease.subModel ? '/' + lease.subModel : ''} ${lease.width}x${lease.height} ${lease.format} ${lease.blend}`);
+                emitInfo(`[overlay] lease ${lease.id} (${lease.mode}, ${overlayHolderLabel(lease)}) opened on ${lease.model ?? '<display>'}${lease.subModel ? '/' + lease.subModel : ''} ${lease.width}x${lease.height} ${lease.format} ${lease.blend}`);
                 return { ok: true, lease, udpPort: p.overlayPort };
             }
             case 'close': {
@@ -3757,6 +3759,7 @@ function overlayCommand(cmd: OverlayCommand): OverlayResult {
             }
         }
     } catch (e) {
+        if (e instanceof OverlayConflictError) return { ok: false, error: e.message, code: 'conflict', heldBy: e.heldBy };
         return { ok: false, error: (e as Error).message };
     }
     return { ok: false, error: 'unknown op' };

@@ -25,6 +25,8 @@ The instance name is part of its page address, `/apps/<name>/`.
 Each instance has:
 
 - an **enabled** switch. An enabled instance starts when the show opens and runs while its schedule allows.
+- a **name** and a **description** shown to visitors. The description is the place to say where to go:
+  "Tetris on the big tree by the nutcracker". Blank uses the app's own words.
 - the **visitors' page**, at `http://<player>:3000/apps/<name>/` on the home network, and through the
   show's cloud page when the show page lists apps.
 - a **settings page** of its own, when the app has one, opened from the gear icon.
@@ -55,8 +57,10 @@ permissions, so install only what you trust.
 ## Schedules
 
 Outside its availability window an instance is stopped, its page says "not available right now", and
-the show page does not list it. An instance with no schedule of its own follows the apps default
-schedule; an empty schedule means always.
+the show page does not list it. When nothing is running the show page says so in one line.
+
+**Availability** on the Apps card holds the default windows every instance follows. Each instance can
+switch to **its own windows** in its details. No windows, in either place, means always.
 
 ## Show inputs
 
@@ -77,3 +81,11 @@ The player's API for apps is small and plain HTTP. See the [Apps API](../referen
 in the reference: the manifest format, the environment an app process gets, events in, status out,
 documents, and the page SDK. The tetris example in the source tree, `apps-examples/tetris/`, uses
 all of it in a few hundred lines.
+
+An app paints the lights through an [overlay lease](../reference/api.md#overlay-leases-apiezpoverlays).
+A game opens an **exclusive** lease on its model: while it holds the lease no other game can take
+that model, and a game that tries is told who has it ("Front Tree is in use by Race Front Tree"), so
+two instances pointed at the same tree never paint over each other. Hold the lease only while
+something is on the lights and release it between games, so the show and the other apps get the
+model back. A background effect opens a **layer** instead, which blends over whatever is there and
+blocks nothing.

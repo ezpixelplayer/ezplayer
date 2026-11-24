@@ -1218,6 +1218,8 @@ Submodels are overlay targets only. They are not in the frame pool manifest and 
 
 Payloads travel over UDP (fast, lossy, meant for animation) or as a raw `PUT` (simple clients). Either one also renews the lease. A lease with no traffic for `ttlMs` is dropped.
 
+A lease is **exclusive** or a **layer**. An exclusive lease is refused while another exclusive lease holds any of the same nodes, so two games cannot fight over one tree: a lease on a model covers its submodels, and a lease on the whole display covers everything. A layer blends over whatever is there and never blocks anything, which is what a background effect wants. Every lease carries a `name`; an app that sends its `x-ezp-app-token` holds the lease under its instance title, and a refused client is told who has the model.
+
 #### GET /api/ezp/overlays/targets
 
 Models that can take an overlay, with their grid sizes. `subModels` is how many submodels a model has, when it has any.
@@ -1262,10 +1264,12 @@ A client can use these to draw by position: compute a color for each node from w
 
 #### POST /api/ezp/overlays
 
-Open a lease. Body (all optional except that a grid needs a size when the model has none):
+Open a lease. Body (`mode` and `name` are required; a grid also needs a size when the model has none):
 
 | Field     | Meaning                                                          |
 | --------- | ---------------------------------------------------------------- |
+| `mode`    | `exclusive` (a game: refused while another exclusive lease holds any of the nodes) or `layer` (an effect: blends over anything, blocks nothing) |
+| `name`    | Who is painting, shown in the lease list and in "in use" errors  |
 | `model`   | Model name or `Model/Submodel`; the whole display when omitted   |
 | `subModel` | Submodel of `model`, as an alternative to naming it in `model`  |
 | `format`  | `grid` (default for grid models), `nodes`, or `buffer` (default for submodels) |
@@ -1275,7 +1279,8 @@ Open a lease. Body (all optional except that a grid needs a size when the model 
 | `blend`   | `replace` (default), `max`, `underlay`, `add`, `subtract`, `multiply`, `screen`, `alpha`, `min` |
 | `opacity` | 0..1, default 1                                                  |
 | `ttlMs`   | Expiry after the last payload, default 30000                     |
-| `name`    | Free text, shown in the lease list                               |
+
+An app process sends its `x-ezp-app-token` header too; the lease then carries `owner` (`instance` and `title`) and the title is what other clients are told.
 
 Response:
 
@@ -1283,13 +1288,24 @@ Response:
 {
   "ok": true,
   "udpPort": 4049,
-  "lease": { "id": 3, "token": 2810465117, "model": "Matrix", "format": "grid", "width": 64, "height": 32,
+  "lease": { "id": 3, "token": 2810465117, "name": "tetris", "mode": "exclusive",
+             "owner": { "instance": "tetris-front", "title": "Tetris Front Tree" },
+             "model": "Matrix", "format": "grid", "width": 64, "height": 32,
              "nodeStart": 4096, "nodeCount": 2048, "frameBytes": 6144, "blend": "replace", "opacity": 1,
              "ttlMs": 30000, "expiresAt": 1789357165034, "frames": 0 }
 }
 ```
 
 `frameBytes` is the exact payload size the lease expects (`width * height * 3`, or `nodeCount * 3`). The `token` must accompany every payload and every later call. A lease on a submodel also reports `subModel`, and its `nodeStart` is -1 when the submodel's nodes are not next to each other in the frame.
+
+When an exclusive lease is refused the status is `409` and the body names the holder, so a game can tell its players who has the lights and try again when that lease closes or expires:
+
+```json
+{ "ok": false, "error": "Matrix is in use by Race Front Tree", "code": "conflict",
+  "heldBy": { "id": 2, "name": "race-to-the-star", "mode": "exclusive", "owner": { "instance": "race-front", "title": "Race Front Tree" }, "model": "Matrix", "expiresAt": 1789357165034 } }
+```
+
+A bad request (a missing `mode` or `name`, an unknown model) is `400`.
 
 With `format: "nodes"` a model takes its nodes in frame order and a submodel takes them in the order its lines list them, each node once. With `format: "grid"` a target that has no dense grid is treated as one strip in that same order.
 

@@ -1673,9 +1673,14 @@ async function dispatchHttpProxy(
     // Device web-UI bridge — must run before the method split so device POSTs
     // (login forms, config writes) work too.
     if (pathStr.startsWith('/proxy/')) return dispatchDeviceProxy(pathStr, query, req);
-    // App pages, events, status, documents and show inputs: our own Koa routes answer
-    // these, so forward to ourselves and mark the traffic as the cloud's.
-    if (pathStr.startsWith('/apps/') || pathStr.startsWith('/api/ezp/apps') || pathStr.startsWith('/api/ezp/inputs/')) {
+    // App pages, events, status, documents, show inputs and Test + Tweak: our own Koa
+    // routes answer these, so forward to ourselves and mark the traffic as the cloud's.
+    if (
+        pathStr.startsWith('/apps/') ||
+        pathStr.startsWith('/api/ezp/apps') ||
+        pathStr.startsWith('/api/ezp/inputs/') ||
+        pathStr.startsWith('/api/ezp/testtweak')
+    ) {
         return dispatchSelfForward(pathStr, query, req);
     }
     if (method !== 'GET') return dispatchProxyWrite(pathStr, method, req);
@@ -2576,8 +2581,8 @@ async function startServer(config: ServerWorkerData) {
         try {
             const res = await rpc.call('overlayCommand', cmd);
             if (!res.ok) {
-                // Not up yet (player starting) is a 503; a bad request is a 400.
-                ctx.status = res.error === 'player not running' ? 503 : 400;
+                // Not up yet (player starting) is a 503; a model another exclusive lease holds is a 409; a bad request is a 400.
+                ctx.status = res.error === 'player not running' ? 503 : res.code === 'conflict' ? 409 : 400;
                 ctx.body = res;
                 return;
             }
@@ -2597,9 +2602,12 @@ async function startServer(config: ServerWorkerData) {
         return overlayCall(ctx, { op: 'targets', model, detail });
     });
     router.get('/api/ezp/overlays', (ctx) => overlayCall(ctx, { op: 'list' }));
-    router.post('/api/ezp/overlays', (ctx) =>
-        overlayCall(ctx, { op: 'open', request: (ctx.request.body ?? {}) as OverlayLeaseRequest }),
-    );
+    router.post('/api/ezp/overlays', (ctx) => {
+        // An app that sends its token holds the lease under its instance title; nobody can claim one in the body.
+        const { owner: _claimed, ...request } = (ctx.request.body ?? {}) as OverlayLeaseRequest;
+        const owner = appsRuntime.ownerOf(ctx.get('x-ezp-app-token') || undefined);
+        return overlayCall(ctx, { op: 'open', request: owner ? { ...request, owner } : request });
+    });
     router.delete('/api/ezp/overlays/:id', (ctx) =>
         overlayCall(ctx, { op: 'close', id: overlayId(ctx), token: overlayToken(ctx) }),
     );

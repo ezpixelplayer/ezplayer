@@ -138,7 +138,7 @@ export function publishNow(): void {
             running: p?.view.state === 'running' || p?.view.state === 'starting',
             title: rec.title ?? app.manifest.name,
             icon: app.manifest.icon,
-            description: app.manifest.description,
+            description: rec.description ?? app.manifest.description,
             eventsPerMinute: rec.eventsPerMinute ?? app.manifest.events?.perMinute,
             clientPerSecond: app.manifest.events?.perClientPerSecond,
         };
@@ -315,10 +315,13 @@ async function run(cmd: AppsCommand): Promise<void> {
         case 'setInstance': {
             const rec = file.instances.find((i) => i.name === cmd.name);
             if (!rec) throw new Error(`no instance named ${cmd.name}`);
-            const { enabled, schedule, title, eventsPerMinute } = cmd.patch;
+            const { enabled, schedule, title, description, eventsPerMinute } = cmd.patch;
             if (enabled !== undefined) rec.enabled = !!enabled;
-            if (schedule !== undefined) rec.schedule = schedule.length ? schedule : undefined;
+            if (schedule !== undefined) rec.schedule = schedule ?? undefined;
             if (title !== undefined) rec.title = title.trim() ? title.trim().slice(0, 80) : undefined;
+            if (description !== undefined) {
+                rec.description = description.trim() ? description.trim().slice(0, 300) : undefined;
+            }
             if (eventsPerMinute !== undefined) {
                 rec.eventsPerMinute = Number.isFinite(eventsPerMinute) ? Math.max(1, eventsPerMinute) : undefined;
             }

@@ -1385,7 +1385,9 @@ export interface AppInstanceRecord {
     schedule?: CloudPollScheduleEntry[];
     /** Shown to visitors; defaults to the app's name. */
     title?: string;
-    /** Events per minute this instance accepts in total (default 20). */
+    /** Shown to visitors under the title, typically where to go to play; defaults to the app's own. */
+    description?: string;
+    /** Events per minute this instance accepts in total (default 600). */
     eventsPerMinute?: number;
 }
 
@@ -1471,7 +1473,14 @@ export type AppsCommand =
     | { op: 'createInstance'; name: string; appId: string; title?: string }
     | { op: 'findPython' }
     | { op: 'removeInstance'; name: string; keepData?: boolean }
-    | { op: 'setInstance'; name: string; patch: Partial<Omit<AppInstanceRecord, 'name' | 'appId'>> }
+    /** `schedule: null` goes back to the apps default; `[]` means always. */
+    | {
+          op: 'setInstance';
+          name: string;
+          patch: Partial<Omit<AppInstanceRecord, 'name' | 'appId' | 'schedule'>> & {
+              schedule?: CloudPollScheduleEntry[] | null;
+          };
+      }
     | { op: 'start'; name: string }
     | { op: 'stop'; name: string }
     | { op: 'restart'; name: string }
