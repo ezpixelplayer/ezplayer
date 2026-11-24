@@ -2,6 +2,8 @@ import { Navigate, RouteObject } from 'react-router-dom';
 import { useState } from 'react';
 import { useSelector } from 'react-redux';
 import {
+    AppsSettings,
+    APPS_SETTINGS_SECTION_KEY,
     AudioSettings,
     BrightnessSettings,
     CloudPage,
@@ -39,6 +41,7 @@ import {
 import type { MenuRoute, RootState, SettingsSection } from '@ezplayer/player-ui-components';
 
 import TableChartTwoToneIcon from '@mui/icons-material/TableChartTwoTone';
+import AppsIcon from '@mui/icons-material/Apps';
 import PlayArrow from '@mui/icons-material/PlayArrow';
 import InfoRounded from '@mui/icons-material/InfoRounded';
 import ListTwoToneIcon from '@mui/icons-material/ListTwoTone';
@@ -169,6 +172,12 @@ const EmbeddedSettingsPage = () => {
             title: 'Software Update',
             available: canUpdate,
             content: <SoftwareUpdateSettings />,
+        },
+        {
+            key: APPS_SETTINGS_SECTION_KEY,
+            label: 'Apps',
+            icon: <AppsIcon sx={{ fontSize: 56 }} />,
+            content: <AppsSettings />,
         },
         // Present only when available.
         shellSection,

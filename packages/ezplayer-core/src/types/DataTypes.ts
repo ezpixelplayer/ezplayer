@@ -1308,7 +1308,166 @@ export type FullPlayerState = {
     viewerStats?: ViewerStatsSummary;
     /** Extra link tiles for the Settings screen (--settings-link). */
     settingsLinks?: SettingsLink[];
+    /** Installed player apps and their instances, with supervisor state. */
+    apps?: AppsState;
+    /** The latest status snapshot each app instance published. */
+    appStatuses?: AppStatuses;
 };
+
+// -- player apps ---------------------------------------------------------------
+// Third-party programs that run next to the player: the player installs them into
+// the show folder, starts them, serves their pages, stores their data and routes
+// events to them. See doc/design/player-apps.md in the private repo.
+
+export type AppRuntime = 'node' | 'python3' | 'binary';
+
+/** An input an app instance accepts from the show (buttons, sensors), declared in its manifest. */
+export interface AppInputDecl {
+    name: string;
+    /** `event` is a press; `value` is a level or open/closed; `text` is a string. */
+    kind: 'event' | 'value' | 'text';
+    min?: number;
+    max?: number;
+}
+
+/** A static directory inside the package, or the instance's own HTTP server on its assigned port. */
+export type AppPageSource = string | { proxy: true };
+
+/** `ezapp.json` at the root of an app package. */
+export interface AppManifest {
+    /** Lower-case id, also the package directory name. */
+    id: string;
+    name: string;
+    version: string;
+    description?: string;
+    /** An emoji or a short string shown with the name. */
+    icon?: string;
+    runtime: AppRuntime;
+    /** Arguments after the runtime; for `binary`, the first is the executable. */
+    start: string[];
+    /** The page visitors open. */
+    page?: AppPageSource;
+    /** The show owner's settings page. */
+    config?: AppPageSource;
+    inputs?: AppInputDecl[];
+    /** process.platform values; absent means all. */
+    platforms?: string[];
+}
+
+export interface InstalledApp {
+    id: string;
+    /** Absolute package directory. */
+    dir: string;
+    manifest?: AppManifest;
+    /** Why the manifest could not be used, when it could not. */
+    error?: string;
+    /** Where it came from, when the installer recorded it; `update` fetches from here again. */
+    source?: AppInstallSource;
+    installedAt?: number;
+}
+
+/** One configured instance of an app, as stored in `.ezplayer/apps.json`. */
+export interface AppInstanceRecord {
+    name: string;
+    appId: string;
+    enabled: boolean;
+    /** Overrides the apps default schedule when present; empty means always available. */
+    schedule?: CloudPollScheduleEntry[];
+    /** Shown to visitors; defaults to the app's name. */
+    title?: string;
+    /** Events per minute this instance accepts in total (default 20). */
+    eventsPerMinute?: number;
+}
+
+export type AppInstanceState = 'disabled' | 'unavailable' | 'starting' | 'running' | 'stopped' | 'failed' | 'missing';
+
+export interface AppStartupReport {
+    /** The runtime executable that was used, when one was found. */
+    runtime?: string;
+    runtimeVersion?: string;
+    port?: number;
+    startedAt?: number;
+    firstStatusAt?: number;
+    lastExit?: string;
+    /** The most recent lines the process wrote. */
+    logTail: string[];
+}
+
+export interface AppInstanceStatus extends AppInstanceRecord {
+    state: AppInstanceState;
+    pid?: number;
+    restarts: number;
+    report: AppStartupReport;
+}
+
+/** Routes a named show input to an instance input. */
+export interface AppInputMapping {
+    source: string;
+    name: string;
+    instance: string;
+    input: string;
+}
+
+export interface AppsState {
+    apps: InstalledApp[];
+    instances: AppInstanceStatus[];
+    /** Empty means always available. */
+    defaultSchedule: CloudPollScheduleEntry[];
+    /** Where python3 was found, or what the owner set. */
+    pythonPath?: string;
+    /** Pythons found on this computer by `findPython`, for the owner to pick from. */
+    pythonCandidates?: { path: string; version: string }[];
+    inputMappings: AppInputMapping[];
+    /** The last install or command error, for the Apps card. */
+    lastError?: string;
+    /** Whether bundled example apps are available to install. */
+    hasExamples?: boolean;
+}
+
+export interface AppStatusSnapshot {
+    seq: number;
+    at: number;
+    state: unknown;
+}
+
+export type AppStatuses = Record<string, AppStatusSnapshot>;
+
+/** One event delivered to an app instance. */
+export interface AppEvent {
+    id: number;
+    ts: number;
+    /** `cloud`, `lan`, `card`, or `input:<source>`. */
+    source: string;
+    /** Who sent it: the page's client id, or the caller's address. */
+    client: string;
+    data: unknown;
+}
+
+/** `url` is a `.tar.gz` link or a GitHub repository page; `examples` are the apps bundled with the player. */
+export type AppInstallSource =
+    | { kind: 'folder'; path: string }
+    | { kind: 'url'; url: string }
+    | { kind: 'contrib' }
+    | { kind: 'examples' };
+
+/** Verbs the Apps settings card sends. */
+export type AppsCommand =
+    | { op: 'rescan' }
+    | { op: 'install'; source: AppInstallSource }
+    /** Stop its instances, fetch the package again from its recorded source, start them again. */
+    | { op: 'update'; appId: string }
+    | { op: 'uninstall'; appId: string }
+    /** `name` is the URL-safe instance name; `title` is what people see and may have caps and spaces. */
+    | { op: 'createInstance'; name: string; appId: string; title?: string }
+    | { op: 'findPython' }
+    | { op: 'removeInstance'; name: string; keepData?: boolean }
+    | { op: 'setInstance'; name: string; patch: Partial<Omit<AppInstanceRecord, 'name' | 'appId'>> }
+    | { op: 'start'; name: string }
+    | { op: 'stop'; name: string }
+    | { op: 'restart'; name: string }
+    | { op: 'setDefaultSchedule'; schedule: CloudPollScheduleEntry[] }
+    | { op: 'setPythonPath'; path: string }
+    | { op: 'setInputMappings'; mappings: AppInputMapping[] };
 
 /**
  * Whether the player is offering each password-gated remote-access feature.

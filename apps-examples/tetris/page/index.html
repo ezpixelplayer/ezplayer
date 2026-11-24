@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#0b0d12">
+<title>Tetris</title>
+<style>
+  :root { color-scheme: dark; --bg: #0b0d12; --panel: #161a24; --line: #2a3040; --text: #e8ebf2; --dim: #8b93a7; --accent: #4cc9f0; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 16px/1.3 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+  body { display: flex; flex-direction: column; align-items: center; padding: 10px 12px; gap: 10px; min-height: 100dvh; touch-action: manipulation; user-select: none; }
+  header { display: flex; width: 100%; max-width: 480px; justify-content: space-between; align-items: baseline; }
+  h1 { margin: 0; font-size: 20px; letter-spacing: 2px; }
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; width: 100%; max-width: 480px; }
+  .stat { background: var(--panel); border-radius: 8px; padding: 6px 8px; text-align: center; }
+  .stat small { display: block; color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: 1px; }
+  .stat b { font-size: 18px; font-variant-numeric: tabular-nums; }
+  .play { display: flex; gap: 10px; width: 100%; max-width: 480px; flex: 1; min-height: 0; justify-content: center; }
+  #board { display: grid; gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 4px; height: min(52dvh, 440px); aspect-ratio: var(--w) / var(--h); }
+  #next { display: grid; grid-template-columns: repeat(4, 14px); grid-auto-rows: 14px; gap: 1px; background: var(--line); border: 1px solid var(--line); padding: 1px; align-self: start; }
+  .cell { background: var(--bg); }
+  .ghost { opacity: 0.25; }
+  .C { background: #00e5ff; } .Y { background: #ffe600; } .P { background: #b040ff; } .G { background: #30e830; }
+  .R { background: #ff3b3b; } .B { background: #3b6bff; } .O { background: #ff8c1a; }
+  #message { min-height: 1.3em; color: var(--dim); text-align: center; width: 100%; max-width: 480px; }
+  #message.alert { color: #ffb347; }
+  .pad { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; width: 100%; max-width: 480px; }
+  button { font: inherit; font-size: 26px; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 12px; height: 64px; cursor: pointer; }
+  button:active { background: #243048; }
+  button:disabled { opacity: 0.35; }
+  #start { grid-column: 1 / -1; font-size: 20px; background: #1a3a4a; border-color: var(--accent); height: 56px; }
+  #other { display: none; color: #ffb347; font-weight: 600; }
+</style>
+</head>
+<body>
+<header><h1>TETRIS</h1><span id="other">Someone else is playing</span></header>
+<div class="stats">
+  <div class="stat"><small>Score</small><b id="score">0</b></div>
+  <div class="stat"><small>Lines</small><b id="lines">0</b></div>
+  <div class="stat"><small>Level</small><b id="level">1</b></div>
+  <div class="stat"><small>Best</small><b id="high">0</b></div>
+</div>
+<div class="play">
+  <div id="board" style="--w:10;--h:20"></div>
+  <div id="next"></div>
+</div>
+<div id="message">Connecting...</div>
+<div class="pad">
+  <button id="start">Start</button>
+  <button data-type="left" aria-label="Move left">&#9664;</button>
+  <button data-type="rotate" aria-label="Rotate">&#10227;</button>
+  <button data-type="right" aria-label="Move right">&#9654;</button>
+  <button data-type="drop" aria-label="Hard drop">&#9660;</button>
+</div>
+
+<script>
+  const el = (id) => document.getElementById(id);
+  const boardEl = el('board'), nextEl = el('next');
+  let app, status = { phase: 'idle', board: [], next: [], player: null }, cells = [], nextCells = [];
+
+  // Rebuilds the grid only when the board size changes; otherwise just repaints classes.
+  function paint(container, rows, store, fallbackW, fallbackH) {
+    const h = rows.length || fallbackH, w = rows[0]?.length || fallbackW;
+    if (store.length !== w * h) {
+      container.replaceChildren();
+      store.length = 0;
+      for (let i = 0; i < w * h; i++) { const d = document.createElement('div'); store.push(d); container.appendChild(d); }
+      container.style.setProperty('--w', w); container.style.setProperty('--h', h);
+      container.style.gridTemplateColumns = `repeat(${w}, 1fr)`;
+    }
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const ch = rows[y]?.[x] ?? '.';
+      const d = store[y * w + x];
+      d.className = ch === '.' ? 'cell' : /[a-z]/.test(ch) ? `cell ${ch.toUpperCase()} ghost` : `cell ${ch}`;
+    }
+  }
+
+  function render() {
+    const mine = status.player && app && status.player === app.clientId;
+    const busy = status.phase === 'playing' && status.player && !mine;
+    paint(boardEl, status.board || [], cells, 10, 20);
+    paint(nextEl, status.next || [], nextCells, 4, 2);
+    nextEl.style.gridTemplateColumns = 'repeat(4, 14px)';
+    el('score').textContent = status.score ?? 0;
+    el('lines').textContent = status.lines ?? 0;
+    el('level').textContent = status.level ?? 1;
+    if (typeof status.highscore === 'number') el('high').textContent = status.highscore;
+    el('message').textContent = status.message || '';
+    el('message').className = status.phase === 'unconfigured' ? 'alert' : '';
+    el('other').style.display = busy ? 'inline' : 'none';
+    const playing = status.phase === 'playing';
+    el('start').textContent = !playing ? 'Start' : status.message === 'Paused' ? 'Resume' : 'Pause';
+    el('start').disabled = status.phase === 'unconfigured' || busy;
+    for (const b of document.querySelectorAll('button[data-type]')) b.disabled = !playing || !mine;
+  }
+
+  function send(type) {
+    if (!app) return;
+    app.send({ type }).catch(() => undefined);
+  }
+
+  for (const b of document.querySelectorAll('button[data-type]')) {
+    b.addEventListener('pointerdown', (e) => { e.preventDefault(); send(b.dataset.type); });
+  }
+  el('start').addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    send(status.phase === 'playing' ? 'pause' : 'start');
+  });
+  // Arrow keys for anyone opening the page on a laptop.
+  const keys = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'rotate', ArrowDown: 'down', ' ': 'drop', p: 'pause', Enter: 'start' };
+  addEventListener('keydown', (e) => { if (keys[e.key]) { e.preventDefault(); send(keys[e.key]); } });
+
+  function init() {
+    app = EZApp.connect();
+    app.onStatus((s) => { if (s) { status = s; render(); } });
+    app.get('public', 'highscore').then((h) => { if (h && typeof h.score === 'number') el('high').textContent = h.score; }).catch(() => undefined);
+    render();
+  }
+
+  // The player serves the SDK next to every app page, on the LAN and through the cloud.
+  const sdk = document.createElement('script');
+  sdk.src = '_sdk.js';
+  sdk.onload = init;
+  sdk.onerror = () => { el('message').textContent = 'Could not load the app SDK.'; el('message').className = 'alert'; };
+  document.head.appendChild(sdk);
+  render();
+</script>
+</body>
+</html>

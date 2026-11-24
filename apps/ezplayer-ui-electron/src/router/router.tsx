@@ -4,6 +4,8 @@ import { Navigate, RouteObject } from 'react-router';
 import { SuspenseLoader } from '@ezplayer/shared-ui-components';
 
 import {
+    AppsSettings,
+    APPS_SETTINGS_SECTION_KEY,
     AudioSettings,
     BrightnessSettings,
     CloudPage,
@@ -52,6 +54,7 @@ import DisplaySettingsIcon from '@mui/icons-material/DisplaySettings';
 import CloudIcon from '@mui/icons-material/Cloud';
 import RouterIcon from '@mui/icons-material/Router';
 import FolderIcon from '@mui/icons-material/Folder';
+import AppsIcon from '@mui/icons-material/Apps';
 import ContrastIcon from '@mui/icons-material/Contrast';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import LibraryMusicIcon from '@mui/icons-material/LibraryMusic';
@@ -164,6 +167,12 @@ const ElectronSettingsPage = () => {
             title: 'Software Update',
             available: canControlUpdates(),
             content: <SoftwareUpdateSettings />,
+        },
+        {
+            key: APPS_SETTINGS_SECTION_KEY,
+            label: 'Apps',
+            icon: <AppsIcon sx={{ fontSize: 56 }} />,
+            content: <AppsSettings />,
         },
         shellSection,
         filesSection,

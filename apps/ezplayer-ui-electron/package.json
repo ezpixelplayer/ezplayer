@@ -40,6 +40,10 @@
         ],
         "extraResources": [
             {
+                "from": "../../apps-examples",
+                "to": "apps-examples"
+            },
+            {
                 "from": "src/assets/images",
                 "to": "images",
                 "filter": [

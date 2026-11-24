@@ -60,6 +60,7 @@ import { getWebPort, getKioskPort } from './webport.js';
 import type { PlaybackWorkerData, WorkerToMainMessage } from './mainsrc/workers/playbacktypes.js';
 import { ezpVersions } from './versions.js';
 import { setUpServerWorker, shutdownServerWorker } from './mainsrc/server-worker-manager.js';
+import { appsStopAll } from './mainsrc/apps/apps.js';
 import { runCli } from './cli/dispatch.js';
 import type { Event as ElectronEvent } from 'electron';
 import {
@@ -592,6 +593,7 @@ if (isToolVerb()) {
 app.on('before-quit', async () => {
     noteQuitting();
     cleanupAutoUpdate();
+    await appsStopAll();
     await shutdownServerWorker();
     await closeShowFolder();
 });

@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tetris settings</title>
+<style>
+  :root { color-scheme: dark; --bg: #0b0d12; --panel: #161a24; --line: #2a3040; --text: #e8ebf2; --dim: #8b93a7; --accent: #4cc9f0; }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 16px; background: var(--bg); color: var(--text); font: 16px/1.4 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; max-width: 560px; margin-inline: auto; }
+  h1 { font-size: 20px; margin: 0 0 12px; }
+  label { display: block; margin: 12px 0 4px; color: var(--dim); font-size: 14px; }
+  select, input[type=text], input[type=number] { width: 100%; font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
+  input[type=range] { width: 100%; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  button { font: inherit; font-weight: 600; color: #0b0d12; background: var(--accent); border: 0; border-radius: 10px; padding: 12px 20px; margin-top: 18px; cursor: pointer; }
+  button:disabled { opacity: 0.5; }
+  #note { margin-left: 12px; color: var(--dim); }
+  details { margin-top: 24px; }
+  pre { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px; font-size: 12px; overflow: auto; max-height: 50vh; white-space: pre-wrap; }
+  .hint { color: var(--dim); font-size: 13px; }
+</style>
+</head>
+<body>
+<h1>Tetris settings</h1>
+<p class="hint">The game is painted onto one grid model (a matrix). The board uses up to 10 x 20 pixels of it.</p>
+
+<label for="model">Model</label>
+<select id="model"><option value="">Loading targets...</option></select>
+
+<div class="row">
+  <div><label for="fps">Frames per second (10 to 30)</label><input id="fps" type="number" min="10" max="30" step="1" value="20"></div>
+  <div><label for="bus">Audio bus</label><input id="bus" type="text" value="immediate" placeholder="immediate"></div>
+</div>
+
+<label for="volume">Sound volume: <span id="volv">0.6</span></label>
+<input id="volume" type="range" min="0" max="1" step="0.05" value="0.6">
+
+<button id="save" disabled>Save</button><span id="note"></span>
+
+<details>
+  <summary>Current status (debug)</summary>
+  <pre id="status">No status yet.</pre>
+</details>
+
+<script>
+  const el = (id) => document.getElementById(id);
+  let app;
+
+  el('volume').addEventListener('input', () => { el('volv').textContent = el('volume').value; });
+
+  async function loadTargets(selected) {
+    if (app.apiBase === null) throw new Error('open this page on the home network to list the models');
+    const res = await fetch(`${app.apiBase}/api/ezp/overlays/targets`);
+    const { targets = [] } = await res.json();
+    const grids = targets.filter((t) => t.width && t.height);
+    const sel = el('model');
+    sel.replaceChildren();
+    if (!grids.length) sel.append(new Option('No grid models found', ''));
+    for (const t of grids) {
+      const o = new Option(`${t.model} (${t.width} x ${t.height})`, t.model);
+      o.disabled = t.width < 4 || t.height < 6;
+      sel.append(o);
+    }
+    if (selected) sel.value = selected;
+  }
+
+  async function init() {
+    app = EZApp.connect();
+    try {
+      await app.ready;
+    } catch (e) {
+      el('note').textContent = `Could not reach the player: ${e.message}`;
+      return;
+    }
+    app.onStatus((s) => { el('status').textContent = JSON.stringify(s, null, 2); });
+    let settings = null;
+    try { settings = await app.get('private', 'settings'); } catch { /* not readable here; the form keeps its defaults */ }
+    if (settings) {
+      if (settings.fps) el('fps').value = settings.fps;
+      if (typeof settings.bus === 'string') el('bus').value = settings.bus;
+      if (typeof settings.volume === 'number') { el('volume').value = settings.volume; el('volv').textContent = settings.volume; }
+    }
+    try {
+      await loadTargets(settings?.model);
+    } catch (e) {
+      el('note').textContent = `Could not list models: ${e.message}`;
+    }
+    el('save').disabled = false;
+  }
+
+  el('save').addEventListener('click', async () => {
+    const model = el('model').value;
+    if (!model) { el('note').textContent = 'Pick a model first.'; return; }
+    const fps = Math.min(30, Math.max(10, Number(el('fps').value) || 20));
+    el('fps').value = fps;
+    const body = { model, fps, bus: el('bus').value.trim() || 'immediate', volume: Number(el('volume').value) };
+    el('save').disabled = true;
+    try {
+      await app.put('private', 'settings', body);
+      el('note').textContent = 'Saved. The game picks it up within a few seconds.';
+    } catch (e) {
+      el('note').textContent = `Save failed: ${e.message}`;
+    }
+    el('save').disabled = false;
+  });
+
+  // The player serves the SDK next to every app page, on the LAN and through the cloud.
+  const sdk = document.createElement('script');
+  sdk.src = '_sdk.js';
+  sdk.onload = init;
+  sdk.onerror = () => { el('note').textContent = 'Could not load the app SDK.'; };
+  document.head.appendChild(sdk);
+</script>
+</body>
+</html>

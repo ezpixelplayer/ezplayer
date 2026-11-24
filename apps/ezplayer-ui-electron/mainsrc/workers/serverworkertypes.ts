@@ -19,6 +19,9 @@ import type { AudioCommand, AudioResult } from './audiotypes';
 import { type ViewObject, type LayoutSettings, type MhFixtureInfo } from './playbacktypes';
 import type {
     AudioChunk,
+    AppPageSource,
+    AppsCommand,
+    AppsState,
     AppSettingsCommand,
     CloudAudioMode,
     CloudCommand,
@@ -121,7 +124,33 @@ export type MainToServerWorkerMessage =
           type: 'shellEvent';
           event: ShellEvent;
       }
+    | {
+          /** The app instances the worker serves, with the secrets the public
+           *  `apps` broadcast must not carry. Replaces the previous set. */
+          type: 'appsAuth';
+          instances: Record<string, AppsAuthEntry>;
+      }
     | { type: 'shutdown' };
+
+/** What the server worker needs to serve one app instance. */
+export interface AppsAuthEntry {
+    appId: string;
+    appDir: string;
+    dataDir: string;
+    page?: AppPageSource;
+    config?: AppPageSource;
+    /** Declared input names, for the inputs endpoint. */
+    inputs: string[];
+    /** Present while a process is up; its routes check this. */
+    token?: string;
+    /** The port the process was told to bind, when it serves its own page. */
+    port?: number;
+    running: boolean;
+    title: string;
+    icon?: string;
+    description?: string;
+    eventsPerMinute?: number;
+}
 
 /** pty → viewer events. `superseded` is what the displaced viewer sees when
  *  someone else opens a terminal, since only one session exists at a time. */
@@ -175,4 +204,8 @@ export interface ServerWorkerRPCAPI {
     remoteAccessReloadConfig(): Promise<RemoteAccessAvailability>;
     /** Zip of logs, recent crash dumps and an environment summary. */
     buildSupportBundle(level: SupportBundleLevel): Promise<{ name: string; data: Uint8Array }>;
+    /** Apps card verb; resolves with the state after it. */
+    appsCommand(cmd: AppsCommand): Promise<AppsState>;
+    /** An instance published a status; its startup report notes the first. */
+    appsSawStatus(instance: string): void;
 }
