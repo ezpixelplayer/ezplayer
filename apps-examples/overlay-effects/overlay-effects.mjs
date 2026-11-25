@@ -37,7 +37,8 @@ const PLAN_CONCURRENCY = 4;
 const HTTP_IN_FLIGHT = 16;
 // The player takes a status of up to 4 MB; a row per target stays under that up to about 20000 targets.
 // The rows ride along only when the list changed, and every few seconds for pages that joined late.
-const STATUS_TARGETS_MAX = 20000;
+/** A model row is about 150 bytes; the player takes a status of up to 4 MB. */
+const STATUS_MODELS_MAX = 5000;
 const TARGETS_RESEND_MS = 10_000;
 
 // ---------------------------------------------------------------------------
@@ -566,8 +567,8 @@ let runtime = { seed: 1234, pins: {} };
 let live = [];
 let loopPromise = null;
 let message = '';
-/** Bumps whenever the target list or its effects change, so a page knows when to redraw the table. */
-let targetsRev = 0;
+/** Bumps whenever the model list or its effects change, so a page knows when to redraw the table. */
+let modelsRev = 0;
 /** What the app is in the middle of (reading models, opening leases); shown over everything else while set. */
 let working = '';
 
@@ -594,15 +595,24 @@ function painter(tg) {
 }
 
 /** Gives every planned target its effect; running targets switch painters in place. */
+/** A pin names a target or its whole model; a runtime change (from the settings page) wins over the saved one. */
+function pinFor(tg) {
+    for (const key of [tg.target, tg.model]) {
+        if (key in runtime.pins) return runtime.pins[key];
+        if (key in settings.pins) return settings.pins[key];
+    }
+    return undefined;
+}
+
 function assign() {
     if (!settings) return;
-    targetsRev++;
+    modelsRev++;
     const enabled = EFFECT_NAMES.filter((n) => settings.effects[n] !== false);
     const rand = rng(runtime.seed);
     for (const tg of planned) {
         // Draw for every target so pinning one does not reshuffle the others.
         const pick = enabled.length ? enabled[Math.floor(rand() * enabled.length)] : null;
-        const pin = runtime.pins[tg.target] ?? settings.pins[tg.target];
+        const pin = pinFor(tg);
         tg.pinned = Boolean(pin && EFFECTS[pin]);
         tg.effect = tg.pinned ? pin : pick;
     }
@@ -851,8 +861,8 @@ function status(now) {
         seed: runtime.seed,
         targetCount: planned.length,
         modelCount: new Set(planned.map((tg) => tg.model)).size,
-        targetsListed: planned.length <= STATUS_TARGETS_MAX,
-        targetsRev,
+        modelsListed: new Set(planned.map((tg) => tg.model)).size <= STATUS_MODELS_MAX,
+        modelsRev,
         effectsAvailable: EFFECT_NAMES,
         effects: EFFECT_NAMES.map((name) => ({
             name,
@@ -864,18 +874,38 @@ function status(now) {
     };
 }
 
-/** The target rows, sent with a status only when the list changed or a page may have joined. */
-function targetRows() {
-    return planned.map((tg) => ({
-        target: tg.target,
-        model: tg.model,
-        kind: tg.kind,
-        nodes: tg.nodes,
-        width: tg.width,
-        height: tg.height,
-        format: tg.format,
-        effect: tg.effect,
-        pinned: tg.pinned,
+/**
+ * One row per model, sent with a status only when the list changed or a page may have joined.
+ * A layout can have twenty thousand submodels; a row for each is megabytes a page cannot draw.
+ */
+function modelRows() {
+    const rows = new Map();
+    for (const tg of planned) {
+        let r = rows.get(tg.model);
+        if (!r) {
+            r = { model: tg.model, targets: 0, nodes: 0, leases: {}, effects: new Set(), pinned: false, one: tg };
+            rows.set(tg.model, r);
+        }
+        r.targets++;
+        r.nodes += tg.nodes;
+        r.leases[tg.format] = (r.leases[tg.format] ?? 0) + 1;
+        if (tg.effect) r.effects.add(tg.effect);
+        r.pinned ||= tg.pinned;
+    }
+    return [...rows.values()].map((r) => ({
+        model: r.model,
+        targets: r.targets,
+        nodes: r.nodes,
+        lease:
+            r.targets === 1
+                ? r.one.format === 'nodes'
+                    ? 'nodes'
+                    : `${r.one.format} ${r.one.width}x${r.one.height}`
+                : Object.entries(r.leases)
+                      .map(([f, n]) => `${n} ${f}`)
+                      .join(', '),
+        effect: r.effects.size === 1 ? [...r.effects][0] : r.effects.size ? 'mixed' : '',
+        pinned: r.pinned,
     }));
 }
 
@@ -918,7 +948,7 @@ function handleEvent(ev) {
         case 'setEffect': {
             // Visitors on the show's cloud page may start and stop, not change what is painted.
             if (ev.source === 'cloud') return;
-            if (typeof d.target !== 'string' || !planned.some((tg) => tg.target === d.target)) return;
+            if (typeof d.target !== 'string' || !planned.some((tg) => tg.target === d.target || tg.model === d.target)) return;
             const effect = typeof d.effect === 'string' && EFFECTS[d.effect] ? d.effect : '';
             runtime.pins[d.target] = effect;
             assign();
@@ -982,8 +1012,8 @@ async function main() {
     let lastStatusJson = '';
     let lastStatusAt = -Infinity;
     let publishing = false;
-    let sentTargetsRev = -1;
-    let sentTargetsAt = -Infinity;
+    let sentModelsRev = -1;
+    let sentModelsAt = -Infinity;
     const statusTimer = setInterval(() => {
         if (publishing || quit) return;
         const st = status(performance.now());
@@ -992,19 +1022,19 @@ async function main() {
         const due =
             (phase === 'running' && t - lastStatusAt >= 500) ||
             (phase !== 'running' && (json !== lastStatusJson || t - lastStatusAt > 5000));
-        const withTargets =
-            st.targetsListed && (targetsRev !== sentTargetsRev || t - sentTargetsAt > TARGETS_RESEND_MS);
-        if (!due && !withTargets) return;
-        if (withTargets) st.targets = targetRows();
-        const rev = targetsRev;
+        const withModels =
+            st.modelsListed && (modelsRev !== sentModelsRev || t - sentModelsAt > TARGETS_RESEND_MS);
+        if (!due && !withModels) return;
+        if (withModels) st.models = modelRows();
+        const rev = modelsRev;
         lastStatusJson = json;
         lastStatusAt = t;
         publishing = true;
         publishStatus(st)
             .then((ok) => {
-                if (ok && withTargets) {
-                    sentTargetsRev = rev;
-                    sentTargetsAt = t;
+                if (ok && withModels) {
+                    sentModelsRev = rev;
+                    sentModelsAt = t;
                 }
             })
             .finally(() => {

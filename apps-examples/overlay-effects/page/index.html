@@ -76,14 +76,17 @@
 <div id="count"></div>
 <div class="wrap">
 <table>
-  <thead><tr><th>Target</th><th>Nodes</th><th>Lease</th><th>Effect</th></tr></thead>
-  <tbody id="targets"></tbody>
+  <thead><tr><th>Model</th><th>Targets</th><th>Nodes</th><th>Leases</th><th>Effect</th></tr></thead>
+  <tbody id="models"></tbody>
 </table>
+<div id="more" class="hint" hidden></div>
 </div>
 
 <script>
   const el = (id) => document.getElementById(id);
-  let app, status = null;
+  let app, status = null, drawnRev = -1;
+  /** Rows beyond this are counted, not drawn; a long table is what makes a browser crawl. */
+  const ROWS_MAX = 1000;
 
   function kb(n) {
     if (n >= 1e6) return (n / 1e6).toFixed(2) + ' MB/s';
@@ -123,31 +126,34 @@
     el('stop').disabled = s.phase !== 'running' && s.phase !== 'starting';
 
     const titles = Object.fromEntries((s.effects || []).map((e) => [e.name, e.title]));
-    const n = s.targetCount ?? (s.targets || []).length;
-    const m = s.modelCount ?? new Set((s.targets || []).map((t) => t.model)).size;
-    const hidden = s.targetsListed === false ? ' (too many to list here)' : '';
+    const n = s.targetCount ?? 0;
+    const m = s.modelCount ?? (s.models || []).length;
+    const hidden = s.modelsListed === false ? ' (too many to list here)' : '';
     el('count').textContent = n ? `${n} targets on ${m} model${m === 1 ? '' : 's'}; seed ${s.seed}${hidden}` : '';
-    // The rows ride along only when the list changed or every few seconds; otherwise the table stands.
-    if (!Array.isArray(s.targets)) return;
-    const rows = s.targets;
-    const body = el('targets');
+    // The rows ride along only when the list changed or every few seconds, and are redrawn only when they changed.
+    if (!Array.isArray(s.models) || s.modelsRev === drawnRev) return;
+    drawnRev = s.modelsRev;
+    const rows = s.models;
+    const body = el('models');
     body.replaceChildren();
-    for (const t of rows) {
+    for (const r of rows.slice(0, ROWS_MAX)) {
       const tr = document.createElement('tr');
-      const lease = t.format === 'nodes' ? 'nodes' : `${t.format} ${t.width}x${t.height}`;
-      const effect = t.effect ? (titles[t.effect] || t.effect) : '';
-      tr.innerHTML = `<td class="target"></td><td class="num"></td><td></td><td></td>`;
-      tr.children[0].textContent = t.target;
-      tr.children[1].textContent = t.nodes;
-      tr.children[2].textContent = lease;
+      const effect = r.effect === 'mixed' ? 'mixed' : r.effect ? (titles[r.effect] || r.effect) : '';
+      tr.innerHTML = `<td class="target"></td><td class="num"></td><td class="num"></td><td></td><td></td>`;
+      tr.children[0].textContent = r.model;
+      tr.children[1].textContent = r.targets;
+      tr.children[2].textContent = r.nodes;
+      tr.children[3].textContent = r.lease;
       if (effect) {
-        tr.children[3].textContent = effect;
-        if (t.pinned) { const pin = document.createElement('span'); pin.className = 'pin'; pin.textContent = 'pinned'; tr.children[3].appendChild(pin); }
+        tr.children[4].textContent = effect;
+        if (r.pinned) { const pin = document.createElement('span'); pin.className = 'pin'; pin.textContent = 'pinned'; tr.children[4].appendChild(pin); }
       } else {
-        tr.children[3].innerHTML = '<span class="off">no effect enabled</span>';
+        tr.children[4].innerHTML = '<span class="off">no effect enabled</span>';
       }
       body.appendChild(tr);
     }
+    el('more').hidden = rows.length <= ROWS_MAX;
+    el('more').textContent = `and ${rows.length - ROWS_MAX} more models`;
   }
 
   function send(type) {
