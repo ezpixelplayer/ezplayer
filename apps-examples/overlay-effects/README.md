@@ -26,7 +26,8 @@ Open the instance's settings page (the gear on the Apps tile).
 - **Frames per second**: 1 to 60. **Blend**: how the overlay combines with the sequence
   (`replace` by default).
 - **Send frames over UDP**: on, frames go as overlay packets, fast and lossy; off, each target gets
-  one HTTP `PUT` per frame, which is simpler and acknowledged.
+  one HTTP `PUT` per frame, which is simpler and acknowledged. At most 16 `PUT`s are in flight at once:
+  hundreds landing together slow the player for every other client, this app's own status included.
 - **Start painting when the app starts**: otherwise the loop waits for Start.
 - **Seed**: each target draws its effect from the enabled ones with this seed, so the same seed gives
   the same picture; a new seed gives a new draw. Reshuffle on the public page draws a fresh seed

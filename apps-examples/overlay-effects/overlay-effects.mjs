@@ -34,6 +34,7 @@ const WINDOW_MS = 2000; // the rate readouts cover the last two seconds
 const SETTINGS_EVERY_MS = 5000;
 const OPEN_CONCURRENCY = 8;
 const PLAN_CONCURRENCY = 4;
+const HTTP_IN_FLIGHT = 16;
 
 // ---------------------------------------------------------------------------
 // Overlay API
@@ -81,14 +82,25 @@ function sendUdp(l, seq) {
     return Promise.all(pending);
 }
 
+// Hundreds of PUTs landing at once make the player slow for everyone else, this
+// app's own status included; a few at a time costs no frame rate (measured).
+let httpActive = 0;
+const httpQueue = [];
 async function sendHttp(l, seq) {
-    const res = await fetch(`${base}/api/ezp/overlays/${l.lease.id}/frame?token=${l.lease.token}&seq=${seq}`, {
-        method: 'PUT',
-        headers: { 'content-type': 'application/octet-stream' },
-        body: l.payload,
-    }).catch(() => null);
-    if (res?.ok) l.lastAck = performance.now();
-    else l.errors++;
+    if (httpActive >= HTTP_IN_FLIGHT) await new Promise((r) => httpQueue.push(r));
+    httpActive++;
+    try {
+        const res = await fetch(`${base}/api/ezp/overlays/${l.lease.id}/frame?token=${l.lease.token}&seq=${seq}`, {
+            method: 'PUT',
+            headers: { 'content-type': 'application/octet-stream' },
+            body: l.payload,
+        }).catch(() => null);
+        if (res?.ok) l.lastAck = performance.now();
+        else l.errors++;
+    } finally {
+        httpActive--;
+        httpQueue.shift()?.();
+    }
 }
 
 // ---------------------------------------------------------------------------
