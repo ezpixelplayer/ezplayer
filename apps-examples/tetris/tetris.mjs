@@ -584,14 +584,16 @@ async function main() {
         // Tall boards play better; use up to 10 wide by 20 high from the model's grid.
         const width = Math.min(target.width, 10);
         const height = Math.min(target.height, 20);
+        // The app token puts the instance title on the lease, so a refused game names who has the model.
         const openRes = await fetch(`${base}/api/ezp/overlays`, {
             method: 'POST',
-            headers: { 'content-type': 'application/json' },
+            headers: { ...authHeaders, 'content-type': 'application/json' },
             body: JSON.stringify({
                 model: target.model,
                 format: 'grid',
                 width,
                 height,
+                mode: 'exclusive',
                 blend: 'replace',
                 ttlMs: 10_000,
                 name: 'tetris',

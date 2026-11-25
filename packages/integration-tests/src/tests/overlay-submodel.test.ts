@@ -2,7 +2,7 @@
  *  asked, a lease on it paints just its nodes through its own buffer, and a
  *  node its lines name twice takes the cell the lease's rule picks. */
 
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { startMockController, type MockController } from '@ezplayer/epp-mock-controller';
 import { startEzPlayer, type EzPlayerProc } from '../harness/ezplayer-proc.js';
 import { createFixtureShow, type FixtureShow } from '../fixtures/showfolder.js';
@@ -46,7 +46,7 @@ async function open(body: object): Promise<Lease> {
     const res = await fetch(`${app.base}/api/ezp/overlays`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ mode: 'exclusive', name: 'it-submodel', ...body }),
     });
     const text = await res.text();
     expect(res.status, text).toBe(200);
@@ -91,6 +91,12 @@ afterAll(async () => {
     await app?.stop();
     await mock?.stop();
     await show?.cleanup();
+});
+
+// A lease a failed attempt left behind would refuse the retry's exclusive open.
+beforeEach(async () => {
+    const { leases = [] } = (await (await fetch(`${app.base}/api/ezp/overlays`)).json()) as { leases?: Lease[] };
+    for (const l of leases) await fetch(`${app.base}/api/ezp/overlays/${l.id}?token=${l.token}`, { method: 'DELETE' });
 });
 
 describe('overlay leases on a submodel', () => {
@@ -151,7 +157,7 @@ describe('overlay leases on a submodel', () => {
         const res = await fetch(`${app.base}/api/ezp/overlays`, {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ model: 'Line1/Middle' }),
+            body: JSON.stringify({ model: 'Line1/Middle', mode: 'exclusive', name: 'it-submodel' }),
         });
         expect(res.status).toBe(400);
         expect(await res.text()).toContain('Line1/Middle');

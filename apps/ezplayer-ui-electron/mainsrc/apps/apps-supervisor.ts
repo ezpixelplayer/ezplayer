@@ -152,7 +152,12 @@ export class AppProcess {
             this.note(`[player] process error: ${err.message}`);
         });
         child.on('exit', (code, signal) => {
-            const why = signal ? `stopped by ${signal}` : `exited with code ${code}`;
+            // Windows has no signals: a process this player killed just reports code 1.
+            const why = this.stopping
+                ? 'stopped by the player'
+                : signal
+                  ? `stopped by ${signal}`
+                  : `exited with code ${code}`;
             this.note(`[player] ${why}`);
             this.child = undefined;
             if (this.stopping) {

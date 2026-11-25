@@ -19,12 +19,15 @@ player creates an instance and gives it a token; nothing else to set up.
 
 Open the instance's settings page (the gear on the Apps tile).
 
-- **Models**: tick the models to paint, A to Z, each showing how many submodels it has. A model
-  with submodels gets a lease per submodel; a model without gets one lease of its own.
+- **Models**: tick the models to paint, A to Z, each showing what xLights draws it as and how many
+  submodels it has. Search by name and tick or untick everything the search shows, or tick every model
+  of one type (all the trees, say) or an xLights model group in one go. A model with submodels gets a
+  lease per submodel; a model without gets one lease of its own.
 - **Frames per second**: 1 to 60. **Blend**: how the overlay combines with the sequence
   (`replace` by default).
 - **Send frames over UDP**: on, frames go as overlay packets, fast and lossy; off, each target gets
-  one HTTP `PUT` per frame, which is simpler and acknowledged.
+  one HTTP `PUT` per frame, which is simpler and acknowledged. At most 16 `PUT`s are in flight at once:
+  hundreds landing together slow the player for every other client, this app's own status included.
 - **Start painting when the app starts**: otherwise the loop waits for Start.
 - **Seed**: each target draws its effect from the enabled ones with this seed, so the same seed gives
   the same picture; a new seed gives a new draw. Reshuffle on the public page draws a fresh seed
@@ -94,7 +97,12 @@ its strand list. The hue of each target follows its place across the yard, as in
 
 The page sends `{ type: 'start' }`, `{ type: 'stop' }` and `{ type: 'reshuffle' }`. The settings page
 also sends `{ type: 'setEffect', target, effect }` (ignored when it comes through the show's cloud
-page) and `{ type: 'restart' }`. Status is published at least twice a second while running:
+page) and `{ type: 'restart' }`. Leases live on the player's frame pipeline, so the player must be
+playing (songs or idle frames between them) for the app to plan or paint; stopped, it waits and says so.
+Status is published at least twice a second while running, and
+whenever it changes otherwise. `phase` is `idle`, `starting` (reading the models or opening the leases,
+with the count so far in `message`), `running` or `stopping`; leases opened so far are kept alive while
+the rest open, so a slow start on a big layout does not lose them:
 
 ```json
 {
@@ -108,3 +116,11 @@ page) and `{ type: 'restart' }`. Status is published at least twice a second whi
   "message": "Painting 14 targets at 20 fps over HTTP"
 }
 ```
+
+The target rows are the bulk of the status, so they ride along only when the list changed (`targetsRev`
+bumps) and every ten seconds for a page that joined late; a status without `targets` means the list a
+page already has still stands. The player accepts a status of up to 4 MB, so above 20000 targets the
+list is left out altogether (`targetsListed` is false) and `targetCount` and `modelCount` carry the
+numbers; the pin table on the settings page then says so, and pins saved earlier still apply by name.
+Over UDP a payload handed to the socket counts as the lease's keepalive, so the keepalive call is only
+made for a lease whose sends fail.

@@ -330,6 +330,35 @@ describe('a record edit', () => {
     });
 });
 
+describe('a read that ends after a distribution', () => {
+    it('keeps the content status the distribution left on the row', async () => {
+        // In the show as a remote: only a host the show sends to carries a content status.
+        await loadControllerRecords(await fsp.mkdtemp(path.join(os.tmpdir(), 'ezp-ops-')));
+        setKnownControllers([
+            { name: 'R', address: '10.0.0.5', active: true, enableState: 'enabled', role: 'remote', source: 'xlights' },
+        ]);
+        const id = '10.0.0.5|direct';
+        const read = startRead('10.0.0.5');
+        await vi.waitFor(() => expect(probe.pending.length).toBeGreaterThan(0));
+
+        // While the controller is still being read, a distribution finishes and
+        // records what the device now holds.
+        const state = getControllerOpsState();
+        const contentStatus = {
+            checkedAt: new Date().toISOString(),
+            current: 1,
+            missing: 0,
+            missingBytes: 0,
+            failed: 0,
+        };
+        state.devices[id] = { ...state.devices[id], contentStatus };
+
+        probe.pending.shift()!({ success: true, report: { ip: '10.0.0.5', driverType: 'FPP', mode: 'remote' } });
+        await read;
+        expect(state.devices[id]).toMatchObject({ driverType: 'FPP', contentStatus });
+    });
+});
+
 describe('the send-from address on a record', () => {
     it("sits beside the layout's, and an empty one clears it", async () => {
         await loadControllerRecords(await fsp.mkdtemp(path.join(os.tmpdir(), 'ezp-ops-')));

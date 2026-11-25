@@ -12,7 +12,10 @@ import {
     DialogContentText,
     DialogTitle,
     Divider,
+    FormControlLabel,
     Link,
+    Radio,
+    RadioGroup,
     TextField,
     Typography,
 } from '@mui/material';
@@ -46,6 +49,19 @@ const selectCloudServiceUrl = createSelector([selectCloudConfig], (cfg) => cfg.c
 const selectIsRegistered = createSelector([selectCloudStatus], (s) => s.playerIdIsRegistered);
 const selectCloudActive = createSelector([selectCloudConfig], (cfg) => cfg.cloudEnabled !== false);
 
+/** The two EZRGB clouds; anything else is a custom address typed in full. */
+const CLOUD_CHOICES = [
+    { key: 'production', label: 'Production', host: 'api.ezplayer.dev', url: 'https://api.ezplayer.dev/' },
+    { key: 'development', label: 'Development', host: 'dev.ezplayer.dev', url: 'https://dev.ezplayer.dev/' },
+] as const;
+type CloudChoice = (typeof CLOUD_CHOICES)[number]['key'] | 'custom';
+
+/** Which choice a stored URL is: the hosts above (with or without a trailing slash) or custom. */
+function cloudChoiceOf(url: string): CloudChoice {
+    const bare = url.trim().toLowerCase().replace(/\/+$/, '');
+    return CLOUD_CHOICES.find((c) => bare === `https://${c.host}`)?.key ?? 'custom';
+}
+
 interface PlayerCloudWelcomePanelProps {
     /** When true, also surface the per-folder polling editor inside the Advanced
      *  accordion. Used by the cloud-screen Register dialog (power-user context).
@@ -56,7 +72,7 @@ interface PlayerCloudWelcomePanelProps {
 
 /**
  * The canonical player-registration UX. Leads with the QR / URL ("scan and go")
- * and tucks manual ID entry + cloud URL editing inside an Advanced accordion.
+ * and tucks manual ID entry + the cloud picker (production, development, other) inside an Advanced accordion.
  * Auto-generates a Player ID on mount when none is set.
  *
  * Used both by the first-run Welcome bootstrap (no polling editor) and by the
@@ -74,8 +90,9 @@ export const PlayerCloudWelcomePanel: React.FC<PlayerCloudWelcomePanelProps> = (
     // Advanced-section popups; each seeds its draft from the current value on open.
     const [manualPlayerId, setManualPlayerId] = useState('');
     const [manualOpen, setManualOpen] = useState(false);
-    const [cloudUrlInput, setCloudUrlInput] = useState('');
-    const [cloudUrlOpen, setCloudUrlOpen] = useState(false);
+    // The cloud picker: the radio follows the stored URL; "Other" shows a field seeded from it.
+    const [customUrlInput, setCustomUrlInput] = useState('');
+    const [customPicked, setCustomPicked] = useState(false);
 
     // Auto-generate a Player ID on mount when none is set, so the friendly QR-and-go
     // path lights up immediately. Skip while paused — generating a token whose
@@ -122,18 +139,30 @@ export const PlayerCloudWelcomePanel: React.FC<PlayerCloudWelcomePanelProps> = (
         void dispatch(postSetPlayerIdToken({ playerIdToken: id }));
         setManualOpen(false);
     };
-    const openCloudUrl = () => {
-        setCloudUrlInput(cloudServiceUrl || '');
-        setCloudUrlOpen(true);
-    };
-    const handleCloudUrlSave = async () => {
+    const storedChoice = cloudChoiceOf(cloudServiceUrl || '');
+    const cloudChoice: CloudChoice = customPicked ? 'custom' : storedChoice;
+    const saveCloudUrl = async (url: string) => {
         try {
-            await dispatch(postSetCloudUrl({ cloudUrl: cloudUrlInput.trim() })).unwrap();
-            setCloudUrlOpen(false);
+            await dispatch(postSetCloudUrl({ cloudUrl: url })).unwrap();
+            setCustomPicked(false);
         } catch (e) {
             console.error('Error updating cloud URL:', e);
         }
     };
+    const handleCloudChoice = (key: string) => {
+        if (key === 'custom') {
+            setCustomUrlInput(cloudServiceUrl || '');
+            setCustomPicked(true);
+            return;
+        }
+        const choice = CLOUD_CHOICES.find((c) => c.key === key);
+        if (choice && choice.key !== storedChoice) void saveCloudUrl(choice.url);
+        else setCustomPicked(false);
+    };
+    // Until the user types, the field shows the stored address; a stored custom URL opens on it.
+    const customUrlShown = customPicked ? customUrlInput : cloudServiceUrl || '';
+    const customUrl = customUrlShown.trim();
+    const customUrlChanged = customUrl !== '' && customUrl !== (cloudServiceUrl || '');
 
     return (
         <Box>
@@ -252,22 +281,73 @@ export const PlayerCloudWelcomePanel: React.FC<PlayerCloudWelcomePanelProps> = (
             <Accordion disableGutters elevation={0} sx={{ bgcolor: 'transparent' }}>
                 <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                     <Typography variant="subtitle2" color="text.secondary">
-                        Advanced (Cloud URL, specific Player ID
+                        Advanced (Cloud service, specific Player ID
                         {showPollingEditor ? ', polling interval' : ''})
                     </Typography>
                 </AccordionSummary>
                 <AccordionDetails>
-                    {/* Cloud Service URL */}
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2, flexWrap: 'wrap' }}>
-                        <Typography variant="body2" color="text.secondary" sx={{ minWidth: 140 }}>
-                            Cloud Service URL:
+                    {/* Cloud service: production, development, or an address typed in full */}
+                    <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mb: 2, flexWrap: 'wrap' }}>
+                        <Typography variant="body2" color="text.secondary" sx={{ minWidth: 140, pt: '9px' }}>
+                            Cloud service:
                         </Typography>
-                        <Typography variant="body2" sx={{ fontFamily: 'monospace', wordBreak: 'break-all', flex: 1 }}>
-                            {cloudServiceUrl || '(not set)'}
-                        </Typography>
-                        <Button size="small" variant="outlined" onClick={openCloudUrl}>
-                            Edit
-                        </Button>
+                        <Box sx={{ flex: 1, minWidth: 240 }}>
+                            <RadioGroup value={cloudChoice} onChange={(e) => handleCloudChoice(e.target.value)}>
+                                {CLOUD_CHOICES.map((c) => (
+                                    <FormControlLabel
+                                        key={c.key}
+                                        value={c.key}
+                                        control={<Radio size="small" />}
+                                        label={
+                                            <Typography variant="body2">
+                                                {c.label}{' '}
+                                                <Typography
+                                                    component="span"
+                                                    variant="body2"
+                                                    color="text.secondary"
+                                                    sx={{ fontFamily: 'monospace' }}
+                                                >
+                                                    {c.host}
+                                                </Typography>
+                                            </Typography>
+                                        }
+                                    />
+                                ))}
+                                <FormControlLabel
+                                    value="custom"
+                                    control={<Radio size="small" />}
+                                    label={<Typography variant="body2">Other address</Typography>}
+                                />
+                            </RadioGroup>
+                            {cloudChoice === 'custom' && (
+                                <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', mt: 0.5, pl: 4 }}>
+                                    <TextField
+                                        autoFocus={customPicked}
+                                        fullWidth
+                                        size="small"
+                                        label="Cloud Service URL"
+                                        value={customUrlShown}
+                                        onChange={(e) => {
+                                            setCustomUrlInput(e.target.value);
+                                            setCustomPicked(true);
+                                        }}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter' && customUrlChanged) void saveCloudUrl(customUrl);
+                                        }}
+                                        helperText="Registration and sync restart against the new address when you save."
+                                    />
+                                    <Button
+                                        size="small"
+                                        variant="contained"
+                                        disabled={!customUrlChanged}
+                                        onClick={() => void saveCloudUrl(customUrl)}
+                                        sx={{ alignSelf: 'flex-start', mt: '1px' }}
+                                    >
+                                        Save
+                                    </Button>
+                                </Box>
+                            )}
+                        </Box>
                     </Box>
 
                     {/* Current Player ID */}
@@ -294,34 +374,6 @@ export const PlayerCloudWelcomePanel: React.FC<PlayerCloudWelcomePanelProps> = (
                     )}
                 </AccordionDetails>
             </Accordion>
-
-            {/* Edit Cloud Service URL */}
-            <Dialog open={cloudUrlOpen} onClose={() => setCloudUrlOpen(false)} maxWidth="sm" fullWidth>
-                <DialogTitle>Cloud Service URL</DialogTitle>
-                <DialogContent>
-                    <DialogContentText sx={{ mb: 2 }}>
-                        Only change this if you have been given a different cloud service address. Registration and sync
-                        restart against the new URL when you save.
-                    </DialogContentText>
-                    <TextField
-                        autoFocus
-                        fullWidth
-                        size="small"
-                        label="Cloud Service URL"
-                        value={cloudUrlInput}
-                        onChange={(e) => setCloudUrlInput(e.target.value)}
-                        onKeyDown={(e) => {
-                            if (e.key === 'Enter') void handleCloudUrlSave();
-                        }}
-                    />
-                </DialogContent>
-                <DialogActions>
-                    <Button onClick={() => setCloudUrlOpen(false)}>Cancel</Button>
-                    <Button variant="contained" onClick={() => void handleCloudUrlSave()}>
-                        Save
-                    </Button>
-                </DialogActions>
-            </Dialog>
 
             {/* Enter a specific Player ID */}
             <Dialog open={manualOpen} onClose={() => setManualOpen(false)} maxWidth="sm" fullWidth>

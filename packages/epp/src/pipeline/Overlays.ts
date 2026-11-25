@@ -15,7 +15,21 @@ export type OverlayFormat = 'grid' | 'nodes' | 'buffer';
 /** Which cell colors a node that sits in several buffer cells. */
 export type OverlayOverlap = 'last' | 'first' | 'max';
 
+/** 'exclusive' refuses other exclusive leases on any of its nodes; 'layer' blends over anything. */
+export type OverlayMode = 'exclusive' | 'layer';
+
+/** The app instance that opened a lease; the server fills this in from the app token. */
+export interface OverlayOwner {
+    instance: string;
+    title: string;
+}
+
 export interface OverlayLeaseRequest {
+    /** Who is painting; shown in the lease list and in "in use" errors. */
+    name: string;
+    mode: OverlayMode;
+    /** Never taken from a client; see OverlayOwner. */
+    owner?: OverlayOwner;
     /** Model name or "Model/Submodel"; the whole display when absent. */
     model?: string;
     /** Submodel of `model`, when not given in the name. */
@@ -31,7 +45,6 @@ export interface OverlayLeaseRequest {
     /** 0..1 */
     opacity?: number;
     ttlMs?: number;
-    name?: string;
 }
 
 export interface OverlayTargetQuery {
@@ -67,7 +80,9 @@ export interface OverlayTargetInfo {
 export interface OverlayLeaseInfo {
     id: number;
     token: number;
-    name?: string;
+    name: string;
+    mode: OverlayMode;
+    owner?: OverlayOwner;
     model?: string;
     subModel?: string;
     format: OverlayFormat;
@@ -89,6 +104,38 @@ export interface OverlayLeaseInfo {
 
 const DEFAULT_TTL_MS = 30_000;
 const MAX_TTL_MS = 24 * 3600 * 1000;
+
+/** The instance title when an app holds the lease, else the name the client gave. */
+export function overlayHolderLabel(lease: OverlayLeaseInfo): string {
+    return lease.owner?.title ?? lease.name;
+}
+
+/** An exclusive lease asked for nodes another exclusive lease holds. */
+export class OverlayConflictError extends Error {
+    constructor(
+        readonly target: string,
+        readonly heldBy: OverlayLeaseInfo,
+    ) {
+        super(`${target} is in use by ${overlayHolderLabel(heldBy)}`);
+        this.name = 'OverlayConflictError';
+    }
+}
+
+/** The canonical nodes a lease paints: a run, or a list when they are scattered. */
+type NodeSpan = { start: number; count: number } | Int32Array;
+
+function spansOverlap(a: NodeSpan, b: NodeSpan): boolean {
+    if (!(a instanceof Int32Array) && !(b instanceof Int32Array)) {
+        return a.start < b.start + b.count && b.start < a.start + a.count;
+    }
+    const list = a instanceof Int32Array ? a : (b as Int32Array);
+    const other = a instanceof Int32Array ? b : a;
+    if (other instanceof Int32Array) {
+        const set = new Set(other);
+        return list.some((n) => set.has(n));
+    }
+    return list.some((n) => n >= other.start && n < other.start + other.count);
+}
 
 class OverlayLayer {
     info: OverlayLeaseInfo;
@@ -117,6 +164,10 @@ class OverlayLayer {
         this.staging = new Uint8Array(info.frameBytes);
         if (info.format === 'grid') this.buildGridMap();
         if (info.format === 'buffer') this.buildBufferMap();
+    }
+
+    get span(): NodeSpan {
+        return this.nodes ?? { start: this.info.nodeStart, count: this.info.nodeCount };
     }
 
     private buildBufferMap() {
@@ -329,6 +380,9 @@ export class OverlayManager {
     }
 
     open(req: OverlayLeaseRequest, now: number): OverlayLeaseInfo {
+        if (req.mode !== 'exclusive' && req.mode !== 'layer') throw new Error("overlay: mode must be 'exclusive' or 'layer'");
+        const name = typeof req.name === 'string' ? req.name.trim() : '';
+        if (!name) throw new Error('overlay: name is required');
         let target: PixelTarget | undefined;
         let nodeStart = 0;
         let nodeCount = this.layout.nodeCount;
@@ -337,6 +391,14 @@ export class OverlayManager {
             if (!target) throw new Error(`overlay: no pixel model named ${req.subModel ? req.model + '/' + req.subModel : req.model}`);
             nodeStart = target.nodeStart;
             nodeCount = target.nodes.length;
+        }
+        if (req.mode === 'exclusive') {
+            const span: NodeSpan = target && target.nodeStart < 0 ? target.nodes : { start: nodeStart, count: nodeCount };
+            for (const l of this.layers.values()) {
+                if (l.info.mode === 'exclusive' && spansOverlap(span, l.span)) {
+                    throw new OverlayConflictError(target?.name ?? 'The display', l.info);
+                }
+            }
         }
         const format: OverlayFormat = req.format ?? (target?.subModel ? 'buffer' : target?.grid || req.width ? 'grid' : 'nodes');
         let width = nodeCount;
@@ -358,7 +420,9 @@ export class OverlayManager {
         const info: OverlayLeaseInfo = {
             id: this.nextId++,
             token: (Math.random() * 0xffffffff) >>> 0,
-            name: req.name,
+            name,
+            mode: req.mode,
+            owner: req.owner,
             model: target?.model ?? req.model,
             subModel: target?.subModel,
             format,

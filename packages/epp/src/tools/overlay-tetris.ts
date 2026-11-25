@@ -385,7 +385,7 @@ async function main() {
     const openRes = await fetch(`${base}/api/ezp/overlays`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ model: pick.model, format: 'grid', width, height, blend: args.blend, ttlMs: 10_000, name: 'tetris' }),
+        body: JSON.stringify({ model: pick.model, format: 'grid', width, height, mode: 'exclusive', blend: args.blend, ttlMs: 10_000, name: 'tetris' }),
     });
     const opened = (await openRes.json()) as { ok: boolean; lease?: Lease; udpPort?: number; error?: string };
     if (!opened.ok || !opened.lease) throw new Error(`open lease: ${opened.error}`);

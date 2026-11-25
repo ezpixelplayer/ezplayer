@@ -33,6 +33,12 @@ const TTL_MS = 15_000;
 const WINDOW_MS = 2000; // the rate readouts cover the last two seconds
 const SETTINGS_EVERY_MS = 5000;
 const OPEN_CONCURRENCY = 8;
+const PLAN_CONCURRENCY = 4;
+const HTTP_IN_FLIGHT = 16;
+// The player takes a status of up to 4 MB; a row per target stays under that up to about 20000 targets.
+// The rows ride along only when the list changed, and every few seconds for pages that joined late.
+const STATUS_TARGETS_MAX = 20000;
+const TARGETS_RESEND_MS = 10_000;
 
 // ---------------------------------------------------------------------------
 // Overlay API
@@ -41,10 +47,13 @@ const OPEN_CONCURRENCY = 8;
 async function api(method, path, body) {
     const res = await fetch(`${base}/api/ezp/overlays${path}`, {
         method,
-        headers: body ? { 'content-type': 'application/json' } : undefined,
+        headers: body ? { ...authHeaders, 'content-type': 'application/json' } : undefined,
         body: body ? JSON.stringify(body) : undefined,
     });
     const text = await res.text();
+    // Leases live on the player's frame pipeline, which exists only while it plays (songs or idle frames).
+    if (res.status === 503)
+        throw new Error('The player is not playing, so there are no frames to paint on. Start the show in EZPlayer.');
     if (!res.ok) throw new Error(`${method} ${path}: ${res.status} ${text}`);
     return JSON.parse(text);
 }
@@ -71,7 +80,9 @@ function sendUdp(l, seq) {
         pending.push(
             new Promise((r) =>
                 sock.send(p, udpPort, udpHost, (err) => {
+                    // Handed to the socket counts: the payload renews the lease, so no keepalive is needed.
                     if (err) l.errors++;
+                    else l.lastAck = performance.now();
                     r();
                 }),
             ),
@@ -80,12 +91,29 @@ function sendUdp(l, seq) {
     return Promise.all(pending);
 }
 
+// Thousands of requests landing at once make the player slow for everyone else and
+// crowd out this app's own status write; a few at a time costs no frame rate (measured).
+let httpActive = 0;
+const httpQueue = [];
+async function limited(fn) {
+    if (httpActive >= HTTP_IN_FLIGHT) await new Promise((r) => httpQueue.push(r));
+    httpActive++;
+    try {
+        return await fn();
+    } finally {
+        httpActive--;
+        httpQueue.shift()?.();
+    }
+}
+
 async function sendHttp(l, seq) {
-    const res = await fetch(`${base}/api/ezp/overlays/${l.lease.id}/frame?token=${l.lease.token}&seq=${seq}`, {
-        method: 'PUT',
-        headers: { 'content-type': 'application/octet-stream' },
-        body: l.payload,
-    }).catch(() => null);
+    const res = await limited(() =>
+        fetch(`${base}/api/ezp/overlays/${l.lease.id}/frame?token=${l.lease.token}&seq=${seq}`, {
+            method: 'PUT',
+            headers: { 'content-type': 'application/octet-stream' },
+            body: l.payload,
+        }).catch(() => null),
+    );
     if (res?.ok) l.lastAck = performance.now();
     else l.errors++;
 }
@@ -470,13 +498,19 @@ function formatFor(t) {
 async function plan(settings) {
     const all = (await api('GET', '/targets')).targets;
     const targets = [];
-    const missing = [];
-    for (const name of settings.models) {
-        if (!all.some((m) => m.model === name)) {
-            missing.push(name);
-            continue;
-        }
-        const rows = (await api('GET', `/targets?model=${encodeURIComponent(name)}&detail=nodes`)).targets;
+    const missing = settings.models.filter((name) => !all.some((m) => m.model === name));
+    const present = settings.models.filter((name) => !missing.includes(name));
+    // Per-node detail is a big answer per model; a few in flight at once, and the page sees the count climb.
+    const rowsOf = new Map();
+    let done = 0;
+    await pool(present, PLAN_CONCURRENCY, async (name) => {
+        working = `Reading ${done + 1} of ${present.length} models...`;
+        rowsOf.set(name, (await api('GET', `/targets?model=${encodeURIComponent(name)}&detail=nodes`)).targets);
+        done++;
+    });
+    working = '';
+    for (const name of present) {
+        const rows = rowsOf.get(name) ?? [];
         const subs = rows.filter((r) => r.subModel && r.nodeCount > 0);
         for (const r of subs.length ? subs : rows.filter((r) => !r.subModel && r.nodeCount > 0)) {
             const format = formatFor(r);
@@ -532,6 +566,10 @@ let runtime = { seed: 1234, pins: {} };
 let live = [];
 let loopPromise = null;
 let message = '';
+/** Bumps whenever the target list or its effects change, so a page knows when to redraw the table. */
+let targetsRev = 0;
+/** What the app is in the middle of (reading models, opening leases); shown over everything else while set. */
+let working = '';
 
 function newStats(targetFps) {
     return { targetFps, started: performance.now(), frames: 0, late: 0, window: [] };
@@ -558,6 +596,7 @@ function painter(tg) {
 /** Gives every planned target its effect; running targets switch painters in place. */
 function assign() {
     if (!settings) return;
+    targetsRev++;
     const enabled = EFFECT_NAMES.filter((n) => settings.effects[n] !== false);
     const rand = rng(runtime.seed);
     for (const tg of planned) {
@@ -585,6 +624,7 @@ async function replan() {
         missing = [];
         planError = e.message;
     }
+    working = '';
     assign();
 }
 
@@ -635,16 +675,21 @@ async function startRun() {
     const todo = planned.filter((tg) => tg.effect);
     if (!todo.length) return void (message = 'Enable at least one effect in the app settings.');
     busy = true;
-    message = 'Opening leases...';
+    const openingFrom = performance.now();
     try {
         if (settings.useUdp && !sock) sock = dgram.createSocket('udp4');
+        // Opened leases are live at once so the keepalive timer renews them while the rest open.
         const opened = [];
         const skipped = [];
+        live = opened;
         await pool(todo, OPEN_CONCURRENCY, async (tg) => {
+            working = `Opening leases: ${opened.length + skipped.length} of ${todo.length}...`;
             try {
+                // An effect is decoration: it layers over whatever else paints the model and never blocks a game.
                 const body = {
                     model: tg.target,
                     format: tg.format,
+                    mode: 'layer',
                     blend: settings.blend,
                     ttlMs: TTL_MS,
                     name: 'overlay-effects',
@@ -673,9 +718,10 @@ async function startRun() {
                 console.log(`skipped ${tg.target}: ${e.message}`);
             }
         });
+        working = '';
         if (!opened.length)
             throw new Error(skipped.length ? 'no lease could be opened (see the log)' : 'nothing to paint');
-        live = opened;
+        console.log(`opened ${opened.length} leases in ${((performance.now() - openingFrom) / 1000).toFixed(1)} s`);
         stats = newStats(settings.fps);
         phase = 'running';
         const over = settings.useUdp ? 'UDP' : 'HTTP';
@@ -688,6 +734,7 @@ async function startRun() {
             wanted = 'idle';
         });
     } catch (e) {
+        working = '';
         message = `Could not start: ${e.message}`;
         console.log(message);
         wanted = 'idle';
@@ -699,9 +746,11 @@ async function startRun() {
 async function stopRun(why) {
     busy = true;
     phase = 'idle';
+    working = 'Closing leases...';
     await loopPromise;
     loopPromise = null;
     await releaseAll();
+    working = '';
     message = why;
     // Settings may have changed while running; pick them up before the next start.
     lastSettingsCheck = -Infinity;
@@ -749,6 +798,9 @@ async function frameLoop() {
         stats.window.push({ at: end, ms: end - start, bytes });
         while (stats.window.length && stats.window[0].at < end - WINDOW_MS) stats.window.shift();
         due += interval;
+        // A UDP send that finishes at once calls back through nextTick, so a loop that is behind
+        // never returns to the event loop and starves the timers (status, keepalive). This does.
+        await new Promise((r) => setImmediate(r));
     }
 }
 
@@ -779,13 +831,14 @@ function status(now) {
     const s = summarize(now);
     const round = (v, d) => Math.round(v * 10 ** d) / 10 ** d;
     let text = message;
-    if (!settings || settingsError) text = settingsError;
+    if (working) text = working;
+    else if (!settings || settingsError) text = settingsError;
     else if (phase === 'idle') {
         const gone = missing.length ? `Not in the layout: ${missing.join(', ')}` : '';
         text = planError || [message || 'Idle; tap Start', gone].filter(Boolean).join('. ');
     }
     return {
-        phase,
+        phase: phase === 'running' ? 'running' : busy ? (wanted === 'running' ? 'starting' : 'stopping') : 'idle',
         fps: { target: settings?.fps ?? 0, achieved: round(s.achieved, 1) },
         frameMs: { avg: round(s.avg, 2), max: round(s.max, 2) },
         bytesPerSec: Math.round(s.bytesPerSec),
@@ -796,17 +849,10 @@ function status(now) {
         timerTickMs: round(timerTickMs, 1),
         leases: live.length,
         seed: runtime.seed,
-        targets: planned.map((tg) => ({
-            target: tg.target,
-            model: tg.model,
-            kind: tg.kind,
-            nodes: tg.nodes,
-            width: tg.width,
-            height: tg.height,
-            format: tg.format,
-            effect: tg.effect,
-            pinned: tg.pinned,
-        })),
+        targetCount: planned.length,
+        modelCount: new Set(planned.map((tg) => tg.model)).size,
+        targetsListed: planned.length <= STATUS_TARGETS_MAX,
+        targetsRev,
         effectsAvailable: EFFECT_NAMES,
         effects: EFFECT_NAMES.map((name) => ({
             name,
@@ -818,10 +864,36 @@ function status(now) {
     };
 }
 
+/** The target rows, sent with a status only when the list changed or a page may have joined. */
+function targetRows() {
+    return planned.map((tg) => ({
+        target: tg.target,
+        model: tg.model,
+        kind: tg.kind,
+        nodes: tg.nodes,
+        width: tg.width,
+        height: tg.height,
+        format: tg.format,
+        effect: tg.effect,
+        pinned: tg.pinned,
+    }));
+}
+
+let statusRefused = 0;
+/** True when the player took it. A write that hangs must not wedge the feed, hence the timeout. */
 async function publishStatus(st) {
-    await fetch(appUrl('/status'), { method: 'PUT', headers: jsonHeaders, body: JSON.stringify(st) }).catch(
-        () => undefined,
-    );
+    const res = await fetch(appUrl('/status'), {
+        method: 'PUT',
+        headers: jsonHeaders,
+        body: JSON.stringify(st),
+        signal: AbortSignal.timeout(5000),
+    }).catch(() => null);
+    // Refused status is invisible on the page; say so once per kind of refusal.
+    if (res && !res.ok && res.status !== statusRefused) {
+        statusRefused = res.status;
+        console.log(`status refused: HTTP ${res.status} ${await res.text().catch(() => '')}`);
+    }
+    return Boolean(res?.ok);
 }
 
 function handleEvent(ev) {
@@ -895,19 +967,50 @@ async function main() {
 
     // Payload traffic renews a lease, but UDP gives no receipt; a lease with no acknowledged send gets a keepalive.
     const keepalive = setInterval(() => {
-        if (phase !== 'running') return;
+        if (phase !== 'running' && !busy) return;
         const now = performance.now();
         for (const l of live) {
             if (now - l.lastAck < TTL_MS / 3) continue;
             l.lastAck = now;
-            void fetch(`${base}/api/ezp/overlays/${l.lease.id}/keepalive?token=${l.lease.token}`, {
-                method: 'POST',
-            }).catch(() => undefined);
+            void limited(() =>
+                fetch(`${base}/api/ezp/overlays/${l.lease.id}/keepalive?token=${l.lease.token}`, { method: 'POST' }),
+            ).catch(() => undefined);
         }
     }, 1000);
 
+    // On a timer of its own: the loop below blocks for as long as a plan or a start takes.
     let lastStatusJson = '';
     let lastStatusAt = -Infinity;
+    let publishing = false;
+    let sentTargetsRev = -1;
+    let sentTargetsAt = -Infinity;
+    const statusTimer = setInterval(() => {
+        if (publishing || quit) return;
+        const st = status(performance.now());
+        const json = JSON.stringify(st);
+        const t = performance.now();
+        const due =
+            (phase === 'running' && t - lastStatusAt >= 500) ||
+            (phase !== 'running' && (json !== lastStatusJson || t - lastStatusAt > 5000));
+        const withTargets =
+            st.targetsListed && (targetsRev !== sentTargetsRev || t - sentTargetsAt > TARGETS_RESEND_MS);
+        if (!due && !withTargets) return;
+        if (withTargets) st.targets = targetRows();
+        const rev = targetsRev;
+        lastStatusJson = json;
+        lastStatusAt = t;
+        publishing = true;
+        publishStatus(st)
+            .then((ok) => {
+                if (ok && withTargets) {
+                    sentTargetsRev = rev;
+                    sentTargetsAt = t;
+                }
+            })
+            .finally(() => {
+                publishing = false;
+            });
+    }, 250);
     while (!quit) {
         const now = performance.now();
         if (phase === 'idle' && !busy && now - lastSettingsCheck > SETTINGS_EVERY_MS) {
@@ -926,20 +1029,10 @@ async function main() {
                 await startRun();
             }
         }
-        const st = status(performance.now());
-        const json = JSON.stringify(st);
-        const t = performance.now();
-        if (
-            (phase === 'running' && t - lastStatusAt >= 500) ||
-            (phase === 'idle' && (json !== lastStatusJson || t - lastStatusAt > 5000))
-        ) {
-            lastStatusJson = json;
-            lastStatusAt = t;
-            await publishStatus(st);
-        }
         await sleep(250);
     }
 
+    clearInterval(statusTimer);
     clearInterval(keepalive);
     phase = 'idle';
     await loopPromise;

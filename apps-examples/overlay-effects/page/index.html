@@ -14,6 +14,7 @@
   h1 { margin: 0; font-size: 20px; letter-spacing: 1px; }
   #phase { font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: var(--dim); }
   #phase.running { color: var(--good); }
+  #phase.starting, #phase.stopping { color: var(--accent); }
   .big { width: 100%; max-width: 640px; background: var(--panel); border-radius: 14px; padding: 18px 20px; text-align: center; }
   .big small { display: block; color: var(--dim); font-size: 12px; text-transform: uppercase; letter-spacing: 1px; }
   .big b { display: block; font-size: 72px; line-height: 1; font-variant-numeric: tabular-nums; margin: 6px 0 2px; }
@@ -118,13 +119,17 @@
     el('tick').textContent = `Node's timer ticks every ${tick.toFixed(1)} ms on this machine, so frames at ${target} fps start up to ${(tick / 2).toFixed(0)} ms early or late.`;
     el('message').textContent = s.message || '';
     el('message').className = /not configured|not reachable|could not|failed|not in the layout/i.test(s.message || '') ? 'alert' : '';
-    el('start').disabled = running;
-    el('stop').disabled = !running;
+    el('start').disabled = s.phase !== 'idle';
+    el('stop').disabled = s.phase !== 'running' && s.phase !== 'starting';
 
     const titles = Object.fromEntries((s.effects || []).map((e) => [e.name, e.title]));
-    const rows = s.targets || [];
-    const models = new Set(rows.map((t) => t.model));
-    el('count').textContent = rows.length ? `${rows.length} targets on ${models.size} model${models.size === 1 ? '' : 's'}; seed ${s.seed}` : '';
+    const n = s.targetCount ?? (s.targets || []).length;
+    const m = s.modelCount ?? new Set((s.targets || []).map((t) => t.model)).size;
+    const hidden = s.targetsListed === false ? ' (too many to list here)' : '';
+    el('count').textContent = n ? `${n} targets on ${m} model${m === 1 ? '' : 's'}; seed ${s.seed}${hidden}` : '';
+    // The rows ride along only when the list changed or every few seconds; otherwise the table stands.
+    if (!Array.isArray(s.targets)) return;
+    const rows = s.targets;
     const body = el('targets');
     body.replaceChildren();
     for (const t of rows) {
