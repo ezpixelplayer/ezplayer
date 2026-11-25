@@ -56,11 +56,14 @@ permissions, so install only what you trust.
 
 ## Schedules
 
-Outside its availability window an instance is stopped, its page says "not available right now", and
-the show page does not list it. When nothing is running the show page says so in one line.
+Outside its scheduled time windows an instance is stopped and shows **not scheduled now** on the Apps
+card; its page says "not available right now", and the show page does not list it. When nothing is
+running the show page says so in one line.
 
-**Availability** on the Apps card holds the default windows every instance follows. Each instance can
-switch to **its own windows** in its details. No windows, in either place, means always.
+**Default Availability Schedule** on the Apps card holds the time windows every instance follows. In its
+details each instance picks **Default (below)** or **Its own time windows**. No time windows, in either
+place, means always. **Event Rate Limit**, below the schedule, caps how many taps a minute the instance
+accepts from all phones together.
 
 ## Show inputs
 

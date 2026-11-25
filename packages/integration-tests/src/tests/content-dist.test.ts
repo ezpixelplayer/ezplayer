@@ -98,6 +98,11 @@ afterAll(async () => {
 
 describe('add a song, send it, play it', () => {
     it('distributes a newly added song and leaves the device holding it', async () => {
+        // A retry starts over: the mock forgets what a failed attempt sent it.
+        primary.http.content.files.get('sequences')?.clear();
+        primary.http.content.playlists.clear();
+        primary.http.content.uploadLog.length = 0;
+
         // A song arrives the way the Songs screen adds one: file, then record.
         await fpp.upload('sequences', 'Carol.fseq', buildFseq({ channels: CHANNELS, frames: FRAMES, value: 42 }));
         const reg = await fetch(`${app.base}/api/ezp/sequences`, {

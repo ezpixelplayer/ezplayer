@@ -75,6 +75,9 @@ const STATE_COLOR: Record<AppInstanceStatus['state'], 'default' | 'success' | 'w
     missing: 'error',
 };
 
+// Only the state whose name does not say what to do about it gets a label.
+const STATE_LABEL: Partial<Record<AppInstanceStatus['state'], string>> = { unavailable: 'not scheduled now' };
+
 type Command = (cmd: AppsCommand, label?: string) => Promise<void>;
 
 /**
@@ -293,7 +296,7 @@ const InstanceRow: React.FC<{
                 <Typography color="text.secondary" variant="body2">
                     /apps/{inst.name}/
                 </Typography>
-                <Chip size="small" label={inst.state} color={STATE_COLOR[inst.state]} />
+                <Chip size="small" label={STATE_LABEL[inst.state] ?? inst.state} color={STATE_COLOR[inst.state]} />
                 {inst.restarts > 0 && <Chip size="small" variant="outlined" label={`${inst.restarts} restarts`} />}
                 <Box sx={{ flex: 1 }} />
                 <Tooltip title="Enabled: start when the show opens and the schedule allows">
@@ -397,6 +400,7 @@ const InstanceRow: React.FC<{
                         }}
                     />
                     <InstanceAvailability inst={inst} busy={busy} command={command} />
+                    <Typography variant="subtitle2">Event Rate Limit</Typography>
                     <TextField
                         size="small"
                         type="number"
@@ -497,29 +501,29 @@ const Report: React.FC<{ inst: AppInstanceStatus }> = ({ inst }) => {
 
 // -- availability -------------------------------------------------------------------
 
-/** The default windows every instance follows unless it has its own. */
+/** The default time windows every instance follows unless it has its own. */
 const AvailabilitySection: React.FC<{ state: AppsState; busy: string | null; command: Command }> = ({
     state,
     busy,
     command,
 }) => (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-        <Typography variant="h6">Availability</Typography>
+        <Typography variant="h6">Default Availability Schedule</Typography>
         <Typography color="text.secondary" variant="body2">
-            When enabled instances run. Outside these windows an instance is stopped and the show page does not
-            list it. Each instance can follow this default or have its own windows.
+            When enabled instances run. Outside these time windows an instance is stopped and the show page does not
+            list it. Each instance follows this schedule unless it has its own.
         </Typography>
         <WindowListEditor
             schedule={state.defaultSchedule}
-            noun="availability window"
-            emptyText="Always, whenever the instance is enabled. Add a window to limit that."
+            noun="time window"
+            emptyText="Always, whenever the instance is enabled. Add a time window to limit that."
             disabled={busy !== null}
             onChange={(schedule) => void command({ op: 'setDefaultSchedule', schedule })}
         />
     </Box>
 );
 
-/** One instance's choice: the default windows, or its own (none means always). */
+/** One instance's choice: the default time windows, or its own (none means always). */
 const InstanceAvailability: React.FC<{ inst: AppInstanceStatus; busy: string | null; command: Command }> = ({
     inst,
     busy,
@@ -530,26 +534,26 @@ const InstanceAvailability: React.FC<{ inst: AppInstanceStatus; busy: string | n
         void command({ op: 'setInstance', name: inst.name, patch: { schedule } });
     return (
         <Box>
-            <Typography variant="subtitle2">Availability</Typography>
+            <Typography variant="subtitle2">Availability Schedule</Typography>
             <RadioGroup row value={own ? 'own' : 'default'} onChange={(e) => set(e.target.value === 'own' ? [] : null)}>
                 <FormControlLabel
                     value="default"
                     control={<Radio size="small" />}
-                    label="The Apps default"
+                    label="Default (below)"
                     disabled={busy !== null}
                 />
                 <FormControlLabel
                     value="own"
                     control={<Radio size="small" />}
-                    label="Its own windows"
+                    label="Its own time windows"
                     disabled={busy !== null}
                 />
             </RadioGroup>
             {own && (
                 <WindowListEditor
                     schedule={inst.schedule ?? []}
-                    noun="availability window"
-                    emptyText="Always, whenever enabled. Add a window to limit that."
+                    noun="time window"
+                    emptyText="Always, whenever enabled. Add a time window to limit that."
                     disabled={busy !== null}
                     onChange={set}
                 />
