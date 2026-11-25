@@ -127,7 +127,9 @@
     const body = el('pins');
     body.replaceChildren();
     if (!targets.length) {
-      el('pinsHint').textContent = 'The target list comes from the running app; save the models first and this table fills in within a few seconds.';
+      el('pinsHint').textContent = status?.targetsListed === false
+        ? `${status.targetCount} targets is too many to list for pinning; pins saved earlier still apply by name.`
+        : 'The target list comes from the running app; save the models first and this table fills in within a few seconds.';
       return;
     }
     for (const t of targets) {
@@ -238,8 +240,11 @@
       el('status').textContent = JSON.stringify(s, null, 2);
       if (!s) return;
       if (Array.isArray(s.effects) && s.effects.length) { effects = s.effects; renderEffects(); }
-      const list = (s.targets || []).map((t) => ({ target: t.target, nodes: t.nodes, format: t.format }));
-      if (JSON.stringify(list) !== JSON.stringify(targets)) { targets = list; renderPins(); }
+      // The rows ride along only when the list changed or every few seconds; otherwise the table stands.
+      if (Array.isArray(s.targets)) {
+        const list = s.targets.map((t) => ({ target: t.target, nodes: t.nodes, format: t.format }));
+        if (JSON.stringify(list) !== JSON.stringify(targets)) { targets = list; renderPins(); }
+      }
       el('apply').hidden = s.phase !== 'running';
     });
     try {

@@ -35,6 +35,10 @@ const SETTINGS_EVERY_MS = 5000;
 const OPEN_CONCURRENCY = 8;
 const PLAN_CONCURRENCY = 4;
 const HTTP_IN_FLIGHT = 16;
+// The player takes a status of up to 4 MB; a row per target stays under that up to about 20000 targets.
+// The rows ride along only when the list changed, and every few seconds for pages that joined late.
+const STATUS_TARGETS_MAX = 20000;
+const TARGETS_RESEND_MS = 10_000;
 
 // ---------------------------------------------------------------------------
 // Overlay API
@@ -47,6 +51,9 @@ async function api(method, path, body) {
         body: body ? JSON.stringify(body) : undefined,
     });
     const text = await res.text();
+    // Leases live on the player's frame pipeline, which exists only while it plays (songs or idle frames).
+    if (res.status === 503)
+        throw new Error('The player is not playing, so there are no frames to paint on. Start the show in EZPlayer.');
     if (!res.ok) throw new Error(`${method} ${path}: ${res.status} ${text}`);
     return JSON.parse(text);
 }
@@ -73,7 +80,9 @@ function sendUdp(l, seq) {
         pending.push(
             new Promise((r) =>
                 sock.send(p, udpPort, udpHost, (err) => {
+                    // Handed to the socket counts: the payload renews the lease, so no keepalive is needed.
                     if (err) l.errors++;
+                    else l.lastAck = performance.now();
                     r();
                 }),
             ),
@@ -82,25 +91,31 @@ function sendUdp(l, seq) {
     return Promise.all(pending);
 }
 
-// Hundreds of PUTs landing at once make the player slow for everyone else, this
-// app's own status included; a few at a time costs no frame rate (measured).
+// Thousands of requests landing at once make the player slow for everyone else and
+// crowd out this app's own status write; a few at a time costs no frame rate (measured).
 let httpActive = 0;
 const httpQueue = [];
-async function sendHttp(l, seq) {
+async function limited(fn) {
     if (httpActive >= HTTP_IN_FLIGHT) await new Promise((r) => httpQueue.push(r));
     httpActive++;
     try {
-        const res = await fetch(`${base}/api/ezp/overlays/${l.lease.id}/frame?token=${l.lease.token}&seq=${seq}`, {
-            method: 'PUT',
-            headers: { 'content-type': 'application/octet-stream' },
-            body: l.payload,
-        }).catch(() => null);
-        if (res?.ok) l.lastAck = performance.now();
-        else l.errors++;
+        return await fn();
     } finally {
         httpActive--;
         httpQueue.shift()?.();
     }
+}
+
+async function sendHttp(l, seq) {
+    const res = await limited(() =>
+        fetch(`${base}/api/ezp/overlays/${l.lease.id}/frame?token=${l.lease.token}&seq=${seq}`, {
+            method: 'PUT',
+            headers: { 'content-type': 'application/octet-stream' },
+            body: l.payload,
+        }).catch(() => null),
+    );
+    if (res?.ok) l.lastAck = performance.now();
+    else l.errors++;
 }
 
 // ---------------------------------------------------------------------------
@@ -551,6 +566,8 @@ let runtime = { seed: 1234, pins: {} };
 let live = [];
 let loopPromise = null;
 let message = '';
+/** Bumps whenever the target list or its effects change, so a page knows when to redraw the table. */
+let targetsRev = 0;
 /** What the app is in the middle of (reading models, opening leases); shown over everything else while set. */
 let working = '';
 
@@ -579,6 +596,7 @@ function painter(tg) {
 /** Gives every planned target its effect; running targets switch painters in place. */
 function assign() {
     if (!settings) return;
+    targetsRev++;
     const enabled = EFFECT_NAMES.filter((n) => settings.effects[n] !== false);
     const rand = rng(runtime.seed);
     for (const tg of planned) {
@@ -780,6 +798,9 @@ async function frameLoop() {
         stats.window.push({ at: end, ms: end - start, bytes });
         while (stats.window.length && stats.window[0].at < end - WINDOW_MS) stats.window.shift();
         due += interval;
+        // A UDP send that finishes at once calls back through nextTick, so a loop that is behind
+        // never returns to the event loop and starves the timers (status, keepalive). This does.
+        await new Promise((r) => setImmediate(r));
     }
 }
 
@@ -828,17 +849,10 @@ function status(now) {
         timerTickMs: round(timerTickMs, 1),
         leases: live.length,
         seed: runtime.seed,
-        targets: planned.map((tg) => ({
-            target: tg.target,
-            model: tg.model,
-            kind: tg.kind,
-            nodes: tg.nodes,
-            width: tg.width,
-            height: tg.height,
-            format: tg.format,
-            effect: tg.effect,
-            pinned: tg.pinned,
-        })),
+        targetCount: planned.length,
+        modelCount: new Set(planned.map((tg) => tg.model)).size,
+        targetsListed: planned.length <= STATUS_TARGETS_MAX,
+        targetsRev,
         effectsAvailable: EFFECT_NAMES,
         effects: EFFECT_NAMES.map((name) => ({
             name,
@@ -850,10 +864,36 @@ function status(now) {
     };
 }
 
+/** The target rows, sent with a status only when the list changed or a page may have joined. */
+function targetRows() {
+    return planned.map((tg) => ({
+        target: tg.target,
+        model: tg.model,
+        kind: tg.kind,
+        nodes: tg.nodes,
+        width: tg.width,
+        height: tg.height,
+        format: tg.format,
+        effect: tg.effect,
+        pinned: tg.pinned,
+    }));
+}
+
+let statusRefused = 0;
+/** True when the player took it. A write that hangs must not wedge the feed, hence the timeout. */
 async function publishStatus(st) {
-    await fetch(appUrl('/status'), { method: 'PUT', headers: jsonHeaders, body: JSON.stringify(st) }).catch(
-        () => undefined,
-    );
+    const res = await fetch(appUrl('/status'), {
+        method: 'PUT',
+        headers: jsonHeaders,
+        body: JSON.stringify(st),
+        signal: AbortSignal.timeout(5000),
+    }).catch(() => null);
+    // Refused status is invisible on the page; say so once per kind of refusal.
+    if (res && !res.ok && res.status !== statusRefused) {
+        statusRefused = res.status;
+        console.log(`status refused: HTTP ${res.status} ${await res.text().catch(() => '')}`);
+    }
+    return Boolean(res?.ok);
 }
 
 function handleEvent(ev) {
@@ -932,9 +972,9 @@ async function main() {
         for (const l of live) {
             if (now - l.lastAck < TTL_MS / 3) continue;
             l.lastAck = now;
-            void fetch(`${base}/api/ezp/overlays/${l.lease.id}/keepalive?token=${l.lease.token}`, {
-                method: 'POST',
-            }).catch(() => undefined);
+            void limited(() =>
+                fetch(`${base}/api/ezp/overlays/${l.lease.id}/keepalive?token=${l.lease.token}`, { method: 'POST' }),
+            ).catch(() => undefined);
         }
     }, 1000);
 
@@ -942,22 +982,34 @@ async function main() {
     let lastStatusJson = '';
     let lastStatusAt = -Infinity;
     let publishing = false;
+    let sentTargetsRev = -1;
+    let sentTargetsAt = -Infinity;
     const statusTimer = setInterval(() => {
         if (publishing || quit) return;
         const st = status(performance.now());
         const json = JSON.stringify(st);
         const t = performance.now();
-        if (
+        const due =
             (phase === 'running' && t - lastStatusAt >= 500) ||
-            (phase !== 'running' && (json !== lastStatusJson || t - lastStatusAt > 5000))
-        ) {
-            lastStatusJson = json;
-            lastStatusAt = t;
-            publishing = true;
-            publishStatus(st).finally(() => {
+            (phase !== 'running' && (json !== lastStatusJson || t - lastStatusAt > 5000));
+        const withTargets =
+            st.targetsListed && (targetsRev !== sentTargetsRev || t - sentTargetsAt > TARGETS_RESEND_MS);
+        if (!due && !withTargets) return;
+        if (withTargets) st.targets = targetRows();
+        const rev = targetsRev;
+        lastStatusJson = json;
+        lastStatusAt = t;
+        publishing = true;
+        publishStatus(st)
+            .then((ok) => {
+                if (ok && withTargets) {
+                    sentTargetsRev = rev;
+                    sentTargetsAt = t;
+                }
+            })
+            .finally(() => {
                 publishing = false;
             });
-        }
     }, 250);
     while (!quit) {
         const now = performance.now();

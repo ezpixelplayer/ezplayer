@@ -26,7 +26,7 @@ import {
 import { APPS_SDK_JS } from './apps-sdk.js';
 import type { AppsAuthEntry } from './serverworkertypes.js';
 
-const STATUS_MAX_BYTES = 256 * 1024;
+const STATUS_MAX_BYTES = 4 * 1024 * 1024;
 const EVENT_MAX_BYTES = 64 * 1024;
 const POLL_MAX_WAIT_MS = 60_000;
 const PAGE_PROXY_MAX_BODY = 2 * 1024 * 1024;
@@ -224,7 +224,7 @@ export function registerAppsRoutes(router: Router, apps: AppsRuntime, deps: Apps
         if (state === undefined) return;
         if (JSON.stringify(state).length > STATUS_MAX_BYTES) {
             ctx.status = 413;
-            ctx.body = { error: 'status is larger than 256 KB' };
+            ctx.body = { error: 'status is larger than 4 MB' };
             return;
         }
         apps.setStatus(ctx.params.name, state);

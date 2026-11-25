@@ -2339,7 +2339,7 @@ input. The last 1000 events of the current run are kept; a new process starts wi
 
 #### Status out
 
-`PUT /api/ezp/apps/:instance/status` — the process, with the token. Any JSON up to 256 KB. The player
+`PUT /api/ezp/apps/:instance/status` — the process, with the token. Any JSON up to 4 MB. The player
 numbers it and pushes it to every subscriber.
 
 `GET /api/ezp/apps/:instance/status` — anyone. `{ "seq": n, "at": ms, "state": <the JSON> }`, `seq` 0

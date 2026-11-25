@@ -97,7 +97,9 @@ its strand list. The hue of each target follows its place across the yard, as in
 
 The page sends `{ type: 'start' }`, `{ type: 'stop' }` and `{ type: 'reshuffle' }`. The settings page
 also sends `{ type: 'setEffect', target, effect }` (ignored when it comes through the show's cloud
-page) and `{ type: 'restart' }`. Status is published at least twice a second while running, and
+page) and `{ type: 'restart' }`. Leases live on the player's frame pipeline, so the player must be
+playing (songs or idle frames between them) for the app to plan or paint; stopped, it waits and says so.
+Status is published at least twice a second while running, and
 whenever it changes otherwise. `phase` is `idle`, `starting` (reading the models or opening the leases,
 with the count so far in `message`), `running` or `stopping`; leases opened so far are kept alive while
 the rest open, so a slow start on a big layout does not lose them:
@@ -114,3 +116,11 @@ the rest open, so a slow start on a big layout does not lose them:
   "message": "Painting 14 targets at 20 fps over HTTP"
 }
 ```
+
+The target rows are the bulk of the status, so they ride along only when the list changed (`targetsRev`
+bumps) and every ten seconds for a page that joined late; a status without `targets` means the list a
+page already has still stands. The player accepts a status of up to 4 MB, so above 20000 targets the
+list is left out altogether (`targetsListed` is false) and `targetCount` and `modelCount` carry the
+numbers; the pin table on the settings page then says so, and pins saved earlier still apply by name.
+Over UDP a payload handed to the socket counts as the lease's keepalive, so the keepalive call is only
+made for a lease whose sends fail.

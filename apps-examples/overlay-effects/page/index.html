@@ -123,9 +123,13 @@
     el('stop').disabled = s.phase !== 'running' && s.phase !== 'starting';
 
     const titles = Object.fromEntries((s.effects || []).map((e) => [e.name, e.title]));
-    const rows = s.targets || [];
-    const models = new Set(rows.map((t) => t.model));
-    el('count').textContent = rows.length ? `${rows.length} targets on ${models.size} model${models.size === 1 ? '' : 's'}; seed ${s.seed}` : '';
+    const n = s.targetCount ?? (s.targets || []).length;
+    const m = s.modelCount ?? new Set((s.targets || []).map((t) => t.model)).size;
+    const hidden = s.targetsListed === false ? ' (too many to list here)' : '';
+    el('count').textContent = n ? `${n} targets on ${m} model${m === 1 ? '' : 's'}; seed ${s.seed}${hidden}` : '';
+    // The rows ride along only when the list changed or every few seconds; otherwise the table stands.
+    if (!Array.isArray(s.targets)) return;
+    const rows = s.targets;
     const body = el('targets');
     body.replaceChildren();
     for (const t of rows) {
