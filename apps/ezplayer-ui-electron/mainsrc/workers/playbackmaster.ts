@@ -77,6 +77,7 @@ import {
     ExplicitControllerDesc,
     readControllerRecordOverrides,
     OverlayConflictError,
+    type OverlayLeaseInfo,
     overlayHolderLabel,
 } from '@ezplayer/epp';
 
@@ -531,7 +532,9 @@ async function openOrReopenSenders(): Promise<void> {
             emitInfo(`Controller ${c.setup.name} (${c.setup.address}) ${w.why}; it is now getting data`);
         } else {
             // c.report carries the reason; the next window tries again.
-            emitWarning(`Controller ${c.setup.name} (${c.setup.address}) could not be opened: ${report?.error ?? 'unknown'}`);
+            emitWarning(
+                `Controller ${c.setup.name} (${c.setup.address}) could not be opened: ${report?.error ?? 'unknown'}`,
+            );
         }
     }
 }
@@ -1995,7 +1998,8 @@ const resolveFilePathFromIndex = resolveShowAssetPath;
 const testTweak = new TestTweakService({
     log: (level, msg) => (level === 'error' ? emitError(msg) : level === 'warn' ? emitWarning(msg) : emitInfo(msg)),
     onWiringChanged: () => {
-        if (parsedControllerDoc) send({ type: 'knownControllers', controllers: deriveKnownControllers(parsedControllerDoc) });
+        if (parsedControllerDoc)
+            send({ type: 'knownControllers', controllers: deriveKnownControllers(parsedControllerDoc) });
     },
 });
 
@@ -2970,7 +2974,12 @@ async function processQueue() {
         frameExportBuffer = undefined;
         if (nChannels > 0) {
             frameExportBuffer = LatestFrameRingBuffer.allocate(nChannels, 4, true) as SharedArrayBuffer;
-            new LatestFrameRingBuffer({ buffer: frameExportBuffer, frameSize: nChannels, slotCount: 4, isWriter: true });
+            new LatestFrameRingBuffer({
+                buffer: frameExportBuffer,
+                frameSize: nChannels,
+                slotCount: 4,
+                isWriter: true,
+            });
         }
 
         // The pipeline owns the layout, the frame pool, and the output worker (sockets included).
@@ -2984,7 +2993,8 @@ async function processQueue() {
             settings: { outputEnabled: !outputSuppressed, blackFramesEnabled: sendIdleBlackFrames, maxSlotFraction },
             legacyRing: frameExportBuffer,
             overlayPort: latestSettings?.advanced?.overlayPort ?? 4049,
-            log: (level, msg) => (level === 'error' ? emitError(msg) : level === 'warn' ? emitWarning(msg) : emitInfo(msg)),
+            log: (level, msg) =>
+                level === 'error' ? emitError(msg) : level === 'warn' ? emitWarning(msg) : emitInfo(msg),
         });
         curPipeline = pipeline;
         testTweak.attach(pipeline);
@@ -3695,7 +3705,12 @@ async function processQueue() {
  */
 let lastOutputSent = 0;
 let lastOutputActiveMs = 0;
-const outputBase = { framesSent: 0, cframesSkippedDirective: 0, cframesSkippedIncompletePrior: 0, packetsDroppedBySender: 0 };
+const outputBase = {
+    framesSent: 0,
+    cframesSkippedDirective: 0,
+    cframesSkippedIncompletePrior: 0,
+    packetsDroppedBySender: 0,
+};
 function resetOutputStatsBase() {
     const snap = curPipeline?.outputStats();
     outputBase.framesSent = snap?.counters.framesSent ?? 0;
@@ -3706,8 +3721,10 @@ function resetOutputStatsBase() {
 function pullOutputStats(pipeline: PixelPipeline) {
     const { counters, gauges } = pipeline.outputStats();
     playbackStats.sentFramesCumulative = counters.framesSent - outputBase.framesSent;
-    playbackStats.cframesSkippedDueToDirectiveCumulative = counters.cframesSkippedDirective - outputBase.cframesSkippedDirective;
-    playbackStats.cframesSkippedDueToIncompletePriorCumulative = counters.cframesSkippedIncompletePrior - outputBase.cframesSkippedIncompletePrior;
+    playbackStats.cframesSkippedDueToDirectiveCumulative =
+        counters.cframesSkippedDirective - outputBase.cframesSkippedDirective;
+    playbackStats.cframesSkippedDueToIncompletePriorCumulative =
+        counters.cframesSkippedIncompletePrior - outputBase.cframesSkippedIncompletePrior;
     playbackStats.cpacketsDroppedBySenderCumulative = gauges.packetsDroppedBySender - outputBase.packetsDroppedBySender;
     playbackStats.maxSendTimeHistorical = Math.max(playbackStats.maxSendTimeHistorical, gauges.maxSendMs);
     const sent = counters.framesSent - lastOutputSent;
@@ -3718,6 +3735,53 @@ function pullOutputStats(pipeline: PixelPipeline) {
     lastOutputActiveMs = gauges.sendActiveMsTotal;
 }
 
+/**
+ * An app painting hundreds of submodels opens and closes its leases in a burst.
+ * One line per burst and holder says what happened; a lone lease keeps its detail.
+ */
+interface OverlayBurst {
+    verb: 'opened' | 'closed';
+    who: string;
+    mode: string;
+    n: number;
+    models: Set<string>;
+    first: OverlayLeaseInfo;
+    since: number;
+    timer?: NodeJS.Timeout;
+}
+const OVERLAY_BURST_QUIET_MS = 1000;
+const overlayBursts = new Map<string, OverlayBurst>();
+
+function logOverlayLease(verb: 'opened' | 'closed', lease: OverlayLeaseInfo): void {
+    const who = overlayHolderLabel(lease);
+    const key = `${verb}|${who}|${lease.mode}`;
+    let burst = overlayBursts.get(key);
+    if (!burst) {
+        burst = { verb, who, mode: lease.mode, n: 0, models: new Set(), first: lease, since: Date.now() };
+        overlayBursts.set(key, burst);
+    }
+    const b = burst;
+    b.n++;
+    b.models.add(lease.model ?? '<display>');
+    if (b.timer) clearTimeout(b.timer);
+    b.timer = setTimeout(() => {
+        overlayBursts.delete(key);
+        if (b.n === 1) {
+            const l = b.first;
+            const where = `${l.model ?? '<display>'}${l.subModel ? '/' + l.subModel : ''}`;
+            emitInfo(
+                verb === 'opened'
+                    ? `[overlay] lease ${l.id} (${l.mode}, ${who}) opened on ${where} ${l.width}x${l.height} ${l.format} ${l.blend}`
+                    : `[overlay] lease ${l.id} (${who}) closed on ${where}`,
+            );
+            return;
+        }
+        const ms = Date.now() - b.since - OVERLAY_BURST_QUIET_MS;
+        const models = `${b.models.size} model${b.models.size === 1 ? '' : 's'}`;
+        emitInfo(`[overlay] ${who} ${verb} ${b.n} ${b.mode} leases on ${models} in ${ms} ms`);
+    }, OVERLAY_BURST_QUIET_MS).unref();
+}
+
 /** Overlay lease operations from the HTTP API. */
 function overlayCommand(cmd: OverlayCommand): OverlayResult {
     const p = curPipeline;
@@ -3725,23 +3789,37 @@ function overlayCommand(cmd: OverlayCommand): OverlayResult {
     const ov = p.overlays;
     try {
         switch (cmd.op) {
-            case 'targets':
+            case 'targets': {
                 // Per-node detail for a whole layout runs to tens of megabytes.
                 if (cmd.detail === 'nodes' && !cmd.model) return { ok: false, error: 'detail=nodes needs model=NAME' };
-                return { ok: true, targets: ov.targets({ model: cmd.model, detail: cmd.detail }), layoutVersion: p.layout.layoutVersion };
+                const { types, groups } = testTweak.showModels();
+                const targets = ov
+                    .targets({ model: cmd.model, detail: cmd.detail })
+                    .map((t) => (!t.subModel && types.has(t.model) ? { ...t, type: types.get(t.model) } : t));
+                const res: OverlayResult = { ok: true, targets, layoutVersion: p.layout.layoutVersion };
+                if (cmd.groups) {
+                    // Models only: a group that reaches no overlay target is left out.
+                    const known = new Set(ov.targets().map((t) => t.model));
+                    res.groups = groups
+                        .map((g) => ({ name: g.name, models: g.models.filter((m) => known.has(m)) }))
+                        .filter((g) => g.models.length > 0);
+                }
+                return res;
+            }
             case 'list':
                 return { ok: true, leases: ov.list() };
             case 'open': {
                 const lease = ov.open(cmd.request, Date.now());
-                emitInfo(`[overlay] lease ${lease.id} (${lease.mode}, ${overlayHolderLabel(lease)}) opened on ${lease.model ?? '<display>'}${lease.subModel ? '/' + lease.subModel : ''} ${lease.width}x${lease.height} ${lease.format} ${lease.blend}`);
+                logOverlayLease('opened', lease);
                 return { ok: true, lease, udpPort: p.overlayPort };
             }
             case 'close': {
                 const info = ov.get(cmd.id);
                 if (!info) return { ok: false, error: 'no such lease' };
-                if (cmd.token !== undefined && cmd.token !== 0 && cmd.token !== info.token) return { ok: false, error: 'bad token' };
+                if (cmd.token !== undefined && cmd.token !== 0 && cmd.token !== info.token)
+                    return { ok: false, error: 'bad token' };
                 ov.close(cmd.id);
-                emitInfo(`[overlay] lease ${cmd.id} closed`);
+                logOverlayLease('closed', info);
                 return { ok: true };
             }
             case 'keepalive': {
@@ -3753,13 +3831,15 @@ function overlayCommand(cmd: OverlayCommand): OverlayResult {
             case 'frame': {
                 const info = ov.get(cmd.id);
                 if (!info || info.token !== cmd.token) return { ok: false, error: 'no such lease' };
-                if (cmd.data.length !== info.frameBytes) return { ok: false, error: `payload must be ${info.frameBytes} bytes` };
+                if (cmd.data.length !== info.frameBytes)
+                    return { ok: false, error: `payload must be ${info.frameBytes} bytes` };
                 ov.write(cmd.id, cmd.token, cmd.seq, 0, cmd.data, true, Date.now());
                 return { ok: true };
             }
         }
     } catch (e) {
-        if (e instanceof OverlayConflictError) return { ok: false, error: e.message, code: 'conflict', heldBy: e.heldBy };
+        if (e instanceof OverlayConflictError)
+            return { ok: false, error: e.message, code: 'conflict', heldBy: e.heldBy };
         return { ok: false, error: (e as Error).message };
     }
     return { ok: false, error: 'unknown op' };

@@ -19,8 +19,10 @@ player creates an instance and gives it a token; nothing else to set up.
 
 Open the instance's settings page (the gear on the Apps tile).
 
-- **Models**: tick the models to paint, A to Z, each showing how many submodels it has. A model
-  with submodels gets a lease per submodel; a model without gets one lease of its own.
+- **Models**: tick the models to paint, A to Z, each showing what xLights draws it as and how many
+  submodels it has. Search by name and tick or untick everything the search shows, or tick every model
+  of one type (all the trees, say) or an xLights model group in one go. A model with submodels gets a
+  lease per submodel; a model without gets one lease of its own.
 - **Frames per second**: 1 to 60. **Blend**: how the overlay combines with the sequence
   (`replace` by default).
 - **Send frames over UDP**: on, frames go as overlay packets, fast and lossy; off, each target gets
@@ -94,7 +96,10 @@ its strand list. The hue of each target follows its place across the yard, as in
 
 The page sends `{ type: 'start' }`, `{ type: 'stop' }` and `{ type: 'reshuffle' }`. The settings page
 also sends `{ type: 'setEffect', target, effect }` (ignored when it comes through the show's cloud
-page) and `{ type: 'restart' }`. Status is published at least twice a second while running:
+page) and `{ type: 'restart' }`. Status is published at least twice a second while running, and
+whenever it changes otherwise. `phase` is `idle`, `starting` (reading the models or opening the leases,
+with the count so far in `message`), `running` or `stopping`; leases opened so far are kept alive while
+the rest open, so a slow start on a big layout does not lose them:
 
 ```json
 {

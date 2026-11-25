@@ -1759,7 +1759,8 @@ async function dispatchHttpProxy(
     if (pathStr === '/api/ezp/overlays/targets') {
         const detail = query?.detail === 'submodels' || query?.detail === 'nodes' ? query.detail : undefined;
         const model = query?.model ? query.model : undefined;
-        const res = await rpc.call('overlayCommand', { op: 'targets', model, detail });
+        const groups = query?.groups === '1';
+        const res = await rpc.call('overlayCommand', { op: 'targets', model, detail, groups });
         if (res.ok) return jsonResult(res);
         return { ...jsonResult(res), status: res.error === 'player not running' ? 503 : 400 };
     }
@@ -2599,7 +2600,7 @@ async function startServer(config: ServerWorkerData) {
     router.get('/api/ezp/overlays/targets', (ctx) => {
         const detail = ctx.query.detail === 'submodels' || ctx.query.detail === 'nodes' ? ctx.query.detail : undefined;
         const model = typeof ctx.query.model === 'string' && ctx.query.model ? ctx.query.model : undefined;
-        return overlayCall(ctx, { op: 'targets', model, detail });
+        return overlayCall(ctx, { op: 'targets', model, detail, groups: ctx.query.groups === '1' });
     });
     router.get('/api/ezp/overlays', (ctx) => overlayCall(ctx, { op: 'list' }));
     router.post('/api/ezp/overlays', (ctx) => {

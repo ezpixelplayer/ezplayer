@@ -28,14 +28,19 @@ async function waitForWire(pred: (bytes: Uint8Array) => boolean, label: string, 
     for (;;) {
         const bytes = mock.ddp.channelRange(0, CHANNELS);
         if (pred(bytes)) return bytes;
-        if (Date.now() > deadline) throw new Error(`timed out waiting for ${label}; wire=${Array.from(bytes.subarray(0, 9))}`);
+        if (Date.now() > deadline)
+            throw new Error(`timed out waiting for ${label}; wire=${Array.from(bytes.subarray(0, 9))}`);
         await new Promise((r) => setTimeout(r, 100));
     }
 }
 
 beforeAll(async () => {
     mock = await startMockController({ channels: CHANNELS, ddpPort: 4048 });
-    show = await createFixtureShow({ channels: CHANNELS });
+    show = await createFixtureShow({
+        channels: CHANNELS,
+        modelGroupsXml:
+            '<modelGroups><modelGroup name="All" models="Line1"/><modelGroup name="Stale" models="Gone"/></modelGroups>',
+    });
     app = await startEzPlayer(show.dir);
 });
 
@@ -52,13 +57,19 @@ beforeEach(async () => {
 });
 
 describe('overlay leases', () => {
-    it('lists the fixture model as a target', async () => {
-        const res = await fetch(`${app.base}/api/ezp/overlays/targets`);
+    it('lists the fixture model as a target, with its type and its xLights groups', async () => {
+        const res = await fetch(`${app.base}/api/ezp/overlays/targets?groups=1`);
         const text = await res.text();
         expect(res.status, text).toBe(200);
-        const body = JSON.parse(text) as { ok: boolean; targets: { model: string; nodeCount: number }[] };
+        const body = JSON.parse(text) as {
+            ok: boolean;
+            targets: { model: string; type?: string; nodeCount: number }[];
+            groups?: { name: string; models: string[] }[];
+        };
         expect(body.ok).toBe(true);
-        expect(body.targets).toEqual([{ model: 'Line1', nodeCount: 50 }]);
+        expect(body.targets).toEqual([{ model: 'Line1', type: 'Single Line', nodeCount: 50 }]);
+        // A group that reaches no model of the show is left out.
+        expect(body.groups).toEqual([{ name: 'All', models: ['Line1'] }]);
     });
 
     it('paints the model by PUT, then by UDP, then goes dark when closed', async () => {
@@ -95,20 +106,28 @@ describe('overlay leases', () => {
         for (let n = 0; n < 50; ++n) payload2.set([9, 8, 200], n * 3);
         const sock = dgram.createSocket('udp4');
         for (const p of packetizeOverlayFrame(lease.id, lease.token, 2, payload2)) {
-            await new Promise<void>((resolve, reject) => sock.send(p, opened.udpPort, '127.0.0.1', (e) => (e ? reject(e) : resolve())));
+            await new Promise<void>((resolve, reject) =>
+                sock.send(p, opened.udpPort, '127.0.0.1', (e) => (e ? reject(e) : resolve())),
+            );
         }
         sock.close();
         const wire2 = await waitForWire((b) => b[0] === 9 && b[2] === 200, 'UDP overlay on the wire');
         expect(Array.from(wire2)).toEqual(Array.from(payload2));
 
         // A wrong token is refused.
-        const bad = await fetch(`${app.base}/api/ezp/overlays/${lease.id}/keepalive?token=${lease.token ^ 1}`, { method: 'POST' });
+        const bad = await fetch(`${app.base}/api/ezp/overlays/${lease.id}/keepalive?token=${lease.token ^ 1}`, {
+            method: 'POST',
+        });
         expect(bad.status).toBe(400);
 
-        const list = (await (await fetch(`${app.base}/api/ezp/overlays`)).json()) as { leases: { id: number; frames: number }[] };
+        const list = (await (await fetch(`${app.base}/api/ezp/overlays`)).json()) as {
+            leases: { id: number; frames: number }[];
+        };
         expect(list.leases.find((l) => l.id === lease.id)?.frames).toBe(2);
 
-        const close = await fetch(`${app.base}/api/ezp/overlays/${lease.id}?token=${lease.token}`, { method: 'DELETE' });
+        const close = await fetch(`${app.base}/api/ezp/overlays/${lease.id}?token=${lease.token}`, {
+            method: 'DELETE',
+        });
         expect(close.status).toBe(200);
         await waitForWire((b) => b.every((v) => v === 0), 'black after close');
     });
@@ -120,7 +139,8 @@ describe('overlay leases', () => {
                 headers: { 'content-type': 'application/json' },
                 body: JSON.stringify(body),
             });
-        const close = (l: Lease) => fetch(`${app.base}/api/ezp/overlays/${l.id}?token=${l.token}`, { method: 'DELETE' });
+        const close = (l: Lease) =>
+            fetch(`${app.base}/api/ezp/overlays/${l.id}?token=${l.token}`, { method: 'DELETE' });
 
         const first = await open({ model: 'Line1', format: 'nodes', mode: 'exclusive', name: 'first game' });
         expect(first.status).toBe(200);
@@ -128,7 +148,12 @@ describe('overlay leases', () => {
 
         const second = await open({ model: 'Line1', format: 'nodes', mode: 'exclusive', name: 'second game' });
         expect(second.status).toBe(409);
-        const refused = (await second.json()) as { ok: boolean; error: string; code?: string; heldBy?: { id: number; name: string } };
+        const refused = (await second.json()) as {
+            ok: boolean;
+            error: string;
+            code?: string;
+            heldBy?: { id: number; name: string };
+        };
         expect(refused.ok).toBe(false);
         expect(refused.code).toBe('conflict');
         expect(refused.error).toBe('Line1 is in use by first game');

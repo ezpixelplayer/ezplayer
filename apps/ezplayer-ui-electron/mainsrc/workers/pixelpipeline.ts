@@ -155,7 +155,13 @@ export class PixelPipeline {
     /** Models and submodels a test can be aimed at. */
     private readonly targets: TargetCatalog;
     /** The running test pattern, painted over its targets ahead of the show brightness and the output trims. */
-    private test?: { renderer: SpatialPatternRenderer; models: string[]; startMs: number; expiresAt?: number; animates: boolean };
+    private test?: {
+        renderer: SpatialPatternRenderer;
+        models: string[];
+        startMs: number;
+        expiresAt?: number;
+        animates: boolean;
+    };
 
     private constructor(opts: PixelPipelineOptions, layout: DisplayLayout, specs: LayoutModelSpec[]) {
         this.layout = layout;
@@ -198,14 +204,20 @@ export class PixelPipeline {
                     if (cached) return cached;
                     const d = decodeDescriptorHeader(bytes);
                     if (d) {
-                        this.log('info', `[pipeline] ${fseqfile}: EZ descriptor, ${d.models.length} models, fingerprint ${prefix.fingerprint}`);
+                        this.log(
+                            'info',
+                            `[pipeline] ${fseqfile}: EZ descriptor, ${d.models.length} models, fingerprint ${prefix.fingerprint}`,
+                        );
                         this.descriptors.set(String(prefix.fingerprint), d);
                         return d;
                     }
                 }
                 this.log('warn', `[pipeline] ${fseqfile}: EZ header present but unreadable; falling back`);
             } catch (e) {
-                this.log('warn', `[pipeline] ${fseqfile}: EZ header read failed (${(e as Error).message}); falling back`);
+                this.log(
+                    'warn',
+                    `[pipeline] ${fseqfile}: EZ header read failed (${(e as Error).message}); falling back`,
+                );
             }
         }
         const xr = header.extendedHeaders[XL_RGBEFFECTS_HEADER];
@@ -218,15 +230,25 @@ export class PixelPipeline {
                 const cached = this.descriptors.get(key);
                 if (cached) return cached;
                 const dec = new TextDecoder('utf-8');
-                const d = descriptorFromEmbeddedXlights(dec.decode(decompressExtended(xrb)), dec.decode(decompressExtended(xnb)), {
-                    logger: (m) => this.log('warn', `[pipeline] ${fseqfile}: ${m}`),
-                });
-                this.log('info', `[pipeline] ${fseqfile}: descriptor derived from embedded xLights files, ${d.models.length} models, fingerprint ${d.fingerprint}`);
+                const d = descriptorFromEmbeddedXlights(
+                    dec.decode(decompressExtended(xrb)),
+                    dec.decode(decompressExtended(xnb)),
+                    {
+                        logger: (m) => this.log('warn', `[pipeline] ${fseqfile}: ${m}`),
+                    },
+                );
+                this.log(
+                    'info',
+                    `[pipeline] ${fseqfile}: descriptor derived from embedded xLights files, ${d.models.length} models, fingerprint ${d.fingerprint}`,
+                );
                 this.descriptors.set(key, d);
                 if (d.fingerprint !== undefined) this.descriptors.set(String(d.fingerprint), d);
                 return d;
             } catch (e) {
-                this.log('warn', `[pipeline] ${fseqfile}: embedded xLights files unusable (${(e as Error).message}); falling back`);
+                this.log(
+                    'warn',
+                    `[pipeline] ${fseqfile}: embedded xLights files unusable (${(e as Error).message}); falling back`,
+                );
             }
         }
 
@@ -291,7 +313,12 @@ export class PixelPipeline {
         const specs = this.outputSpecs.map((s): OutputSpec => {
             const place = this.wired
                 .filter((w) => w.controller === s.id)
-                .map((w) => ({ model: w.model, nodeStart: w.nodeStart, nodeCount: w.nodeCount, dstOffset: w.channel - 1 - s.channelStart }))
+                .map((w) => ({
+                    model: w.model,
+                    nodeStart: w.nodeStart,
+                    nodeCount: w.nodeCount,
+                    dstOffset: w.channel - 1 - s.channelStart,
+                }))
                 .filter((seg) => seg.dstOffset >= 0);
             return {
                 ...s,
@@ -323,7 +350,8 @@ export class PixelPipeline {
         const painted = targets.map((t) => t.name);
         const prev = this.test;
         // Keep the clock when only the pattern changed, so dragging a slider does not restart the motion.
-        const sameTargets = !!prev && prev.models.length === painted.length && prev.models.every((n, i) => n === painted[i]);
+        const sameTargets =
+            !!prev && prev.models.length === painted.length && prev.models.every((n, i) => n === painted[i]);
         const now = Date.now();
         this.test = targets.length
             ? {
@@ -348,7 +376,12 @@ export class PixelPipeline {
     }
 
     overlayStats() {
-        return { leases: this.overlays.size, packets: this.overlayPackets, badPackets: this.overlayBadPackets, port: this.overlayPort };
+        return {
+            leases: this.overlays.size,
+            packets: this.overlayPackets,
+            badPackets: this.overlayBadPackets,
+            port: this.overlayPort,
+        };
     }
 
     static async create(opts: PixelPipelineOptions): Promise<PixelPipeline> {
@@ -361,7 +394,9 @@ export class PixelPipeline {
             `[pipeline ${p.id}] layout v${layout.layoutVersion}: ${layout.models.length} models, ` +
                 `${layout.nodeCount} nodes x${layout.pixelStride}, raw ${layout.rawCount} ch in ${layout.rawSpans.length} spans, ` +
                 `frame ${layout.frameBytes} B, channel space ${layout.totalChannels}` +
-                (rawModels.length ? `; raw models: ${rawModels.map((m) => `${m.name} (${m.rawReason})`).join(', ')}` : ''),
+                (rawModels.length
+                    ? `; raw models: ${rawModels.map((m) => `${m.name} (${m.rawReason})`).join(', ')}`
+                    : ''),
         );
 
         // One output per usable controller, carrying its channel range; plus the legacy export.
@@ -371,10 +406,20 @@ export class PixelPipeline {
         opts.controllers.forEach((c, i) => {
             if (!c.setup.usable || !c.setup.proto || !c.xlRecord) return;
             senderOutput[i] = outputSpecs.length;
-            outputSpecs.push({ id: c.setup.name, channelStart: c.setup.startCh - 1, channelCount: c.setup.nCh, policy: 'controller' });
+            outputSpecs.push({
+                id: c.setup.name,
+                channelStart: c.setup.startCh - 1,
+                channelCount: c.setup.nCh,
+                policy: 'controller',
+            });
         });
         p.outputSpecs = outputSpecs;
-        const legacySpec: OutputSpec = { id: '<preview>', channelStart: 0, channelCount: opts.nChannels, policy: 'controller' };
+        const legacySpec: OutputSpec = {
+            id: '<preview>',
+            channelStart: 0,
+            channelCount: opts.nChannels,
+            policy: 'controller',
+        };
         const omap = compileOutputMap(layout, [...outputSpecs, legacySpec]);
         const legacyOutput = omap.outputs[omap.outputs.length - 1];
         const outputs = omap.outputs.slice(0, -1);
@@ -398,17 +443,28 @@ export class PixelPipeline {
     }
 
     /** The Input Map for a sequence file, from whichever descriptor it resolves to. */
-    canonicalizer = async (fseqfile: string, header: FSEQHeader, fileLayout: FileLayoutLike): Promise<InputMapProgram | undefined> => {
+    canonicalizer = async (
+        fseqfile: string,
+        header: FSEQHeader,
+        fileLayout: FileLayoutLike,
+    ): Promise<InputMapProgram | undefined> => {
         if (this.closed) return undefined;
         const desc = await this.descriptorFor(fseqfile, header);
         if (desc.source === 'pinned' || !desc.source) {
             const modelEnd = Math.max(0, ...desc.models.map((m) => m.startChannel + m.nodeCount * m.channelsPerNode));
             if (header.channels !== desc.totalChannels && header.channels !== modelEnd) {
-                this.log('warn', `[pipeline] ${fseqfile}: file has ${header.channels} channels, layout expects ${desc.totalChannels}; mapping by channel number`);
+                this.log(
+                    'warn',
+                    `[pipeline] ${fseqfile}: file has ${header.channels} channels, layout expects ${desc.totalChannels}; mapping by channel number`,
+                );
             }
         }
         const sparse = fileLayout.isSparse
-            ? fileLayout.scatterPlan.map((r) => ({ srcOffset: r.srcOffset, channelStart: r.dstOffset, length: r.length }))
+            ? fileLayout.scatterPlan.map((r) => ({
+                  srcOffset: r.srcOffset,
+                  channelStart: r.dstOffset,
+                  length: r.length,
+              }))
             : undefined;
         const flags = `${desc.curvesApplied === false ? '' : 'c'}${desc.colorOrderApplied === false ? '' : 'o'}${desc.nodeOrder === 'canonical' ? 'n' : ''}`;
         const key = `${desc.fingerprint ?? descriptorHash(desc)}:${flags}:${sparse ? JSON.stringify(sparse) : 'dense'}`;
@@ -419,7 +475,9 @@ export class PixelPipeline {
                 this.log(
                     'warn',
                     `[pipeline] ${fseqfile}: ` +
-                        (map.missing.length ? `${map.missing.length} layout models absent from file (${map.missing.slice(0, 5).join(', ')}); ` : '') +
+                        (map.missing.length
+                            ? `${map.missing.length} layout models absent from file (${map.missing.slice(0, 5).join(', ')}); `
+                            : '') +
                         (map.resized.length ? `${map.resized.length} models resized; ` : '') +
                         (map.inverted.length ? `${map.inverted.length} models with baked gamma inverted (lossy)` : ''),
                 );
@@ -450,7 +508,8 @@ export class PixelPipeline {
                 blendNodes(mode, bytes, a.bg, stride, 0, L.nodeCount, 255, L.xMeaning === 2);
                 // Raw channels have no blend semantics: the background fills what the foreground leaves at zero.
                 if (L.rawCount) {
-                    for (let i = L.rawOffset, e = L.rawOffset + L.rawCount; i < e; ++i) if (bytes[i] === 0) bytes[i] = a.bg[i];
+                    for (let i = L.rawOffset, e = L.rawOffset + L.rawCount; i < e; ++i)
+                        if (bytes[i] === 0) bytes[i] = a.bg[i];
                 }
             }
         } else if (a.bg) {
@@ -463,7 +522,9 @@ export class PixelPipeline {
         const now = Date.now();
         if (now - this.lastExpire > 1000) {
             this.lastExpire = now;
-            for (const id of this.overlays.expire(now)) this.log('info', `[overlay] lease ${id} expired`);
+            const expired = this.overlays.expire(now);
+            if (expired.length === 1) this.log('info', `[overlay] lease ${expired[0]} expired`);
+            else if (expired.length) this.log('info', `[overlay] ${expired.length} leases expired`);
         }
         if (this.overlays.size > 0) {
             this.overlays.composite(bytes, stride);

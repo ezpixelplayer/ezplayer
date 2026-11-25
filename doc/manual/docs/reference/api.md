@@ -1222,10 +1222,10 @@ A lease is **exclusive** or a **layer**. An exclusive lease is refused while ano
 
 #### GET /api/ezp/overlays/targets
 
-Models that can take an overlay, with their grid sizes. `subModels` is how many submodels a model has, when it has any.
+Models that can take an overlay, with their grid sizes. `type` is what xLights draws the model as (its DisplayAs), when the player knows it; `subModels` is how many submodels a model has, when it has any.
 
 ```json
-{ "ok": true, "layoutVersion": 4232670734, "targets": [{ "model": "Matrix", "nodeCount": 2048, "width": 64, "height": 32 }] }
+{ "ok": true, "layoutVersion": 4232670734, "targets": [{ "model": "Matrix", "type": "Matrix", "nodeCount": 2048, "width": 64, "height": 32 }] }
 ```
 
 A layout can hold thousands of submodels, so more is sent only when asked for:
@@ -1235,6 +1235,7 @@ A layout can hold thousands of submodels, so more is sent only when asked for:
 | `model=NAME`       | Only that model, or only that `Model/Submodel`                                        |
 | `detail=submodels` | A row per submodel, and the shape of every row (below)                                |
 | `detail=nodes`     | The same plus per-node coordinates; needs `model=NAME`                                |
+| `groups=1`         | `groups`: the show's xLights model groups as `{ name, models }`, flattened to the models listed here; a group that reaches none is left out |
 
 ```json
 {

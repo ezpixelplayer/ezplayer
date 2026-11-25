@@ -215,6 +215,11 @@ export class TestTweakService {
         this.replan();
     }
 
+    /** Model types and xLights groups, for other listings of the show's models (the overlay targets). */
+    showModels(): { types: Map<string, string>; groups: XlModelGroup[] } {
+        return { types: new Map(this.models.map((m) => [m.name, m.displayAs])), groups: this.xlGroups };
+    }
+
     private replan(): boolean {
         const before = JSON.stringify([this.plan.overridden, this.plan.strings]);
         this.plan = this.models.length

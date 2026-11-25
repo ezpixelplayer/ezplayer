@@ -33,6 +33,7 @@ const TTL_MS = 15_000;
 const WINDOW_MS = 2000; // the rate readouts cover the last two seconds
 const SETTINGS_EVERY_MS = 5000;
 const OPEN_CONCURRENCY = 8;
+const PLAN_CONCURRENCY = 4;
 
 // ---------------------------------------------------------------------------
 // Overlay API
@@ -470,13 +471,19 @@ function formatFor(t) {
 async function plan(settings) {
     const all = (await api('GET', '/targets')).targets;
     const targets = [];
-    const missing = [];
-    for (const name of settings.models) {
-        if (!all.some((m) => m.model === name)) {
-            missing.push(name);
-            continue;
-        }
-        const rows = (await api('GET', `/targets?model=${encodeURIComponent(name)}&detail=nodes`)).targets;
+    const missing = settings.models.filter((name) => !all.some((m) => m.model === name));
+    const present = settings.models.filter((name) => !missing.includes(name));
+    // Per-node detail is a big answer per model; a few in flight at once, and the page sees the count climb.
+    const rowsOf = new Map();
+    let done = 0;
+    await pool(present, PLAN_CONCURRENCY, async (name) => {
+        working = `Reading ${done + 1} of ${present.length} models...`;
+        rowsOf.set(name, (await api('GET', `/targets?model=${encodeURIComponent(name)}&detail=nodes`)).targets);
+        done++;
+    });
+    working = '';
+    for (const name of present) {
+        const rows = rowsOf.get(name) ?? [];
         const subs = rows.filter((r) => r.subModel && r.nodeCount > 0);
         for (const r of subs.length ? subs : rows.filter((r) => !r.subModel && r.nodeCount > 0)) {
             const format = formatFor(r);
@@ -532,6 +539,8 @@ let runtime = { seed: 1234, pins: {} };
 let live = [];
 let loopPromise = null;
 let message = '';
+/** What the app is in the middle of (reading models, opening leases); shown over everything else while set. */
+let working = '';
 
 function newStats(targetFps) {
     return { targetFps, started: performance.now(), frames: 0, late: 0, window: [] };
@@ -585,6 +594,7 @@ async function replan() {
         missing = [];
         planError = e.message;
     }
+    working = '';
     assign();
 }
 
@@ -635,12 +645,15 @@ async function startRun() {
     const todo = planned.filter((tg) => tg.effect);
     if (!todo.length) return void (message = 'Enable at least one effect in the app settings.');
     busy = true;
-    message = 'Opening leases...';
+    const openingFrom = performance.now();
     try {
         if (settings.useUdp && !sock) sock = dgram.createSocket('udp4');
+        // Opened leases are live at once so the keepalive timer renews them while the rest open.
         const opened = [];
         const skipped = [];
+        live = opened;
         await pool(todo, OPEN_CONCURRENCY, async (tg) => {
+            working = `Opening leases: ${opened.length + skipped.length} of ${todo.length}...`;
             try {
                 // An effect is decoration: it layers over whatever else paints the model and never blocks a game.
                 const body = {
@@ -675,9 +688,10 @@ async function startRun() {
                 console.log(`skipped ${tg.target}: ${e.message}`);
             }
         });
+        working = '';
         if (!opened.length)
             throw new Error(skipped.length ? 'no lease could be opened (see the log)' : 'nothing to paint');
-        live = opened;
+        console.log(`opened ${opened.length} leases in ${((performance.now() - openingFrom) / 1000).toFixed(1)} s`);
         stats = newStats(settings.fps);
         phase = 'running';
         const over = settings.useUdp ? 'UDP' : 'HTTP';
@@ -690,6 +704,7 @@ async function startRun() {
             wanted = 'idle';
         });
     } catch (e) {
+        working = '';
         message = `Could not start: ${e.message}`;
         console.log(message);
         wanted = 'idle';
@@ -701,9 +716,11 @@ async function startRun() {
 async function stopRun(why) {
     busy = true;
     phase = 'idle';
+    working = 'Closing leases...';
     await loopPromise;
     loopPromise = null;
     await releaseAll();
+    working = '';
     message = why;
     // Settings may have changed while running; pick them up before the next start.
     lastSettingsCheck = -Infinity;
@@ -781,13 +798,14 @@ function status(now) {
     const s = summarize(now);
     const round = (v, d) => Math.round(v * 10 ** d) / 10 ** d;
     let text = message;
-    if (!settings || settingsError) text = settingsError;
+    if (working) text = working;
+    else if (!settings || settingsError) text = settingsError;
     else if (phase === 'idle') {
         const gone = missing.length ? `Not in the layout: ${missing.join(', ')}` : '';
         text = planError || [message || 'Idle; tap Start', gone].filter(Boolean).join('. ');
     }
     return {
-        phase,
+        phase: phase === 'running' ? 'running' : busy ? (wanted === 'running' ? 'starting' : 'stopping') : 'idle',
         fps: { target: settings?.fps ?? 0, achieved: round(s.achieved, 1) },
         frameMs: { avg: round(s.avg, 2), max: round(s.max, 2) },
         bytesPerSec: Math.round(s.bytesPerSec),
@@ -897,7 +915,7 @@ async function main() {
 
     // Payload traffic renews a lease, but UDP gives no receipt; a lease with no acknowledged send gets a keepalive.
     const keepalive = setInterval(() => {
-        if (phase !== 'running') return;
+        if (phase !== 'running' && !busy) return;
         const now = performance.now();
         for (const l of live) {
             if (now - l.lastAck < TTL_MS / 3) continue;
@@ -908,8 +926,27 @@ async function main() {
         }
     }, 1000);
 
+    // On a timer of its own: the loop below blocks for as long as a plan or a start takes.
     let lastStatusJson = '';
     let lastStatusAt = -Infinity;
+    let publishing = false;
+    const statusTimer = setInterval(() => {
+        if (publishing || quit) return;
+        const st = status(performance.now());
+        const json = JSON.stringify(st);
+        const t = performance.now();
+        if (
+            (phase === 'running' && t - lastStatusAt >= 500) ||
+            (phase !== 'running' && (json !== lastStatusJson || t - lastStatusAt > 5000))
+        ) {
+            lastStatusJson = json;
+            lastStatusAt = t;
+            publishing = true;
+            publishStatus(st).finally(() => {
+                publishing = false;
+            });
+        }
+    }, 250);
     while (!quit) {
         const now = performance.now();
         if (phase === 'idle' && !busy && now - lastSettingsCheck > SETTINGS_EVERY_MS) {
@@ -928,20 +965,10 @@ async function main() {
                 await startRun();
             }
         }
-        const st = status(performance.now());
-        const json = JSON.stringify(st);
-        const t = performance.now();
-        if (
-            (phase === 'running' && t - lastStatusAt >= 500) ||
-            (phase === 'idle' && (json !== lastStatusJson || t - lastStatusAt > 5000))
-        ) {
-            lastStatusJson = json;
-            lastStatusAt = t;
-            await publishStatus(st);
-        }
         await sleep(250);
     }
 
+    clearInterval(statusTimer);
     clearInterval(keepalive);
     phase = 'idle';
     await loopPromise;

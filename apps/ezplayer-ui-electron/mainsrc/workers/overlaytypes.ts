@@ -3,7 +3,8 @@
 import type { OverlayLeaseInfo, OverlayLeaseRequest, OverlayTargetInfo, OverlayTargetQuery } from '@ezplayer/epp';
 
 export type OverlayCommand =
-    | ({ op: 'targets' } & OverlayTargetQuery)
+    /** `groups` adds the show's xLights model groups to the answer. */
+    | ({ op: 'targets'; groups?: boolean } & OverlayTargetQuery)
     | { op: 'list' }
     | { op: 'open'; request: OverlayLeaseRequest }
     | { op: 'close'; id: number; token?: number }
@@ -11,10 +12,17 @@ export type OverlayCommand =
     /** A whole payload delivered over HTTP instead of UDP. */
     | { op: 'frame'; id: number; token: number; seq: number; data: Uint8Array };
 
-export type OverlayTarget = OverlayTargetInfo;
+/** A model row also says what xLights draws it as, when the player knows. */
+export type OverlayTarget = OverlayTargetInfo & { type?: string };
+
+/** An xLights model group, reduced to the models that can take an overlay. */
+export interface OverlayModelGroup {
+    name: string;
+    models: string[];
+}
 
 export type OverlayResult =
-    | { ok: true; targets: OverlayTarget[]; layoutVersion: number }
+    | { ok: true; targets: OverlayTarget[]; layoutVersion: number; groups?: OverlayModelGroup[] }
     | { ok: true; leases: OverlayLeaseInfo[] }
     | { ok: true; lease: OverlayLeaseInfo; udpPort: number }
     | { ok: true }
