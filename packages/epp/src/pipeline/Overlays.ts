@@ -7,10 +7,18 @@
 
 import { DisplayLayout, LayoutModelSpec } from './Layout';
 import { overlappingNodes, PixelTarget, StrandKind, TargetCatalog } from './Targets';
-import { BlendMode, blendModeFromName, blendNodes, BLEND_REPLACE } from './Kernels';
+import { BlendMode, blendModeFromName, blendNodes, BLEND_ADD, BLEND_ALPHA, BLEND_MAX, BLEND_REPLACE } from './Kernels';
+import { compilePatternJs, normalizeUniforms, PatternProgram, PatternSpec, PatternUniforms, resolvePattern } from './Patterns';
 
-/** 'buffer' is the target's own render buffer, sparse where it has no node. */
-export type OverlayFormat = 'grid' | 'nodes' | 'buffer';
+/**
+ * 'buffer' is the target's own render buffer, sparse where it has no node. 'pattern'
+ * carries no pixels: the player evaluates a program per node (see Patterns.ts) and
+ * the payload is a JSON object of uniform values.
+ */
+export type OverlayFormat = 'grid' | 'nodes' | 'buffer' | 'pattern';
+
+/** Longest uniform payload a pattern lease accepts. */
+export const PATTERN_PAYLOAD_MAX = 16384;
 
 /** Which cell colors a node that sits in several buffer cells. */
 export type OverlayOverlap = 'last' | 'first' | 'max';
@@ -34,8 +42,16 @@ export interface OverlayLeaseRequest {
     model?: string;
     /** Submodel of `model`, when not given in the name. */
     subModel?: string;
-    /** 'grid' and 'buffer': width x height RGB rows, top row first; 'nodes': one RGB per node. */
+    /** Several targets at once (models or "Model/Submodel"); the payload lists their nodes in this order. */
+    models?: string[];
+    /** An xLights model group; the player resolves it to `models` before opening. */
+    group?: string;
+    /** 'grid' and 'buffer': width x height rows of cells, top row first; 'nodes': one cell per node. */
     format?: OverlayFormat;
+    /** Bytes per cell: 3 (RGB) or 4 (RGBA; alpha scales the cell before it blends, and fades the frame under an 'over' blend). */
+    channels?: 3 | 4;
+    /** 'pattern' format: the program to evaluate per node and its starting uniforms. */
+    pattern?: PatternSpec;
     /** Payload size; defaults to the target's own grid or buffer (or nodeCount x 1). */
     width?: number;
     height?: number;
@@ -85,21 +101,28 @@ export interface OverlayLeaseInfo {
     owner?: OverlayOwner;
     model?: string;
     subModel?: string;
+    /** The targets of a multi-target lease, in payload order. */
+    models?: string[];
+    group?: string;
     format: OverlayFormat;
+    channels: 3 | 4;
     overlap?: OverlayOverlap;
     width: number;
     height: number;
     /** First canonical node; -1 when the target's nodes are not one run. */
     nodeStart: number;
     nodeCount: number;
-    /** Bytes one full payload carries. */
+    /** Bytes one full payload carries; 0 for a pattern lease, whose payload is JSON. */
     frameBytes: number;
     blend: string;
     opacity: number;
     ttlMs: number;
     expiresAt: number;
-    /** Frames committed so far. */
+    openedAt: number;
+    /** Frames committed so far (uniform updates for a pattern lease). */
     frames: number;
+    /** Pattern leases: what runs, on which evaluator, and the uniforms it paints with now. */
+    pattern?: { preset?: string; backend: string; uniforms: PatternUniforms };
 }
 
 const DEFAULT_TTL_MS = 30_000;
@@ -137,11 +160,50 @@ function spansOverlap(a: NodeSpan, b: NodeSpan): boolean {
     return list.some((n) => n >= other.start && n < other.start + other.count);
 }
 
+/** The nodes, coordinates and program a pattern renderer paints. */
+export interface PatternLeaseSpec {
+    program: PatternProgram;
+    /** World x, y, z per node, in payload order. */
+    world: Float32Array;
+    /** Model-local x, y, z per node, when every node has them. */
+    local?: Float32Array;
+    nodeCount: number;
+}
+
+export interface PatternRenderer {
+    /** 'js' or 'gpu'; shown in the lease info. */
+    readonly backend: string;
+    /** RGBA per node, straight alpha, into the first nodeCount * 4 bytes of out. */
+    render(uniforms: PatternUniforms, t: number, out: Uint8Array): void;
+    dispose(): void;
+}
+
+/** Makes the renderer for a pattern lease; the player supplies a GPU one when it can. */
+export type PatternBackend = (spec: PatternLeaseSpec) => PatternRenderer;
+
+/** The evaluator every player has: the program compiled to JavaScript. */
+export function jsPatternBackend(spec: PatternLeaseSpec): PatternRenderer {
+    const fn = compilePatternJs(spec.program);
+    return {
+        backend: 'js',
+        render: (uniforms, t, out) => fn(spec.world, spec.local, spec.nodeCount, t, uniforms, out),
+        dispose: () => undefined,
+    };
+}
+
+interface LayerPattern {
+    renderer: PatternRenderer;
+    program: PatternProgram;
+    uniforms: PatternUniforms;
+}
+
 class OverlayLayer {
     info: OverlayLeaseInfo;
     blendMode: BlendMode;
-    /** Committed pixels in canonical node order (3 bytes per node). */
+    /** Committed pixels in payload node order: RGB for 3-channel payloads, RGBA for 4-channel and pattern leases. */
     front: Uint8Array;
+    /** Bytes per node in `front`. */
+    private readonly fs: 3 | 4;
     /** Payload being assembled from packets. */
     staging: Uint8Array;
     stagingSeq = -1;
@@ -151,19 +213,24 @@ class OverlayLayer {
     private nodeToCell: Int32Array | null = null;
     /** (target node, payload cell) pairs for 'buffer', in the order the cells were listed. */
     private cellPairs: Int32Array | null = null;
-    /** Canonical node per target node; null when the target is the run from nodeStart. */
+    /** Canonical node per payload node; null when the nodes are the run from nodeStart. */
     private readonly nodes: Int32Array | null;
     private readonly target?: PixelTarget;
+    readonly pattern?: LayerPattern;
 
-    constructor(info: OverlayLeaseInfo, target: PixelTarget | undefined) {
+    constructor(info: OverlayLeaseInfo, target: PixelTarget | undefined, nodes: Int32Array | null, pattern?: LayerPattern) {
         this.info = info;
         this.target = target;
-        this.nodes = target && target.nodeStart < 0 ? target.nodes : null;
+        this.nodes = nodes;
+        this.pattern = pattern;
         this.blendMode = blendModeFromName(info.blend, BLEND_REPLACE);
-        this.front = new Uint8Array(info.nodeCount * 3);
-        this.staging = new Uint8Array(info.frameBytes);
+        this.fs = info.format === 'pattern' || info.channels === 4 ? 4 : 3;
+        this.front = new Uint8Array(info.nodeCount * this.fs);
+        this.staging = new Uint8Array(info.format === 'pattern' ? PATTERN_PAYLOAD_MAX : info.frameBytes);
         if (info.format === 'grid') this.buildGridMap();
         if (info.format === 'buffer') this.buildBufferMap();
+        // A pattern paints from its first frame; nothing has to arrive first.
+        if (pattern) this.hasFrame = true;
     }
 
     get span(): NodeSpan {
@@ -220,66 +287,106 @@ class OverlayLayer {
         }
         if (offset < 0 || offset + data.length > this.staging.length) return false;
         this.staging.set(data, offset);
-        this.stagingBytes += data.length;
+        this.stagingBytes = Math.max(this.stagingBytes, offset + data.length);
         if (!last) return false;
+        if (this.pattern) return this.commitUniforms();
         this.commit();
         return true;
     }
 
+    /** A pattern payload is a JSON object of uniform values; unknown names are ignored, wrong shapes refuse the whole update. */
+    private commitUniforms(): boolean {
+        const p = this.pattern!;
+        let values: unknown;
+        try {
+            values = JSON.parse(new TextDecoder().decode(this.staging.subarray(0, this.stagingBytes)));
+        } catch {
+            return false;
+        }
+        if (!values || typeof values !== 'object' || Array.isArray(values)) return false;
+        let next: PatternUniforms;
+        try {
+            next = normalizeUniforms(p.program, values as Record<string, never>);
+        } catch {
+            return false;
+        }
+        for (const k of Object.keys(values as object)) if (k in next) p.uniforms[k] = next[k];
+        this.info.frames++;
+        return true;
+    }
+
+    /** Copy payload cell s to front node d. */
+    private put(d: number, s: number): void {
+        const ch = this.info.channels;
+        const src = this.staging;
+        const dst = this.front;
+        const o = d * this.fs;
+        const q = s * ch;
+        dst[o] = src[q];
+        dst[o + 1] = src[q + 1];
+        dst[o + 2] = src[q + 2];
+        if (this.fs === 4) dst[o + 3] = ch === 4 ? src[q + 3] : 255;
+    }
+
     /** Commit the staging payload into the front buffer. */
     commit(): void {
-        const { width, height, nodeCount, format } = this.info;
+        const { width, height, nodeCount, format, channels } = this.info;
         const src = this.staging;
         const dst = this.front;
         if (format === 'nodes') {
-            dst.set(src.subarray(0, nodeCount * 3));
+            if (channels === this.fs) dst.set(src.subarray(0, nodeCount * channels));
+            else for (let n = 0; n < nodeCount; ++n) this.put(n, n);
         } else if (this.cellPairs) {
             const pairs = this.cellPairs;
             const rule = this.info.overlap;
             if (rule === 'max') {
                 dst.fill(0);
                 for (let p = 0; p < pairs.length; p += 2) {
-                    const d = pairs[p] * 3;
-                    const s = pairs[p + 1] * 3;
-                    if (src[s] > dst[d]) dst[d] = src[s];
-                    if (src[s + 1] > dst[d + 1]) dst[d + 1] = src[s + 1];
-                    if (src[s + 2] > dst[d + 2]) dst[d + 2] = src[s + 2];
+                    const d = pairs[p] * this.fs;
+                    const s = pairs[p + 1] * channels;
+                    for (let c = 0; c < channels; ++c) if (src[s + c] > dst[d + c]) dst[d + c] = src[s + c];
+                    if (channels === 3 && this.fs === 4) dst[d + 3] = 255;
                 }
             } else {
                 // The cell written last wins: walk backwards for 'first'.
                 const back = rule === 'first';
                 for (let i = 0; i < pairs.length; i += 2) {
                     const p = back ? pairs.length - 2 - i : i;
-                    const d = pairs[p] * 3;
-                    const s = pairs[p + 1] * 3;
-                    dst[d] = src[s];
-                    dst[d + 1] = src[s + 1];
-                    dst[d + 2] = src[s + 2];
+                    this.put(pairs[p], pairs[p + 1]);
                 }
             }
         } else if (!this.nodeToCell) {
             // Same-size grid: flip rows (payload top-first, canonical bottom-first).
-            const rowBytes = width * 3;
-            for (let y = 0; y < height; ++y) {
-                dst.set(src.subarray(y * rowBytes, (y + 1) * rowBytes), (height - 1 - y) * rowBytes);
+            if (channels === this.fs) {
+                const rowBytes = width * channels;
+                for (let y = 0; y < height; ++y) {
+                    dst.set(src.subarray(y * rowBytes, (y + 1) * rowBytes), (height - 1 - y) * rowBytes);
+                }
+            } else {
+                for (let y = 0; y < height; ++y) for (let x = 0; x < width; ++x) this.put((height - 1 - y) * width + x, y * width + x);
             }
         } else {
             const map = this.nodeToCell;
-            for (let n = 0; n < nodeCount; ++n) {
-                const s = map[n] * 3;
-                const d = n * 3;
-                dst[d] = src[s];
-                dst[d + 1] = src[s + 1];
-                dst[d + 2] = src[s + 2];
-            }
+            for (let n = 0; n < nodeCount; ++n) this.put(n, map[n]);
         }
         this.hasFrame = true;
         this.info.frames++;
     }
 
+    /** Pattern leases paint themselves for the moment nowMs. */
+    evaluate(nowMs: number): void {
+        const p = this.pattern;
+        if (!p) return;
+        p.renderer.render(p.uniforms, (nowMs - this.info.openedAt) / 1000, this.front);
+    }
+
     /** Blend the committed layer into a canonical frame. */
     composite(frame: Uint8Array, stride: number): void {
         if (!this.hasFrame) return;
+        if (this.fs === 4) {
+            this.compositeAlpha(frame, stride);
+            return;
+        }
         const { nodeStart, nodeCount, opacity } = this.info;
         const front = this.front;
         const nodes = this.nodes;
@@ -310,10 +417,86 @@ class OverlayLayer {
             frame[d + 2] = scratchDst[2];
         }
     }
+
+    /**
+     * RGBA layers: each node's alpha times the lease opacity scales the source before
+     * its blend mode; 'over' (and 'replace') also fade the frame by the same amount, so
+     * a transparent cell leaves the frame alone and a half-covered one shows both.
+     */
+    private compositeAlpha(frame: Uint8Array, stride: number): void {
+        const { nodeStart, nodeCount, opacity } = this.info;
+        const front = this.front;
+        const nodes = this.nodes;
+        const op = Math.round(Math.max(0, Math.min(1, opacity)) * 255);
+        const mode = this.blendMode;
+        for (let n = 0; n < nodeCount; ++n) {
+            const s = n * 4;
+            const a = (front[s + 3] * op + 127) / 255 | 0;
+            if (a === 0) continue;
+            const d = (nodes ? nodes[n] : nodeStart + n) * stride;
+            let r = front[s];
+            let g = front[s + 1];
+            let b = front[s + 2];
+            if (a < 255) {
+                r = (r * a + 127) / 255 | 0;
+                g = (g * a + 127) / 255 | 0;
+                b = (b * a + 127) / 255 | 0;
+            }
+            switch (mode) {
+                case BLEND_ADD: {
+                    const r2 = frame[d] + r;
+                    const g2 = frame[d + 1] + g;
+                    const b2 = frame[d + 2] + b;
+                    frame[d] = r2 > 255 ? 255 : r2;
+                    frame[d + 1] = g2 > 255 ? 255 : g2;
+                    frame[d + 2] = b2 > 255 ? 255 : b2;
+                    break;
+                }
+                case BLEND_MAX:
+                    if (r > frame[d]) frame[d] = r;
+                    if (g > frame[d + 1]) frame[d + 1] = g;
+                    if (b > frame[d + 2]) frame[d + 2] = b;
+                    break;
+                case BLEND_REPLACE:
+                case BLEND_ALPHA:
+                    if (a === 255) {
+                        frame[d] = r;
+                        frame[d + 1] = g;
+                        frame[d + 2] = b;
+                    } else {
+                        const inv = 255 - a;
+                        frame[d] = ((frame[d] * inv + 127) / 255 | 0) + r;
+                        frame[d + 1] = ((frame[d + 1] * inv + 127) / 255 | 0) + g;
+                        frame[d + 2] = ((frame[d + 2] * inv + 127) / 255 | 0) + b;
+                    }
+                    break;
+                default:
+                    scratchDst[0] = frame[d];
+                    scratchDst[1] = frame[d + 1];
+                    scratchDst[2] = frame[d + 2];
+                    scratchSrc[0] = r;
+                    scratchSrc[1] = g;
+                    scratchSrc[2] = b;
+                    blendNodes(mode, scratchDst, scratchSrc, 3, 0, 1);
+                    frame[d] = scratchDst[0];
+                    frame[d + 1] = scratchDst[1];
+                    frame[d + 2] = scratchDst[2];
+            }
+        }
+    }
+
+    dispose(): void {
+        this.pattern?.renderer.dispose();
+    }
 }
 
 const scratchDst = new Uint8Array(3);
 const scratchSrc = new Uint8Array(3);
+
+export interface OverlayManagerOptions {
+    /** Renders pattern leases; the JavaScript evaluator when absent. */
+    patternBackend?: PatternBackend;
+}
 
 export class OverlayManager {
     private layers = new Map<number, OverlayLayer>();
@@ -321,10 +504,12 @@ export class OverlayManager {
     readonly layout: DisplayLayout;
     /** Models and submodels by name; effects can resolve their targets here too. */
     readonly catalog: TargetCatalog;
+    private readonly patternBackend: PatternBackend;
 
-    constructor(layout: DisplayLayout, specs?: LayoutModelSpec[]) {
+    constructor(layout: DisplayLayout, specs?: LayoutModelSpec[], opts: OverlayManagerOptions = {}) {
         this.layout = layout;
         this.catalog = new TargetCatalog(layout, specs);
+        this.patternBackend = opts.patternBackend ?? jsPatternBackend;
     }
 
     /** What a client can target. Models only unless more detail is asked for. */
@@ -384,36 +569,87 @@ export class OverlayManager {
         const name = typeof req.name === 'string' ? req.name.trim() : '';
         if (!name) throw new Error('overlay: name is required');
         let target: PixelTarget | undefined;
+        let nodes: Int32Array | null = null;
         let nodeStart = 0;
         let nodeCount = this.layout.nodeCount;
-        if (req.model) {
+        let models: string[] | undefined;
+        if (req.models !== undefined) {
+            // Several targets: their nodes concatenated in the order given.
+            if (!Array.isArray(req.models) || req.models.length === 0) throw new Error('overlay: models must list at least one target');
+            const found: PixelTarget[] = [];
+            for (const m of req.models) {
+                const t = this.catalog.find(String(m));
+                if (!t) throw new Error(`overlay: no pixel model named ${String(m)}`);
+                found.push(t);
+            }
+            models = found.map((t) => t.name);
+            if (found.length === 1) {
+                target = found[0];
+                nodeStart = target.nodeStart;
+                nodeCount = target.nodes.length;
+                if (nodeStart < 0) nodes = target.nodes;
+            } else {
+                nodeCount = found.reduce((a, t) => a + t.nodes.length, 0);
+                nodes = new Int32Array(nodeCount);
+                let at = 0;
+                for (const t of found) {
+                    nodes.set(t.nodes, at);
+                    at += t.nodes.length;
+                }
+                nodeStart = -1;
+            }
+        } else if (req.model) {
             target = this.catalog.find(req.model, req.subModel);
             if (!target) throw new Error(`overlay: no pixel model named ${req.subModel ? req.model + '/' + req.subModel : req.model}`);
             nodeStart = target.nodeStart;
             nodeCount = target.nodes.length;
+            if (nodeStart < 0) nodes = target.nodes;
         }
         if (req.mode === 'exclusive') {
-            const span: NodeSpan = target && target.nodeStart < 0 ? target.nodes : { start: nodeStart, count: nodeCount };
+            const span: NodeSpan = nodes ?? { start: nodeStart, count: nodeCount };
             for (const l of this.layers.values()) {
                 if (l.info.mode === 'exclusive' && spansOverlap(span, l.span)) {
-                    throw new OverlayConflictError(target?.name ?? 'The display', l.info);
+                    throw new OverlayConflictError(target?.name ?? (models ? models.join(', ') : 'The display'), l.info);
                 }
             }
         }
-        const format: OverlayFormat = req.format ?? (target?.subModel ? 'buffer' : target?.grid || req.width ? 'grid' : 'nodes');
+        const format: OverlayFormat =
+            req.format ?? (req.pattern ? 'pattern' : target?.subModel ? 'buffer' : target?.grid || req.width ? 'grid' : 'nodes');
+        if (req.channels !== undefined && req.channels !== 3 && req.channels !== 4) throw new Error('overlay: channels must be 3 or 4');
+        const channels: 3 | 4 = format === 'pattern' ? 4 : (req.channels ?? 3);
         let width = nodeCount;
         let height = 1;
+        let pattern: LayerPattern | undefined;
+        let patternInfo: OverlayLeaseInfo['pattern'];
         if (format === 'buffer') {
+            if (models && models.length > 1) throw new Error('overlay: the buffer format takes one target');
             if (!target?.buffer) throw new Error('overlay: the buffer format needs a model or submodel with a known buffer');
             width = req.width ?? target.buffer.width;
             height = req.height ?? target.buffer.height;
         } else if (format === 'grid') {
+            if (models && models.length > 1) throw new Error('overlay: the grid format takes one target');
             width = req.width ?? target?.grid?.width ?? nodeCount;
             height = req.height ?? target?.grid?.height ?? 1;
+        } else if (format === 'pattern') {
+            if (!req.pattern) throw new Error('overlay: the pattern format needs pattern: { preset } or { program }');
+            const world = this.layout.world;
+            if (!world) throw new Error('overlay: the layout has no node coordinates, so no pattern can run');
+            let resolved;
+            try {
+                resolved = resolvePattern(req.pattern);
+            } catch (e) {
+                throw new Error(`overlay: ${(e as Error).message}`);
+            }
+            const spec = this.patternSpec(resolved.program, world, target, nodes, nodeStart, nodeCount, models);
+            const renderer = this.patternBackend(spec);
+            pattern = { renderer, program: resolved.program, uniforms: resolved.uniforms };
+            patternInfo = { preset: resolved.preset, backend: renderer.backend, uniforms: resolved.uniforms };
+            width = nodeCount;
+            height = 1;
         } else if (format !== 'nodes') {
             throw new Error(`overlay: unknown format ${String(format)}`);
         }
-        if (format !== 'nodes' && !(width > 0 && height > 0 && width * height <= 4_000_000)) throw new Error('overlay: bad grid size');
+        if (format !== 'nodes' && format !== 'pattern' && !(width > 0 && height > 0 && width * height <= 4_000_000)) throw new Error('overlay: bad grid size');
         const overlap: OverlayOverlap | undefined =
             format !== 'buffer' ? undefined : req.overlap === 'first' || req.overlap === 'max' ? req.overlap : 'last';
         const ttlMs = Math.min(MAX_TTL_MS, Math.max(1000, req.ttlMs ?? DEFAULT_TTL_MS));
@@ -423,26 +659,68 @@ export class OverlayManager {
             name,
             mode: req.mode,
             owner: req.owner,
-            model: target?.model ?? req.model,
+            model: target?.model ?? (models ? undefined : req.model),
             subModel: target?.subModel,
+            models,
+            group: typeof req.group === 'string' ? req.group : undefined,
             format,
+            channels,
             overlap,
             width,
             height,
             nodeStart,
             nodeCount,
-            frameBytes: format === 'nodes' ? nodeCount * 3 : width * height * 3,
-            blend: req.blend ?? 'replace',
+            frameBytes: format === 'pattern' ? 0 : format === 'nodes' ? nodeCount * channels : width * height * channels,
+            blend: req.blend ?? (format === 'pattern' || channels === 4 ? 'over' : 'replace'),
             opacity: req.opacity ?? 1,
             ttlMs,
             expiresAt: now + ttlMs,
+            openedAt: now,
             frames: 0,
+            pattern: patternInfo,
         };
-        this.layers.set(info.id, new OverlayLayer(info, target));
+        this.layers.set(info.id, new OverlayLayer(info, target, nodes, pattern));
         return info;
     }
 
+    /** Coordinates per payload node for a pattern: world always, local when every target has it. */
+    private patternSpec(
+        program: PatternProgram,
+        world: Float32Array,
+        target: PixelTarget | undefined,
+        nodes: Int32Array | null,
+        nodeStart: number,
+        nodeCount: number,
+        models: string[] | undefined,
+    ): PatternLeaseSpec {
+        const w = new Float32Array(nodeCount * 3);
+        for (let n = 0; n < nodeCount; ++n) {
+            const c = (nodes ? nodes[n] : nodeStart + n) * 3;
+            w[n * 3] = world[c];
+            w[n * 3 + 1] = world[c + 1];
+            w[n * 3 + 2] = world[c + 2];
+        }
+        let local: Float32Array | undefined;
+        if (target?.local) {
+            local = target.local;
+        } else if (models && models.length > 1) {
+            const parts = models.map((m) => this.catalog.find(m)?.local);
+            if (parts.every((p) => p !== undefined)) {
+                local = new Float32Array(nodeCount * 3);
+                let at = 0;
+                for (const p of parts as Float32Array[]) {
+                    local.set(p, at);
+                    at += p.length;
+                }
+            }
+        }
+        return { program, world: w, local, nodeCount };
+    }
+
     close(id: number): boolean {
+        const l = this.layers.get(id);
+        if (!l) return false;
+        l.dispose();
         return this.layers.delete(id);
     }
 
@@ -475,6 +753,7 @@ export class OverlayManager {
         const gone: number[] = [];
         for (const [id, l] of this.layers) {
             if (l.info.expiresAt <= now) {
+                l.dispose();
                 this.layers.delete(id);
                 gone.push(id);
             }
@@ -486,9 +765,12 @@ export class OverlayManager {
         return this.layers.size;
     }
 
-    /** Blend every live layer into the frame, in lease order. */
-    composite(frame: Uint8Array, stride: number): void {
-        for (const l of this.layers.values()) l.composite(frame, stride);
+    /** Blend every live layer into the frame, in lease order; patterns are evaluated for nowMs first. */
+    composite(frame: Uint8Array, stride: number, nowMs = Date.now()): void {
+        for (const l of this.layers.values()) {
+            if (l.pattern) l.evaluate(nowMs);
+            l.composite(frame, stride);
+        }
     }
 }
 

@@ -1218,6 +1218,10 @@ Submodels are overlay targets only. They are not in the frame pool manifest and 
 
 Payloads travel over UDP (fast, lossy, meant for animation) or as a raw `PUT` (simple clients). Either one also renews the lease. A lease with no traffic for `ttlMs` is dropped.
 
+Cells are RGB by default. With `channels: 4` they are RGBA: a cell's alpha scales it before it blends, and under the default `over` blend also fades the frame beneath it by the same amount, so a sprite with a transparent background runs across a matrix that keeps playing its sequence.
+
+A lease can also cover **several targets** at once (`models`, or an xLights `group`), and a lease can carry no pixels at all: a **pattern** lease names a program the player evaluates for every node from its position and the time, on the GPU when the player has one. See [Pattern leases](#pattern-leases) below.
+
 A lease is **exclusive** or a **layer**. An exclusive lease is refused while another exclusive lease holds any of the same nodes, so two games cannot fight over one tree: a lease on a model covers its submodels, and a lease on the whole display covers everything. A layer blends over whatever is there and never blocks anything, which is what a background effect wants. Every lease carries a `name`; an app that sends its `x-ezp-app-token` holds the lease under its instance title, and a refused client is told who has the model.
 
 #### GET /api/ezp/overlays/targets
@@ -1273,12 +1277,16 @@ Open a lease. Body (`mode` and `name` are required; a grid also needs a size whe
 | `name`    | Who is painting, shown in the lease list and in "in use" errors  |
 | `model`   | Model name or `Model/Submodel`; the whole display when omitted   |
 | `subModel` | Submodel of `model`, as an alternative to naming it in `model`  |
-| `format`  | `grid` (default for grid models), `nodes`, or `buffer` (default for submodels) |
+| `models`  | Several targets at once, as a list of names; the payload lists their nodes in this order (`nodes` and `pattern` formats) |
+| `group`   | An xLights model group; the player resolves it to `models` (those of its models that can take an overlay, in group order) |
+| `format`  | `grid` (default for grid models), `nodes`, `buffer` (default for submodels), or `pattern` (default when `pattern` is given) |
+| `channels` | Bytes per cell: `3` (RGB, default) or `4` (RGBA, straight alpha) |
+| `pattern` | `format: "pattern"`: `{ preset, uniforms }` or `{ program, uniforms }`, see below |
 | `width`   | Picture width; defaults to the target's grid or buffer           |
 | `height`  | Picture height                                                   |
 | `overlap` | `buffer` only: which cell colors a node that sits in several. `last` (default) takes the cell listed latest, as xLights does, so later passes of a strand lie on top; `first` takes the earliest; `max` takes the brightest of them, channel by channel |
-| `blend`   | `replace` (default), `max`, `underlay`, `add`, `subtract`, `multiply`, `screen`, `alpha`, `min` |
-| `opacity` | 0..1, default 1                                                  |
+| `blend`   | `replace` (default for RGB), `over` (default for RGBA and patterns: alpha fades the frame beneath), `max`, `underlay`, `add`, `subtract`, `multiply`, `screen`, `alpha` (same as `over`), `min` |
+| `opacity` | 0..1, default 1; multiplies every cell's alpha                   |
 | `ttlMs`   | Expiry after the last payload, default 30000                     |
 
 An app process sends its `x-ezp-app-token` header too; the lease then carries `owner` (`instance` and `title`) and the title is what other clients are told.
@@ -1297,7 +1305,7 @@ Response:
 }
 ```
 
-`frameBytes` is the exact payload size the lease expects (`width * height * 3`, or `nodeCount * 3`). The `token` must accompany every payload and every later call. A lease on a submodel also reports `subModel`, and its `nodeStart` is -1 when the submodel's nodes are not next to each other in the frame.
+`frameBytes` is the exact payload size the lease expects (`width * height * channels`, or `nodeCount * channels`; 0 for a pattern lease, whose payload is JSON). The `token` must accompany every payload and every later call. A lease on a submodel also reports `subModel`, and its `nodeStart` is -1 when the submodel's nodes are not next to each other in the frame. A multi-target lease reports `models` (and `group` when it was opened by group); a pattern lease reports `pattern` with the preset, the evaluator in use (`gpu` or `js`) and the current uniform values. Every lease carries `channels` and `openedAt`.
 
 When an exclusive lease is refused the status is `409` and the body names the holder, so a game can tell its players who has the lights and try again when that lease closes or expires:
 
@@ -1310,9 +1318,44 @@ A bad request (a missing `mode` or `name`, an unknown model) is `400`.
 
 With `format: "nodes"` a model takes its nodes in frame order and a submodel takes them in the order its lines list them, each node once. With `format: "grid"` a target that has no dense grid is treated as one strip in that same order.
 
+#### Pattern leases
+
+A pattern lease sends no pixels. It names a program, and the player computes every node's color itself, from the node's position, the time since the lease opened, and a block of **uniforms** the client may update at any rate it likes with a payload of a few dozen bytes. On a player with a GPU the program runs there, one point per node, in well under a millisecond for a whole yard; without one it runs in JavaScript. A pattern is RGBA and blends `over` by default; `add` suits a light beam.
+
+```json
+{ "mode": "layer", "name": "wand", "group": "Beam Coverage", "blend": "add",
+  "pattern": { "preset": "beam",
+               "uniforms": { "origin": [120, 60, 900], "dir": [0, 0, -1], "halfAngle": 0.15, "range": 1200, "color": "#fff0c0" } } }
+```
+
+Presets and their uniforms (a color is `"#rrggbb"` or `[r, g, b]` in 0..1; positions are in the layout's world units):
+
+| Preset      | Uniforms                                                                 | Paints                                                     |
+| ----------- | ------------------------------------------------------------------------ | ---------------------------------------------------------- |
+| `beam`      | `origin`, `dir`, `halfAngle` (radians), `softness` (0..1 of the rim), `range`, `color`, `noise` (0..1 cloudiness) | A flashlight cone, fading with distance |
+| `shockwave` | `center`, `radius`, `thickness`, `color`                                 | A ring of light; animate `radius`                          |
+| `wipe`      | `dir`, `offset`, `width`, `color`                                        | A band across the plane `dot(pos, dir) = offset`           |
+| `fire`      | `base` (y), `height`, `speed`, `scale`, `intensity`                      | Flames rising from `base`                                  |
+| `snow`      | `cell`, `speed`, `size`, `density`, `color`                              | Flakes drifting down, one per cell of space                |
+| `meteors`   | `cell`, `speed`, `length`, `height`, `density`, `color`                  | Streaks falling through columns `cell` apart               |
+| `solid`     | `color`, `opacity`                                                       | One color everywhere                                       |
+| `rainbow`   | `dir`, `period`, `speed`                                                 | Hue by position along `dir`, drifting                      |
+
+A client can also send its own `program`: an expression graph in JSON with a `color` (vec3 or vec4) and an optional `alpha` (float), over the inputs `pos` (world x, y, z), `local` (model-local x, y, z), `t` (seconds), `i` (node index in the lease), `n` (nodes in the lease), `u` (`i / (n - 1)`) and the program's declared `uniforms` as `$name`; any of them takes a swizzle such as `pos.xz`. Numbers and `[x, y, z]` are constants, `"#rrggbb"` is a color, and `{ "op": ..., "args": [...] }` applies an operation: `add sub mul div min max mod pow step atan2`, `neg abs floor ceil fract sqrt exp log sin cos tan asin acos atan sign saturate`, `clamp mix smoothstep`, `vec2 vec3 vec4 swizzle dot length distance normalize cross angle`, `hash noise fbm hsv`, and `ramp` (a float through color `stops`). Every uniform a program reads must be declared in `uniforms` with a default, which fixes its type. A program that does not compile is refused with the reason.
+
+```json
+{ "mode": "layer", "name": "plane", "models": ["Arch 1", "Arch 2"],
+  "pattern": { "program": {
+    "uniforms": { "y": 50, "tint": "#40c0ff" },
+    "color": "$tint",
+    "alpha": { "op": "sub", "args": [1, { "op": "saturate", "args": [{ "op": "div", "args": [{ "op": "abs", "args": [{ "op": "sub", "args": ["pos.y", "$y"] }] }, 20] }] }] } } } }
+```
+
+The payload of a pattern lease is a JSON object of uniform values, over UDP or `PUT` like any other payload, at most 16384 bytes. Names the program does not declare are ignored; a value of the wrong shape refuses the whole update. The open response and `GET /api/ezp/overlays` show the values in force.
+
 #### PUT /api/ezp/overlays/:id/frame?token=T[&seq=N]
 
-Whole payload as `application/octet-stream`, exactly `frameBytes` long. Commits immediately.
+Whole payload as `application/octet-stream`, exactly `frameBytes` long (a pattern lease: the JSON uniform object). Commits immediately.
 
 #### POST /api/ezp/overlays/:id/keepalive?token=T
 

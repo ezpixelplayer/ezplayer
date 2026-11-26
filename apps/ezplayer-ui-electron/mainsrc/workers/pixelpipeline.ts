@@ -54,6 +54,7 @@ import {
 } from '@ezplayer/epp';
 import type { GetNodeResult, SubModelResult, XlModelChannelInfo } from 'xllayoutcalcs';
 import { OutputWorkerHandle, serializeOutput } from './outputparent';
+import { gpuPatternBackend } from './pattern-gpu';
 import { OUTPUT_STATS_COUNTERS, OUTPUT_STATS_GAUGES } from './outputprotocol';
 
 /** What FSeqPrefetchCache's canonicalizer hands us for a file's own layout. */
@@ -184,7 +185,8 @@ export class PixelPipeline {
         this.output.onSenderStats = (stats) => (this.latestSenderStats = stats);
         this.pinnedDescriptor = descriptorFromSpecs(specs, Math.max(opts.nChannels, layout.totalChannels));
         this.pinnedDescriptor.fingerprint = descriptorHash(this.pinnedDescriptor);
-        this.overlays = new OverlayManager(layout, specs);
+        // Pattern leases render on the GPU when this thread can open a GL context.
+        this.overlays = new OverlayManager(layout, specs, { patternBackend: gpuPatternBackend((level, msg) => opts.log(level, msg)) });
         this.targets = new TargetCatalog(layout, specs);
     }
 
@@ -527,7 +529,7 @@ export class PixelPipeline {
             else if (expired.length) this.log('info', `[overlay] ${expired.length} leases expired`);
         }
         if (this.overlays.size > 0) {
-            this.overlays.composite(bytes, stride);
+            this.overlays.composite(bytes, stride, now);
             black = false;
             flags &= ~FRAME_FLAG_IDLE;
         }

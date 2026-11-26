@@ -79,6 +79,7 @@ import {
     OverlayConflictError,
     type OverlayLeaseInfo,
     overlayHolderLabel,
+    PATTERN_PAYLOAD_MAX,
 } from '@ezplayer/epp';
 
 import {
@@ -3809,7 +3810,16 @@ function overlayCommand(cmd: OverlayCommand): OverlayResult {
             case 'list':
                 return { ok: true, leases: ov.list() };
             case 'open': {
-                const lease = ov.open(cmd.request, Date.now());
+                const request = { ...cmd.request };
+                if (request.group !== undefined) {
+                    // An xLights group names its models; the lease takes them in group order.
+                    const g = testTweak.showModels().groups.find((x) => x.name === request.group);
+                    if (!g) return { ok: false, error: `no xLights model group named ${String(request.group)}` };
+                    const known = new Set(ov.targets().map((t) => t.model));
+                    request.models = g.models.filter((m) => known.has(m));
+                    if (request.models.length === 0) return { ok: false, error: `group ${g.name} reaches no pixel model` };
+                }
+                const lease = ov.open(request, Date.now());
                 logOverlayLease('opened', lease);
                 return { ok: true, lease, udpPort: p.overlayPort };
             }
@@ -3831,8 +3841,9 @@ function overlayCommand(cmd: OverlayCommand): OverlayResult {
             case 'frame': {
                 const info = ov.get(cmd.id);
                 if (!info || info.token !== cmd.token) return { ok: false, error: 'no such lease' };
-                if (cmd.data.length !== info.frameBytes)
-                    return { ok: false, error: `payload must be ${info.frameBytes} bytes` };
+                // A pattern payload is JSON of any length up to the cap; pixel payloads are exact.
+                if (info.format === 'pattern' ? cmd.data.length > PATTERN_PAYLOAD_MAX : cmd.data.length !== info.frameBytes)
+                    return { ok: false, error: info.format === 'pattern' ? `uniforms must be at most ${PATTERN_PAYLOAD_MAX} bytes` : `payload must be ${info.frameBytes} bytes` };
                 ov.write(cmd.id, cmd.token, cmd.seq, 0, cmd.data, true, Date.now());
                 return { ok: true };
             }

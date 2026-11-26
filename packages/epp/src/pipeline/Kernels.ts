@@ -28,6 +28,7 @@ export const BLEND_MODE_NAMES: Record<string, BlendMode> = {
     multiply: BLEND_MULTIPLY,
     screen: BLEND_SCREEN,
     alpha: BLEND_ALPHA,
+    over: BLEND_ALPHA,
     min: BLEND_MIN,
 };
 
