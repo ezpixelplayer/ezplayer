@@ -92,3 +92,10 @@ two instances pointed at the same tree never paint over each other. Hold the lea
 something is on the lights and release it between games, so the show and the other apps get the
 model back. A background effect opens a **layer** instead, which blends over whatever is there and
 blocks nothing.
+
+An effect that covers most of the display does not have to send pixels at all. A **pattern lease**
+names a program (a flashlight beam, a shockwave, fire, snow) that the player evaluates for every
+node from its position and the time, on the GPU when it has one, and the app only updates a few
+uniforms as things move. The `tag-the-monsters` example sweeps a wand's beam over an xLights group
+that way while RGBA sprites run across the matrices, and `wand-sim` stands in for the wand's base
+station by posting poses to the show inputs.

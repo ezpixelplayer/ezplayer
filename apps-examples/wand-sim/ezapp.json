@@ -1,0 +1,14 @@
+{
+    "id": "wand-sim",
+    "name": "Wand Simulator",
+    "version": "1",
+    "description": "Stands in for the RF wand: a joystick walks the holder, a dome aims the beam, a button switches it on, and every pose goes to the player's show inputs exactly as a base station would send it",
+    "icon": "🕹️",
+    "runtime": "node",
+    "start": ["wand-sim.mjs"],
+    "page": "page/",
+    "config": "config/",
+    "inputs": [],
+    "platforms": ["win32", "darwin", "linux"],
+    "events": { "perMinute": 3000, "perClientPerSecond": 30 }
+}

@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<meta name="theme-color" content="#0b0d12">
+<title>Wand Simulator</title>
+<style>
+  :root { color-scheme: dark; --bg: #0b0d12; --panel: #161a24; --line: #2a3040; --text: #e8ebf2; --dim: #8b93a7; --accent: #ffb347; --bad: #ff5c5c; --good: #5fe39a; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.3 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; overscroll-behavior: none; }
+  body { display: flex; flex-direction: column; align-items: center; padding: 12px 16px 24px; gap: 12px; }
+  header { display: flex; width: 100%; max-width: 640px; justify-content: space-between; align-items: baseline; }
+  h1 { margin: 0; font-size: 20px; letter-spacing: 1px; }
+  #link { font-size: 13px; color: var(--dim); }
+  #link.good { color: var(--good); }
+  #link.bad { color: var(--bad); }
+  .pads { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; width: 100%; max-width: 640px; }
+  .pad { position: relative; aspect-ratio: 1; background: var(--panel); border: 1px solid var(--line); border-radius: 50%; touch-action: none; user-select: none; }
+  .pad small { position: absolute; top: 10px; left: 0; right: 0; text-align: center; color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: 1px; pointer-events: none; }
+  .pad .knob { position: absolute; width: 22%; height: 22%; border-radius: 50%; background: var(--accent); left: 39%; top: 39%; pointer-events: none; box-shadow: 0 0 18px #ffb34780; }
+  #dome .knob { background: #6ad0ff; box-shadow: 0 0 18px #6ad0ff80; }
+  .pad .ring { position: absolute; inset: 30%; border: 1px dashed var(--line); border-radius: 50%; pointer-events: none; }
+  .pad .cross { position: absolute; left: 50%; top: 12%; bottom: 12%; border-left: 1px dashed var(--line); pointer-events: none; }
+  .pad .cross2 { position: absolute; top: 50%; left: 12%; right: 12%; border-top: 1px dashed var(--line); pointer-events: none; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; width: 100%; max-width: 640px; }
+  button { font: inherit; font-weight: 600; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 12px; height: 56px; cursor: pointer; }
+  #beam.on { background: #3a2a10; border-color: var(--accent); color: var(--accent); }
+  .stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; width: 100%; max-width: 640px; }
+  .stat { background: var(--panel); border-radius: 10px; padding: 8px 6px; text-align: center; }
+  .stat small { display: block; color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: 1px; }
+  .stat b { font-size: 18px; font-variant-numeric: tabular-nums; }
+  #msg { min-height: 1.3em; color: var(--dim); text-align: center; width: 100%; max-width: 640px; font-size: 14px; }
+  #msg.bad { color: var(--bad); }
+  .hint { color: var(--dim); font-size: 13px; text-align: center; max-width: 640px; }
+  code { color: var(--text); }
+</style>
+</head>
+<body>
+<header><h1>🕹️ Wand Simulator</h1><div id="link">connecting…</div></header>
+<div class="pads">
+  <div class="pad" id="walk"><small>Walk</small><div class="cross"></div><div class="cross2"></div><div class="knob"></div></div>
+  <div class="pad" id="dome"><small>Aim</small><div class="ring"></div><div class="knob"></div></div>
+</div>
+<div class="row">
+  <button id="beam">Beam off</button>
+  <button id="reset">Back to start</button>
+</div>
+<div class="stats">
+  <div class="stat"><small>x</small><b id="px">0.00</b></div>
+  <div class="stat"><small>z</small><b id="pz">0.00</b></div>
+  <div class="stat"><small>yaw</small><b id="pyaw">0</b></div>
+  <div class="stat"><small>pitch</small><b id="ppitch">10</b></div>
+  <div class="stat"><small>sent</small><b id="sent">0</b></div>
+</div>
+<div id="msg"></div>
+<div class="hint" id="hint">Hold the walk pad to move: up walks toward the display. Touch the aim dome: the center points straight up, the rim points level, the direction is where you touch. Pose goes to <code id="path">…</code>.</div>
+<script>
+(function () {
+  const el = (id) => document.getElementById(id);
+  let app;
+  const pose = { x: 0, z: 0, yaw: 0, pitch: 10, on: false };
+  const walk = { dx: 0, dy: 0, active: false };
+  const SPEED = 1.2; // meters per second at full deflection
+  const RATE_MS = 50;
+  let dirty = true, lastSend = 0, sends = 0;
+
+  function knob(pad, fx, fy) {
+    const k = pad.querySelector('.knob');
+    k.style.left = `${39 + fx * 39}%`;
+    k.style.top = `${39 + fy * 39}%`;
+  }
+
+  /** Pointer position in the pad as -1..1 from its center, clipped to the circle. */
+  function frac(pad, e) {
+    const r = pad.getBoundingClientRect();
+    let fx = ((e.clientX - r.left) / r.width) * 2 - 1;
+    let fy = ((e.clientY - r.top) / r.height) * 2 - 1;
+    const len = Math.hypot(fx, fy);
+    if (len > 1) { fx /= len; fy /= len; }
+    return [fx, fy];
+  }
+
+  function bindWalk() {
+    const pad = el('walk');
+    const move = (e) => { const [fx, fy] = frac(pad, e); walk.dx = fx; walk.dy = fy; knob(pad, fx, fy); };
+    pad.addEventListener('pointerdown', (e) => { e.preventDefault(); pad.setPointerCapture(e.pointerId); walk.active = true; move(e); });
+    pad.addEventListener('pointermove', (e) => { if (walk.active) move(e); });
+    const up = () => { walk.active = false; walk.dx = walk.dy = 0; knob(pad, 0, 0); };
+    for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) pad.addEventListener(ev, up);
+  }
+
+  function bindDome() {
+    const pad = el('dome');
+    let active = false;
+    const aim = (e) => {
+      const [fx, fy] = frac(pad, e);
+      const r = Math.hypot(fx, fy);
+      // Up on the dome is yaw 0 (facing the display); the rim is level, the center straight up.
+      pose.yaw = r < 0.05 ? pose.yaw : Math.round((Math.atan2(fx, -fy) * 180) / Math.PI);
+      pose.pitch = Math.round(90 * (1 - Math.min(1, r)));
+      knob(pad, fx, fy);
+      dirty = true;
+      show();
+    };
+    pad.addEventListener('pointerdown', (e) => { e.preventDefault(); pad.setPointerCapture(e.pointerId); active = true; aim(e); });
+    pad.addEventListener('pointermove', (e) => { if (active) aim(e); });
+    for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) pad.addEventListener(ev, () => { active = false; });
+    // Start aimed level, straight ahead.
+    const r0 = 1 - pose.pitch / 90;
+    knob(pad, 0, -r0);
+  }
+
+  function show() {
+    el('px').textContent = pose.x.toFixed(2);
+    el('pz').textContent = pose.z.toFixed(2);
+    el('pyaw').textContent = pose.yaw;
+    el('ppitch').textContent = pose.pitch;
+    el('sent').textContent = sends;
+    el('beam').textContent = pose.on ? 'Beam ON' : 'Beam off';
+    el('beam').className = pose.on ? 'on' : '';
+  }
+
+  let lastStep = performance.now();
+  function step() {
+    const now = performance.now();
+    const dt = Math.min(0.1, (now - lastStep) / 1000);
+    lastStep = now;
+    if (walk.active && (walk.dx || walk.dy)) {
+      // Up on the pad is toward the display: -z in the wand frame.
+      pose.x += walk.dx * SPEED * dt;
+      pose.z += walk.dy * SPEED * dt;
+      dirty = true;
+      show();
+    }
+    if (app && dirty && now - lastSend >= RATE_MS) {
+      dirty = false;
+      lastSend = now;
+      sends++;
+      app.send({ type: 'pose', value: { x: +pose.x.toFixed(3), z: +pose.z.toFixed(3), yaw: pose.yaw, pitch: pose.pitch, on: pose.on } })
+        .catch((e) => { el('msg').textContent = `Could not send: ${e.message}`; el('msg').className = 'bad'; });
+    }
+    requestAnimationFrame(step);
+  }
+
+  function init() {
+    app = window.EZApp.connect();
+    bindWalk();
+    bindDome();
+    el('beam').addEventListener('click', () => { pose.on = !pose.on; dirty = true; show(); });
+    el('reset').addEventListener('click', () => { pose.x = 0; pose.z = 0; dirty = true; show(); });
+    app.onStatus((s) => {
+      if (!s) return;
+      el('path').textContent = s.path;
+      const link = el('link');
+      if (s.lastError) { link.textContent = s.lastError; link.className = 'bad'; }
+      else if (s.lastDelivered === 0) { link.textContent = 'sent, but no app is mapped to it'; link.className = 'bad'; }
+      else if (s.lastDelivered > 0) { link.textContent = `delivered to ${s.lastDelivered} app${s.lastDelivered === 1 ? '' : 's'}`; link.className = 'good'; }
+      else { link.textContent = 'waiting for a move'; link.className = ''; }
+      el('msg').textContent = s.lastError ? '' : `${s.counts.sent} poses sent at up to ${s.rateHz} a second`;
+      el('msg').className = '';
+    });
+    show();
+    requestAnimationFrame(step);
+  }
+
+  const sdk = document.createElement('script');
+  sdk.src = '_sdk.js';
+  sdk.onload = init;
+  sdk.onerror = () => { el('msg').textContent = 'Could not load the app SDK.'; el('msg').className = 'bad'; };
+  document.head.appendChild(sdk);
+})();
+</script>
+</body>
+</html>
