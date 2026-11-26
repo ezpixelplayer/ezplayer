@@ -17,13 +17,16 @@ base stations replace it with one row on the Apps card.
 ## Install
 
 In the player, open the Apps tile and point it at this folder (the one holding `ezapp.json`). Do
-the same for `../wand-sim` until the real wand arrives.
+the same for `../wand-sim` until the real wand arrives. The settings page reads the layout from the
+player, so the groups and matrices are there to pick whether or not the game is running; its first line
+says what the player and the game are doing, including when the last wand pose arrived.
 
 ## Wire the wand
 
-On the Apps card, under **Show inputs**, add a row: source `wand-sim` (or whatever the Wand Simulator's
-settings say), name `pose`, driving this instance's `pose` input. A base station does the same thing
-by posting to the same address:
+Open the Wand Simulator's page and move the wand once. Then, on the Apps card under **Show inputs**,
+`wand-sim/pose` appears under *Heard lately*; **Map this** fills the row, pick this instance and its
+`pose` input, and add it. (The source is whatever the Wand Simulator's settings say, `wand-sim` by
+default.) A base station does the same thing by posting to the same address:
 
 ```
 POST http://<player>:3000/api/ezp/inputs/<source>/pose

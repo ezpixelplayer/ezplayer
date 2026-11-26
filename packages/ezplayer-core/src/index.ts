@@ -106,6 +106,7 @@ export type {
     AppStartupReport,
     AppInstanceStatus,
     AppInputMapping,
+    AppRecentInput,
     AppsState,
     AppStatusSnapshot,
     AppStatuses,

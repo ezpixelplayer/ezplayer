@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
     Alert,
+    Autocomplete,
     Button,
     Chip,
     CircularProgress,
@@ -793,6 +794,16 @@ const AddAppsSection: React.FC<{ state: AppsState; busy: string | null; command:
 
 // -- inputs -------------------------------------------------------------------------
 
+/** "just now", "40 s ago", "3 min ago". */
+function ago(ms: number): string {
+    const s = Math.max(0, Math.round((Date.now() - ms) / 1000));
+    if (s < 5) return 'just now';
+    if (s < 90) return `${s} s ago`;
+    const m = Math.round(s / 60);
+    if (m < 90) return `${m} min ago`;
+    return `${Math.round(m / 60)} h ago`;
+}
+
 const InputsSection: React.FC<{ state: AppsState; busy: string | null; command: Command }> = ({
     state,
     busy,
@@ -806,14 +817,55 @@ const InputsSection: React.FC<{ state: AppsState; busy: string | null; command: 
     };
     const save = (mappings: AppInputMapping[]) => void command({ op: 'setInputMappings', mappings });
     const ok = NAME_RE.test(draft.source) && NAME_RE.test(draft.name) && draft.instance && draft.input;
+    // What the player has actually heard is the best list of what to type.
+    const recent = state.recentInputs ?? [];
+    const mapped = new Set(state.inputMappings.map((m) => `${m.source}/${m.name}`));
+    const sources = [...new Set(recent.map((r) => r.source))];
+    const names = [...new Set(recent.filter((r) => !draft.source || r.source === draft.source).map((r) => r.name))];
 
     return (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
             <Typography variant="h6">Show inputs</Typography>
             <Typography color="text.secondary" variant="body2">
-                A button or sensor posts to <code>/api/ezp/inputs/&lt;source&gt;/&lt;name&gt;</code> on this player.
-                Each row sends one of those to an input of an app instance, as if a visitor had tapped it.
+                A button, sensor or helper app posts to <code>/api/ezp/inputs/&lt;source&gt;/&lt;name&gt;</code> on this
+                player. The sender picks both words: <em>source</em> is who it is (a board, the Wand Simulator's source
+                setting) and <em>name</em> is which button or value. Each row below hands one of those to an input of an
+                app instance, as if a visitor had tapped it. Anything that posts shows up under <em>Heard lately</em>,
+                so let it send once and pick it from there.
             </Typography>
+            {recent.length > 0 && (
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                    <Typography variant="subtitle2">Heard lately</Typography>
+                    {recent.slice(0, 8).map((r) => {
+                        const key = `${r.source}/${r.name}`;
+                        const isMapped = mapped.has(key);
+                        return (
+                            <Box key={key} sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                                <Typography variant="body2">
+                                    <code>{key}</code> · {r.count} {r.count === 1 ? 'post' : 'posts'}, last{' '}
+                                    {ago(r.lastAt)}
+                                    {r.lastValue !== undefined && (
+                                        <Typography component="span" variant="caption" color="text.secondary">
+                                            {' '}
+                                            {r.lastValue}
+                                        </Typography>
+                                    )}
+                                </Typography>
+                                {isMapped ? (
+                                    <Chip size="small" variant="outlined" label="mapped" />
+                                ) : (
+                                    <Button
+                                        size="small"
+                                        onClick={() => setDraft({ ...draft, source: r.source, name: r.name })}
+                                    >
+                                        Map this
+                                    </Button>
+                                )}
+                            </Box>
+                        );
+                    })}
+                </Box>
+            )}
             {state.inputMappings.map((m, i) => (
                 <Box key={i} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                     <Typography variant="body2">
@@ -832,19 +884,27 @@ const InputsSection: React.FC<{ state: AppsState; busy: string | null; command: 
                 </Box>
             ))}
             <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
-                <TextField
+                <Autocomplete
+                    freeSolo
                     size="small"
-                    label="Source"
-                    value={draft.source}
-                    sx={{ width: 140 }}
-                    onChange={(e) => setDraft({ ...draft, source: e.target.value.toLowerCase() })}
+                    options={sources}
+                    value={draft.source || null}
+                    inputValue={draft.source}
+                    onInputChange={(_, v) => setDraft({ ...draft, source: (v ?? '').toLowerCase() })}
+                    onChange={(_, v) => setDraft({ ...draft, source: (v ?? '').toLowerCase() })}
+                    sx={{ width: 170 }}
+                    renderInput={(params) => <TextField {...params} label="Source" placeholder="who sends it" />}
                 />
-                <TextField
+                <Autocomplete
+                    freeSolo
                     size="small"
-                    label="Name"
-                    value={draft.name}
-                    sx={{ width: 140 }}
-                    onChange={(e) => setDraft({ ...draft, name: e.target.value.toLowerCase() })}
+                    options={names}
+                    value={draft.name || null}
+                    inputValue={draft.name}
+                    onInputChange={(_, v) => setDraft({ ...draft, name: (v ?? '').toLowerCase() })}
+                    onChange={(_, v) => setDraft({ ...draft, name: (v ?? '').toLowerCase() })}
+                    sx={{ width: 170 }}
+                    renderInput={(params) => <TextField {...params} label="Name" placeholder="which button or value" />}
                 />
                 <FormControl size="small" sx={{ minWidth: 160 }}>
                     <InputLabel id="apps-map-inst">Instance</InputLabel>

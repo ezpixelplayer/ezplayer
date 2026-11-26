@@ -24,11 +24,14 @@
   #msg { margin-top: 10px; min-height: 1.3em; color: var(--dim); }
   #msg.bad { color: var(--bad); }
   #msg.good { color: var(--good); }
+  #state { margin: -6px 0 10px; }
+  #state.bad { color: var(--bad); }
   .hint { color: var(--dim); font-size: 13px; margin-top: 6px; }
 </style>
 </head>
 <body>
 <h1>Tag the Monsters settings</h1>
+<div id="state" class="hint">Connecting to the player…</div>
 
 <h2>Cast</h2>
 <section>
@@ -80,7 +83,10 @@
     <label>World units per meter<input id="scale" type="number" step="1" min="0.01"></label>
     <label>Eye height (meters)<input id="eyeHeight" type="number" step="0.05" min="0"></label>
   </div>
-  <div class="hint">Leave the origin blank to stand in front of the layout's middle. The player's layout is in xLights world units; 100 per meter is typical when the layout was drawn in centimeters.</div>
+  <div class="row">
+    <label>Or: how wide is the whole display, in meters?<input id="widthM" type="number" step="0.5" min="0.5" placeholder="sets the units per meter"></label>
+  </div>
+  <div class="hint" id="calib">Leave the origin blank to stand in front of the layout's middle.</div>
 </section>
 
 <h2>Rules</h2>
@@ -108,10 +114,87 @@
 (function () {
   const el = (id) => document.getElementById(id);
   let app, settings = {}, status = null;
+  let layout = null; // { groups, grid, all, bounds } read from the player, independent of the game process
+  let layoutError = '';
+
+  const fmt = (v, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v.toFixed(d) : '?');
+
+  /** Everything the pick lists need, from the player's own API; the game does not have to be running. */
+  async function loadLayout() {
+    if (app.apiBase === null) { layoutError = 'This page has no access to the player API; open it from the Apps card.'; return; }
+    try {
+      const res = await fetch(app.apiBase + '/api/ezp/overlays/targets?groups=1', { cache: 'no-store' });
+      const body = await res.json().catch(() => null);
+      if (res.status === 503) throw new Error('the player has not loaded its layout yet (open the show in EZPlayer first)');
+      if (!res.ok) throw new Error(body?.error || ('HTTP ' + res.status));
+      const targets = (body.targets || []).filter((t) => !t.subModel);
+      layout = {
+        groups: (body.groups || []).map((g) => ({ name: g.name, models: g.models.length })),
+        grid: targets.filter((t) => t.width && t.height && t.width >= 8 && t.height >= 8).map((t) => ({ model: t.model, width: t.width, height: t.height, type: t.kind })),
+        all: targets.map((t) => ({ model: t.model, type: (t.kind ? t.kind + ', ' : '') + t.nodeCount + ' nodes' })),
+        bounds: layout?.bounds ?? null,
+      };
+      layoutError = '';
+    } catch (e) {
+      layoutError = 'Could not read the layout: ' + e.message;
+    }
+    try {
+      // The 3D preview's coordinates give the layout's extent, for the calibration hints.
+      const res = await fetch(app.apiBase + '/api/ezp/model-coordinates', { cache: 'no-store' });
+      if (res.ok) {
+        const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+        const walk = (v) => {
+          if (!v || typeof v !== 'object') return;
+          if (typeof v.wX === 'number' && typeof v.wY === 'number') {
+            const p = [v.wX, v.wY, typeof v.wZ === 'number' ? v.wZ : 0];
+            for (let k = 0; k < 3; ++k) { if (p[k] < lo[k]) lo[k] = p[k]; if (p[k] > hi[k]) hi[k] = p[k]; }
+          }
+          for (const x of Object.values(v)) walk(x);
+        };
+        walk(await res.json());
+        if (Number.isFinite(lo[0]) && layout) layout.bounds = { lo, hi };
+      }
+    } catch { /* the hints just stay generic */ }
+  }
+
+  function showState() {
+    const box = el('state');
+    const parts = [];
+    if (layoutError) parts.push(layoutError);
+    else if (layout) parts.push(layout.all.length + ' models and ' + layout.groups.length + ' groups in the layout.');
+    if (!status) parts.push('The game is not running right now; settings save either way, and the Apps card starts it.');
+    else {
+      parts.push('Game: ' + (status.phase || 'idle') + (status.message ? ' (' + status.message + ')' : '') + '.');
+      const age = status.pose?.ageMs;
+      if (age === null || age === undefined) parts.push('No wand pose has arrived yet: on the Apps card, under Show inputs, send the wand (wand-sim/pose) to this instance\u2019s pose input.');
+      else parts.push('Last wand pose ' + (age / 1000).toFixed(1) + ' s ago, beam ' + (status.beam?.on ? 'on' : 'off') + '.');
+    }
+    box.textContent = parts.join(' ');
+    box.className = layoutError ? 'hint bad' : 'hint';
+  }
+
+  /** What the calibration fields mean against this layout, in plain numbers. */
+  function showCalib() {
+    const b = layout?.bounds ?? status?.layoutBounds ?? null;
+    const scale = Number(el('scale').value) || 100;
+    const eye = Number(el('eyeHeight').value) || 0;
+    const parts = [];
+    if (b) {
+      const w = b.hi[0] - b.lo[0], h = b.hi[1] - b.lo[1], d = b.hi[2] - b.lo[2];
+      parts.push('The layout spans ' + fmt(w) + ' units wide, ' + fmt(h) + ' tall and ' + fmt(d) + ' deep (x ' + fmt(b.lo[0]) + '..' + fmt(b.hi[0]) + ', y ' + fmt(b.lo[1]) + '..' + fmt(b.hi[1]) + ', z ' + fmt(b.lo[2]) + '..' + fmt(b.hi[2]) + ').');
+      parts.push('At ' + fmt(scale, 1) + ' units per meter that is ' + fmt(w / scale, 1) + ' m wide; a 1 m step moves the holder ' + fmt(scale) + ' units.');
+      const ox = el('ox').value, oy = el('oy').value, oz = el('oz').value;
+      const o = ox !== '' && oy !== '' && oz !== '' ? [Number(ox), Number(oy), Number(oz)] : [(b.lo[0] + b.hi[0]) / 2, b.lo[1], b.hi[2] + d * 0.25];
+      parts.push('The holder starts at (' + fmt(o[0]) + ', ' + fmt(o[1]) + ', ' + fmt(o[2]) + ') with eyes ' + fmt(eye * scale) + ' units up, facing -z.');
+    } else {
+      parts.push('Leave the origin blank to stand in front of the layout\u2019s middle. 100 units per meter fits a layout drawn in centimeters.');
+    }
+    el('calib').textContent = parts.join(' ');
+  }
 
   function fillModels(container, models, chosen, labelOf) {
     const have = new Set(chosen);
-    container.innerHTML = models.length ? '' : '<span class="hint">No models known yet; the player may be loading its layout.</span>';
+    container.innerHTML = models.length ? '' : '<span class="hint">' + (layoutError || (layout ? 'The layout has no models of this kind.' : 'Reading the layout from the player…')) + '</span>';
     for (const m of models) {
       const l = document.createElement('label');
       l.className = 'check';
@@ -132,7 +215,7 @@
     const sel = el('beamGroup');
     const want = settings.beamGroup ?? '';
     sel.innerHTML = '<option value="">(pick models below instead)</option>';
-    for (const g of status?.groups ?? []) {
+    for (const g of layout?.groups ?? status?.groups ?? []) {
       const o = document.createElement('option');
       o.value = g.name;
       o.textContent = `${g.name} (${g.models} models)`;
@@ -151,9 +234,9 @@
     const s = settings;
     el('cast').value = s.cast ?? 'halloween';
     fillGroups();
-    const grid = status?.gridModels ?? [];
+    const grid = layout?.grid ?? status?.gridModels ?? [];
     fillModels(el('spriteModels'), grid, s.spriteModels ?? [], (m) => `${m.width}x${m.height}${m.type ? ' ' + m.type : ''}`);
-    const all = (status?.allModels ?? grid);
+    const all = layout?.all ?? grid;
     fillModels(el('beamModels'), all, s.beamModels ?? [], (m) => m.type ?? '');
     const b = s.beam ?? {};
     el('halfAngle').value = b.halfAngle ?? 0.12;
@@ -183,6 +266,7 @@
     el('respawnMs').value = r.respawnMs ?? 1200;
     el('useUdp').checked = s.useUdp !== false;
     el('autoStart').checked = s.autoStart === true;
+    showCalib();
   }
 
   const n = (id) => { const v = Number(el(id).value); return Number.isFinite(v) ? v : undefined; };
@@ -216,15 +300,39 @@
 
   async function init() {
     app = window.EZApp.connect();
+    await app.ready;
     try { settings = (await app.get('private', 'settings')) || {}; } catch { settings = {}; }
     show();
-    let drawn = '';
+    showState();
+    await loadLayout();
+    show();
+    showState();
+    let drawn = JSON.stringify([layout?.groups, layout?.grid]);
+    let lastStatusAt = 0;
     app.onStatus((s) => {
       if (!s) return;
       status = s;
-      // Rebuild the pick lists only when the layout changes, so a status every half second does not undo a tick.
-      const key = JSON.stringify([s.groups, s.gridModels]);
+      lastStatusAt = Date.now();
+      // Without the player API the lists come from the game; rebuild them only when they change.
+      if (!layout) {
+        const key = JSON.stringify([s.groups, s.gridModels]);
+        if (key !== drawn) { drawn = key; show(); }
+      }
+      showState();
+    });
+    // A status that stops arriving means the game stopped.
+    setInterval(() => { if (status && Date.now() - lastStatusAt > 6000) { status = null; showState(); } }, 2000);
+    setInterval(async () => {
+      await loadLayout();
+      const key = JSON.stringify([layout?.groups, layout?.grid]);
       if (key !== drawn) { drawn = key; show(); }
+      showState();
+    }, 15000);
+    for (const id of ['ox', 'oy', 'oz', 'scale', 'eyeHeight']) el(id).addEventListener('input', showCalib);
+    el('widthM').addEventListener('input', () => {
+      const b = layout?.bounds ?? status?.layoutBounds;
+      const m = Number(el('widthM').value);
+      if (b && m > 0) { el('scale').value = Math.round(((b.hi[0] - b.lo[0]) / m) * 10) / 10; showCalib(); }
     });
     el('save').addEventListener('click', save);
   }

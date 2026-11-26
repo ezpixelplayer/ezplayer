@@ -1420,6 +1420,19 @@ export interface AppInputMapping {
     input: string;
 }
 
+/** A show input the player has heard recently, mapped or not, for the Apps card to offer. */
+export interface AppRecentInput {
+    source: string;
+    name: string;
+    count: number;
+    /** Epoch ms of the last post. */
+    lastAt: number;
+    /** How many instances the last post reached; 0 means no mapping row matched it. */
+    delivered: number;
+    /** A short rendering of the last value, for the owner to recognize the sender. */
+    lastValue?: string;
+}
+
 export interface AppsState {
     apps: InstalledApp[];
     instances: AppInstanceStatus[];
@@ -1430,6 +1443,8 @@ export interface AppsState {
     /** Pythons found on this computer by `findPython`, for the owner to pick from. */
     pythonCandidates?: { path: string; version: string }[];
     inputMappings: AppInputMapping[];
+    /** Inputs posted lately, newest first; only the server answering `GET /api/ezp/apps` fills it. */
+    recentInputs?: AppRecentInput[];
     /** The last install or command error, for the Apps card. */
     lastError?: string;
     /** Whether bundled example apps are available to install. */

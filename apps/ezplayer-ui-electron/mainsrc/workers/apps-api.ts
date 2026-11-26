@@ -10,7 +10,14 @@ import type { Duplex } from 'node:stream';
 import type Koa from 'koa';
 import getRawBody from 'raw-body';
 import { WebSocketServer, type WebSocket } from 'ws';
-import type { AppInputMapping, AppsCommand, AppsState, AppStatuses, FullPlayerState } from '@ezplayer/ezplayer-core';
+import type {
+    AppInputMapping,
+    AppRecentInput,
+    AppsCommand,
+    AppsState,
+    AppStatuses,
+    FullPlayerState,
+} from '@ezplayer/ezplayer-core';
 import { AppEventFeed } from './apps-events.js';
 import {
     DATA_KEY_RE,
@@ -32,6 +39,8 @@ const POLL_MAX_WAIT_MS = 60_000;
 const PAGE_PROXY_MAX_BODY = 2 * 1024 * 1024;
 const PAGE_PROXY_TIMEOUT_MS = 30_000;
 const INSTANCE_RE = /^[a-z0-9][a-z0-9-]{0,39}$/;
+const RECENT_INPUTS_MAX = 50;
+const RECENT_VALUE_MAX = 60;
 
 export interface AppsApiDeps {
     appsCommand(cmd: AppsCommand): Promise<AppsState>;
@@ -48,6 +57,7 @@ export class AppsRuntime {
     private readonly feeds = new Map<string, AppEventFeed>();
     private readonly statuses: AppStatuses = {};
     private readonly live = new Map<string, Set<WebSocket>>();
+    private readonly recent = new Map<string, AppRecentInput>();
 
     constructor(private readonly deps: AppsApiDeps) {}
 
@@ -142,7 +152,33 @@ export class AppsRuntime {
             });
             if (!('refused' in r)) n++;
         }
+        this.remember(source, name, value, n);
         return n;
+    }
+
+    /** Inputs heard lately, newest first, so the Apps card can offer them instead of asking for typing. */
+    recentInputs(): AppRecentInput[] {
+        // Every post re-inserts its key, so the map runs oldest to newest.
+        return [...this.recent.values()].reverse();
+    }
+
+    private remember(source: string, name: string, value: unknown, delivered: number): void {
+        const key = `${source}/${name}`;
+        const was = this.recent.get(key);
+        let lastValue: string | undefined;
+        if (value !== undefined) {
+            try {
+                lastValue = typeof value === 'string' ? value : JSON.stringify(value);
+            } catch {
+                lastValue = String(value);
+            }
+            if (lastValue && lastValue.length > RECENT_VALUE_MAX)
+                lastValue = lastValue.slice(0, RECENT_VALUE_MAX - 1) + '…';
+        }
+        // Re-insert so the map stays in arrival order and the oldest key is first to go.
+        this.recent.delete(key);
+        this.recent.set(key, { source, name, count: (was?.count ?? 0) + 1, lastAt: Date.now(), delivered, lastValue });
+        while (this.recent.size > RECENT_INPUTS_MAX) this.recent.delete(this.recent.keys().next().value!);
     }
 
     addLive(name: string, ws: WebSocket): void {
@@ -190,6 +226,7 @@ export function registerAppsRoutes(router: Router, apps: AppsRuntime, deps: Apps
         ctx.set('Cache-Control', 'no-store');
         ctx.body = {
             ...(deps.getState('apps') ?? { apps: [], instances: [], defaultSchedule: [], inputMappings: [] }),
+            recentInputs: apps.recentInputs(),
         };
     });
 
@@ -200,7 +237,7 @@ export function registerAppsRoutes(router: Router, apps: AppsRuntime, deps: Apps
             ctx.body = { error: 'op is required' };
             return;
         }
-        ctx.body = await deps.appsCommand(cmd);
+        ctx.body = { ...(await deps.appsCommand(cmd)), recentInputs: apps.recentInputs() };
     });
 
     router.get('/api/ezp/apps/public', (ctx) => {

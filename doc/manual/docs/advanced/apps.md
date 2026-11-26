@@ -74,9 +74,12 @@ address on a press (Falcon and FPP controllers can) post to:
 POST http://<player>:3000/api/ezp/inputs/<source>/<name>
 ```
 
-Under **Show inputs** on the Apps card, add a row for each one: the source and name the board sends,
-and the instance and input it should drive. An app declares its inputs in its manifest. The app sees the
-press as an ordinary event whose source says it came from an input.
+The sender chooses both words: `source` says who it is (a board's name, a helper app's setting) and
+`name` says which button or value. Under **Show inputs** on the Apps card, add a row for each one: that
+source and name, and the instance and input it should drive. The easiest way is to let the sender post
+once; everything the player has heard lately is listed there with its last value, and **Map this** fills
+the row. An app declares its inputs in its manifest. The app sees the press as an ordinary event whose
+source says it came from an input.
 
 ## Writing an app
 

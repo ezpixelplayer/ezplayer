@@ -34,6 +34,8 @@ const KEY_PREFIX = `ttm-${instance.replace(/[^A-Za-z0-9._~-]/g, '-').slice(0, 32
 const TICK_MS = 40;
 const OBJECT_TTL_MS = 3000;
 const LEASE_TTL_MS = 10_000;
+// A lease with no traffic for its TTL is dropped, and a still wand sends nothing, so the uniforms go out this often anyway.
+const BEAM_KEEPALIVE_MS = 2000;
 const POSE_STALE_MS = 2500;
 
 // ---------------------------------------------------------------------------
@@ -264,6 +266,7 @@ let roundResult = null;
 let beamLease = null;
 let beamSeq = 1;
 let lastBeamJson = '';
+let lastBeamSentAt = 0;
 let sprites = []; // one per sprite model
 let objectsDefined = false;
 let quit = false;
@@ -575,8 +578,10 @@ function updateBeam() {
         color: world.on ? settings.beam.color : '#000000',
     };
     const json = JSON.stringify(u);
-    if (json === lastBeamJson) return;
+    const now = Date.now();
+    if (json === lastBeamJson && now - lastBeamSentAt < BEAM_KEEPALIVE_MS) return;
     lastBeamJson = json;
+    lastBeamSentAt = now;
     sendPayload(beamLease, beamSeq++, Buffer.from(json));
 }
 
@@ -773,6 +778,7 @@ async function publish(force = false) {
         sprites: sprites.map((s) => s.status()),
         groups: layoutGroups,
         gridModels,
+        layoutBounds,
         targetsError,
         transport: settings.useUdp ? 'udp' : 'http',
     };
