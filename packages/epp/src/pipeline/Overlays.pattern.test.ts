@@ -27,7 +27,14 @@ const uniforms = (u: object) => new TextEncoder().encode(JSON.stringify(u));
 describe('pattern leases', () => {
     it('paints a wipe over two models from their world coordinates and takes uniform updates', () => {
         const ov = new OverlayManager(layout());
-        const lease = ov.open({ ...L, models: ['A', 'B'], pattern: { preset: 'wipe', uniforms: { offset: 120, width: 15, color: '#ff0000' } } }, 1000);
+        const lease = ov.open(
+            {
+                ...L,
+                models: ['A', 'B'],
+                pattern: { preset: 'wipe', uniforms: { offset: 120, width: 15, color: '#ff0000' } },
+            },
+            1000,
+        );
         expect(lease.format).toBe('pattern');
         expect(lease.channels).toBe(4);
         expect(lease.models).toEqual(['A', 'B']);
@@ -61,14 +68,25 @@ describe('pattern leases', () => {
 
     it('blends with alpha: over fades the frame, add brightens it, and a zero-alpha node leaves it alone', () => {
         const ov = new OverlayManager(layout());
-        const over = ov.open({ ...L, model: 'A', pattern: { preset: 'solid', uniforms: { color: '#ffffff', opacity: 0.5 } } }, 0);
+        const over = ov.open(
+            { ...L, model: 'A', pattern: { preset: 'solid', uniforms: { color: '#ffffff', opacity: 0.5 } } },
+            0,
+        );
         const frame = frameOf(100);
         ov.composite(frame, 3, 0);
         // 100 * 0.5 + 255 * 0.5
         expect(frame[0]).toBe(178);
         expect(frame[B0 * 3]).toBe(100);
         ov.close(over.id);
-        ov.open({ ...L, model: 'A', blend: 'add', pattern: { preset: 'solid', uniforms: { color: '#ffffff', opacity: 0.5 } } }, 0);
+        ov.open(
+            {
+                ...L,
+                model: 'A',
+                blend: 'add',
+                pattern: { preset: 'solid', uniforms: { color: '#ffffff', opacity: 0.5 } },
+            },
+            0,
+        );
         frame.fill(100);
         ov.composite(frame, 3, 0);
         expect(frame[0]).toBe(228);
@@ -133,13 +151,17 @@ describe('pattern leases', () => {
         expect(() => ov.open({ ...L, models: ['A', 'B'], format: 'grid' }, 0)).toThrow(/one target/);
         expect(() => ov.open({ ...L, model: 'A', channels: 2 as never }, 0)).toThrow(/channels/);
         const noWorld = new OverlayManager(compileLayout(specs()));
-        expect(() => noWorld.open({ ...L, model: 'A', pattern: { preset: 'solid' } }, 0)).toThrow(/no node coordinates/);
+        expect(() => noWorld.open({ ...L, model: 'A', pattern: { preset: 'solid' } }, 0)).toThrow(
+            /no node coordinates/,
+        );
     });
 
     it('keeps exclusive conflicts across multi-target leases', () => {
         const ov = new OverlayManager(layout());
         ov.open({ mode: 'exclusive', name: 'sprite', model: 'B' }, 0);
-        expect(() => ov.open({ mode: 'exclusive', name: 'both', models: ['A', 'B'] }, 0)).toThrow(/B is in use by sprite/);
+        expect(() => ov.open({ mode: 'exclusive', name: 'both', models: ['A', 'B'] }, 0)).toThrow(
+            /B is in use by sprite/,
+        );
         // A layer over both is fine.
         expect(ov.open({ ...L, models: ['A', 'B'], pattern: { preset: 'solid' } }, 0).nodeCount).toBe(10);
     });

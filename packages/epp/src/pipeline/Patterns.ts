@@ -70,12 +70,21 @@ function uniformValue(name: string, v: unknown): number | number[] {
         if (c) return c;
         throw new PatternError(`uniform ${name}: not a color: ${v}`);
     }
-    if (Array.isArray(v) && v.length >= 2 && v.length <= 4 && v.every((x) => typeof x === 'number' && Number.isFinite(x))) return v.slice();
+    if (
+        Array.isArray(v) &&
+        v.length >= 2 &&
+        v.length <= 4 &&
+        v.every((x) => typeof x === 'number' && Number.isFinite(x))
+    )
+        return v.slice();
     throw new PatternError(`uniform ${name}: expected a number, a 2..4 vector or '#rrggbb'`);
 }
 
 /** Uniforms as the evaluators take them; values of the wrong type for the program are rejected. */
-export function normalizeUniforms(program: PatternProgram, values: Record<string, PatternUniformValue> | undefined): PatternUniforms {
+export function normalizeUniforms(
+    program: PatternProgram,
+    values: Record<string, PatternUniformValue> | undefined,
+): PatternUniforms {
     const out: PatternUniforms = {};
     const decl = program.uniforms ?? {};
     for (const [name, def] of Object.entries(decl)) out[name] = uniformValue(name, def);
@@ -84,7 +93,8 @@ export function normalizeUniforms(program: PatternProgram, values: Record<string
         const nv = uniformValue(name, v);
         const want = typeof out[name] === 'number' ? 1 : (out[name] as number[]).length;
         const got = typeof nv === 'number' ? 1 : nv.length;
-        if (want !== got) throw new PatternError(`uniform ${name}: expected ${want === 1 ? 'a number' : `a ${want}-vector`}`);
+        if (want !== got)
+            throw new PatternError(`uniform ${name}: expected ${want === 1 ? 'a number' : `a ${want}-vector`}`);
         out[name] = nv;
     }
     return out;
@@ -142,16 +152,38 @@ const BINARY: Record<string, { js: (a: string, b: string) => string; gl: (a: str
     atan2: { js: (a, b) => `Math.atan2(${a}, ${b})`, gl: (a, b) => `atan(${a}, ${b})` },
 };
 
-const TERNARY: Record<string, { js: (a: string, b: string, c: string) => string; gl: (a: string, b: string, c: string) => string }> = {
+const TERNARY: Record<
+    string,
+    { js: (a: string, b: string, c: string) => string; gl: (a: string, b: string, c: string) => string }
+> = {
     /** clamp(x, lo, hi) */
-    clamp: { js: (x, lo, hi) => `Math.min(Math.max(${x}, ${lo}), ${hi})`, gl: (x, lo, hi) => `clamp(${x}, ${lo}, ${hi})` },
+    clamp: {
+        js: (x, lo, hi) => `Math.min(Math.max(${x}, ${lo}), ${hi})`,
+        gl: (x, lo, hi) => `clamp(${x}, ${lo}, ${hi})`,
+    },
     /** mix(a, b, t) */
     mix: { js: (a, b, t) => `(${a} + (${b} - ${a}) * ${t})`, gl: (a, b, t) => `mix(${a}, ${b}, ${t})` },
     /** smoothstep(e0, e1, x) */
-    smoothstep: { js: (e0, e1, x) => `L.smooth(${e0}, ${e1}, ${x})`, gl: (e0, e1, x) => `smoothstep(${e0}, ${e1}, ${x})` },
+    smoothstep: {
+        js: (e0, e1, x) => `L.smooth(${e0}, ${e1}, ${x})`,
+        gl: (e0, e1, x) => `smoothstep(${e0}, ${e1}, ${x})`,
+    },
 };
 
-const SWIZZLE_INDEX: Record<string, number> = { x: 0, y: 1, z: 2, w: 3, r: 0, g: 1, b: 2, a: 3, s: 0, t: 1, p: 2, q: 3 };
+const SWIZZLE_INDEX: Record<string, number> = {
+    x: 0,
+    y: 1,
+    z: 2,
+    w: 3,
+    r: 0,
+    g: 1,
+    b: 2,
+    a: 3,
+    s: 0,
+    t: 1,
+    p: 2,
+    q: 3,
+};
 
 const INPUTS: Record<string, Ty> = { pos: 3, local: 3, t: 1, i: 1, n: 1, u: 1 };
 
@@ -187,19 +219,22 @@ class Lowering {
     private joinTypes(op: string, vals: Val[]): Ty {
         let ty: Ty = 1;
         for (const v of vals) if (v.ty !== 1) ty = v.ty;
-        for (const v of vals) if (v.ty !== 1 && v.ty !== ty) throw new PatternError(`${op}: mixed vector sizes ${v.ty} and ${ty}`);
+        for (const v of vals)
+            if (v.ty !== 1 && v.ty !== ty) throw new PatternError(`${op}: mixed vector sizes ${v.ty} and ${ty}`);
         return ty;
     }
 
     lower(e: PatternExpr, what: string): Val {
         if (typeof e === 'number') return this.temp(1, [String(e)], glNum(e));
         if (Array.isArray(e)) {
-            if (e.length < 2 || e.length > 4 || !e.every((x) => typeof x === 'number')) throw new PatternError(`${what}: a vector has 2 to 4 numbers`);
+            if (e.length < 2 || e.length > 4 || !e.every((x) => typeof x === 'number'))
+                throw new PatternError(`${what}: a vector has 2 to 4 numbers`);
             const ty = e.length as Ty;
             return this.temp(ty, e.map(String), `${GL_TY[ty]}(${e.map(glNum).join(', ')})`);
         }
         if (typeof e === 'string') return this.ref(e, what);
-        if (!e || typeof e !== 'object' || typeof e.op !== 'string') throw new PatternError(`${what}: expected a number, vector, name or {op}`);
+        if (!e || typeof e !== 'object' || typeof e.op !== 'string')
+            throw new PatternError(`${what}: expected a number, vector, name or {op}`);
         return this.call(e, what);
     }
 
@@ -234,13 +269,18 @@ class Lowering {
         if (sel.length < 1 || sel.length > 4) throw new PatternError(`${what}: swizzle ${sel} takes 1 to 4 components`);
         const idx = [...sel].map((ch) => {
             const k = SWIZZLE_INDEX[ch];
-            if (k === undefined || k >= v.ty) throw new PatternError(`${what}: component ${ch} is not in a ${GL_TY[v.ty]}`);
+            if (k === undefined || k >= v.ty)
+                throw new PatternError(`${what}: component ${ch} is not in a ${GL_TY[v.ty]}`);
             return k;
         });
         if (v.ty === 1) throw new PatternError(`${what}: a float has no components to swizzle`);
         const ty = idx.length as Ty;
         const glSel = idx.map((k) => 'xyzw'[k]).join('');
-        return this.temp(ty, idx.map((k) => v.js[k]), `${v.gl}.${glSel}`);
+        return this.temp(
+            ty,
+            idx.map((k) => v.js[k]),
+            `${v.gl}.${glSel}`,
+        );
     }
 
     private call(c: PatternCall, what: string): Val {
@@ -254,7 +294,11 @@ class Lowering {
             const [a] = args;
             const f = UNARY[op];
             if (op === 'saturate') this.helpers.add('saturate');
-            return this.temp(a.ty, a.js.map((x) => f.js(x)), `${f.gl}(${a.gl})`);
+            return this.temp(
+                a.ty,
+                a.js.map((x) => f.js(x)),
+                `${f.gl}(${a.gl})`,
+            );
         }
         if (op in BINARY) {
             need(2);
@@ -303,15 +347,33 @@ class Lowering {
                 need(2);
                 const [a, b] = args;
                 if (a.ty !== b.ty) throw new PatternError(`${what}: distance takes two values of one size`);
-                return this.lengthOf(this.temp(a.ty, a.js.map((x, k) => `(${x} - ${b.js[k]})`), `(${a.gl} - ${b.gl})`));
+                return this.lengthOf(
+                    this.temp(
+                        a.ty,
+                        a.js.map((x, k) => `(${x} - ${b.js[k]})`),
+                        `(${a.gl} - ${b.gl})`,
+                    ),
+                );
             }
             case 'normalize': {
                 need(1);
                 const [a] = args;
                 if (a.ty === 1) throw new PatternError(`${what}: normalize takes a vector`);
-                const len = this.temp(1, [`Math.sqrt(${a.js.map((x) => `${x} * ${x}`).join(' + ')})`], `length(${a.gl})`);
-                const inv = this.temp(1, [`(${len.js[0]} > 0 ? 1 / ${len.js[0]} : 0)`], `(${len.gl} > 0.0 ? 1.0 / ${len.gl} : 0.0)`);
-                return this.temp(a.ty, a.js.map((x) => `${x} * ${inv.js[0]}`), `(${a.gl} * ${inv.gl})`);
+                const len = this.temp(
+                    1,
+                    [`Math.sqrt(${a.js.map((x) => `${x} * ${x}`).join(' + ')})`],
+                    `length(${a.gl})`,
+                );
+                const inv = this.temp(
+                    1,
+                    [`(${len.js[0]} > 0 ? 1 / ${len.js[0]} : 0)`],
+                    `(${len.gl} > 0.0 ? 1.0 / ${len.gl} : 0.0)`,
+                );
+                return this.temp(
+                    a.ty,
+                    a.js.map((x) => `${x} * ${inv.js[0]}`),
+                    `(${a.gl} * ${inv.gl})`,
+                );
             }
             case 'cross': {
                 need(2);
@@ -319,7 +381,11 @@ class Lowering {
                 if (a.ty !== 3 || b.ty !== 3) throw new PatternError(`${what}: cross takes two vec3`);
                 const [ax, ay, az] = a.js;
                 const [bx, by, bz] = b.js;
-                return this.temp(3, [`${ay} * ${bz} - ${az} * ${by}`, `${az} * ${bx} - ${ax} * ${bz}`, `${ax} * ${by} - ${ay} * ${bx}`], `cross(${a.gl}, ${b.gl})`);
+                return this.temp(
+                    3,
+                    [`${ay} * ${bz} - ${az} * ${by}`, `${az} * ${bx} - ${ax} * ${bz}`, `${ax} * ${by} - ${ay} * ${bx}`],
+                    `cross(${a.gl}, ${b.gl})`,
+                );
             }
             case 'angle': {
                 // The angle between two vectors, 0..pi; zero vectors give pi/2 rather than NaN.
@@ -327,7 +393,11 @@ class Lowering {
                 const [a, b] = args;
                 if (a.ty !== b.ty || a.ty === 1) throw new PatternError(`${what}: angle takes two vectors of one size`);
                 this.helpers.add('angle');
-                return this.temp(1, [`L.angle(${a.js.join(', ')}, ${b.js.join(', ')})`], `angle${a.ty}(${a.gl}, ${b.gl})`);
+                return this.temp(
+                    1,
+                    [`L.angle(${a.js.join(', ')}, ${b.js.join(', ')})`],
+                    `angle${a.ty}(${a.gl}, ${b.gl})`,
+                );
             }
             case 'hash': {
                 need(1);
@@ -364,8 +434,14 @@ class Lowering {
                 if (a.ty !== 1) throw new PatternError(`${what}: ramp takes a float`);
                 if (!Array.isArray(c.stops) || c.stops.length < 1) throw new PatternError(`${what}: ramp needs stops`);
                 const stops: [number, number[]][] = c.stops.map((s, k) => {
-                    if (!Array.isArray(s) || typeof s[0] !== 'number') throw new PatternError(`${what}: stop ${k} is [position, color]`);
-                    const col = typeof s[1] === 'string' ? parseColor(s[1]) : Array.isArray(s[1]) && s[1].length === 3 ? s[1] : undefined;
+                    if (!Array.isArray(s) || typeof s[0] !== 'number')
+                        throw new PatternError(`${what}: stop ${k} is [position, color]`);
+                    const col =
+                        typeof s[1] === 'string'
+                            ? parseColor(s[1])
+                            : Array.isArray(s[1]) && s[1].length === 3
+                              ? s[1]
+                              : undefined;
                     if (!col) throw new PatternError(`${what}: stop ${k} color is '#rrggbb' or [r, g, b]`);
                     return [s[0], col];
                 });
@@ -393,10 +469,12 @@ interface Lowered {
 }
 
 function lowerProgram(program: PatternProgram): Lowered {
-    if (!program || typeof program !== 'object' || program.color === undefined) throw new PatternError('a program needs a color expression');
+    if (!program || typeof program !== 'object' || program.color === undefined)
+        throw new PatternError('a program needs a color expression');
     const uniformTypes: Record<string, Ty> = {};
     for (const [name, def] of Object.entries(program.uniforms ?? {})) {
-        if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) throw new PatternError(`uniform name ${name} must be an identifier`);
+        if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name))
+            throw new PatternError(`uniform name ${name} must be an identifier`);
         if (name in INPUTS) throw new PatternError(`uniform ${name} shadows an input`);
         const v = uniformValue(name, def);
         uniformTypes[name] = typeof v === 'number' ? 1 : (v.length as Ty);
@@ -422,7 +500,14 @@ export function validatePattern(program: PatternProgram): void {
 // ---------------------------------------------------------------------------
 
 /** Paint every node: RGBA bytes per node into out, straight alpha. */
-export type PatternRenderFn = (world: Float32Array, local: Float32Array | undefined, n: number, t: number, uniforms: PatternUniforms, out: Uint8Array) => void;
+export type PatternRenderFn = (
+    world: Float32Array,
+    local: Float32Array | undefined,
+    n: number,
+    t: number,
+    uniforms: PatternUniforms,
+    out: Uint8Array,
+) => void;
 
 const JS_LIB = {
     T: new Float32Array(4),
@@ -540,19 +625,42 @@ const JS_LIB = {
         const q = v * (1 - f * s);
         const t = v * (1 - (1 - f) * s);
         switch (i % 6) {
-            case 0: out[0] = v; out[1] = t; out[2] = p; break;
-            case 1: out[0] = q; out[1] = v; out[2] = p; break;
-            case 2: out[0] = p; out[1] = v; out[2] = t; break;
-            case 3: out[0] = p; out[1] = q; out[2] = v; break;
-            case 4: out[0] = t; out[1] = p; out[2] = v; break;
-            default: out[0] = v; out[1] = p; out[2] = q;
+            case 0:
+                out[0] = v;
+                out[1] = t;
+                out[2] = p;
+                break;
+            case 1:
+                out[0] = q;
+                out[1] = v;
+                out[2] = p;
+                break;
+            case 2:
+                out[0] = p;
+                out[1] = v;
+                out[2] = t;
+                break;
+            case 3:
+                out[0] = p;
+                out[1] = q;
+                out[2] = v;
+                break;
+            case 4:
+                out[0] = t;
+                out[1] = p;
+                out[2] = v;
+                break;
+            default:
+                out[0] = v;
+                out[1] = p;
+                out[2] = q;
         }
     },
     ramp(stops: [number, number[]][], t: number, out: Float32Array): void {
-        let [, c] = stops[0];
-        out[0] = c[0];
-        out[1] = c[1];
-        out[2] = c[2];
+        const first = stops[0][1];
+        out[0] = first[0];
+        out[1] = first[1];
+        out[2] = first[2];
         for (let k = 1; k < stops.length; ++k) {
             const [t0] = stops[k - 1];
             const [t1, c1] = stops[k];
@@ -560,7 +668,6 @@ const JS_LIB = {
             out[0] += (c1[0] - out[0]) * w;
             out[1] += (c1[1] - out[1]) * w;
             out[2] += (c1[2] - out[2]) * w;
-            c = c1;
         }
     },
 };
@@ -581,13 +688,19 @@ export function compilePatternJs(program: PatternProgram): PatternRenderFn {
     src.push('for (let k = 0; k < n; ++k) {');
     src.push('const i = k;');
     if (low.usedInputs.has('u')) src.push('const u = k * nInv;');
-    if (low.usedInputs.has('pos')) src.push('const pos_x = world[k * 3], pos_y = world[k * 3 + 1], pos_z = world[k * 3 + 2];');
-    if (wantLocal) src.push('const local_x = local ? local[k * 3] : 0, local_y = local ? local[k * 3 + 1] : 0, local_z = local ? local[k * 3 + 2] : 0;');
+    if (low.usedInputs.has('pos'))
+        src.push('const pos_x = world[k * 3], pos_y = world[k * 3 + 1], pos_z = world[k * 3 + 2];');
+    if (wantLocal)
+        src.push(
+            'const local_x = local ? local[k * 3] : 0, local_y = local ? local[k * 3 + 1] : 0, local_z = local ? local[k * 3 + 2] : 0;',
+        );
     src.push(...low.jsLines);
     const a = color.ty === 4 ? color.js[3] : '1';
     const alphaExpr = alpha ? `${a} * ${alpha.js[0]}` : a;
     src.push(`const o = k * 4;`);
-    src.push(`out[o] = L.byte(${color.js[0]}); out[o + 1] = L.byte(${color.js[1]}); out[o + 2] = L.byte(${color.js[2]}); out[o + 3] = L.byte(${alphaExpr});`);
+    src.push(
+        `out[o] = L.byte(${color.js[0]}); out[o + 1] = L.byte(${color.js[1]}); out[o + 2] = L.byte(${color.js[2]}); out[o + 3] = L.byte(${alphaExpr});`,
+    );
     src.push('}');
     const lib = { ...JS_LIB, byte: (x: number) => (x <= 0 || x !== x ? 0 : x >= 1 ? 255 : (x * 255 + 0.5) | 0) };
     const ramps = low.ramps.map((r) => r.stops);
@@ -677,7 +790,8 @@ export function compilePatternGlsl(program: PatternProgram): PatternGlsl {
         lines.push(`uniform ${GL_TY[uniformTypes[u]]} U_${u};`);
     }
     lines.push('out vec4 vcolor;');
-    for (const h of ['saturate', 'angle', 'hash', 'noise', 'fbm', 'hsv']) if (low.helpers.has(h)) lines.push(GL_HELPERS[h]);
+    for (const h of ['saturate', 'angle', 'hash', 'noise', 'fbm', 'hsv'])
+        if (low.helpers.has(h)) lines.push(GL_HELPERS[h]);
     low.ramps.forEach((r, k) => {
         const body: string[] = [`vec3 c = ${glVec3(r.stops[0][1])};`];
         for (let s = 1; s < r.stops.length; ++s) {
@@ -716,7 +830,15 @@ void main() { color = vcolor; }`;
 export const PATTERN_PRESETS: Record<string, PatternProgram> = {
     /** A flashlight cone from `origin` along `dir`, soft-edged, fading with distance; `noise` adds drifting cloudiness. */
     beam: {
-        uniforms: { origin: [0, 0, 0], dir: [0, 0, -1], halfAngle: 0.12, softness: 0.3, range: 1000, color: '#fff0c0', noise: 0 },
+        uniforms: {
+            origin: [0, 0, 0],
+            dir: [0, 0, -1],
+            halfAngle: 0.12,
+            softness: 0.3,
+            range: 1000,
+            color: '#fff0c0',
+            noise: 0,
+        },
         color: '$color',
         alpha: {
             op: 'mul',
@@ -724,11 +846,58 @@ export const PATTERN_PRESETS: Record<string, PatternProgram> = {
                 {
                     op: 'mul',
                     args: [
-                        { op: 'sub', args: [1, { op: 'smoothstep', args: [{ op: 'mul', args: ['$halfAngle', { op: 'sub', args: [1, '$softness'] }] }, '$halfAngle', { op: 'angle', args: [{ op: 'sub', args: ['pos', '$origin'] }, '$dir'] }] }] },
-                        { op: 'saturate', args: [{ op: 'sub', args: [1, { op: 'div', args: [{ op: 'distance', args: ['pos', '$origin'] }, '$range'] }] }] },
+                        {
+                            op: 'sub',
+                            args: [
+                                1,
+                                {
+                                    op: 'smoothstep',
+                                    args: [
+                                        { op: 'mul', args: ['$halfAngle', { op: 'sub', args: [1, '$softness'] }] },
+                                        '$halfAngle',
+                                        { op: 'angle', args: [{ op: 'sub', args: ['pos', '$origin'] }, '$dir'] },
+                                    ],
+                                },
+                            ],
+                        },
+                        {
+                            op: 'saturate',
+                            args: [
+                                {
+                                    op: 'sub',
+                                    args: [
+                                        1,
+                                        { op: 'div', args: [{ op: 'distance', args: ['pos', '$origin'] }, '$range'] },
+                                    ],
+                                },
+                            ],
+                        },
                     ],
                 },
-                { op: 'sub', args: [1, { op: 'mul', args: ['$noise', { op: 'fbm', args: [{ op: 'add', args: [{ op: 'mul', args: ['pos', 0.02] }, { op: 'vec3', args: [{ op: 'mul', args: ['t', 0.3] }] }] }] }] }] },
+                {
+                    op: 'sub',
+                    args: [
+                        1,
+                        {
+                            op: 'mul',
+                            args: [
+                                '$noise',
+                                {
+                                    op: 'fbm',
+                                    args: [
+                                        {
+                                            op: 'add',
+                                            args: [
+                                                { op: 'mul', args: ['pos', 0.02] },
+                                                { op: 'vec3', args: [{ op: 'mul', args: ['t', 0.3] }] },
+                                            ],
+                                        },
+                                    ],
+                                },
+                            ],
+                        },
+                    ],
+                },
             ],
         },
     },
@@ -736,23 +905,215 @@ export const PATTERN_PRESETS: Record<string, PatternProgram> = {
     shockwave: {
         uniforms: { center: [0, 0, 0], radius: 0, thickness: 20, color: '#80c0ff' },
         color: '$color',
-        alpha: { op: 'sub', args: [1, { op: 'saturate', args: [{ op: 'div', args: [{ op: 'abs', args: [{ op: 'sub', args: [{ op: 'distance', args: ['pos', '$center'] }, '$radius'] }] }, '$thickness'] }] }] },
+        alpha: {
+            op: 'sub',
+            args: [
+                1,
+                {
+                    op: 'saturate',
+                    args: [
+                        {
+                            op: 'div',
+                            args: [
+                                {
+                                    op: 'abs',
+                                    args: [
+                                        { op: 'sub', args: [{ op: 'distance', args: ['pos', '$center'] }, '$radius'] },
+                                    ],
+                                },
+                                '$thickness',
+                            ],
+                        },
+                    ],
+                },
+            ],
+        },
     },
     /** A band `width` wide across the plane `dot(pos, dir) = offset`. */
     wipe: {
         uniforms: { dir: [1, 0, 0], offset: 0, width: 30, color: '#ffffff' },
         color: '$color',
-        alpha: { op: 'sub', args: [1, { op: 'saturate', args: [{ op: 'div', args: [{ op: 'abs', args: [{ op: 'sub', args: [{ op: 'dot', args: ['pos', '$dir'] }, '$offset'] }] }, '$width'] }] }] },
+        alpha: {
+            op: 'sub',
+            args: [
+                1,
+                {
+                    op: 'saturate',
+                    args: [
+                        {
+                            op: 'div',
+                            args: [
+                                {
+                                    op: 'abs',
+                                    args: [{ op: 'sub', args: [{ op: 'dot', args: ['pos', '$dir'] }, '$offset'] }],
+                                },
+                                '$width',
+                            ],
+                        },
+                    ],
+                },
+            ],
+        },
     },
     /** Flames rising from `base` up to `height`: scrolled noise through a heat ramp. */
     fire: {
         uniforms: { base: 0, height: 100, speed: 40, scale: 0.03, intensity: 1 },
         color: {
             op: 'ramp',
-            args: [{ op: 'saturate', args: [{ op: 'mul', args: ['$intensity', { op: 'add', args: [{ op: 'sub', args: [{ op: 'mul', args: [{ op: 'fbm', args: [{ op: 'vec3', args: [{ op: 'mul', args: ['pos.x', '$scale'] }, { op: 'sub', args: [{ op: 'mul', args: ['pos.y', '$scale'] }, { op: 'mul', args: ['t', { op: 'mul', args: ['$speed', '$scale'] }] }] }, { op: 'mul', args: ['pos.z', '$scale'] }] }] }, 1.6] }, { op: 'mul', args: [{ op: 'div', args: [{ op: 'sub', args: ['pos.y', '$base'] }, '$height'] }, 1.3] }] }, 0.1] }] }] }],
-            stops: [[0, '#000000'], [0.25, '#7a0000'], [0.5, '#ff4a00'], [0.75, '#ffb020'], [1, '#ffffe0']],
+            args: [
+                {
+                    op: 'saturate',
+                    args: [
+                        {
+                            op: 'mul',
+                            args: [
+                                '$intensity',
+                                {
+                                    op: 'add',
+                                    args: [
+                                        {
+                                            op: 'sub',
+                                            args: [
+                                                {
+                                                    op: 'mul',
+                                                    args: [
+                                                        {
+                                                            op: 'fbm',
+                                                            args: [
+                                                                {
+                                                                    op: 'vec3',
+                                                                    args: [
+                                                                        { op: 'mul', args: ['pos.x', '$scale'] },
+                                                                        {
+                                                                            op: 'sub',
+                                                                            args: [
+                                                                                {
+                                                                                    op: 'mul',
+                                                                                    args: ['pos.y', '$scale'],
+                                                                                },
+                                                                                {
+                                                                                    op: 'mul',
+                                                                                    args: [
+                                                                                        't',
+                                                                                        {
+                                                                                            op: 'mul',
+                                                                                            args: ['$speed', '$scale'],
+                                                                                        },
+                                                                                    ],
+                                                                                },
+                                                                            ],
+                                                                        },
+                                                                        { op: 'mul', args: ['pos.z', '$scale'] },
+                                                                    ],
+                                                                },
+                                                            ],
+                                                        },
+                                                        1.6,
+                                                    ],
+                                                },
+                                                {
+                                                    op: 'mul',
+                                                    args: [
+                                                        {
+                                                            op: 'div',
+                                                            args: [{ op: 'sub', args: ['pos.y', '$base'] }, '$height'],
+                                                        },
+                                                        1.3,
+                                                    ],
+                                                },
+                                            ],
+                                        },
+                                        0.1,
+                                    ],
+                                },
+                            ],
+                        },
+                    ],
+                },
+            ],
+            stops: [
+                [0, '#000000'],
+                [0.25, '#7a0000'],
+                [0.5, '#ff4a00'],
+                [0.75, '#ffb020'],
+                [1, '#ffffe0'],
+            ],
         },
-        alpha: { op: 'saturate', args: [{ op: 'mul', args: [2, { op: 'mul', args: ['$intensity', { op: 'add', args: [{ op: 'sub', args: [{ op: 'mul', args: [{ op: 'fbm', args: [{ op: 'vec3', args: [{ op: 'mul', args: ['pos.x', '$scale'] }, { op: 'sub', args: [{ op: 'mul', args: ['pos.y', '$scale'] }, { op: 'mul', args: ['t', { op: 'mul', args: ['$speed', '$scale'] }] }] }, { op: 'mul', args: ['pos.z', '$scale'] }] }] }, 1.6] }, { op: 'mul', args: [{ op: 'div', args: [{ op: 'sub', args: ['pos.y', '$base'] }, '$height'] }, 1.3] }] }, 0.1] }] }] }] },
+        alpha: {
+            op: 'saturate',
+            args: [
+                {
+                    op: 'mul',
+                    args: [
+                        2,
+                        {
+                            op: 'mul',
+                            args: [
+                                '$intensity',
+                                {
+                                    op: 'add',
+                                    args: [
+                                        {
+                                            op: 'sub',
+                                            args: [
+                                                {
+                                                    op: 'mul',
+                                                    args: [
+                                                        {
+                                                            op: 'fbm',
+                                                            args: [
+                                                                {
+                                                                    op: 'vec3',
+                                                                    args: [
+                                                                        { op: 'mul', args: ['pos.x', '$scale'] },
+                                                                        {
+                                                                            op: 'sub',
+                                                                            args: [
+                                                                                {
+                                                                                    op: 'mul',
+                                                                                    args: ['pos.y', '$scale'],
+                                                                                },
+                                                                                {
+                                                                                    op: 'mul',
+                                                                                    args: [
+                                                                                        't',
+                                                                                        {
+                                                                                            op: 'mul',
+                                                                                            args: ['$speed', '$scale'],
+                                                                                        },
+                                                                                    ],
+                                                                                },
+                                                                            ],
+                                                                        },
+                                                                        { op: 'mul', args: ['pos.z', '$scale'] },
+                                                                    ],
+                                                                },
+                                                            ],
+                                                        },
+                                                        1.6,
+                                                    ],
+                                                },
+                                                {
+                                                    op: 'mul',
+                                                    args: [
+                                                        {
+                                                            op: 'div',
+                                                            args: [{ op: 'sub', args: ['pos.y', '$base'] }, '$height'],
+                                                        },
+                                                        1.3,
+                                                    ],
+                                                },
+                                            ],
+                                        },
+                                        0.1,
+                                    ],
+                                },
+                            ],
+                        },
+                    ],
+                },
+            ],
+        },
     },
     /** Flakes drifting down: one per `cell` of space with a random offset, falling at `speed`. */
     snow: {
@@ -761,7 +1122,38 @@ export const PATTERN_PRESETS: Record<string, PatternProgram> = {
         alpha: {
             op: 'mul',
             args: [
-                { op: 'step', args: [{ op: 'sub', args: [1, '$density'] }, { op: 'hash', args: [{ op: 'floor', args: [{ op: 'div', args: [{ op: 'add', args: ['pos', { op: 'vec3', args: [0, { op: 'mul', args: ['t', '$speed'] }, 0] }] }, '$cell'] }] }] }] },
+                {
+                    op: 'step',
+                    args: [
+                        { op: 'sub', args: [1, '$density'] },
+                        {
+                            op: 'hash',
+                            args: [
+                                {
+                                    op: 'floor',
+                                    args: [
+                                        {
+                                            op: 'div',
+                                            args: [
+                                                {
+                                                    op: 'add',
+                                                    args: [
+                                                        'pos',
+                                                        {
+                                                            op: 'vec3',
+                                                            args: [0, { op: 'mul', args: ['t', '$speed'] }, 0],
+                                                        },
+                                                    ],
+                                                },
+                                                '$cell',
+                                            ],
+                                        },
+                                    ],
+                                },
+                            ],
+                        },
+                    ],
+                },
                 {
                     op: 'sub',
                     args: [
@@ -774,7 +1166,27 @@ export const PATTERN_PRESETS: Record<string, PatternProgram> = {
                                 {
                                     op: 'distance',
                                     args: [
-                                        { op: 'fract', args: [{ op: 'div', args: [{ op: 'add', args: ['pos', { op: 'vec3', args: [0, { op: 'mul', args: ['t', '$speed'] }, 0] }] }, '$cell'] }] },
+                                        {
+                                            op: 'fract',
+                                            args: [
+                                                {
+                                                    op: 'div',
+                                                    args: [
+                                                        {
+                                                            op: 'add',
+                                                            args: [
+                                                                'pos',
+                                                                {
+                                                                    op: 'vec3',
+                                                                    args: [0, { op: 'mul', args: ['t', '$speed'] }, 0],
+                                                                },
+                                                            ],
+                                                        },
+                                                        '$cell',
+                                                    ],
+                                                },
+                                            ],
+                                        },
                                         {
                                             op: 'add',
                                             args: [
@@ -786,9 +1198,132 @@ export const PATTERN_PRESETS: Record<string, PatternProgram> = {
                                                         {
                                                             op: 'vec3',
                                                             args: [
-                                                                { op: 'hash', args: [{ op: 'add', args: [{ op: 'floor', args: [{ op: 'div', args: [{ op: 'add', args: ['pos', { op: 'vec3', args: [0, { op: 'mul', args: ['t', '$speed'] }, 0] }] }, '$cell'] }] }, [1.7, 3.1, 5.3]] }] },
-                                                                { op: 'hash', args: [{ op: 'add', args: [{ op: 'floor', args: [{ op: 'div', args: [{ op: 'add', args: ['pos', { op: 'vec3', args: [0, { op: 'mul', args: ['t', '$speed'] }, 0] }] }, '$cell'] }] }, [7.9, 2.3, 4.1]] }] },
-                                                                { op: 'hash', args: [{ op: 'add', args: [{ op: 'floor', args: [{ op: 'div', args: [{ op: 'add', args: ['pos', { op: 'vec3', args: [0, { op: 'mul', args: ['t', '$speed'] }, 0] }] }, '$cell'] }] }, [3.3, 8.7, 1.9]] }] },
+                                                                {
+                                                                    op: 'hash',
+                                                                    args: [
+                                                                        {
+                                                                            op: 'add',
+                                                                            args: [
+                                                                                {
+                                                                                    op: 'floor',
+                                                                                    args: [
+                                                                                        {
+                                                                                            op: 'div',
+                                                                                            args: [
+                                                                                                {
+                                                                                                    op: 'add',
+                                                                                                    args: [
+                                                                                                        'pos',
+                                                                                                        {
+                                                                                                            op: 'vec3',
+                                                                                                            args: [
+                                                                                                                0,
+                                                                                                                {
+                                                                                                                    op: 'mul',
+                                                                                                                    args: [
+                                                                                                                        't',
+                                                                                                                        '$speed',
+                                                                                                                    ],
+                                                                                                                },
+                                                                                                                0,
+                                                                                                            ],
+                                                                                                        },
+                                                                                                    ],
+                                                                                                },
+                                                                                                '$cell',
+                                                                                            ],
+                                                                                        },
+                                                                                    ],
+                                                                                },
+                                                                                [1.7, 3.1, 5.3],
+                                                                            ],
+                                                                        },
+                                                                    ],
+                                                                },
+                                                                {
+                                                                    op: 'hash',
+                                                                    args: [
+                                                                        {
+                                                                            op: 'add',
+                                                                            args: [
+                                                                                {
+                                                                                    op: 'floor',
+                                                                                    args: [
+                                                                                        {
+                                                                                            op: 'div',
+                                                                                            args: [
+                                                                                                {
+                                                                                                    op: 'add',
+                                                                                                    args: [
+                                                                                                        'pos',
+                                                                                                        {
+                                                                                                            op: 'vec3',
+                                                                                                            args: [
+                                                                                                                0,
+                                                                                                                {
+                                                                                                                    op: 'mul',
+                                                                                                                    args: [
+                                                                                                                        't',
+                                                                                                                        '$speed',
+                                                                                                                    ],
+                                                                                                                },
+                                                                                                                0,
+                                                                                                            ],
+                                                                                                        },
+                                                                                                    ],
+                                                                                                },
+                                                                                                '$cell',
+                                                                                            ],
+                                                                                        },
+                                                                                    ],
+                                                                                },
+                                                                                [7.9, 2.3, 4.1],
+                                                                            ],
+                                                                        },
+                                                                    ],
+                                                                },
+                                                                {
+                                                                    op: 'hash',
+                                                                    args: [
+                                                                        {
+                                                                            op: 'add',
+                                                                            args: [
+                                                                                {
+                                                                                    op: 'floor',
+                                                                                    args: [
+                                                                                        {
+                                                                                            op: 'div',
+                                                                                            args: [
+                                                                                                {
+                                                                                                    op: 'add',
+                                                                                                    args: [
+                                                                                                        'pos',
+                                                                                                        {
+                                                                                                            op: 'vec3',
+                                                                                                            args: [
+                                                                                                                0,
+                                                                                                                {
+                                                                                                                    op: 'mul',
+                                                                                                                    args: [
+                                                                                                                        't',
+                                                                                                                        '$speed',
+                                                                                                                    ],
+                                                                                                                },
+                                                                                                                0,
+                                                                                                            ],
+                                                                                                        },
+                                                                                                    ],
+                                                                                                },
+                                                                                                '$cell',
+                                                                                            ],
+                                                                                        },
+                                                                                    ],
+                                                                                },
+                                                                                [3.3, 8.7, 1.9],
+                                                                            ],
+                                                                        },
+                                                                    ],
+                                                                },
                                                             ],
                                                         },
                                                     ],
@@ -811,18 +1346,174 @@ export const PATTERN_PRESETS: Record<string, PatternProgram> = {
         alpha: {
             op: 'mul',
             args: [
-                { op: 'step', args: [{ op: 'sub', args: [1, '$density'] }, { op: 'hash', args: [{ op: 'floor', args: [{ op: 'div', args: ['pos.xz', '$cell'] }] }] }] },
+                {
+                    op: 'step',
+                    args: [
+                        { op: 'sub', args: [1, '$density'] },
+                        { op: 'hash', args: [{ op: 'floor', args: [{ op: 'div', args: ['pos.xz', '$cell'] }] }] },
+                    ],
+                },
                 {
                     op: 'mul',
                     args: [
                         // Across the column: bright at its center, dark at its edge.
-                        { op: 'sub', args: [1, { op: 'smoothstep', args: [0, 0.5, { op: 'distance', args: [{ op: 'fract', args: [{ op: 'div', args: ['pos.xz', '$cell'] }] }, [0.5, 0.5]] }] }] },
+                        {
+                            op: 'sub',
+                            args: [
+                                1,
+                                {
+                                    op: 'smoothstep',
+                                    args: [
+                                        0,
+                                        0.5,
+                                        {
+                                            op: 'distance',
+                                            args: [
+                                                { op: 'fract', args: [{ op: 'div', args: ['pos.xz', '$cell'] }] },
+                                                [0.5, 0.5],
+                                            ],
+                                        },
+                                    ],
+                                },
+                            ],
+                        },
                         // Along it: the head is at a height that wraps with time and a per-column phase; the trail fades below it.
                         {
                             op: 'mul',
                             args: [
-                                { op: 'step', args: [0, { op: 'sub', args: [{ op: 'mul', args: ['$height', { op: 'fract', args: [{ op: 'sub', args: [{ op: 'hash', args: [{ op: 'add', args: [{ op: 'floor', args: [{ op: 'div', args: ['pos.xz', '$cell'] }] }, [2.7, 9.3]] }] }, { op: 'div', args: [{ op: 'mul', args: ['t', '$speed'] }, '$height'] }] }] }] }, 'pos.y'] }] },
-                                { op: 'saturate', args: [{ op: 'sub', args: [1, { op: 'div', args: [{ op: 'sub', args: [{ op: 'mul', args: ['$height', { op: 'fract', args: [{ op: 'sub', args: [{ op: 'hash', args: [{ op: 'add', args: [{ op: 'floor', args: [{ op: 'div', args: ['pos.xz', '$cell'] }] }, [2.7, 9.3]] }] }, { op: 'div', args: [{ op: 'mul', args: ['t', '$speed'] }, '$height'] }] }] }] }, 'pos.y'] }, '$length'] }] }] },
+                                {
+                                    op: 'step',
+                                    args: [
+                                        0,
+                                        {
+                                            op: 'sub',
+                                            args: [
+                                                {
+                                                    op: 'mul',
+                                                    args: [
+                                                        '$height',
+                                                        {
+                                                            op: 'fract',
+                                                            args: [
+                                                                {
+                                                                    op: 'sub',
+                                                                    args: [
+                                                                        {
+                                                                            op: 'hash',
+                                                                            args: [
+                                                                                {
+                                                                                    op: 'add',
+                                                                                    args: [
+                                                                                        {
+                                                                                            op: 'floor',
+                                                                                            args: [
+                                                                                                {
+                                                                                                    op: 'div',
+                                                                                                    args: [
+                                                                                                        'pos.xz',
+                                                                                                        '$cell',
+                                                                                                    ],
+                                                                                                },
+                                                                                            ],
+                                                                                        },
+                                                                                        [2.7, 9.3],
+                                                                                    ],
+                                                                                },
+                                                                            ],
+                                                                        },
+                                                                        {
+                                                                            op: 'div',
+                                                                            args: [
+                                                                                { op: 'mul', args: ['t', '$speed'] },
+                                                                                '$height',
+                                                                            ],
+                                                                        },
+                                                                    ],
+                                                                },
+                                                            ],
+                                                        },
+                                                    ],
+                                                },
+                                                'pos.y',
+                                            ],
+                                        },
+                                    ],
+                                },
+                                {
+                                    op: 'saturate',
+                                    args: [
+                                        {
+                                            op: 'sub',
+                                            args: [
+                                                1,
+                                                {
+                                                    op: 'div',
+                                                    args: [
+                                                        {
+                                                            op: 'sub',
+                                                            args: [
+                                                                {
+                                                                    op: 'mul',
+                                                                    args: [
+                                                                        '$height',
+                                                                        {
+                                                                            op: 'fract',
+                                                                            args: [
+                                                                                {
+                                                                                    op: 'sub',
+                                                                                    args: [
+                                                                                        {
+                                                                                            op: 'hash',
+                                                                                            args: [
+                                                                                                {
+                                                                                                    op: 'add',
+                                                                                                    args: [
+                                                                                                        {
+                                                                                                            op: 'floor',
+                                                                                                            args: [
+                                                                                                                {
+                                                                                                                    op: 'div',
+                                                                                                                    args: [
+                                                                                                                        'pos.xz',
+                                                                                                                        '$cell',
+                                                                                                                    ],
+                                                                                                                },
+                                                                                                            ],
+                                                                                                        },
+                                                                                                        [2.7, 9.3],
+                                                                                                    ],
+                                                                                                },
+                                                                                            ],
+                                                                                        },
+                                                                                        {
+                                                                                            op: 'div',
+                                                                                            args: [
+                                                                                                {
+                                                                                                    op: 'mul',
+                                                                                                    args: [
+                                                                                                        't',
+                                                                                                        '$speed',
+                                                                                                    ],
+                                                                                                },
+                                                                                                '$height',
+                                                                                            ],
+                                                                                        },
+                                                                                    ],
+                                                                                },
+                                                                            ],
+                                                                        },
+                                                                    ],
+                                                                },
+                                                                'pos.y',
+                                                            ],
+                                                        },
+                                                        '$length',
+                                                    ],
+                                                },
+                                            ],
+                                        },
+                                    ],
+                                },
                             ],
                         },
                     ],
@@ -835,17 +1526,46 @@ export const PATTERN_PRESETS: Record<string, PatternProgram> = {
     /** Hue by position along `dir`, cycling over `period` units and drifting at `speed` cycles a second. */
     rainbow: {
         uniforms: { dir: [1, 0, 0], period: 200, speed: 0.2 },
-        color: { op: 'hsv', args: [{ op: 'vec3', args: [{ op: 'fract', args: [{ op: 'add', args: [{ op: 'div', args: [{ op: 'dot', args: ['pos', '$dir'] }, '$period'] }, { op: 'mul', args: ['t', '$speed'] }] }] }, 1, 1] }] },
+        color: {
+            op: 'hsv',
+            args: [
+                {
+                    op: 'vec3',
+                    args: [
+                        {
+                            op: 'fract',
+                            args: [
+                                {
+                                    op: 'add',
+                                    args: [
+                                        { op: 'div', args: [{ op: 'dot', args: ['pos', '$dir'] }, '$period'] },
+                                        { op: 'mul', args: ['t', '$speed'] },
+                                    ],
+                                },
+                            ],
+                        },
+                        1,
+                        1,
+                    ],
+                },
+            ],
+        },
     },
 };
 
 /** The program and starting uniforms a lease's pattern spec resolves to. */
-export function resolvePattern(spec: PatternSpec): { program: PatternProgram; uniforms: PatternUniforms; preset?: string } {
-    if (!spec || typeof spec !== 'object') throw new PatternError('a pattern lease needs pattern: { preset } or { program }');
+export function resolvePattern(spec: PatternSpec): {
+    program: PatternProgram;
+    uniforms: PatternUniforms;
+    preset?: string;
+} {
+    if (!spec || typeof spec !== 'object')
+        throw new PatternError('a pattern lease needs pattern: { preset } or { program }');
     let program: PatternProgram;
     if (spec.preset !== undefined) {
         const p = PATTERN_PRESETS[spec.preset];
-        if (!p) throw new PatternError(`unknown preset ${spec.preset}; one of ${Object.keys(PATTERN_PRESETS).join(', ')}`);
+        if (!p)
+            throw new PatternError(`unknown preset ${spec.preset}; one of ${Object.keys(PATTERN_PRESETS).join(', ')}`);
         program = p;
     } else if (spec.program) {
         program = spec.program;

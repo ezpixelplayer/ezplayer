@@ -6,7 +6,14 @@
  * slower.
  */
 
-import { compilePatternGlsl, jsPatternBackend, PatternBackend, PatternLeaseSpec, PatternRenderer, PatternUniforms } from '@ezplayer/epp';
+import {
+    compilePatternGlsl,
+    jsPatternBackend,
+    PatternBackend,
+    PatternLeaseSpec,
+    PatternRenderer,
+    PatternUniforms,
+} from '@ezplayer/epp';
 import { getXlgl, Xlgl, xlglError } from '@ezplayer/xlgl';
 
 type Log = (level: 'info' | 'warn', msg: string) => void;

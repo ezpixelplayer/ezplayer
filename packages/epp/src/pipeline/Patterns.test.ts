@@ -47,16 +47,32 @@ describe('pattern programs', () => {
         expect(() => validatePattern({ color: 1 })).toThrow(/vec3 or vec4/);
         expect(() => validatePattern({ color: '$nope' })).toThrow(/unknown uniform/);
         expect(() => validatePattern({ color: { op: 'frobnicate', args: [] } })).toThrow(/unknown op/);
-        expect(() => validatePattern({ color: { op: 'add', args: [[1, 2], [1, 2, 3]] } })).toThrow(/mixed vector sizes/);
+        expect(() =>
+            validatePattern({
+                color: {
+                    op: 'add',
+                    args: [
+                        [1, 2],
+                        [1, 2, 3],
+                    ],
+                },
+            }),
+        ).toThrow(/mixed vector sizes/);
         expect(() => validatePattern({ color: 'pos', alpha: 'pos' })).toThrow(/alpha must be a float/);
         expect(() => validatePattern({ color: 'pos.w' })).toThrow(/not in a vec3/);
-        expect(() => validatePattern({ uniforms: { 't': 1 }, color: 'pos' })).toThrow(/shadows/);
+        expect(() => validatePattern({ uniforms: { t: 1 }, color: 'pos' })).toThrow(/shadows/);
     });
 
     it('computes the beam preset like the hand formula', () => {
         const program = PATTERN_PRESETS.beam;
         const world = new Float32Array([0, 0, -100, 10, 0, -100, 0, 0, 100]);
-        const out = render(program, world, 0, { origin: [0, 0, 0], dir: [0, 0, -1], halfAngle: 0.2, softness: 0.5, range: 200 });
+        const out = render(program, world, 0, {
+            origin: [0, 0, 0],
+            dir: [0, 0, -1],
+            halfAngle: 0.2,
+            softness: 0.5,
+            range: 200,
+        });
         // On axis, half way out: full edge, half falloff.
         expect(out[3]).toBe(128);
         // 0.0997 rad off axis: inside the soft rim, which runs 0.1..0.2 rad, so nearly full.
@@ -79,7 +95,10 @@ describe('pattern programs', () => {
             const gl = compilePatternGlsl(program);
             expect(gl.vertex, name).toContain('#version 330 core');
             expect(gl.vertex, name).toContain('gl_Position');
-            for (const u of Object.keys(gl.uniforms)) expect(gl.vertex, name).toContain(`uniform ${['', 'float', 'vec2', 'vec3', 'vec4'][gl.uniforms[u]]} U_${u};`);
+            for (const u of Object.keys(gl.uniforms))
+                expect(gl.vertex, name).toContain(
+                    `uniform ${['', 'float', 'vec2', 'vec3', 'vec4'][gl.uniforms[u]]} U_${u};`,
+                );
         }
         const { program, uniforms, preset } = resolvePattern({ preset: 'shockwave', uniforms: { radius: 50 } });
         expect(preset).toBe('shockwave');
@@ -91,18 +110,39 @@ describe('pattern programs', () => {
     });
 
     it('declares only the uniforms and attributes a program uses in GLSL', () => {
-        const gl = compilePatternGlsl({ uniforms: { a: 1, b: [1, 2, 3] }, color: { op: 'mul', args: ['local', '$a'] } });
+        const gl = compilePatternGlsl({
+            uniforms: { a: 1, b: [1, 2, 3] },
+            color: { op: 'mul', args: ['local', '$a'] },
+        });
         expect(gl.usesLocal).toBe(true);
         expect(gl.vertex).toContain('in vec3 local;');
         expect(gl.uniforms).toEqual({ a: 1 });
         expect(gl.vertex).not.toContain('U_b');
-        const ramp = compilePatternGlsl({ color: { op: 'ramp', args: ['u'], stops: [[0, '#000000'], [1, '#ffffff']] } });
+        const ramp = compilePatternGlsl({
+            color: {
+                op: 'ramp',
+                args: ['u'],
+                stops: [
+                    [0, '#000000'],
+                    [1, '#ffffff'],
+                ],
+            },
+        });
         expect(ramp.vertex).toContain('vec3 ramp0(float x)');
         expect(ramp.usesLocal).toBe(false);
     });
 
     it('interpolates ramps and converts hsv', () => {
-        const ramp: PatternProgram = { color: { op: 'ramp', args: ['u'], stops: [[0, '#000000'], [1, '#ff0000']] } };
+        const ramp: PatternProgram = {
+            color: {
+                op: 'ramp',
+                args: ['u'],
+                stops: [
+                    [0, '#000000'],
+                    [1, '#ff0000'],
+                ],
+            },
+        };
         const out = render(ramp, line(3));
         expect([out[0], out[4], out[8]]).toEqual([0, 128, 255]);
         const hsv: PatternProgram = { color: { op: 'hsv', args: [{ op: 'vec3', args: ['u', 1, 1] }] } };
@@ -113,7 +153,9 @@ describe('pattern programs', () => {
     });
 
     it('keeps noise in 0..1 and smooth between lattice points', () => {
-        const p: PatternProgram = { color: { op: 'vec3', args: [{ op: 'noise', args: [{ op: 'mul', args: ['pos', 0.013] }] }] } };
+        const p: PatternProgram = {
+            color: { op: 'vec3', args: [{ op: 'noise', args: [{ op: 'mul', args: ['pos', 0.013] }] }] },
+        };
         const out = render(p, line(400, 1));
         let maxStep = 0;
         for (let i = 1; i < 400; ++i) maxStep = Math.max(maxStep, Math.abs(out[i * 4] - out[(i - 1) * 4]));

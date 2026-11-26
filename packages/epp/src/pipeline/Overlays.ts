@@ -8,7 +8,14 @@
 import { DisplayLayout, LayoutModelSpec } from './Layout';
 import { overlappingNodes, PixelTarget, StrandKind, TargetCatalog } from './Targets';
 import { BlendMode, blendModeFromName, blendNodes, BLEND_ADD, BLEND_ALPHA, BLEND_MAX, BLEND_REPLACE } from './Kernels';
-import { compilePatternJs, normalizeUniforms, PatternProgram, PatternSpec, PatternUniforms, resolvePattern } from './Patterns';
+import {
+    compilePatternJs,
+    normalizeUniforms,
+    PatternProgram,
+    PatternSpec,
+    PatternUniforms,
+    resolvePattern,
+} from './Patterns';
 
 /**
  * 'buffer' is the target's own render buffer, sparse where it has no node. 'pattern'
@@ -218,7 +225,12 @@ class OverlayLayer {
     private readonly target?: PixelTarget;
     readonly pattern?: LayerPattern;
 
-    constructor(info: OverlayLeaseInfo, target: PixelTarget | undefined, nodes: Int32Array | null, pattern?: LayerPattern) {
+    constructor(
+        info: OverlayLeaseInfo,
+        target: PixelTarget | undefined,
+        nodes: Int32Array | null,
+        pattern?: LayerPattern,
+    ) {
         this.info = info;
         this.target = target;
         this.nodes = nodes;
@@ -274,7 +286,8 @@ class OverlayLayer {
         } else {
             // No grid: the target is a strip; each node takes its nearest cell along it.
             const cells = width * height;
-            for (let n = 0; n < nodeCount; ++n) map[n] = Math.min(cells - 1, Math.floor(((n + 0.5) * cells) / nodeCount));
+            for (let n = 0; n < nodeCount; ++n)
+                map[n] = Math.min(cells - 1, Math.floor(((n + 0.5) * cells) / nodeCount));
         }
         this.nodeToCell = map;
     }
@@ -363,7 +376,8 @@ class OverlayLayer {
                     dst.set(src.subarray(y * rowBytes, (y + 1) * rowBytes), (height - 1 - y) * rowBytes);
                 }
             } else {
-                for (let y = 0; y < height; ++y) for (let x = 0; x < width; ++x) this.put((height - 1 - y) * width + x, y * width + x);
+                for (let y = 0; y < height; ++y)
+                    for (let x = 0; x < width; ++x) this.put((height - 1 - y) * width + x, y * width + x);
             }
         } else {
             const map = this.nodeToCell;
@@ -392,7 +406,14 @@ class OverlayLayer {
         const nodes = this.nodes;
         const op = Math.round(Math.max(0, Math.min(1, opacity)) * 255);
         if (!nodes && stride === 3 && op === 255) {
-            blendNodes(this.blendMode, frame.subarray(nodeStart * 3, (nodeStart + nodeCount) * 3), front, 3, 0, nodeCount);
+            blendNodes(
+                this.blendMode,
+                frame.subarray(nodeStart * 3, (nodeStart + nodeCount) * 3),
+                front,
+                3,
+                0,
+                nodeCount,
+            );
             return;
         }
         // Generic path: per node through a 1-node scratch so the blend kernel sees matching strides.
@@ -407,9 +428,9 @@ class OverlayLayer {
             scratchSrc[2] = front[s + 2];
             if (op < 255) {
                 // Opacity applies to the source before its own blend mode.
-                scratchSrc[0] = (scratchSrc[0] * op + 127) / 255 | 0;
-                scratchSrc[1] = (scratchSrc[1] * op + 127) / 255 | 0;
-                scratchSrc[2] = (scratchSrc[2] * op + 127) / 255 | 0;
+                scratchSrc[0] = ((scratchSrc[0] * op + 127) / 255) | 0;
+                scratchSrc[1] = ((scratchSrc[1] * op + 127) / 255) | 0;
+                scratchSrc[2] = ((scratchSrc[2] * op + 127) / 255) | 0;
             }
             blendNodes(this.blendMode, scratchDst, scratchSrc, 3, 0, 1);
             frame[d] = scratchDst[0];
@@ -431,16 +452,16 @@ class OverlayLayer {
         const mode = this.blendMode;
         for (let n = 0; n < nodeCount; ++n) {
             const s = n * 4;
-            const a = (front[s + 3] * op + 127) / 255 | 0;
+            const a = ((front[s + 3] * op + 127) / 255) | 0;
             if (a === 0) continue;
             const d = (nodes ? nodes[n] : nodeStart + n) * stride;
             let r = front[s];
             let g = front[s + 1];
             let b = front[s + 2];
             if (a < 255) {
-                r = (r * a + 127) / 255 | 0;
-                g = (g * a + 127) / 255 | 0;
-                b = (b * a + 127) / 255 | 0;
+                r = ((r * a + 127) / 255) | 0;
+                g = ((g * a + 127) / 255) | 0;
+                b = ((b * a + 127) / 255) | 0;
             }
             switch (mode) {
                 case BLEND_ADD: {
@@ -465,9 +486,9 @@ class OverlayLayer {
                         frame[d + 2] = b;
                     } else {
                         const inv = 255 - a;
-                        frame[d] = ((frame[d] * inv + 127) / 255 | 0) + r;
-                        frame[d + 1] = ((frame[d + 1] * inv + 127) / 255 | 0) + g;
-                        frame[d + 2] = ((frame[d + 2] * inv + 127) / 255 | 0) + b;
+                        frame[d] = (((frame[d] * inv + 127) / 255) | 0) + r;
+                        frame[d + 1] = (((frame[d + 1] * inv + 127) / 255) | 0) + g;
+                        frame[d + 2] = (((frame[d + 2] * inv + 127) / 255) | 0) + b;
                     }
                     break;
                 default:
@@ -536,7 +557,12 @@ export class OverlayManager {
     }
 
     private describe(t: PixelTarget, detail: OverlayTargetQuery['detail']): OverlayTargetInfo {
-        const info: OverlayTargetInfo = { model: t.model, nodeCount: t.nodes.length, width: t.grid?.width, height: t.grid?.height };
+        const info: OverlayTargetInfo = {
+            model: t.model,
+            nodeCount: t.nodes.length,
+            width: t.grid?.width,
+            height: t.grid?.height,
+        };
         if (!detail) return info;
         if (t.subModel) info.subModel = t.subModel;
         info.target = t.name;
@@ -556,7 +582,8 @@ export class OverlayManager {
             const world = this.layout.world;
             if (world) {
                 info.nodes.world = [];
-                for (const n of t.nodes) info.nodes.world.push(round(world[n * 3]), round(world[n * 3 + 1]), round(world[n * 3 + 2]));
+                for (const n of t.nodes)
+                    info.nodes.world.push(round(world[n * 3]), round(world[n * 3 + 1]), round(world[n * 3 + 2]));
             }
             if (t.local) info.nodes.local = Array.from(t.local, round);
             if (t.buffer) info.nodes.cells = Array.from(t.buffer.cells);
@@ -565,7 +592,8 @@ export class OverlayManager {
     }
 
     open(req: OverlayLeaseRequest, now: number): OverlayLeaseInfo {
-        if (req.mode !== 'exclusive' && req.mode !== 'layer') throw new Error("overlay: mode must be 'exclusive' or 'layer'");
+        if (req.mode !== 'exclusive' && req.mode !== 'layer')
+            throw new Error("overlay: mode must be 'exclusive' or 'layer'");
         const name = typeof req.name === 'string' ? req.name.trim() : '';
         if (!name) throw new Error('overlay: name is required');
         let target: PixelTarget | undefined;
@@ -575,7 +603,8 @@ export class OverlayManager {
         let models: string[] | undefined;
         if (req.models !== undefined) {
             // Several targets: their nodes concatenated in the order given.
-            if (!Array.isArray(req.models) || req.models.length === 0) throw new Error('overlay: models must list at least one target');
+            if (!Array.isArray(req.models) || req.models.length === 0)
+                throw new Error('overlay: models must list at least one target');
             const found: PixelTarget[] = [];
             for (const m of req.models) {
                 const t = this.catalog.find(String(m));
@@ -600,7 +629,10 @@ export class OverlayManager {
             }
         } else if (req.model) {
             target = this.catalog.find(req.model, req.subModel);
-            if (!target) throw new Error(`overlay: no pixel model named ${req.subModel ? req.model + '/' + req.subModel : req.model}`);
+            if (!target)
+                throw new Error(
+                    `overlay: no pixel model named ${req.subModel ? req.model + '/' + req.subModel : req.model}`,
+                );
             nodeStart = target.nodeStart;
             nodeCount = target.nodes.length;
             if (nodeStart < 0) nodes = target.nodes;
@@ -609,13 +641,18 @@ export class OverlayManager {
             const span: NodeSpan = nodes ?? { start: nodeStart, count: nodeCount };
             for (const l of this.layers.values()) {
                 if (l.info.mode === 'exclusive' && spansOverlap(span, l.span)) {
-                    throw new OverlayConflictError(target?.name ?? (models ? models.join(', ') : 'The display'), l.info);
+                    throw new OverlayConflictError(
+                        target?.name ?? (models ? models.join(', ') : 'The display'),
+                        l.info,
+                    );
                 }
             }
         }
         const format: OverlayFormat =
-            req.format ?? (req.pattern ? 'pattern' : target?.subModel ? 'buffer' : target?.grid || req.width ? 'grid' : 'nodes');
-        if (req.channels !== undefined && req.channels !== 3 && req.channels !== 4) throw new Error('overlay: channels must be 3 or 4');
+            req.format ??
+            (req.pattern ? 'pattern' : target?.subModel ? 'buffer' : target?.grid || req.width ? 'grid' : 'nodes');
+        if (req.channels !== undefined && req.channels !== 3 && req.channels !== 4)
+            throw new Error('overlay: channels must be 3 or 4');
         const channels: 3 | 4 = format === 'pattern' ? 4 : (req.channels ?? 3);
         let width = nodeCount;
         let height = 1;
@@ -623,7 +660,8 @@ export class OverlayManager {
         let patternInfo: OverlayLeaseInfo['pattern'];
         if (format === 'buffer') {
             if (models && models.length > 1) throw new Error('overlay: the buffer format takes one target');
-            if (!target?.buffer) throw new Error('overlay: the buffer format needs a model or submodel with a known buffer');
+            if (!target?.buffer)
+                throw new Error('overlay: the buffer format needs a model or submodel with a known buffer');
             width = req.width ?? target.buffer.width;
             height = req.height ?? target.buffer.height;
         } else if (format === 'grid') {
@@ -638,7 +676,7 @@ export class OverlayManager {
             try {
                 resolved = resolvePattern(req.pattern);
             } catch (e) {
-                throw new Error(`overlay: ${(e as Error).message}`);
+                throw new Error(`overlay: ${(e as Error).message}`, { cause: e });
             }
             const spec = this.patternSpec(resolved.program, world, target, nodes, nodeStart, nodeCount, models);
             const renderer = this.patternBackend(spec);
@@ -649,7 +687,8 @@ export class OverlayManager {
         } else if (format !== 'nodes') {
             throw new Error(`overlay: unknown format ${String(format)}`);
         }
-        if (format !== 'nodes' && format !== 'pattern' && !(width > 0 && height > 0 && width * height <= 4_000_000)) throw new Error('overlay: bad grid size');
+        if (format !== 'nodes' && format !== 'pattern' && !(width > 0 && height > 0 && width * height <= 4_000_000))
+            throw new Error('overlay: bad grid size');
         const overlap: OverlayOverlap | undefined =
             format !== 'buffer' ? undefined : req.overlap === 'first' || req.overlap === 'max' ? req.overlap : 'last';
         const ttlMs = Math.min(MAX_TTL_MS, Math.max(1000, req.ttlMs ?? DEFAULT_TTL_MS));
@@ -670,7 +709,8 @@ export class OverlayManager {
             height,
             nodeStart,
             nodeCount,
-            frameBytes: format === 'pattern' ? 0 : format === 'nodes' ? nodeCount * channels : width * height * channels,
+            frameBytes:
+                format === 'pattern' ? 0 : format === 'nodes' ? nodeCount * channels : width * height * channels,
             blend: req.blend ?? (format === 'pattern' || channels === 4 ? 'over' : 'replace'),
             opacity: req.opacity ?? 1,
             ttlMs,
@@ -741,7 +781,15 @@ export class OverlayManager {
     }
 
     /** Ingest a payload fragment (a whole payload when offset 0 and last). */
-    write(id: number, token: number, seq: number, offset: number, data: Uint8Array, last: boolean, now: number): boolean {
+    write(
+        id: number,
+        token: number,
+        seq: number,
+        offset: number,
+        data: Uint8Array,
+        last: boolean,
+        now: number,
+    ): boolean {
         const l = this.layers.get(id);
         if (!l || l.info.token !== token) return false;
         l.info.expiresAt = now + l.info.ttlMs;
@@ -789,7 +837,10 @@ export interface OverlayPacket {
 }
 
 export function encodeOverlayPacket(p: OverlayPacket, out?: Uint8Array): Uint8Array {
-    const buf = out && out.length >= OVERLAY_HEADER_BYTES + p.data.length ? out : new Uint8Array(OVERLAY_HEADER_BYTES + p.data.length);
+    const buf =
+        out && out.length >= OVERLAY_HEADER_BYTES + p.data.length
+            ? out
+            : new Uint8Array(OVERLAY_HEADER_BYTES + p.data.length);
     const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
     dv.setUint32(0, OVERLAY_MAGIC);
     dv.setUint32(4, p.id >>> 0);
@@ -828,7 +879,16 @@ export function packetizeOverlayFrame(id: number, token: number, seq: number, pa
     }
     for (let off = 0; off < payload.length; off += OVERLAY_MAX_DATA) {
         const end = Math.min(payload.length, off + OVERLAY_MAX_DATA);
-        out.push(encodeOverlayPacket({ id, token, seq, last: end === payload.length, offset: off, data: payload.subarray(off, end) }));
+        out.push(
+            encodeOverlayPacket({
+                id,
+                token,
+                seq,
+                last: end === payload.length,
+                offset: off,
+                data: payload.subarray(off, end),
+            }),
+        );
     }
     return out;
 }
