@@ -67,6 +67,7 @@ export class MultiSyncSender {
     private mediaSync = true;
     private curFile: string | undefined;
     private lastSyncFrame = -1;
+    private lastFrame = -1;
     private curMedia: string | undefined;
     private lastMediaSyncAt = -Infinity;
 
@@ -119,7 +120,11 @@ export class MultiSyncSender {
         if (!seq) {
             this.stopSeq();
         } else {
-            if (seq.file !== this.curFile) {
+            // The same file starting over (a loop, or the same song twice running) is a
+            // new play: remotes end the sequence on their own and need the OPEN/START.
+            const restarted = seq.file === this.curFile && seq.frameNumber < this.lastFrame;
+            if (restarted) this.stopMedia();
+            if (seq.file !== this.curFile || restarted) {
                 this.stopSeq();
                 this.curFile = seq.file;
                 this.lastSyncFrame = -1;
@@ -130,6 +135,7 @@ export class MultiSyncSender {
                 this.lastSyncFrame = seq.frameNumber;
                 this.send(SYNC_SYNC, FILE_SEQ, seq.frameNumber, seq.secondsElapsed, seq.file);
             }
+            this.lastFrame = seq.frameNumber;
         }
 
         const media = this.mediaSync ? info.media : undefined;
@@ -162,6 +168,7 @@ export class MultiSyncSender {
         }
         this.curFile = undefined;
         this.lastSyncFrame = -1;
+        this.lastFrame = -1;
     }
 
     private stopMedia(): void {
