@@ -23,10 +23,10 @@ says what the player and the game are doing, including when the last wand pose a
 
 ## Wire the wand
 
-Open the Wand Simulator's page and move the wand once. Then, on the Apps card under **Show inputs**,
-`wand-sim/pose` appears under *Heard lately*; **Map this** fills the row, pick this instance and its
-`pose` input, and add it. (The source is whatever the Wand Simulator's settings say, `wand-sim` by
-default.) A base station does the same thing by posting to the same address:
+Open the Wand Simulator's page and move the wand once. Then, on the Apps card, expand this instance and
+under **Show inputs** give its `pose` input the feed `wand-sim/pose`, which is offered because the
+player just heard it. (The source is whatever the Wand Simulator's settings say, `wand-sim` by default.)
+A base station does the same thing by posting to the same address:
 
 ```
 POST http://<player>:3000/api/ezp/inputs/<source>/pose

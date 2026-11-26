@@ -17,8 +17,8 @@ POST http://<player>:3000/api/ezp/inputs/<source>/pose
 ## Install
 
 In the player, open the Apps tile and point it at this folder. Open its page and move the wand once,
-then, on the Apps card under **Show inputs**, `wand-sim/pose` is listed under *Heard lately*: **Map
-this**, and send it to the Tag the Monsters instance's `pose`
+then, on the Apps card, expand the Tag the Monsters instance and under **Show inputs** give its `pose`
+input the feed `wand-sim/pose`; or find `wand-sim/pose` under **Show inputs heard** and send it to that
 input. The page's header says whether the last pose reached an app.
 
 ## Use

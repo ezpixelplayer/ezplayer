@@ -166,7 +166,7 @@
     else {
       parts.push('Game: ' + (status.phase || 'idle') + (status.message ? ' (' + status.message + ')' : '') + '.');
       const age = status.pose?.ageMs;
-      if (age === null || age === undefined) parts.push('No wand pose has arrived yet: on the Apps card, under Show inputs, send the wand (wand-sim/pose) to this instance\u2019s pose input.');
+      if (age === null || age === undefined) parts.push('No wand pose has arrived yet: on the Apps card, expand this instance and give its pose input the feed wand-sim/pose.');
       else parts.push('Last wand pose ' + (age / 1000).toFixed(1) + ' s ago, beam ' + (status.beam?.on ? 'on' : 'off') + '.');
     }
     box.textContent = parts.join(' ');

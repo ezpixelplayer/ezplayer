@@ -38,6 +38,7 @@ import SettingsIcon from '@mui/icons-material/Settings';
 import StopIcon from '@mui/icons-material/Stop';
 import UpdateIcon from '@mui/icons-material/Update';
 import type {
+    AppInputDecl,
     AppInputMapping,
     AppInstallSource,
     AppInstanceStatus,
@@ -213,6 +214,7 @@ const InstancesSection: React.FC<{
                     key={inst.name}
                     inst={inst}
                     app={appsById.get(inst.appId)}
+                    state={state}
                     busy={busy}
                     playerUrl={playerUrl}
                     command={command}
@@ -277,10 +279,11 @@ const InstancesSection: React.FC<{
 const InstanceRow: React.FC<{
     inst: AppInstanceStatus;
     app: InstalledApp | undefined;
+    state: AppsState;
     busy: string | null;
     playerUrl: string;
     command: Command;
-}> = ({ inst, app, busy, playerUrl, command }) => {
+}> = ({ inst, app, state, busy, playerUrl, command }) => {
     const [open, setOpen] = useState(false);
     const [confirmRemove, setConfirmRemove] = useState(false);
     const manifest = app?.manifest;
@@ -421,6 +424,15 @@ const InstanceRow: React.FC<{
                         }}
                         sx={{ maxWidth: 260 }}
                     />
+                    {manifest?.inputs && manifest.inputs.length > 0 && (
+                        <InstanceInputs
+                            inst={inst}
+                            inputs={manifest.inputs}
+                            state={state}
+                            busy={busy}
+                            command={command}
+                        />
+                    )}
                     <Report inst={inst} />
                 </Stack>
             </Collapse>
@@ -804,152 +816,194 @@ function ago(ms: number): string {
     return `${Math.round(m / 60)} h ago`;
 }
 
+const FEED_RE = /^[a-z0-9][a-z0-9-]{0,39}\/[a-z0-9][a-z0-9-]{0,39}$/;
+const feedKey = (m: { source: string; name: string }) => `${m.source}/${m.name}`;
+
+/** On an instance card: what drives each input the app declares, with a picker for one more feed. */
+const InstanceInputs: React.FC<{
+    inst: AppInstanceStatus;
+    inputs: AppInputDecl[];
+    state: AppsState;
+    busy: string | null;
+    command: Command;
+}> = ({ inst, inputs, state, busy, command }) => {
+    const mappings = state.inputMappings;
+    const heard = (state.recentInputs ?? []).map(feedKey);
+    const save = (next: AppInputMapping[]) => void command({ op: 'setInputMappings', mappings: next });
+    return (
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+            <Typography variant="subtitle2">Show inputs</Typography>
+            <Typography color="text.secondary" variant="body2">
+                What drives each input this app declares. A board or helper app posts to{' '}
+                <code>/api/ezp/inputs/&lt;source&gt;/&lt;name&gt;</code> on this player; pick it from what the player
+                has heard, or type <code>source/name</code> and press Enter.
+            </Typography>
+            {inputs.map((inp) => {
+                const feeds = mappings.filter((m) => m.instance === inst.name && m.input === inp.name);
+                const have = new Set(feeds.map(feedKey));
+                return (
+                    <Box key={inp.name} sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                        <Typography variant="body2" sx={{ minWidth: 110 }}>
+                            <code>{inp.name}</code>{' '}
+                            <Typography component="span" variant="caption" color="text.secondary">
+                                {inp.kind}
+                            </Typography>
+                        </Typography>
+                        {feeds.map((m) => (
+                            <Chip
+                                key={feedKey(m)}
+                                size="small"
+                                label={feedKey(m)}
+                                disabled={busy !== null}
+                                onDelete={() => save(mappings.filter((x) => x !== m))}
+                            />
+                        ))}
+                        {feeds.length === 0 && <Chip size="small" variant="outlined" label="not wired" />}
+                        <FeedPicker
+                            options={heard.filter((k) => !have.has(k))}
+                            disabled={busy !== null}
+                            onPick={(k) => {
+                                const [source, name] = k.split('/');
+                                save([...mappings, { source, name, instance: inst.name, input: inp.name }]);
+                            }}
+                        />
+                    </Box>
+                );
+            })}
+        </Box>
+    );
+};
+
+/** A `source/name` box with what the player has heard as suggestions; Enter or a pick adds the feed. */
+const FeedPicker: React.FC<{ options: string[]; disabled: boolean; onPick: (key: string) => void }> = ({
+    options,
+    disabled,
+    onPick,
+}) => {
+    const [text, setText] = useState('');
+    const valid = FEED_RE.test(text);
+    return (
+        <Autocomplete
+            freeSolo
+            size="small"
+            disabled={disabled}
+            options={options}
+            value={null}
+            inputValue={text}
+            onInputChange={(_, v) => setText((v ?? '').toLowerCase())}
+            onChange={(_, v) => {
+                if (typeof v === 'string' && FEED_RE.test(v)) {
+                    onPick(v);
+                    setText('');
+                }
+            }}
+            sx={{ width: 230 }}
+            renderInput={(params) => (
+                <TextField {...params} label="Add a feed" placeholder="source/name" error={text !== '' && !valid} />
+            )}
+        />
+    );
+};
+
+/** The other end: what has posted to this player lately and where each one goes. */
 const InputsSection: React.FC<{ state: AppsState; busy: string | null; command: Command }> = ({
     state,
     busy,
     command,
 }) => {
-    const [draft, setDraft] = useState<AppInputMapping>({ source: '', name: '', instance: '', input: '' });
-    const appsById = useMemo(() => new Map(state.apps.map((a) => [a.id, a])), [state.apps]);
-    const inputsOf = (instance: string) => {
-        const inst = state.instances.find((i) => i.name === instance);
-        return appsById.get(inst?.appId ?? '')?.manifest?.inputs ?? [];
-    };
-    const save = (mappings: AppInputMapping[]) => void command({ op: 'setInputMappings', mappings });
-    const ok = NAME_RE.test(draft.source) && NAME_RE.test(draft.name) && draft.instance && draft.input;
-    // What the player has actually heard is the best list of what to type.
     const recent = state.recentInputs ?? [];
-    const mapped = new Set(state.inputMappings.map((m) => `${m.source}/${m.name}`));
-    const sources = [...new Set(recent.map((r) => r.source))];
-    const names = [...new Set(recent.filter((r) => !draft.source || r.source === draft.source).map((r) => r.name))];
+    const appsById = useMemo(() => new Map(state.apps.map((a) => [a.id, a])), [state.apps]);
+    const titleOf = (instance: string) => state.instances.find((i) => i.name === instance)?.title ?? instance;
+    // Every input every instance declares, so a heard post can be wired from here too.
+    const targets = state.instances.flatMap((i) =>
+        (appsById.get(i.appId)?.manifest?.inputs ?? []).map((inp) => ({
+            instance: i.name,
+            title: i.title ?? i.name,
+            input: inp.name,
+            kind: inp.kind,
+        })),
+    );
+    const save = (next: AppInputMapping[]) => void command({ op: 'setInputMappings', mappings: next });
 
     return (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-            <Typography variant="h6">Show inputs</Typography>
+            <Typography variant="h6">Show inputs heard</Typography>
             <Typography color="text.secondary" variant="body2">
-                A button, sensor or helper app posts to <code>/api/ezp/inputs/&lt;source&gt;/&lt;name&gt;</code> on this
-                player. The sender picks both words: <em>source</em> is who it is (a board, the Wand Simulator's source
-                setting) and <em>name</em> is which button or value. Each row below hands one of those to an input of an
-                app instance, as if a visitor had tapped it. Anything that posts shows up under <em>Heard lately</em>,
-                so let it send once and pick it from there.
+                Everything that has posted to <code>/api/ezp/inputs/&lt;source&gt;/&lt;name&gt;</code> on this player
+                lately, and where it goes. The sender picks both words: <em>source</em> is who it is (a board, the Wand
+                Simulator's source setting) and <em>name</em> is which button or value. Each instance's card says what
+                drives its inputs; this is the view from the other end, for finding a sender and seeing whether anything
+                listens to it.
             </Typography>
-            {recent.length > 0 && (
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-                    <Typography variant="subtitle2">Heard lately</Typography>
-                    {recent.slice(0, 8).map((r) => {
-                        const key = `${r.source}/${r.name}`;
-                        const isMapped = mapped.has(key);
-                        return (
-                            <Box key={key} sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-                                <Typography variant="body2">
-                                    <code>{key}</code> · {r.count} {r.count === 1 ? 'post' : 'posts'}, last{' '}
-                                    {ago(r.lastAt)}
-                                    {r.lastValue !== undefined && (
-                                        <Typography component="span" variant="caption" color="text.secondary">
-                                            {' '}
-                                            {r.lastValue}
-                                        </Typography>
-                                    )}
-                                </Typography>
-                                {isMapped ? (
-                                    <Chip size="small" variant="outlined" label="mapped" />
-                                ) : (
-                                    <Button
-                                        size="small"
-                                        onClick={() => setDraft({ ...draft, source: r.source, name: r.name })}
-                                    >
-                                        Map this
-                                    </Button>
-                                )}
-                            </Box>
-                        );
-                    })}
-                </Box>
+            {recent.length === 0 && (
+                <Typography color="text.secondary" variant="body2">
+                    Nothing has posted since the player started. A board pressed once, or the Wand Simulator moved once,
+                    shows up here.
+                </Typography>
             )}
-            {state.inputMappings.map((m, i) => (
-                <Box key={i} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <Typography variant="body2">
-                        <code>
-                            {m.source}/{m.name}
-                        </code>{' '}
-                        → {m.instance} · {m.input}
-                    </Typography>
-                    <IconButton
-                        size="small"
-                        disabled={busy !== null}
-                        onClick={() => save(state.inputMappings.filter((_, j) => j !== i))}
-                    >
-                        <DeleteIcon fontSize="small" />
-                    </IconButton>
-                </Box>
-            ))}
-            <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
-                <Autocomplete
-                    freeSolo
-                    size="small"
-                    options={sources}
-                    value={draft.source || null}
-                    inputValue={draft.source}
-                    onInputChange={(_, v) => setDraft({ ...draft, source: (v ?? '').toLowerCase() })}
-                    onChange={(_, v) => setDraft({ ...draft, source: (v ?? '').toLowerCase() })}
-                    sx={{ width: 170 }}
-                    renderInput={(params) => <TextField {...params} label="Source" placeholder="who sends it" />}
-                />
-                <Autocomplete
-                    freeSolo
-                    size="small"
-                    options={names}
-                    value={draft.name || null}
-                    inputValue={draft.name}
-                    onInputChange={(_, v) => setDraft({ ...draft, name: (v ?? '').toLowerCase() })}
-                    onChange={(_, v) => setDraft({ ...draft, name: (v ?? '').toLowerCase() })}
-                    sx={{ width: 170 }}
-                    renderInput={(params) => <TextField {...params} label="Name" placeholder="which button or value" />}
-                />
-                <FormControl size="small" sx={{ minWidth: 160 }}>
-                    <InputLabel id="apps-map-inst">Instance</InputLabel>
-                    <Select
-                        labelId="apps-map-inst"
-                        label="Instance"
-                        value={draft.instance}
-                        onChange={(e) => setDraft({ ...draft, instance: e.target.value, input: '' })}
-                    >
-                        {state.instances.map((i) => (
-                            <MenuItem key={i.name} value={i.name}>
-                                {i.title ?? i.name}
-                            </MenuItem>
+            {recent.slice(0, 12).map((r) => {
+                const key = feedKey(r);
+                const to = state.inputMappings.filter((m) => m.source === r.source && m.name === r.name);
+                const wired = new Set(to.map((m) => `${m.instance}/${m.input}`));
+                const open = targets.filter((t) => !wired.has(`${t.instance}/${t.input}`));
+                return (
+                    <Box key={key} sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                        <Typography variant="body2">
+                            <code>{key}</code> · {r.count} {r.count === 1 ? 'post' : 'posts'}, last {ago(r.lastAt)}
+                            {r.lastValue !== undefined && (
+                                <Typography component="span" variant="caption" color="text.secondary">
+                                    {' '}
+                                    {r.lastValue}
+                                </Typography>
+                            )}
+                        </Typography>
+                        {to.map((m) => (
+                            <Chip
+                                key={`${m.instance}/${m.input}`}
+                                size="small"
+                                label={`→ ${titleOf(m.instance)} · ${m.input}`}
+                                disabled={busy !== null}
+                                onDelete={() => save(state.inputMappings.filter((x) => x !== m))}
+                            />
                         ))}
-                    </Select>
-                </FormControl>
-                <FormControl size="small" sx={{ minWidth: 160 }} disabled={!draft.instance}>
-                    <InputLabel id="apps-map-input">Input</InputLabel>
-                    <Select
-                        labelId="apps-map-input"
-                        label="Input"
-                        value={draft.input}
-                        onChange={(e) => setDraft({ ...draft, input: e.target.value })}
-                    >
-                        {inputsOf(draft.instance).map((inp) => (
-                            <MenuItem key={inp.name} value={inp.name}>
-                                {inp.name} ({inp.kind})
-                            </MenuItem>
-                        ))}
-                        {inputsOf(draft.instance).length === 0 && (
-                            <MenuItem disabled>This app declares no inputs</MenuItem>
+                        {to.length === 0 && (
+                            <Chip size="small" variant="outlined" color="warning" label="nothing listens" />
                         )}
-                    </Select>
-                </FormControl>
-                <Button
-                    variant="outlined"
-                    disabled={busy !== null || !ok}
-                    onClick={() => {
-                        save([...state.inputMappings, draft]);
-                        setDraft({ source: '', name: '', instance: '', input: '' });
-                    }}
-                >
-                    Add
-                </Button>
-            </Box>
+                        {open.length > 0 && (
+                            <FormControl size="small" sx={{ minWidth: 200 }} disabled={busy !== null}>
+                                <InputLabel id={`apps-wire-${key}`}>
+                                    {to.length ? 'Also send to…' : 'Send to…'}
+                                </InputLabel>
+                                <Select
+                                    labelId={`apps-wire-${key}`}
+                                    label={to.length ? 'Also send to…' : 'Send to…'}
+                                    value=""
+                                    onChange={(e) => {
+                                        const t = open.find((x) => `${x.instance}/${x.input}` === e.target.value);
+                                        if (t) {
+                                            save([
+                                                ...state.inputMappings,
+                                                {
+                                                    source: r.source,
+                                                    name: r.name,
+                                                    instance: t.instance,
+                                                    input: t.input,
+                                                },
+                                            ]);
+                                        }
+                                    }}
+                                >
+                                    {open.map((t) => (
+                                        <MenuItem key={`${t.instance}/${t.input}`} value={`${t.instance}/${t.input}`}>
+                                            {t.title} · {t.input} ({t.kind})
+                                        </MenuItem>
+                                    ))}
+                                </Select>
+                            </FormControl>
+                        )}
+                    </Box>
+                );
+            })}
         </Box>
     );
 };
