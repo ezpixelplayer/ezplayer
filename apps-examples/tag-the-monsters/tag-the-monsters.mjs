@@ -33,6 +33,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const KEY_PREFIX = `ttm-${instance.replace(/[^A-Za-z0-9._~-]/g, '-').slice(0, 32)}`;
 const TICK_MS = 40;
 const OBJECT_TTL_MS = 3000;
+// Patches renew an object's lease, but a still wand patches nothing: renew it by hand this often.
+const OBJECT_KEEPALIVE_MS = 1000;
 const LEASE_TTL_MS = 10_000;
 // A lease with no traffic for its TTL is dropped, and a still wand sends nothing, so the uniforms go out this often anyway.
 const BEAM_KEEPALIVE_MS = 2000;
@@ -246,6 +248,10 @@ async function putObject(key, body) {
 }
 async function patchObject(key, body) {
     const res = await fetch(`${base}/api/ezp/objects/${KEY_PREFIX}-${key}`, { method: 'PATCH', headers: jsonHeaders, body: JSON.stringify(body) }).catch(() => null);
+    return res ? res.status : 0;
+}
+async function keepObject(key) {
+    const res = await fetch(`${base}/api/ezp/objects/${KEY_PREFIX}-${key}/keepalive`, { method: 'POST', headers: authHeaders }).catch(() => null);
     return res ? res.status : 0;
 }
 async function deleteObject(key) {
@@ -697,15 +703,30 @@ async function defineObjects() {
 }
 
 let lastObjectJson = '';
+let lastObjectSentAt = 0;
+let objectsBusy = false;
 async function updateObjects() {
-    if (!objectsDefined) return;
+    if (!objectsDefined || objectsBusy) return;
     const json = JSON.stringify([world.origin, world.dir, world.on]);
-    if (json === lastObjectJson) return;
+    const now = Date.now();
+    const moved = json !== lastObjectJson;
+    if (!moved && now - lastObjectSentAt < OBJECT_KEEPALIVE_MS) return;
     lastObjectJson = json;
-    const s1 = await patchObject('holder', { placement: { position: world.origin, direction: [world.dir[0], 0, world.dir[2]] } });
-    const s2 = await patchObject('beam', { placement: { position: world.beam, direction: world.dir }, appearance: { visible: world.on } });
-    // A 404 means the lease ran out (the player restarted): make them again.
-    if (s1 === 404 || s2 === 404) await defineObjects().catch(() => (objectsDefined = false));
+    lastObjectSentAt = now;
+    // One round trip at a time, so a slow player does not pile up patches.
+    objectsBusy = true;
+    try {
+        const [s1, s2] = moved
+            ? await Promise.all([
+                  patchObject('holder', { placement: { position: world.origin, direction: [world.dir[0], 0, world.dir[2]] } }),
+                  patchObject('beam', { placement: { position: world.beam, direction: world.dir }, appearance: { visible: world.on } }),
+              ])
+            : await Promise.all([keepObject('holder'), keepObject('beam')]);
+        // A 404 means the lease ran out (the player restarted): make them again.
+        if (s1 === 404 || s2 === 404) await defineObjects().catch(() => (objectsDefined = false));
+    } finally {
+        objectsBusy = false;
+    }
 }
 
 async function removeObjects() {

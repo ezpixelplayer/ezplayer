@@ -102,6 +102,7 @@ for a matrix or `buffer` for a model drawn through its 2D render buffer.
 - The hit test is geometry in the app: the world coordinates of a surface's nodes (and, for a buffer,
   which nodes sit in which cell) come from `GET /api/ezp/overlays/targets?model=NAME&detail=nodes`,
   and a creature counts as lit when enough of its nodes sit inside the cone.
-- The holder and the beam are scene objects under `/api/ezp/objects`, patched as the wand moves.
+- The holder and the beam are scene objects under `/api/ezp/objects` with a 3 s lease, patched as
+  the wand moves and kept alive once a second while it is still.
   The pattern's origin, the hit test and the drawn beam all start from the wand tip, so what the
   Show View shows is what the pixels get.
