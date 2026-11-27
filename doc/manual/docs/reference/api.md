@@ -2116,6 +2116,12 @@ Returns layout-level settings parsed from the xLights `<settings>` element in `x
 
 All fields are optional — the object may be empty if no settings are present in the XML. The `backgroundImage` path is show-folder-relative and can be loaded via `/api/ezp/show-file?path=PIFar.jpg`.
 
+When the layout has an active xLights **Ruler** view object, `ruler` says what a world unit measures:
+`{ name, units, unitName, length, from, to, worldLength, unitsPerMeter }`. `units` is xLights' code
+(0 m, 1 cm, 2 mm, 3 yd, 4 ft, 5 in), `length` the ruler's real length in that unit, `from`/`to` its
+ends in world coordinates, and `unitsPerMeter` the number an app placing real-world things in the
+layout needs. Apps should prefer it over asking the owner for a scale.
+
 ---
 
 ### GET /api/ezp/moving-heads

@@ -101,6 +101,7 @@ import {
     type XlModelChannelInfo,
     migrateToFormat,
 } from 'xllayoutcalcs';
+import { rulerFromLayout } from './layout-ruler.js';
 
 // Unused-attribute warnings are only actionable in the parser library itself.
 const PARSE_OPTS: ModelParseOptions = { warnUnusedAttrs: false };
@@ -2266,6 +2267,9 @@ async function loadXmlCoordinates() {
                 if (parsedSettings.layoutMode3D !== undefined) {
                     layoutSettings.layoutMode3D = parsedSettings.layoutMode3D;
                 }
+                // The ruler lives among the view objects, but it is a fact about the whole layout.
+                const ruler = rulerFromLayout(xrgb);
+                if (ruler) layoutSettings.ruler = ruler;
 
                 if (layoutSettings.backgroundImage) {
                     emitInfo(
@@ -3863,8 +3867,18 @@ function overlayCommand(cmd: OverlayCommand): OverlayResult {
                 const info = ov.get(cmd.id);
                 if (!info || info.token !== cmd.token) return { ok: false, error: 'no such lease' };
                 // A pattern payload is JSON of any length up to the cap; pixel payloads are exact.
-                if (info.format === 'pattern' ? cmd.data.length > PATTERN_PAYLOAD_MAX : cmd.data.length !== info.frameBytes)
-                    return { ok: false, error: info.format === 'pattern' ? `uniforms must be at most ${PATTERN_PAYLOAD_MAX} bytes` : `payload must be ${info.frameBytes} bytes` };
+                if (
+                    info.format === 'pattern'
+                        ? cmd.data.length > PATTERN_PAYLOAD_MAX
+                        : cmd.data.length !== info.frameBytes
+                )
+                    return {
+                        ok: false,
+                        error:
+                            info.format === 'pattern'
+                                ? `uniforms must be at most ${PATTERN_PAYLOAD_MAX} bytes`
+                                : `payload must be ${info.frameBytes} bytes`,
+                    };
                 ov.write(cmd.id, cmd.token, cmd.seq, 0, cmd.data, true, Date.now());
                 return { ok: true };
             }

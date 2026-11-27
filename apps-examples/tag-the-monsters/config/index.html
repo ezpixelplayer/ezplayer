@@ -80,7 +80,7 @@
     <label>Origin y<input id="oy" type="number" step="1" placeholder="auto"></label>
     <label>Origin z<input id="oz" type="number" step="1" placeholder="auto"></label>
     <label>Heading offset (degrees)<input id="heading" type="number" step="1"></label>
-    <label>World units per meter<input id="scale" type="number" step="1" min="0.01"></label>
+    <label>World units per meter (blank: from the layout’s ruler)<input id="scale" type="number" step="1" min="0.01"></label>
     <label>Eye height (meters)<input id="eyeHeight" type="number" step="0.05" min="0"></label>
   </div>
   <div class="row">
@@ -115,7 +115,7 @@
 (function () {
   const el = (id) => document.getElementById(id);
   let app, settings = {}, status = null;
-  let layout = null; // { groups, surfaces, all, bounds } read from the player, independent of the game process
+  let layout = null; // { groups, surfaces, all, bounds, ruler } read from the player, independent of the game process
   let layoutError = '';
 
   const fmt = (v, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v.toFixed(d) : '?');
@@ -134,6 +134,7 @@
         surfaces: targets.map(surfaceOf).filter(Boolean),
         all: targets.map((t) => ({ model: t.model, type: (t.type ? t.type + ', ' : '') + t.nodeCount + ' nodes' })),
         bounds: layout?.bounds ?? null,
+        ruler: layout?.ruler ?? null,
       };
       layoutError = '';
     } catch (e) {
@@ -156,7 +157,17 @@
         if (Number.isFinite(lo[0]) && layout) layout.bounds = { lo, hi };
       }
     } catch { /* the hints just stay generic */ }
+    try {
+      // The xLights Ruler view object, when the layout has one, says how long a meter is.
+      const res = await fetch(app.apiBase + '/api/ezp/layout-settings', { cache: 'no-store' });
+      if (res.ok && layout) {
+        const body = await res.json();
+        layout.ruler = body?.ruler && body.ruler.unitsPerMeter > 0 ? body.ruler : null;
+      }
+    } catch { /* no ruler, then */ }
   }
+
+  const rulerOf = () => layout?.ruler ?? status?.wand?.ruler ?? null;
 
   /** The same rule as the game: a matrix at least 8x8, or a model with 500+ nodes and a 2D buffer at least 8x8. */
   function surfaceOf(t) {
@@ -185,9 +196,17 @@
   /** What the calibration fields mean against this layout, in plain numbers. */
   function showCalib() {
     const b = layout?.bounds ?? status?.layoutBounds ?? null;
-    const scale = Number(el('scale').value) || 100;
+    const typed = Number(el('scale').value) || 0;
+    const ruler = rulerOf();
+    const scale = typed > 0 ? typed : ruler ? ruler.unitsPerMeter : 100;
+    el('scale').placeholder = ruler ? 'auto: ' + fmt(ruler.unitsPerMeter, 1) + ' from the ruler' : 'auto: 100';
     const eye = Number(el('eyeHeight').value) || 0;
     const parts = [];
+    if (ruler) {
+      parts.push('The layout’s ruler “' + ruler.name + '” is ' + ruler.length + ' ' + ruler.unitName + ' over ' + fmt(ruler.worldLength, 1) + ' units, so a meter is ' + fmt(ruler.unitsPerMeter, 1) + ' units' + (typed > 0 ? '; the number typed above overrides it.' : '; that is used while the field above is blank.'));
+    } else if (!(typed > 0)) {
+      parts.push('The layout has no Ruler view object, so 100 units per meter is assumed; draw one in xLights (View Objects, Ruler) and the player reads it, or type the number above.');
+    }
     if (b) {
       const w = b.hi[0] - b.lo[0], h = b.hi[1] - b.lo[1], d = b.hi[2] - b.lo[2];
       parts.push('The layout spans ' + fmt(w) + ' units wide, ' + fmt(h) + ' tall and ' + fmt(d) + ' deep (x ' + fmt(b.lo[0]) + '..' + fmt(b.hi[0]) + ', y ' + fmt(b.lo[1]) + '..' + fmt(b.hi[1]) + ', z ' + fmt(b.lo[2]) + '..' + fmt(b.hi[2]) + ').');
@@ -196,7 +215,7 @@
       const o = ox !== '' && oy !== '' && oz !== '' ? [Number(ox), Number(oy), Number(oz)] : [(b.lo[0] + b.hi[0]) / 2, b.lo[1], b.hi[2] + d * 0.25];
       parts.push('The holder starts at (' + fmt(o[0]) + ', ' + fmt(o[1]) + ', ' + fmt(o[2]) + ') with eyes ' + fmt(eye * scale) + ' units up, facing -z.');
     } else {
-      parts.push('Leave the origin blank to stand in front of the layout\u2019s middle. 100 units per meter fits a layout drawn in centimeters.');
+      parts.push('Leave the origin blank to stand in front of the layout\u2019s middle.');
     }
     el('calib').textContent = parts.join(' ');
   }
@@ -264,7 +283,7 @@
     el('oy').value = o[1] ?? '';
     el('oz').value = o[2] ?? '';
     el('heading').value = w.heading ?? 0;
-    el('scale').value = w.scale ?? 100;
+    el('scale').value = w.scale ?? '';
     el('eyeHeight').value = w.eyeHeight ?? 1.6;
     const r = s.rules ?? {};
     el('roundSeconds').value = r.roundSeconds ?? 90;
@@ -292,7 +311,7 @@
       spriteModels: checked('spriteModels'),
       beam: { halfAngle: n('halfAngle'), softness: n('softness'), range: n('range'), color: el('color').value, noise: n('noise'), blend: el('blend').value },
       background: { foe: el('bgFoe').value, friend: el('bgFriend').value, alpha: n('bgAlpha') },
-      wand: { origin, heading: n('heading'), scale: n('scale'), eyeHeight: n('eyeHeight') },
+      wand: { origin, heading: n('heading'), scale: el('scale').value === '' ? null : n('scale'), eyeHeight: n('eyeHeight') },
       rules: { roundSeconds: n('roundSeconds'), dwellMs: n('dwellMs'), coverage: n('coverage'), foePoints: n('foePoints'), friendPenalty: n('friendPenalty'), respawnMs: n('respawnMs'), restMs: n('restMs') },
       useUdp: el('useUdp').checked,
       autoStart: el('autoStart').checked,

@@ -81,7 +81,8 @@ function normalize(raw) {
         wand: {
             origin: Array.isArray(w.origin) && w.origin.length === 3 && w.origin.every((x) => typeof x === 'number') ? w.origin : null,
             heading: num(w.heading, 0, -360, 360),
-            scale: num(w.scale, DEFAULTS.wand.scale, 0.01, 100000),
+            // null: take the layout's ruler, or 100 without one.
+            scale: typeof w.scale === 'number' && Number.isFinite(w.scale) && w.scale > 0 ? Math.min(100000, w.scale) : null,
             eyeHeight: num(w.eyeHeight, DEFAULTS.wand.eyeHeight, 0, 10),
         },
         rules: {
@@ -282,8 +283,14 @@ let targetsError = '';
 const pose = { x: 0, z: 0, yaw: 0, pitch: 10, on: false, at: 0, seen: 0 };
 let world = { origin: [0, 0, 0], dir: [0, 0, -1], beam: [0, 0, 0], on: false };
 let layoutBounds = null;
+let layoutRuler = null; // the xLights Ruler view object, from the player's layout settings
 
 const deg = Math.PI / 180;
+
+/** World units per meter: the owner's number, else the layout's ruler, else 100 (a layout in cm). */
+function unitsPerMeter() {
+    return settings.wand.scale ?? layoutRuler?.unitsPerMeter ?? DEFAULTS.wand.scale;
+}
 
 /** Device frame to world: x right, z toward the holder's back; yaw 0 faces the display (world -z), pitch up. */
 function updateWorldPose() {
@@ -292,9 +299,10 @@ function updateWorldPose() {
     const h = w.heading * deg;
     const ch = Math.cos(h);
     const sh = Math.sin(h);
-    const dx = pose.x * w.scale;
-    const dz = pose.z * w.scale;
-    const origin = [originW[0] + dx * ch + dz * sh, originW[1] + w.eyeHeight * w.scale, originW[2] - dx * sh + dz * ch];
+    const scale = unitsPerMeter();
+    const dx = pose.x * scale;
+    const dz = pose.z * scale;
+    const origin = [originW[0] + dx * ch + dz * sh, originW[1] + w.eyeHeight * scale, originW[2] - dx * sh + dz * ch];
     const yaw = pose.yaw * deg + h;
     const pitch = pose.pitch * deg;
     const dir = [Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch)];
@@ -305,7 +313,7 @@ function updateWorldPose() {
 
 /** The wand tip, a little ahead of, beside and below the eyes. */
 function wandTip(origin, dir) {
-    const u = (settings.wand.eyeHeight * settings.wand.scale) / 1.7;
+    const u = (settings.wand.eyeHeight * unitsPerMeter()) / 1.7;
     const [dx, , dz] = dir;
     const len = Math.hypot(dx, dz) || 1;
     const fx = dx / len;
@@ -354,6 +362,18 @@ function surfaceOf(t) {
         return { model: t.model, width: b.width, height: b.height, kind: 'buffer', nodes: t.nodeCount, type: t.type };
     }
     return null;
+}
+
+/** The layout's ruler, when xLights has one: it says how long a meter is in world units. */
+async function loadRuler() {
+    try {
+        const res = await fetch(`${base}/api/ezp/layout-settings`);
+        if (!res.ok) return;
+        const data = await res.json();
+        layoutRuler = data?.ruler && typeof data.ruler.unitsPerMeter === 'number' && data.ruler.unitsPerMeter > 0 ? data.ruler : null;
+    } catch {
+        /* the scale stays at the owner's number or 100 */
+    }
 }
 
 /** World extent of a few models, for the default wand origin. */
@@ -647,7 +667,7 @@ function updateBeam() {
 
 /** The holder: a head, a body and the wand in hand, plus the beam leaving the wand. */
 function holderBody() {
-    const h = settings.wand.eyeHeight * settings.wand.scale;
+    const h = settings.wand.eyeHeight * unitsPerMeter();
     const u = h / 1.7;
     return {
         content: {
@@ -665,7 +685,7 @@ function holderBody() {
 
 async function defineObjects() {
     const b = settings.beam;
-    const h = settings.wand.eyeHeight * settings.wand.scale;
+    const h = settings.wand.eyeHeight * unitsPerMeter();
     await putObject('holder', { ...holderBody(), placement: { position: world.origin, direction: [world.dir[0], 0, world.dir[2]] }, smoothMs: 80 });
     await putObject('beam', {
         content: { type: 'beam', length: b.range, angle: (b.halfAngle * 180) / Math.PI, radius: h * 0.02 },
@@ -824,7 +844,14 @@ async function publish(force = false) {
         result: roundResult,
         beam: { on: world.on, fresh: !!world.fresh, lease: beamLease ? { id: beamLease.id, nodes: beamLease.nodeCount, backend: beamLease.pattern?.backend, group: beamLease.group ?? null, models: beamLease.models?.length ?? null } : null },
         pose: { x: pose.x, z: pose.z, yaw: pose.yaw, pitch: pose.pitch, on: pose.on, ageMs: pose.seen ? now - pose.seen : null },
-        wand: { origin: world.origin.map((v) => Math.round(v)), beam: world.beam.map((v) => Math.round(v)), dir: world.dir.map((v) => Math.round(v * 100) / 100) },
+        wand: {
+            origin: world.origin.map((v) => Math.round(v)),
+            beam: world.beam.map((v) => Math.round(v)),
+            dir: world.dir.map((v) => Math.round(v * 100) / 100),
+            scale: Math.round(unitsPerMeter() * 10) / 10,
+            scaleFrom: settings.wand.scale !== null ? 'settings' : layoutRuler ? 'ruler' : 'default',
+            ruler: layoutRuler,
+        },
         sprites: sprites.map((s) => s.status()),
         groups: layoutGroups,
         surfaces,
@@ -895,7 +922,7 @@ async function pollEvents() {
 async function main() {
     console.log(`Tag the Monsters: instance ${instance} at ${base}`);
     await refreshSettings();
-    await Promise.all([loadTargets(), loadBounds()]);
+    await Promise.all([loadTargets(), loadBounds(), loadRuler()]);
     void pollEvents();
     let lastSettings = 0;
     let lastTargets = 0;
@@ -907,7 +934,7 @@ async function main() {
         }
         if (now - lastTargets > 15000 && phase !== 'playing') {
             lastTargets = now;
-            await loadTargets();
+            await Promise.all([loadTargets(), loadRuler()]);
         }
         if (wanted === 'running') {
             wanted = null;

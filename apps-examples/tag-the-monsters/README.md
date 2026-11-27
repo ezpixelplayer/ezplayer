@@ -53,8 +53,11 @@ Open the instance's settings page (the gear on the Apps tile).
   nodes under it. The background colors tint a surface by the role of whoever is on it, at the alpha
   given, so the show underneath still shows.
 - **Wand calibration**: where the wand frame's origin sits in the layout (blank: in front of the
-  layout's middle, on the ground), a heading offset, world units per meter (100 when the layout was
-  drawn in centimeters), and the holder's eye height. Changes apply at once.
+  layout's middle, on the ground), a heading offset, world units per meter, and the holder's eye
+  height. Leave the units per meter blank and the game takes them from the layout's xLights
+  **Ruler** view object (the player reports it under `/api/ezp/layout-settings`); a layout
+  without a ruler is taken to be in centimeters. A holder that looks too big or too small in the
+  Show View means the scale is off: draw a ruler, or type the number. Changes apply at once.
 - **Rules**: round length, how long the beam must stay on a creature, what share of its lit pixels
   must be inside the cone, points and penalty, the pause after a tag, and the rest between runs
   (2.5 s by default, give or take half): raise it when the creatures come too thick and fast.
@@ -78,7 +81,7 @@ Published with every change and at least twice a second:
   "phase": "playing", "cast": "halloween", "score": 40, "tags": 4, "misses": 1, "timeLeft": 61,
   "beam": { "on": true, "fresh": true, "lease": { "id": 12, "nodes": 352190, "backend": "gpu", "group": "Beam Coverage" } },
   "pose": { "x": 0.4, "z": 2.1, "yaw": -12, "pitch": 8, "on": true, "ageMs": 31 },
-  "wand": { "origin": [124, 160, 1089], "dir": [-0.21, 0.14, -0.97] },
+  "wand": { "origin": [124, 160, 1089], "beam": [130, 154, 1083], "dir": [-0.21, 0.14, -0.97], "scale": 32.8, "scaleFrom": "ruler", "ruler": { "name": "Ruler", "unitName": "ft", "length": 1, "worldLength": 10, "unitsPerMeter": 32.8 } },
   "sprites": [{ "model": "Matrix", "kind": "grid", "size": "64x32", "creature": "ghost", "role": "foe", "x": 17, "lit": 72, "dwell": 210 }],
   "groups": [{ "name": "Beam Coverage", "models": 598, "subModels": 4 }],
   "surfaces": [{ "model": "Matrix", "width": 64, "height": 32, "kind": "grid", "nodes": 2048, "type": "Matrix" }]
