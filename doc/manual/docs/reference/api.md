@@ -1239,7 +1239,7 @@ A layout can hold thousands of submodels, so more is sent only when asked for:
 | `model=NAME`       | Only that model, or only that `Model/Submodel`                                        |
 | `detail=submodels` | A row per submodel, and the shape of every row (below)                                |
 | `detail=nodes`     | The same plus per-node coordinates; needs `model=NAME`                                |
-| `groups=1`         | `groups`: the show's xLights model groups as `{ name, models }`, flattened to the models listed here; a group that reaches none is left out |
+| `groups=1`         | `groups`: the show's xLights model groups as `{ name, models, subModels }`, flattened to the models listed here and to submodel members (as `Model/Submodel`) whose model is not itself a member; a group that reaches none is left out |
 
 ```json
 {
@@ -1278,7 +1278,7 @@ Open a lease. Body (`mode` and `name` are required; a grid also needs a size whe
 | `model`   | Model name or `Model/Submodel`; the whole display when omitted   |
 | `subModel` | Submodel of `model`, as an alternative to naming it in `model`  |
 | `models`  | Several targets at once, as a list of names; the payload lists their nodes in this order (`nodes` and `pattern` formats) |
-| `group`   | An xLights model group; the player resolves it to `models` (those of its models that can take an overlay, in group order) |
+| `group`   | An xLights model group; the player resolves it to `models` (its models that can take an overlay, then its submodel members whose model is not already listed, in group order) |
 | `format`  | `grid` (default for grid models), `nodes`, `buffer` (default for submodels), or `pattern` (default when `pattern` is given) |
 | `channels` | Bytes per cell: `3` (RGB, default) or `4` (RGBA, straight alpha) |
 | `pattern` | `format: "pattern"`: `{ preset, uniforms }` or `{ program, uniforms }`, see below |
@@ -2334,7 +2334,7 @@ A package is a directory with `ezapp.json` at its root:
 | `start`     | Arguments after the runtime. For `binary`, the first is the executable, relative to the package.                                         |
 | `page`      | The visitors' page: a directory inside the package served as static files, or `{"proxy": true}` to forward to the app's own HTTP server. |
 | `config`    | The owner's settings page, same forms. Served even while the instance is stopped.                                                        |
-| `inputs`    | Show inputs the app accepts: `kind` is `event` (a press), `value` (a level or open/closed) or `text`.                                     |
+| `inputs`    | Show inputs the app accepts: `kind` is `event` (a press), `value` (a level or open/closed), `text` or `object` (a structured value, such as a pose). The Apps card offers a sender to an input only when what it sends fits the kind. |
 | `platforms` | `process.platform` values the app runs on; absent means all.                                                                             |
 | `events`    | The event rate the app needs: `perMinute` across every phone (default 600, at most 6000) and `perClientPerSecond` for one phone (default 10, at most 60). A game that sends every tap asks here; a game that adds taps up on the phone and sends one number a second does not need to. The owner can still change an instance's per-minute rate on the Apps card. |
 
@@ -2426,7 +2426,10 @@ event with source `input:<source>`. Answers `{ "ok": true, "delivered": n }`.
 #### Owner
 
 `GET /api/ezp/apps` returns the apps state: installed packages, instances with state, startup report
-and log tail, default schedule, Python path, input mappings. `POST /api/ezp/apps/command` takes one
+and log tail, default schedule, Python path, input mappings, and `recentInputs`: the last fifty
+senders heard at `/api/ezp/inputs`, newest first, each with its post count, last time, how many
+instances the last post reached, a short rendering of the last value and its `shape` (`none`,
+`boolean`, `number`, `text` or `object`). `POST /api/ezp/apps/command` takes one
 of: `rescan`, `install` (`source`: `{kind:"folder",path}`, `{kind:"url",url}` or `{kind:"contrib"}`),
 `uninstall`, `createInstance`, `removeInstance`, `setInstance` (patch `enabled`, `schedule`, `title`,
 `eventsPerMinute`), `start`, `stop`, `restart`, `setDefaultSchedule`, `setPythonPath`,

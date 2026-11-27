@@ -8,9 +8,9 @@
  * reports where the wand is and where it points, and the player's flashlight beam
  * lands on every pixel in its path: one pattern lease over an xLights group, with
  * the beam's origin and direction as uniforms the player evaluates per node, on the
- * GPU when it has one. Monsters and friends run across the matrices you choose,
- * drawn as RGBA sprites over the show that keeps playing underneath. Hold the beam
- * on a monster to tag it; light up a friend and lose points.
+ * GPU when it has one. Monsters and friends run across the matrices (or other large
+ * 2D models) you choose, drawn as RGBA sprites over the show that keeps playing
+ * underneath. Hold the beam on a monster to tag it; light up a friend and lose points.
  *
  * Environment (set by the player): EZP_API_URL, EZP_APP_INSTANCE, EZP_APP_TOKEN.
  * Settings come from the instance's private data key "settings"; see README.md.
@@ -49,7 +49,7 @@ const DEFAULTS = {
     spriteModels: [],
     beam: { halfAngle: 0.12, softness: 0.35, range: 1500, color: '#fff0c0', noise: 0.15, blend: 'add' },
     wand: { origin: null, heading: 0, scale: 100, eyeHeight: 1.6 },
-    rules: { roundSeconds: 90, dwellMs: 350, coverage: 0.4, foePoints: 10, friendPenalty: 5, respawnMs: 1200 },
+    rules: { roundSeconds: 90, dwellMs: 350, coverage: 0.4, foePoints: 10, friendPenalty: 5, respawnMs: 1200, restMs: 2500 },
     background: { foe: '#40001a', friend: '#003020', alpha: 0.4 },
     useUdp: true,
     autoStart: false,
@@ -91,6 +91,7 @@ function normalize(raw) {
             foePoints: num(ru.foePoints, DEFAULTS.rules.foePoints, 0, 1000),
             friendPenalty: num(ru.friendPenalty, DEFAULTS.rules.friendPenalty, 0, 1000),
             respawnMs: num(ru.respawnMs, DEFAULTS.rules.respawnMs, 0, 30000),
+            restMs: num(ru.restMs, DEFAULTS.rules.restMs, 0, 60000),
         },
         background: {
             foe: color(bg.foe, DEFAULTS.background.foe),
@@ -274,12 +275,12 @@ let wanted = null; // 'running' | 'stopped' | null
 let lastPublish = 0;
 let publishDirty = true;
 let layoutGroups = [];
-let gridModels = [];
+let surfaces = []; // models the cast can run across
 let targetsError = '';
 
 /** The latest wand report in device units, and the world pose derived from it. */
 const pose = { x: 0, z: 0, yaw: 0, pitch: 10, on: false, at: 0, seen: 0 };
-let world = { origin: [0, 0, 0], dir: [0, 0, -1], on: false };
+let world = { origin: [0, 0, 0], dir: [0, 0, -1], beam: [0, 0, 0], on: false };
 let layoutBounds = null;
 
 const deg = Math.PI / 180;
@@ -298,7 +299,19 @@ function updateWorldPose() {
     const pitch = pose.pitch * deg;
     const dir = [Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch)];
     const fresh = Date.now() - pose.seen < POSE_STALE_MS;
-    world = { origin, dir, on: pose.on && fresh, fresh };
+    // The pixels, the hit test and the drawn beam all start from the same point: the wand tip.
+    world = { origin, dir, beam: wandTip(origin, dir), on: pose.on && fresh, fresh };
+}
+
+/** The wand tip, a little ahead of, beside and below the eyes. */
+function wandTip(origin, dir) {
+    const u = (settings.wand.eyeHeight * settings.wand.scale) / 1.7;
+    const [dx, , dz] = dir;
+    const len = Math.hypot(dx, dz) || 1;
+    const fx = dx / len;
+    const fz = dz / len;
+    // Right of the facing direction is (-fz, fx) in the x/z plane.
+    return [origin[0] + fx * u * 0.3 - fz * u * 0.3, origin[1] - u * 0.3, origin[2] + fz * u * 0.3 + fx * u * 0.3];
 }
 
 /** The device origin when none is configured: in front of the layout, at its middle. */
@@ -314,13 +327,33 @@ function defaultOrigin() {
 
 async function loadTargets() {
     try {
-        const res = await api('GET', '/api/ezp/overlays/targets?groups=1');
-        layoutGroups = (res.groups ?? []).map((g) => ({ name: g.name, models: g.models.length }));
-        gridModels = res.targets.filter((t) => t.width && t.height && t.width >= 8 && t.height >= 8).map((t) => ({ model: t.model, width: t.width, height: t.height, type: t.type }));
+        const res = await api('GET', '/api/ezp/overlays/targets?groups=1&detail=submodels');
+        layoutGroups = (res.groups ?? []).map((g) => ({ name: g.name, models: g.models.length, subModels: g.subModels?.length ?? 0 }));
+        surfaces = res.targets.map(surfaceOf).filter(Boolean);
         targetsError = '';
     } catch (e) {
         targetsError = e.message;
     }
+}
+
+/** How many nodes a non-grid model needs before its 2D render buffer is worth a sprite. */
+const BUFFER_SURFACE_NODES = 500;
+
+/**
+ * A model the cast can run across: a grid (matrix) at least 8x8, drawn through a grid lease,
+ * or any other model with enough nodes and a 2D render buffer at least 8x8 (an HD spinner, a big
+ * tree), drawn through a buffer lease onto that buffer.
+ */
+function surfaceOf(t) {
+    if (t.subModel) return null;
+    if (t.width && t.height && t.width >= 8 && t.height >= 8) {
+        return { model: t.model, width: t.width, height: t.height, kind: 'grid', nodes: t.nodeCount, type: t.type };
+    }
+    const b = t.buffer;
+    if (b && t.nodeCount >= BUFFER_SURFACE_NODES && b.width >= 8 && b.height >= 8) {
+        return { model: t.model, width: b.width, height: b.height, kind: 'buffer', nodes: t.nodeCount, type: t.type };
+    }
+    return null;
 }
 
 /** World extent of a few models, for the default wand origin. */
@@ -355,11 +388,23 @@ async function loadBounds() {
 // ---------------------------------------------------------------------------
 
 class Sprite {
-    constructor(target, nodesWorld) {
+    constructor(target, nodesWorld, cells) {
         this.model = target.model;
         this.width = target.width;
         this.height = target.height;
-        this.nodesWorld = nodesWorld; // world x, y, z per node in frame order (row-major, bottom row first)
+        this.kind = target.kind; // 'grid': cell (x, y) is node y * width + x; 'buffer': cells map to nodes
+        this.nodesWorld = nodesWorld; // world x, y, z per node in payload order
+        this.cellNodes = null;
+        if (cells) {
+            // (node, x, y) triples with y up; a cell may hold several nodes and many hold none.
+            this.cellNodes = new Map();
+            for (let k = 0; k < cells.length; k += 3) {
+                const key = cells[k + 2] * this.width + cells[k + 1];
+                const list = this.cellNodes.get(key);
+                if (list) list.push(cells[k]);
+                else this.cellNodes.set(key, [cells[k]]);
+            }
+        }
         this.lease = null;
         this.payload = null;
         this.seq = 1;
@@ -382,7 +427,7 @@ class Sprite {
             name: 'tag-the-monsters',
             mode: 'exclusive',
             model: this.model,
-            format: 'grid',
+            format: this.kind,
             channels: 4,
             blend: 'over',
             ttlMs: LEASE_TTL_MS,
@@ -414,6 +459,11 @@ class Sprite {
         this.spawnedAt = now;
     }
 
+    /** How long the surface stays empty after a run: the rest setting, give or take half. */
+    rest() {
+        return settings.rules.restMs * (0.5 + Math.random());
+    }
+
     /** Move; when the run ends, rest a little and spawn again. */
     step(now, dtSec) {
         if (this.flash > 0) this.flash -= dtSec;
@@ -425,7 +475,7 @@ class Sprite {
         const gone = this.dir > 0 ? this.x > this.width : this.x + this.spriteW < 0;
         if (gone) {
             this.hidden = true;
-            this.nextAt = now + 500 + Math.random() * 1500;
+            this.nextAt = now + this.rest();
         }
     }
 
@@ -457,24 +507,33 @@ class Sprite {
         if (this.hidden || !world.on) return 0;
         const cells = this.litCells();
         if (!cells.length) return 0;
-        const [ox, oy, oz] = world.origin;
+        const [ox, oy, oz] = world.beam;
         const [dx, dy, dz] = world.dir;
         const cosHalf = Math.cos(settings.beam.halfAngle);
         const range = settings.beam.range;
         let inside = 0;
-        const n = cells.length / 3;
-        for (let k = 0; k < cells.length; k += 3) {
-            // Payload rows run top first; canonical grid rows run bottom first.
-            const node = (this.height - 1 - cells[k + 1]) * this.width + cells[k];
+        let total = 0;
+        const visit = (node) => {
+            ++total;
             const w = node * 3;
             const vx = this.nodesWorld[w] - ox;
             const vy = this.nodesWorld[w + 1] - oy;
             const vz = this.nodesWorld[w + 2] - oz;
             const d = Math.hypot(vx, vy, vz);
-            if (d > range || d === 0) continue;
+            if (d > range || d === 0) return;
             if ((vx * dx + vy * dy + vz * dz) / d >= cosHalf) ++inside;
+        };
+        for (let k = 0; k < cells.length; k += 3) {
+            // Payload rows run top first; the model's rows run bottom first.
+            const y = this.height - 1 - cells[k + 1];
+            if (this.cellNodes) {
+                const list = this.cellNodes.get(y * this.width + cells[k]);
+                if (list) for (const node of list) visit(node);
+            } else {
+                visit(y * this.width + cells[k]);
+            }
         }
-        return inside / n;
+        return total ? inside / total : 0;
     }
 
     /** Draw the background tint and the creature into the RGBA payload. */
@@ -535,6 +594,7 @@ class Sprite {
     status() {
         return {
             model: this.model,
+            kind: this.kind,
             size: `${this.width}x${this.height}`,
             creature: this.hidden ? null : this.creature.name,
             role: this.hidden ? null : this.role,
@@ -558,7 +618,7 @@ async function openBeam() {
         ttlMs: LEASE_TTL_MS,
         pattern: {
             preset: 'beam',
-            uniforms: { origin: world.origin, dir: world.dir, halfAngle: b.halfAngle, softness: b.softness, range: b.range, color: '#000000', noise: b.noise },
+            uniforms: { origin: world.beam, dir: world.dir, halfAngle: b.halfAngle, softness: b.softness, range: b.range, color: '#000000', noise: b.noise },
         },
     };
     if (settings.beamGroup) req.group = settings.beamGroup;
@@ -573,7 +633,7 @@ async function openBeam() {
 function updateBeam() {
     if (!beamLease) return;
     const u = {
-        origin: world.origin.map((v) => Math.round(v * 10) / 10),
+        origin: world.beam.map((v) => Math.round(v * 10) / 10),
         dir: world.dir.map((v) => Math.round(v * 1000) / 1000),
         color: world.on ? settings.beam.color : '#000000',
     };
@@ -609,22 +669,11 @@ async function defineObjects() {
     await putObject('holder', { ...holderBody(), placement: { position: world.origin, direction: [world.dir[0], 0, world.dir[2]] }, smoothMs: 80 });
     await putObject('beam', {
         content: { type: 'beam', length: b.range, angle: (b.halfAngle * 180) / Math.PI, radius: h * 0.02 },
-        placement: { position: beamStart(), direction: world.dir },
+        placement: { position: world.beam, direction: world.dir },
         appearance: { color: b.color, visible: world.on },
         smoothMs: 60,
     });
     objectsDefined = true;
-}
-
-/** The beam leaves the wand tip, a little ahead of and beside the holder. */
-function beamStart() {
-    const u = (settings.wand.eyeHeight * settings.wand.scale) / 1.7;
-    const [dx, , dz] = world.dir;
-    const len = Math.hypot(dx, dz) || 1;
-    const fx = dx / len;
-    const fz = dz / len;
-    // Right of the facing direction is (-fz, fx) in the x/z plane.
-    return [world.origin[0] + fx * u * 0.3 - fz * u * 0.3, world.origin[1] - u * 0.3, world.origin[2] + fz * u * 0.3 + fx * u * 0.3];
 }
 
 let lastObjectJson = '';
@@ -634,7 +683,7 @@ async function updateObjects() {
     if (json === lastObjectJson) return;
     lastObjectJson = json;
     const s1 = await patchObject('holder', { placement: { position: world.origin, direction: [world.dir[0], 0, world.dir[2]] } });
-    const s2 = await patchObject('beam', { placement: { position: beamStart(), direction: world.dir }, appearance: { visible: world.on } });
+    const s2 = await patchObject('beam', { placement: { position: world.beam, direction: world.dir }, appearance: { visible: world.on } });
     // A 404 means the lease ran out (the player restarted): make them again.
     if (s1 === 404 || s2 === 404) await defineObjects().catch(() => (objectsDefined = false));
 }
@@ -658,8 +707,8 @@ async function start() {
         await loadTargets();
         if (targetsError) throw new Error(targetsError);
         if (!settings.beamGroup && !settings.beamModels.length) throw new Error('No beam coverage: pick an xLights group or some models in the app settings.');
-        const chosen = settings.spriteModels.map((m) => gridModels.find((g) => g.model === m)).filter(Boolean);
-        if (!chosen.length) throw new Error('No sprite matrices: pick at least one grid model in the app settings.');
+        const chosen = settings.spriteModels.map((m) => surfaces.find((g) => g.model === m)).filter(Boolean);
+        if (!chosen.length) throw new Error('No sprite surfaces: pick at least one matrix or large model in the app settings.');
         if (settings.useUdp && !sock) {
             sock = dgram.createSocket('udp4');
             sock.on('error', () => undefined);
@@ -671,9 +720,10 @@ async function start() {
             const res = await api('GET', `/api/ezp/overlays/targets?model=${encodeURIComponent(t.model)}&detail=nodes`);
             const row = res.targets.find((x) => x.model === t.model && !x.subModel);
             if (!row?.nodes?.world) throw new Error(`${t.model}: the player has no node coordinates for it`);
-            const s = new Sprite(t, Float32Array.from(row.nodes.world));
+            if (t.kind === 'buffer' && !row.nodes.cells) throw new Error(`${t.model}: the player has no render buffer for it`);
+            const s = new Sprite(t, Float32Array.from(row.nodes.world), t.kind === 'buffer' ? row.nodes.cells : null);
             await s.open();
-            s.nextAt = Date.now() + Math.random() * 1500;
+            s.nextAt = Date.now() + Math.random() * Math.max(1500, settings.rules.restMs);
             sprites.push(s);
         }
         await defineObjects();
@@ -683,7 +733,7 @@ async function start() {
         roundResult = null;
         roundEndsAt = Date.now() + settings.rules.roundSeconds * 1000;
         phase = 'playing';
-        console.log(`round started: ${sprites.length} sprite matrices, cast ${settings.cast}`);
+        console.log(`round started: ${sprites.length} sprite surfaces, cast ${settings.cast}`);
     } catch (e) {
         message = e.message;
         console.log(`start failed: ${e.message}`);
@@ -774,10 +824,10 @@ async function publish(force = false) {
         result: roundResult,
         beam: { on: world.on, fresh: !!world.fresh, lease: beamLease ? { id: beamLease.id, nodes: beamLease.nodeCount, backend: beamLease.pattern?.backend, group: beamLease.group ?? null, models: beamLease.models?.length ?? null } : null },
         pose: { x: pose.x, z: pose.z, yaw: pose.yaw, pitch: pose.pitch, on: pose.on, ageMs: pose.seen ? now - pose.seen : null },
-        wand: { origin: world.origin.map((v) => Math.round(v)), dir: world.dir.map((v) => Math.round(v * 100) / 100) },
+        wand: { origin: world.origin.map((v) => Math.round(v)), beam: world.beam.map((v) => Math.round(v)), dir: world.dir.map((v) => Math.round(v * 100) / 100) },
         sprites: sprites.map((s) => s.status()),
         groups: layoutGroups,
-        gridModels,
+        surfaces,
         layoutBounds,
         targetsError,
         transport: settings.useUdp ? 'udp' : 'http',

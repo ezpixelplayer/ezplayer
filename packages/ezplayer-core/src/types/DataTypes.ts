@@ -1324,8 +1324,8 @@ export type AppRuntime = 'node' | 'python3' | 'binary';
 /** An input an app instance accepts from the show (buttons, sensors), declared in its manifest. */
 export interface AppInputDecl {
     name: string;
-    /** `event` is a press; `value` is a level or open/closed; `text` is a string. */
-    kind: 'event' | 'value' | 'text';
+    /** `event` is a press; `value` is a level or open/closed; `text` is a string; `object` is structured (a pose). */
+    kind: 'event' | 'value' | 'text' | 'object';
     min?: number;
     max?: number;
 }
@@ -1421,6 +1421,9 @@ export interface AppInputMapping {
 }
 
 /** A show input the player has heard recently, mapped or not, for the Apps card to offer. */
+/** What a show input post carried: nothing, an on/off, a number, a string or a structured value. */
+export type AppInputShape = 'none' | 'boolean' | 'number' | 'text' | 'object';
+
 export interface AppRecentInput {
     source: string;
     name: string;
@@ -1429,6 +1432,8 @@ export interface AppRecentInput {
     lastAt: number;
     /** How many instances the last post reached; 0 means no mapping row matched it. */
     delivered: number;
+    /** What the last post carried, so the Apps card offers it only to inputs that take that. */
+    shape: AppInputShape;
     /** A short rendering of the last value, for the owner to recognize the sender. */
     lastValue?: string;
 }

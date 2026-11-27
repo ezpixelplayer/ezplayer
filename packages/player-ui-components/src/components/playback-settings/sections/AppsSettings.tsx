@@ -40,6 +40,7 @@ import UpdateIcon from '@mui/icons-material/Update';
 import type {
     AppInputDecl,
     AppInputMapping,
+    AppRecentInput,
     AppInstallSource,
     AppInstanceStatus,
     AppsCommand,
@@ -47,6 +48,7 @@ import type {
     CloudPollScheduleEntry,
     InstalledApp,
 } from '@ezplayer/ezplayer-core';
+import { inputAccepts } from '@ezplayer/ezplayer-core';
 import { Box } from '../../box/Box';
 import { useFrameServerUrl } from '../../../hooks/useFrameServerUrl';
 import { WindowListEditor } from './WindowListEditor';
@@ -819,6 +821,41 @@ function ago(ms: number): string {
 const FEED_RE = /^[a-z0-9][a-z0-9-]{0,39}\/[a-z0-9][a-z0-9-]{0,39}$/;
 const feedKey = (m: { source: string; name: string }) => `${m.source}/${m.name}`;
 
+/** What a sender sends, in words. */
+const SHAPE_WORDS: Record<AppRecentInput['shape'], string> = {
+    none: 'no value',
+    boolean: 'on/off',
+    number: 'a number',
+    text: 'text',
+    object: 'an object',
+};
+/** What an input takes, in words. */
+const KIND_WORDS: Record<AppInputDecl['kind'], string> = {
+    event: 'a press',
+    value: 'a level',
+    text: 'text',
+    object: 'an object',
+};
+
+/** A heard feed as the pickers show it: offered when what it sends fits the input. */
+interface FeedOption {
+    key: string;
+    fits: boolean;
+    /** Why not, when it does not fit. */
+    why?: string;
+}
+
+function feedOption(r: AppRecentInput, kind: AppInputDecl['kind']): FeedOption {
+    const fits = inputAccepts(kind, r.shape, r.lastValue);
+    return {
+        key: feedKey(r),
+        fits,
+        why: fits
+            ? undefined
+            : `sends ${SHAPE_WORDS[r.shape] ?? r.shape}, this input takes ${KIND_WORDS[kind] ?? kind}`,
+    };
+}
+
 /** On an instance card: what drives each input the app declares, with a picker for one more feed. */
 const InstanceInputs: React.FC<{
     inst: AppInstanceStatus;
@@ -828,7 +865,7 @@ const InstanceInputs: React.FC<{
     command: Command;
 }> = ({ inst, inputs, state, busy, command }) => {
     const mappings = state.inputMappings;
-    const heard = (state.recentInputs ?? []).map(feedKey);
+    const heard = state.recentInputs ?? [];
     const save = (next: AppInputMapping[]) => void command({ op: 'setInputMappings', mappings: next });
     return (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
@@ -860,7 +897,7 @@ const InstanceInputs: React.FC<{
                         ))}
                         {feeds.length === 0 && <Chip size="small" variant="outlined" label="not wired" />}
                         <FeedPicker
-                            options={heard.filter((k) => !have.has(k))}
+                            options={heard.filter((r) => !have.has(feedKey(r))).map((r) => feedOption(r, inp.kind))}
                             disabled={busy !== null}
                             onPick={(k) => {
                                 const [source, name] = k.split('/');
@@ -874,32 +911,63 @@ const InstanceInputs: React.FC<{
     );
 };
 
-/** A `source/name` box with what the player has heard as suggestions; Enter or a pick adds the feed. */
-const FeedPicker: React.FC<{ options: string[]; disabled: boolean; onPick: (key: string) => void }> = ({
+/**
+ * A `source/name` box with what the player has heard as suggestions; Enter or a pick adds the feed.
+ * A heard feed that sends the wrong kind of value is listed but cannot be picked, and typing its
+ * name says why.
+ */
+const FeedPicker: React.FC<{ options: FeedOption[]; disabled: boolean; onPick: (key: string) => void }> = ({
     options,
     disabled,
     onPick,
 }) => {
     const [text, setText] = useState('');
     const valid = FEED_RE.test(text);
+    const unfit = options.find((o) => o.key === text && !o.fits);
+    // Grouped lists want their groups contiguous: the ones that fit first.
+    const sorted = [...options].sort((a, b) => Number(b.fits) - Number(a.fits));
+    const pick = (key: string) => {
+        if (!FEED_RE.test(key) || options.some((o) => o.key === key && !o.fits)) return;
+        onPick(key);
+        setText('');
+    };
     return (
         <Autocomplete
             freeSolo
             size="small"
             disabled={disabled}
-            options={options}
+            options={sorted}
+            getOptionLabel={(o) => (typeof o === 'string' ? o : o.key)}
+            getOptionDisabled={(o) => !o.fits}
+            groupBy={(o) => (o.fits ? 'Heard' : 'Heard, but sends the wrong kind of value')}
             value={null}
             inputValue={text}
             onInputChange={(_, v) => setText((v ?? '').toLowerCase())}
             onChange={(_, v) => {
-                if (typeof v === 'string' && FEED_RE.test(v)) {
-                    onPick(v);
-                    setText('');
-                }
+                if (typeof v === 'string') pick(v);
+                else if (v) pick(v.key);
             }}
+            renderOption={(props, o) => (
+                <li {...props} key={o.key}>
+                    <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+                        <code>{o.key}</code>
+                        {o.why && (
+                            <Typography variant="caption" color="text.secondary">
+                                {o.why}
+                            </Typography>
+                        )}
+                    </Box>
+                </li>
+            )}
             sx={{ width: 230 }}
             renderInput={(params) => (
-                <TextField {...params} label="Add a feed" placeholder="source/name" error={text !== '' && !valid} />
+                <TextField
+                    {...params}
+                    label="Add a feed"
+                    placeholder="source/name"
+                    error={text !== '' && (!valid || unfit !== undefined)}
+                    helperText={unfit?.why}
+                />
             )}
         />
     );
@@ -969,6 +1037,13 @@ const InputsSection: React.FC<{ state: AppsState; busy: string | null; command: 
                         {to.length === 0 && (
                             <Chip size="small" variant="outlined" color="warning" label="nothing listens" />
                         )}
+                        {open.length > 0 && !open.some((t) => inputAccepts(t.kind, r.shape, r.lastValue)) && (
+                            <Chip
+                                size="small"
+                                variant="outlined"
+                                label={`sends ${SHAPE_WORDS[r.shape] ?? r.shape}; no input takes that`}
+                            />
+                        )}
                         {open.length > 0 && (
                             <FormControl size="small" sx={{ minWidth: 200 }} disabled={busy !== null}>
                                 <InputLabel id={`apps-wire-${key}`}>
@@ -993,11 +1068,19 @@ const InputsSection: React.FC<{ state: AppsState; busy: string | null; command: 
                                         }
                                     }}
                                 >
-                                    {open.map((t) => (
-                                        <MenuItem key={`${t.instance}/${t.input}`} value={`${t.instance}/${t.input}`}>
-                                            {t.title} · {t.input} ({t.kind})
-                                        </MenuItem>
-                                    ))}
+                                    {open.map((t) => {
+                                        const fits = inputAccepts(t.kind, r.shape, r.lastValue);
+                                        return (
+                                            <MenuItem
+                                                key={`${t.instance}/${t.input}`}
+                                                value={`${t.instance}/${t.input}`}
+                                                disabled={!fits}
+                                            >
+                                                {t.title} · {t.input} ({KIND_WORDS[t.kind] ?? t.kind}
+                                                {fits ? '' : `; sends ${SHAPE_WORDS[r.shape] ?? r.shape}`})
+                                            </MenuItem>
+                                        );
+                                    })}
                                 </Select>
                             </FormControl>
                         )}

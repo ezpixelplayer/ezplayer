@@ -27,8 +27,10 @@ describe('recent show inputs', () => {
         expect(recent[0].count).toBe(2);
         expect(recent[0].delivered).toBe(1);
         expect(recent[0].lastValue).toBe('{"x":1.5,"z":2,"yaw":0,"pitch":10,"on":true}');
+        expect(recent[0].shape).toBe('object');
         expect(recent[1].delivered).toBe(0);
         expect(recent[1].lastValue).toBeUndefined();
+        expect(recent[1].shape).toBe('none');
     });
 
     it('keeps only the newest fifty and trims long values', () => {
@@ -39,5 +41,6 @@ describe('recent show inputs', () => {
         expect(recent[0].name).toBe('b59');
         expect(recent[49].name).toBe('b10');
         expect(recent[0].lastValue!.length).toBe(60);
+        expect(recent[0].shape).toBe('text');
     });
 });

@@ -11,7 +11,7 @@
     "inputs": [
         { "name": "start", "kind": "event" },
         { "name": "stop", "kind": "event" },
-        { "name": "pose", "kind": "value" }
+        { "name": "pose", "kind": "object" }
     ],
     "platforms": ["win32", "darwin", "linux"],
     "events": { "perMinute": 3000, "perClientPerSecond": 30 }

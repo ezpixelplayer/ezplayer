@@ -1,7 +1,8 @@
 # Tag the Monsters app
 
 A player walks the yard with a wand. Its flashlight beam lands on every pixel in its path, across
-the whole display, while monsters and friends run across the matrices you choose. Hold the beam on a
+the whole display, while monsters and friends run across the matrices (or HD spinners, big trees: any
+model with a few hundred nodes in a 2D buffer) you choose. Hold the beam on a
 monster long enough to tag it; light up a friend and lose points. Rounds are timed, the score is on the
 app's page, and the holder, the wand and the beam show in the Show View. Plain Node (22+), no
 dependencies.
@@ -46,14 +47,17 @@ Open the instance's settings page (the gear on the Apps tile).
 - **Beam coverage**: an xLights model group the beam may land on, or a list of models. A group of
   everything except the sprite matrices works well. Half angle, rim softness, range, color,
   cloudiness and blend shape the beam; `add` is light, `max` never darkens, `over` paints.
-- **Sprite matrices**: the grid models the cast runs across; each gets an exclusive lease during a
-  round. The background colors tint a matrix by the role of whoever is on it, at the alpha given, so
-  the show underneath still shows.
+- **Sprite surfaces**: where the cast runs; each gets an exclusive lease during a round. Matrices
+  at least 8x8 are offered, and so is any other model with at least 500 nodes and a 2D render buffer
+  at least 8x8 (an HD spinner, a big tree): the sprite is drawn onto that buffer and lands on the
+  nodes under it. The background colors tint a surface by the role of whoever is on it, at the alpha
+  given, so the show underneath still shows.
 - **Wand calibration**: where the wand frame's origin sits in the layout (blank: in front of the
   layout's middle, on the ground), a heading offset, world units per meter (100 when the layout was
   drawn in centimeters), and the holder's eye height. Changes apply at once.
 - **Rules**: round length, how long the beam must stay on a creature, what share of its lit pixels
-  must be inside the cone, points and penalty, and the pause before the next creature.
+  must be inside the cone, points and penalty, the pause after a tag, and the rest between runs
+  (2.5 s by default, give or take half): raise it when the creatures come too thick and fast.
 - **Delivery**: beam uniforms and sprite frames over UDP (default) or HTTP `PUT`; start a round when
   the app starts.
 
@@ -75,21 +79,26 @@ Published with every change and at least twice a second:
   "beam": { "on": true, "fresh": true, "lease": { "id": 12, "nodes": 352190, "backend": "gpu", "group": "Beam Coverage" } },
   "pose": { "x": 0.4, "z": 2.1, "yaw": -12, "pitch": 8, "on": true, "ageMs": 31 },
   "wand": { "origin": [124, 160, 1089], "dir": [-0.21, 0.14, -0.97] },
-  "sprites": [{ "model": "Matrix", "size": "64x32", "creature": "ghost", "role": "foe", "x": 17, "lit": 72, "dwell": 210 }],
-  "groups": [{ "name": "Beam Coverage", "models": 598 }], "gridModels": [{ "model": "Matrix", "width": 64, "height": 32, "type": "Matrix" }]
+  "sprites": [{ "model": "Matrix", "kind": "grid", "size": "64x32", "creature": "ghost", "role": "foe", "x": 17, "lit": 72, "dwell": 210 }],
+  "groups": [{ "name": "Beam Coverage", "models": 598, "subModels": 4 }],
+  "surfaces": [{ "model": "Matrix", "width": 64, "height": 32, "kind": "grid", "nodes": 2048, "type": "Matrix" }]
 }
 ```
 
 `beam.lease.backend` says where the player evaluates the beam: `gpu` through the xlgl addon, `js` on
-the CPU. `groups` and `gridModels` feed the settings page's pick lists.
+the CPU. `groups` and `surfaces` feed the settings page's pick lists; a surface's `kind` is `grid`
+for a matrix or `buffer` for a model drawn through its 2D render buffer.
 
 ## How the pieces fit
 
 - `POST /api/ezp/overlays` with `{ mode: "layer", group, blend, pattern: { preset: "beam", uniforms } }`
   opens the beam; a JSON object of uniforms is its payload, sent as overlay packets or a `PUT`.
 - `POST /api/ezp/overlays` with `{ mode: "exclusive", model, format: "grid", channels: 4, blend: "over" }`
-  opens a sprite matrix; its payload is RGBA rows, top first.
-- The hit test is geometry in the app: the world coordinates of a matrix's nodes come from
-  `GET /api/ezp/overlays/targets?model=NAME&detail=nodes`, and a creature counts as lit when enough of
-  its pixels sit inside the cone.
+  opens a sprite matrix; its payload is RGBA rows, top first. A non-grid surface uses
+  `format: "buffer"` and the model's own render buffer size instead.
+- The hit test is geometry in the app: the world coordinates of a surface's nodes (and, for a buffer,
+  which nodes sit in which cell) come from `GET /api/ezp/overlays/targets?model=NAME&detail=nodes`,
+  and a creature counts as lit when enough of its nodes sit inside the cone.
 - The holder and the beam are scene objects under `/api/ezp/objects`, patched as the wand moves.
+  The pattern's origin, the hit test and the drawn beam all start from the wand tip, so what the
+  Show View shows is what the pixels get.

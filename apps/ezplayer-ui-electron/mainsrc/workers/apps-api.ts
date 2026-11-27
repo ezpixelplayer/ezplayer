@@ -18,6 +18,7 @@ import type {
     AppStatuses,
     FullPlayerState,
 } from '@ezplayer/ezplayer-core';
+import { inputShapeOf } from '@ezplayer/ezplayer-core';
 import { AppEventFeed } from './apps-events.js';
 import {
     DATA_KEY_RE,
@@ -177,7 +178,15 @@ export class AppsRuntime {
         }
         // Re-insert so the map stays in arrival order and the oldest key is first to go.
         this.recent.delete(key);
-        this.recent.set(key, { source, name, count: (was?.count ?? 0) + 1, lastAt: Date.now(), delivered, lastValue });
+        this.recent.set(key, {
+            source,
+            name,
+            count: (was?.count ?? 0) + 1,
+            lastAt: Date.now(),
+            delivered,
+            lastValue,
+            shape: inputShapeOf(value),
+        });
         while (this.recent.size > RECENT_INPUTS_MAX) this.recent.delete(this.recent.keys().next().value!);
     }
 

@@ -77,7 +77,10 @@ POST http://<player>:3000/api/ezp/inputs/<source>/<name>
 The sender chooses both words: `source` says who it is (a board's name, a helper app's setting) and
 `name` says which button or value. An app declares its inputs in its manifest, and each instance's card
 on the Apps card lists them under **Show inputs** with what drives each one: pick a feed from what the
-player has heard, or type `source/name`. The easiest way is to let the sender post once first. The
+player has heard, or type `source/name`. The easiest way is to let the sender post once first. A feed
+is offered only where what it sends fits the input's kind: a bare press or an on/off goes to an
+`event` or `value` input, a number to a `value`, a string to `text`, and a structured value such as
+a wand pose to an `object` input; anything else is listed but cannot be picked, with the reason. The
 **Show inputs heard** section at the bottom of the card is the view from the other end: everything that
 has posted lately, its last value, and which instance inputs listen to it, with a **Send to** picker for
 the ones nothing listens to. The app sees the press as an ordinary event whose source says it came from

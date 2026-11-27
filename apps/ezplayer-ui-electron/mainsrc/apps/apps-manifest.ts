@@ -82,8 +82,8 @@ function parseInputs(v: unknown): AppManifest['inputs'] {
     return v.map((x) => {
         const i = x as Record<string, unknown>;
         if (typeof i?.name !== 'string' || !APP_NAME_RE.test(i.name)) throw new Error('an input has a bad name');
-        if (i.kind !== 'event' && i.kind !== 'value' && i.kind !== 'text') {
-            throw new Error(`input ${i.name}: kind must be event, value or text`);
+        if (i.kind !== 'event' && i.kind !== 'value' && i.kind !== 'text' && i.kind !== 'object') {
+            throw new Error(`input ${i.name}: kind must be event, value, text or object`);
         }
         return {
             name: i.name,

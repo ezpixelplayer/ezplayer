@@ -19,6 +19,8 @@ export type OverlayTarget = OverlayTargetInfo & { type?: string };
 export interface OverlayModelGroup {
     name: string;
     models: string[];
+    /** Members given as "Model/Submodel" whose model is not itself a member. */
+    subModels: string[];
 }
 
 export type OverlayResult =
