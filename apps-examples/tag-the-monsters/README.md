@@ -58,13 +58,15 @@ Open the instance's settings page (the gear on the Apps tile).
   height. Leave the units per meter blank and the game takes them from the layout's xLights
   **Ruler** view object (the player reports it under `/api/ezp/layout-settings`); a layout
   without a ruler is taken to be in centimeters. A holder that looks too big or too small in the
-  Show View means the scale is off: draw a ruler, or type the number. Show View smoothing is how
-  the drawn holder and beam glide to each new pose (50 ms by default, about one pose interval; 0
-  snaps): while the wand moves, the drawn beam trails its target by about that much, whereas the
-  pixels step to each pose as it arrives. Changes apply at the next round.
+  Show View means the scale is off: draw a ruler, or type the number. Pose smoothing (off by
+  default) eases the pose toward each new wand report with that time constant, in the game itself,
+  so the pixels and the drawn holder and beam follow one and the same path; the Show View is told
+  to snap. Off, both step to each report as it arrives. Changes apply at the next round.
 - **Rules**: round length, how long the beam must stay on a creature, what share of its lit pixels
-  must be inside the cone, points and penalty, the pause after a tag, and the rest between runs
-  (2.5 s by default, give or take half): raise it when the creatures come too thick and fast.
+  must be inside the cone, points and penalty, the pause after a tag, the rest between runs
+  (2.5 s by default, give or take half) and how many creatures may be out at once (0, the default,
+  lets every chosen surface run its own; the surfaces take turns under a cap): raise the rest or
+  lower the cap when the creatures come too thick and fast.
 - **Delivery**: beam uniforms and sprite frames over UDP (default) or HTTP `PUT`; start a round when
   the app starts.
 

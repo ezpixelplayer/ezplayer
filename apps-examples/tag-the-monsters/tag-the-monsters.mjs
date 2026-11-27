@@ -50,9 +50,11 @@ const DEFAULTS = {
     beamModels: [],
     spriteModels: [],
     beam: { halfAngle: 0.12, softness: 0.35, range: 1500, color: '#fff0c0', noise: 0.15, blend: 'add' },
-    // smoothMs: how the Show View glides the holder and beam to each new pose; the pixels are never smoothed.
-    wand: { origin: null, heading: 0, scale: 100, eyeHeight: 1.6, smoothMs: 50 },
-    rules: { roundSeconds: 90, dwellMs: 350, coverage: 0.4, foePoints: 10, friendPenalty: 5, respawnMs: 1200, restMs: 2500 },
+    // smoothMs: the game eases the pose toward each new report with this time constant, and the pixels and
+    // the drawn beam both follow the eased pose; 0 steps to each report as it arrives.
+    wand: { origin: null, heading: 0, scale: 100, eyeHeight: 1.6, smoothMs: 0 },
+    // maxActive: how many creatures may be out at once; 0 lets every surface run its own.
+    rules: { roundSeconds: 90, dwellMs: 350, coverage: 0.4, foePoints: 10, friendPenalty: 5, respawnMs: 1200, restMs: 2500, maxActive: 0 },
     background: { foe: '#40001a', friend: '#003020', alpha: 0.4 },
     useUdp: true,
     autoStart: false,
@@ -97,6 +99,7 @@ function normalize(raw) {
             friendPenalty: num(ru.friendPenalty, DEFAULTS.rules.friendPenalty, 0, 1000),
             respawnMs: num(ru.respawnMs, DEFAULTS.rules.respawnMs, 0, 30000),
             restMs: num(ru.restMs, DEFAULTS.rules.restMs, 0, 60000),
+            maxActive: Math.round(num(ru.maxActive, DEFAULTS.rules.maxActive, 0, 1000)),
         },
         background: {
             foe: color(bg.foe, DEFAULTS.background.foe),
@@ -289,6 +292,8 @@ let targetsError = '';
 
 /** The latest wand report in device units, and the world pose derived from it. */
 const pose = { x: 0, z: 0, yaw: 0, pitch: 10, on: false, at: 0, seen: 0 };
+/** The pose as shown: eased toward the latest report when smoothing is on, else the report itself. */
+const shown = { x: 0, z: 0, yaw: 0, pitch: 10 };
 /** How fast things move through the pipe, for the page; read once a second while playing. */
 const rates = { poseHz: 0, poseLagMs: null, beamFps: null, beamRenderMs: null, spriteFps: null, holderUnits: 0 };
 let poseCount = 0;
@@ -306,19 +311,41 @@ function unitsPerMeter() {
     return settings.wand.scale ?? layoutRuler?.unitsPerMeter ?? DEFAULTS.wand.scale;
 }
 
+/** Ease the shown pose toward the latest report; no time given means snap to it. */
+function smoothPose(dtSec) {
+    const tau = settings.wand.smoothMs / 1000;
+    const t = tau > 0 && dtSec !== undefined ? 1 - Math.exp(-dtSec / tau) : 1;
+    // Turn the short way around.
+    const dyaw = (((pose.yaw - shown.yaw) % 360) + 540) % 360 - 180;
+    // Within half a millimeter and a hundredth of a degree: land, so a still wand stops moving.
+    const close = Math.abs(pose.x - shown.x) < 5e-4 && Math.abs(pose.z - shown.z) < 5e-4 && Math.abs(pose.pitch - shown.pitch) < 0.01 && Math.abs(dyaw) < 0.01;
+    if (t >= 1 || close) {
+        shown.x = pose.x;
+        shown.z = pose.z;
+        shown.pitch = pose.pitch;
+        shown.yaw = pose.yaw;
+        return;
+    }
+    shown.x += (pose.x - shown.x) * t;
+    shown.z += (pose.z - shown.z) * t;
+    shown.pitch += (pose.pitch - shown.pitch) * t;
+    shown.yaw += dyaw * t;
+}
+
 /** Device frame to world: x right, z toward the holder's back; yaw 0 faces the display (world -z), pitch up. */
-function updateWorldPose() {
+function updateWorldPose(dtSec) {
+    smoothPose(dtSec);
     const w = settings.wand;
     const originW = w.origin ?? defaultOrigin();
     const h = w.heading * deg;
     const ch = Math.cos(h);
     const sh = Math.sin(h);
     const scale = unitsPerMeter();
-    const dx = pose.x * scale;
-    const dz = pose.z * scale;
+    const dx = shown.x * scale;
+    const dz = shown.z * scale;
     const origin = [originW[0] + dx * ch + dz * sh, originW[1] + w.eyeHeight * scale, originW[2] - dx * sh + dz * ch];
-    const yaw = pose.yaw * deg + h;
-    const pitch = pose.pitch * deg;
+    const yaw = shown.yaw * deg + h;
+    const pitch = shown.pitch * deg;
     const dir = [Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch)];
     const fresh = Date.now() - pose.seen < POSE_STALE_MS;
     // The pixels, the hit test and the drawn beam all start from the same point: the wand tip.
@@ -498,11 +525,14 @@ class Sprite {
         return settings.rules.restMs * (0.5 + Math.random());
     }
 
-    /** Move; when the run ends, rest a little and spawn again. */
-    step(now, dtSec) {
+    /** Move; when the run ends, rest a little and spawn again, once there is room for another creature. */
+    step(now, dtSec, room = true) {
         if (this.flash > 0) this.flash -= dtSec;
         if (this.hidden) {
-            if (now >= this.nextAt) this.spawn(now);
+            if (now < this.nextAt) return;
+            if (room) this.spawn(now);
+            // Full house: try again shortly, at a random moment so the surfaces take turns.
+            else this.nextAt = now + 100 + Math.random() * 400;
             return;
         }
         this.x += this.speed * dtSec;
@@ -700,9 +730,9 @@ function holderBody() {
 async function defineObjects() {
     const b = settings.beam;
     const h = settings.wand.eyeHeight * unitsPerMeter();
-    // The Show View approaches each new placement with this time constant, so while the wand moves the
-    // drawn beam trails the target by about this much; the pixels step to each pose at once.
-    const smoothMs = settings.wand.smoothMs;
+    // The game eases the pose itself and the pixels follow the same eased pose, so the Show View must
+    // not ease again: it snaps to each patch.
+    const smoothMs = 0;
     await putObject('holder', { ...holderBody(), placement: { position: world.origin, direction: [world.dir[0], 0, world.dir[2]] }, smoothMs });
     await putObject('beam', {
         content: { type: 'beam', length: b.range, angle: (b.halfAngle * 180) / Math.PI, radius: h * 0.02 },
@@ -856,7 +886,7 @@ async function tick() {
     const now = Date.now();
     const dt = Math.min(0.25, (now - lastTick) / 1000);
     lastTick = now;
-    updateWorldPose();
+    updateWorldPose(dt);
     if (now - lastRates >= 1000) {
         lastRates = now;
         void sampleRates(now);
@@ -868,8 +898,12 @@ async function tick() {
     }
     updateBeam();
     void updateObjects();
+    const limit = settings.rules.maxActive || Infinity;
+    let active = sprites.filter((s) => !s.hidden).length;
     for (const s of sprites) {
-        s.step(now, dt);
+        const wasHidden = s.hidden;
+        s.step(now, dt, active < limit);
+        if (wasHidden && !s.hidden) active++;
         const cov = s.coverage();
         s.litFraction = cov;
         if (!s.hidden && s.flash <= 0 && cov >= settings.rules.coverage) {
