@@ -948,6 +948,9 @@ async function runStatus(
         };
     }
     if (!dev) throw new Error(`unknown controller: ${command.id}`);
+    // Written over the row as it is when the read ends: a distribution that
+    // finished meanwhile has put its content status there.
+    const latest = () => state.devices[command.id] ?? dev;
     // Same-target ops are coalesced.
     if (findActiveOp('status', command.id)) return;
 
@@ -972,7 +975,7 @@ async function runStatus(
         if (!probe.success && probe.noWebService) {
             // An ordinary host with no web service: note it, but it is not a
             // failed read, since nothing said a controller was there.
-            state.devices[command.id] = { ...dev, error: probe.error, unreachable: false, seenAt: nowIso() };
+            state.devices[command.id] = { ...latest(), error: probe.error, unreachable: false, seenAt: nowIso() };
             op.status = 'done';
             op.finishedAt = nowIso();
             return;
@@ -981,7 +984,7 @@ async function runStatus(
             if (probe.unreachable && state.devices[command.id]) {
                 // Seen before, gone now.
                 state.devices[command.id] = {
-                    ...dev,
+                    ...latest(),
                     unreachable: true,
                     error: 'not responding — powered off or unreachable',
                 };
@@ -992,7 +995,7 @@ async function runStatus(
             throw new Error(probe.error ?? 'no controller responded');
         }
         state.devices[command.id] = {
-            ...dev,
+            ...latest(),
             driverType: probe.report.driverType ?? dev.driverType,
             vendor: probe.report.vendor ?? dev.vendor,
             model: probe.report.model ?? dev.model,
@@ -1567,6 +1570,7 @@ const CONTENT_CHECK_FRESH_MS = 10 * 60_000;
 async function refreshContentStatus(id: string): Promise<void> {
     if (!contentSource) return;
     if (state.contentDist?.run) return; // a run is already reading these
+    const startedAt = Date.now();
     const dev = state.devices[id];
     if (!dev || !isContentTarget(dev)) return;
     // Only the hosts the show would send content to carry a content status.
@@ -1621,6 +1625,9 @@ async function refreshContentStatus(id: string): Promise<void> {
         const target = report.targets[0];
         const current = state.devices[id];
         if (target && current) {
+            // A run that finished while this was checking knows better.
+            const checkedAt = current.contentStatus?.checkedAt;
+            if (checkedAt && Date.parse(checkedAt) >= startedAt) return;
             state.devices[id] = { ...current, contentStatus: contentStatusFor(target) };
             publish();
         }

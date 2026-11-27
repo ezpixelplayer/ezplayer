@@ -1,5 +1,5 @@
 import React from 'react';
-import { alpha, Chip, Typography, useTheme } from '@mui/material';
+import { alpha, Chip, Link, Typography, useTheme } from '@mui/material';
 import type { Theme } from '@mui/material';
 import { Box } from '../box/Box';
 import { CompactDialog } from '../dialog/CompactDialog';
@@ -181,6 +181,8 @@ export const PortVisualizerDialog: React.FC<{
     panelActual?: ControllerPanelMatrix[];
     virtualIntent?: ControllerVirtualMatrixIntent[];
     virtualActual?: ControllerVirtualMatrix[];
+    /** Offer a way to the Test + Tweak wiring editor, where models are split and moved between ports. */
+    onEditWiring?: () => void;
     onClose: () => void;
 }> = ({
     title,
@@ -195,6 +197,7 @@ export const PortVisualizerDialog: React.FC<{
     panelActual,
     virtualIntent,
     virtualActual,
+    onEditWiring,
     onClose,
 }) => {
     const theme = useTheme();
@@ -218,6 +221,15 @@ export const PortVisualizerDialog: React.FC<{
 
     return (
         <CompactDialog title={`Port map — ${title}`} onClose={onClose} fullScreen>
+            {onEditWiring && (
+                <Typography variant="body2" sx={{ color: 'text.secondary', mb: 1 }}>
+                    To split a model or move it to another port, use{' '}
+                    <Link component="button" variant="body2" onClick={onEditWiring}>
+                        Test + Tweak → Wiring
+                    </Link>
+                    .
+                </Typography>
+            )}
             {map.rows.length === 0 &&
             map.serial.length === 0 &&
             map.panels.length === 0 &&

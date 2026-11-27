@@ -127,6 +127,22 @@ export interface ScheduledPlaylist {
     playlistId: string;
     prePlaylistId?: string;
     postPlaylistId?: string;
+    /** A single sequence as the intro / outro; used when the matching playlist id is unset. */
+    preSequenceId?: string;
+    postSequenceId?: string;
+    /** Played between songs of the main playlist: a playlist, or else a single sequence. */
+    interstitialPlaylistId?: string;
+    interstitialSequenceId?: string;
+    /** Songs between interstitials; the interstitial is off unless this is at least 1. */
+    interstitialEvery?: number;
+    /** Songs played before the first interstitial; absent = `interstitialEvery`. */
+    interstitialFirstAfter?: number;
+    /**
+     * Start the playlist (intro and outro included) at this spacing, counted from the
+     * schedule start, instead of looping back to back. A start that comes due while the
+     * previous pass is still running is skipped. Set together with `loop`.
+     */
+    startEveryMinutes?: number;
     title: string;
     date: number;
     fromTime: string;
@@ -282,6 +298,16 @@ export interface PlayerPStatusContent {
         mode?: 'default' | 'outputs';
         /** Live per-output levels in `outputs` mode; empty when none selected. */
         outputs?: Array<{ id: string; label: string; level: number; deviceId?: string; groupId?: string }>;
+    };
+
+    /** Live output brightness, after slewing toward `brightnessControl`. */
+    brightness?: {
+        /** 0-100, applied to every pixel on the way out. */
+        level: number;
+        /** Kelvin; 6500 is neutral. Warmer dims blue and green, cooler dims red. */
+        colorTemperature: number;
+        /** True while a schedule window, not the default, sets the targets. */
+        scheduled?: boolean;
     };
 
     /** Files pinned by currently-loaded playback (foreground + background), as stored
@@ -688,6 +714,14 @@ export type EZPlayerCommand =
           volume?: number;
           /** Live mute. */
           mute?: boolean;
+      }
+    | {
+          command: 'setbrightness';
+          /** Sets the default brightness 0-100 (persisted; the player ramps to
+           *  it). Like volume, not a live override of a scheduled window. */
+          brightness?: number;
+          /** Sets the default color temperature in kelvin (persisted). */
+          colorTemperature?: number;
       };
 
 /** Initial state returned by ipcUIConnect. The connect invoke RETURNS the
@@ -739,6 +773,16 @@ export interface VolumeScheduleEntry {
     startTime: string; // HH:MM format
     endTime: string; // HH:MM format (can exceed 24:00)
     volumeLevel: number; // 0-100
+}
+
+export interface BrightnessScheduleEntry {
+    id: string;
+    days: ScheduleDays;
+    startTime: string; // HH:MM format
+    endTime: string; // HH:MM format (can exceed 24:00)
+    brightness: number; // 0-100
+    /** Kelvin for this window; omitted keeps the default color temperature. */
+    colorTemperature?: number;
 }
 
 /** A single allowed-window for cloud content polling. Same shape as the other
@@ -800,6 +844,17 @@ export interface VolumeControlState {
     schedule?: VolumeScheduleEntry[];
 }
 
+/** Output brightness and color temperature: a default, and schedule windows on
+ *  top of it, the same shape as volume. Color temperature only ever dims
+ *  channels (warm dims blue, cool dims red), so 100% stays 100%. */
+export interface BrightnessControlState {
+    /** 0-100. */
+    defaultBrightness: number;
+    /** Kelvin; undefined or `COLOR_TEMPERATURE_NEUTRAL_K` leaves colors alone. */
+    defaultColorTemperature?: number;
+    schedule?: BrightnessScheduleEntry[];
+}
+
 /** One named local output for the desktop player when the system default
  *  output is not used. Identity is deviceId, re-matched by label/groupId if
  *  the id changes. Each entry has its own volume and schedule. */
@@ -811,6 +866,36 @@ export interface AudioOutputConfig {
     label: string;
     groupId?: string;
     volumeControl: VolumeControlState;
+}
+
+/** A device an audio bus plays on; matched like `AudioOutputConfig`. */
+export interface AudioBusOutput {
+    deviceId: string;
+    label: string;
+    groupId?: string;
+}
+
+/** A named destination for injected audio. `main` (the show audio) and
+ *  `immediate` always exist; an entry named `immediate` adjusts it. */
+export interface AudioBusConfig {
+    name: string;
+    /** How far ahead of its play time audio is handed to the outputs, ms. */
+    leadMs?: number;
+    /** Length of the pieces the bus is cut into, ms. */
+    chunkMs?: number;
+    /** 0-100; absent is 100. */
+    volume?: number;
+    /** Devices it plays on; absent or empty plays on the show's outputs. */
+    outputs?: AudioBusOutput[];
+    /** False keeps it off this computer's speakers; subscribers still receive it. */
+    playLocally?: boolean;
+    /** Names of the listeners it is sent to. */
+    listeners?: string[];
+}
+
+/** A program on another computer that plays the buses sent to it; it gives its name when it connects. */
+export interface AudioListenerConfig {
+    name: string;
 }
 
 export interface JukeboxSettings {
@@ -867,6 +952,8 @@ export interface PlaybackSettings {
     backgroundSequence?: 'overlay' | 'underlay';
     viewerControl: ViewerControlState;
     volumeControl: VolumeControlState;
+    /** Output brightness and color temperature; absent means full, neutral. */
+    brightnessControl?: BrightnessControlState;
     jukebox?: JukeboxSettings;
     /** Tags identifying test sequences, for display in test area. */
     testSequenceTags?: string[];
@@ -897,6 +984,63 @@ export interface PlaybackSettings {
     /** Named outputs used when `useDefaultAudioOutput` is false. Machine-local,
      *  not part of cloud-managed settings groups. */
     audioOutputs?: AudioOutputConfig[];
+    /** Buses for injected audio beyond the built-in ones. Machine-local. */
+    audioBuses?: AudioBusConfig[];
+    /** Listeners that have connected, so buses can be sent to them. Machine-local. */
+    audioListeners?: AudioListenerConfig[];
+    /** Models shown as pictures: on a display, in a window, or by URL. Machine-local. */
+    virtualMatrixOutputs?: VirtualMatrixOutput[];
+}
+
+/** Where a virtual matrix output shows: a whole display, a floating window, or nowhere on this computer. */
+export type VirtualMatrixMode = 'fullscreen' | 'window' | 'url';
+
+/** One virtual matrix output: a model's pixels shown as a picture. */
+export interface VirtualMatrixOutput {
+    id: string;
+    /** Pixel model to show; grid models (matrices, trees) look like an image, others like a strip. */
+    model: string;
+    /** Default 'fullscreen'. 'url' opens nothing; the picture is only served at /matrix. */
+    mode?: VirtualMatrixMode;
+    /** Full screen: index into the player computer's displays (0 = first). */
+    display?: number;
+    /** Full screen: the display's OS id, preferred over the index while that display exists. */
+    displayId?: number;
+    /** Full screen: keep the model's proportions (default) or stretch to fill the display. */
+    fit?: 'contain' | 'fill';
+    /** Floating window: left and top on the desktop, saved as the window is dragged. */
+    windowX?: number;
+    windowY?: number;
+    /** Floating window: size in screen pixels. Absent means one screen pixel per model pixel. */
+    windowWidth?: number;
+    windowHeight?: number;
+    /** Smooth scaling instead of crisp pixels. */
+    smooth?: boolean;
+    /** No longer used: the picture follows the sequence's own frame rate. */
+    fps?: number;
+    /** Open the display or window. Has no meaning for 'url'. */
+    enabled: boolean;
+}
+
+/** One reader of a model's pixels, as GET /api/ezp/matrix/status reports it. */
+export interface VirtualMatrixReader {
+    model: string;
+    /** The configured output this reader is, when it is one of the player's own windows. */
+    output?: string;
+    /** Where the reader is: 'local' for this computer, else its address. */
+    address: string;
+    /** Milliseconds since it last asked for a frame. */
+    idleMs: number;
+    /** Frames per second the player made, sent, and the reader says it painted. */
+    sourceFps: number;
+    servedFps: number;
+    paintedFps?: number;
+}
+
+export interface VirtualMatrixStatus {
+    readers: VirtualMatrixReader[];
+    /** Base URLs other computers on the network can reach this player at. */
+    lanUrls: string[];
 }
 
 /** Each strategy is independent and gets its own sub-object; Art-Net, OSC,
@@ -963,6 +1107,11 @@ export interface AdvancedPlaybackSettings {
     /** DDP output port override (default 4048). Takes effect when controllers
      *  reopen (show folder reload or player restart). */
     ddpPort?: number;
+    /** UDP port for overlay lease payloads (default 4049). Takes effect when the
+     *  pipeline restarts (show folder reload or player restart). */
+    overlayPort?: number;
+    /** UDP port for audio stream packets (default 4050); 0 turns the receiver off. */
+    audioPort?: number;
 }
 
 /** The "playback" cloud-managed settings group — the part of PlaybackSettings
@@ -1159,7 +1308,185 @@ export type FullPlayerState = {
     viewerStats?: ViewerStatsSummary;
     /** Extra link tiles for the Settings screen (--settings-link). */
     settingsLinks?: SettingsLink[];
+    /** Installed player apps and their instances, with supervisor state. */
+    apps?: AppsState;
+    /** The latest status snapshot each app instance published. */
+    appStatuses?: AppStatuses;
 };
+
+// -- player apps ---------------------------------------------------------------
+// Third-party programs that run next to the player: the player installs them into
+// the show folder, starts them, serves their pages, stores their data and routes
+// events to them. See doc/design/player-apps.md in the private repo.
+
+export type AppRuntime = 'node' | 'python3' | 'binary';
+
+/** An input an app instance accepts from the show (buttons, sensors), declared in its manifest. */
+export interface AppInputDecl {
+    name: string;
+    /** `event` is a press; `value` is a level or open/closed; `text` is a string. */
+    kind: 'event' | 'value' | 'text';
+    min?: number;
+    max?: number;
+}
+
+/** A static directory inside the package, or the instance's own HTTP server on its assigned port. */
+export type AppPageSource = string | { proxy: true };
+
+/** `ezapp.json` at the root of an app package. */
+export interface AppManifest {
+    /** Lower-case id, also the package directory name. */
+    id: string;
+    name: string;
+    version: string;
+    description?: string;
+    /** An emoji or a short string shown with the name. */
+    icon?: string;
+    runtime: AppRuntime;
+    /** Arguments after the runtime; for `binary`, the first is the executable. */
+    start: string[];
+    /** The page visitors open. */
+    page?: AppPageSource;
+    /** The show owner's settings page. */
+    config?: AppPageSource;
+    inputs?: AppInputDecl[];
+    /** process.platform values; absent means all. */
+    platforms?: string[];
+    /** The event rate the app needs; the player's defaults otherwise. The owner can still override per instance. */
+    events?: AppEventRate;
+}
+
+/** Event rate limits, as an app asks for them or an owner sets them. */
+export interface AppEventRate {
+    /** Events per minute across every sender (default 600, at most 6000). */
+    perMinute?: number;
+    /** Sustained events per second from one phone (default 10, at most 60). */
+    perClientPerSecond?: number;
+}
+
+export interface InstalledApp {
+    id: string;
+    /** Absolute package directory. */
+    dir: string;
+    manifest?: AppManifest;
+    /** Why the manifest could not be used, when it could not. */
+    error?: string;
+    /** Where it came from, when the installer recorded it; `update` fetches from here again. */
+    source?: AppInstallSource;
+    installedAt?: number;
+}
+
+/** One configured instance of an app, as stored in `.ezplayer/apps.json`. */
+export interface AppInstanceRecord {
+    name: string;
+    appId: string;
+    enabled: boolean;
+    /** Overrides the apps default schedule when present; empty means always available. */
+    schedule?: CloudPollScheduleEntry[];
+    /** Shown to visitors; defaults to the app's name. */
+    title?: string;
+    /** Shown to visitors under the title, typically where to go to play; defaults to the app's own. */
+    description?: string;
+    /** Events per minute this instance accepts in total (default 600). */
+    eventsPerMinute?: number;
+}
+
+export type AppInstanceState = 'disabled' | 'unavailable' | 'starting' | 'running' | 'stopped' | 'failed' | 'missing';
+
+export interface AppStartupReport {
+    /** The runtime executable that was used, when one was found. */
+    runtime?: string;
+    runtimeVersion?: string;
+    port?: number;
+    startedAt?: number;
+    firstStatusAt?: number;
+    lastExit?: string;
+    /** The most recent lines the process wrote. */
+    logTail: string[];
+}
+
+export interface AppInstanceStatus extends AppInstanceRecord {
+    state: AppInstanceState;
+    pid?: number;
+    restarts: number;
+    report: AppStartupReport;
+}
+
+/** Routes a named show input to an instance input. */
+export interface AppInputMapping {
+    source: string;
+    name: string;
+    instance: string;
+    input: string;
+}
+
+export interface AppsState {
+    apps: InstalledApp[];
+    instances: AppInstanceStatus[];
+    /** Empty means always available. */
+    defaultSchedule: CloudPollScheduleEntry[];
+    /** Where python3 was found, or what the owner set. */
+    pythonPath?: string;
+    /** Pythons found on this computer by `findPython`, for the owner to pick from. */
+    pythonCandidates?: { path: string; version: string }[];
+    inputMappings: AppInputMapping[];
+    /** The last install or command error, for the Apps card. */
+    lastError?: string;
+    /** Whether bundled example apps are available to install. */
+    hasExamples?: boolean;
+}
+
+export interface AppStatusSnapshot {
+    seq: number;
+    at: number;
+    state: unknown;
+}
+
+export type AppStatuses = Record<string, AppStatusSnapshot>;
+
+/** One event delivered to an app instance. */
+export interface AppEvent {
+    id: number;
+    ts: number;
+    /** `cloud`, `lan`, `card`, or `input:<source>`. */
+    source: string;
+    /** Who sent it: the page's client id, or the caller's address. */
+    client: string;
+    data: unknown;
+}
+
+/** `url` is a `.tar.gz` link or a GitHub repository page; `examples` are the apps bundled with the player. */
+export type AppInstallSource =
+    | { kind: 'folder'; path: string }
+    | { kind: 'url'; url: string }
+    | { kind: 'contrib' }
+    | { kind: 'examples' };
+
+/** Verbs the Apps settings card sends. */
+export type AppsCommand =
+    | { op: 'rescan' }
+    | { op: 'install'; source: AppInstallSource }
+    /** Stop its instances, fetch the package again from its recorded source, start them again. */
+    | { op: 'update'; appId: string }
+    | { op: 'uninstall'; appId: string }
+    /** `name` is the URL-safe instance name; `title` is what people see and may have caps and spaces. */
+    | { op: 'createInstance'; name: string; appId: string; title?: string }
+    | { op: 'findPython' }
+    | { op: 'removeInstance'; name: string; keepData?: boolean }
+    /** `schedule: null` goes back to the apps default; `[]` means always. */
+    | {
+          op: 'setInstance';
+          name: string;
+          patch: Partial<Omit<AppInstanceRecord, 'name' | 'appId' | 'schedule'>> & {
+              schedule?: CloudPollScheduleEntry[] | null;
+          };
+      }
+    | { op: 'start'; name: string }
+    | { op: 'stop'; name: string }
+    | { op: 'restart'; name: string }
+    | { op: 'setDefaultSchedule'; schedule: CloudPollScheduleEntry[] }
+    | { op: 'setPythonPath'; path: string }
+    | { op: 'setInputMappings'; mappings: AppInputMapping[] };
 
 /**
  * Whether the player is offering each password-gated remote-access feature.

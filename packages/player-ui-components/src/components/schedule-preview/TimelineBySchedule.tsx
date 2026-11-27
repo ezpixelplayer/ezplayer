@@ -4,7 +4,12 @@ import { DataSet } from 'vis-data';
 import { format } from 'date-fns';
 import { useSelector } from 'react-redux';
 import { RootState } from '../../store/Store';
-import { priorityToNumber, type PlaybackLogDetail, type ScheduledPlaylist } from '@ezplayer/ezplayer-core';
+import {
+    getStartEveryMS,
+    priorityToNumber,
+    type PlaybackLogDetail,
+    type ScheduledPlaylist,
+} from '@ezplayer/ezplayer-core';
 import { formatDateStandard } from '../../util/dateUtils';
 import { Card, CardContent, Typography, Chip, Stack, Tooltip, IconButton, useTheme, Theme } from '@mui/material';
 import { Box } from '../box/Box';
@@ -179,7 +184,15 @@ function buildTimelineData(
         const rowId = rowIdOf(scheduleId);
         const background = isBackground(scheduleId);
         const swatch = swatchOf(scheduleId);
-        const { scheduledStart, scheduledEnd } = scheduledTimesOf(scheduleId);
+        const { scheduledStart: scheduleStart, scheduledEnd } = scheduledTimesOf(scheduleId);
+        const startEverySchedule = scheduleById.get(scheduleId);
+        const startEveryMS = startEverySchedule ? getStartEveryMS(startEverySchedule) : 0;
+        // A "start every" schedule is due at its latest start, not only at its first.
+        const dueAt = (start: Date) => {
+            if (!scheduleStart || !startEveryMS || start <= scheduleStart) return scheduleStart;
+            const passes = Math.floor((start.getTime() - scheduleStart.getTime()) / startEveryMS);
+            return new Date(scheduleStart.getTime() + passes * startEveryMS);
+        };
         // Per-item colors (including variants) so multiple schedules stay distinguishable;
         // text color follows the fill so light variants stay readable.
         const barStyle =
@@ -198,6 +211,7 @@ function buildTimelineData(
             event?: PlaybackLogDetail,
         ) => {
             const suspended = status === 'Suspended';
+            const scheduledStart = dueAt(start);
             const cutOff = status === 'Running' && !!simulationEndTime && end.getTime() === simulationEndTime;
             let title = `${scheduleName}`;
             title += `\n${format(start, 'HH:mm:ss')} - ${status === 'Running' && !cutOff ? '(ongoing)' : format(end, 'HH:mm:ss')}`;
@@ -290,16 +304,16 @@ function buildTimelineData(
         }
 
         // Scheduled-time marker for comparison against what actually ran
-        if (showScheduledMarkers && scheduledStart && scheduledEnd) {
+        if (showScheduledMarkers && scheduleStart && scheduledEnd) {
             const ran = items.some((item) => item.scheduleId === scheduleId && item.actualStart && item.actualEnd);
             let title = `${scheduleName} - ${ran ? 'Scheduled Time' : 'Scheduled Only'}`;
-            title += `\nScheduled: ${format(scheduledStart, 'HH:mm:ss')} - ${format(scheduledEnd, 'HH:mm:ss')}`;
-            title += `\nDate: ${formatDateStandard(scheduledStart)}`;
+            title += `\nScheduled: ${format(scheduleStart, 'HH:mm:ss')} - ${format(scheduledEnd, 'HH:mm:ss')}`;
+            title += `\nDate: ${formatDateStandard(scheduleStart)}`;
             if (!ran) title += `\nStatus: Never Executed`;
             items.push({
                 id: `${scheduleId}-${ran ? 'scheduled-marker' : 'scheduled-only'}`,
                 content: `${scheduleName} (Scheduled)`,
-                start: scheduledStart,
+                start: scheduleStart,
                 end: scheduledEnd,
                 group: rowId,
                 className: ran ? 'schedule-scheduled-marker' : 'schedule-scheduled-only',
@@ -310,7 +324,7 @@ function buildTimelineData(
                 playlistId: '',
                 sequenceId: '',
                 stackDepth: 0,
-                scheduledStart,
+                scheduledStart: scheduleStart,
                 scheduledEnd,
                 isDelayed: false,
                 isMissed: !ran,

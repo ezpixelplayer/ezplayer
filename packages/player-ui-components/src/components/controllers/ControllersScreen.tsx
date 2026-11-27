@@ -64,6 +64,9 @@ import { PageHeader } from '@ezplayer/shared-ui-components';
 import { Box } from '../box/Box';
 import { CompactDialog } from '../dialog/CompactDialog';
 import { PortVisualizerDialog } from './PortVisualizerDialog';
+import { useNavigate } from 'react-router-dom';
+import { TEST_TWEAK } from '../../constants/routes';
+import { useRouteBase } from '../../util/RouteBaseProvider';
 import type { AppDispatch, RootState } from '../../store/Store';
 import { issueControllerCommand } from '../../store/slices/ControllerOpsStore';
 import { callImmediateCommand } from '../../store/slices/RuntimeStore';
@@ -829,6 +832,8 @@ const GridRow: React.FC<{
     const [errorAnchor, setErrorAnchor] = useState<HTMLElement | null>(null);
     const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
     const [portDialog, setPortDialog] = useState<'compare' | 'map' | null>(null);
+    const navigate = useNavigate();
+    const routeBase = useRouteBase();
     const [uploadOpen, setUploadOpen] = useState(false);
     const managePortSettings = useSelector((s: RootState) => s.playbackSettings.settings.managePortSettings);
     const d = row.device;
@@ -1620,6 +1625,7 @@ const GridRow: React.FC<{
                     panelActual={d?.panelMatrices}
                     virtualIntent={row.virtualMatrixIntent}
                     virtualActual={d?.virtualMatrices}
+                    onEditWiring={() => navigate(`${routeBase}${TEST_TWEAK}?view=wiring`)}
                     onClose={() => setPortDialog(null)}
                 />
             )}

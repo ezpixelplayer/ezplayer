@@ -10,7 +10,7 @@
     },
     "private": true,
     "license": "AGPL-3.0",
-    "version": "0.6.15",
+    "version": "0.7.0-dev.3",
     "main": "dist/main.js",
     "type": "module",
     "build": {
@@ -39,6 +39,10 @@
             "**/ffmpeg-static/**"
         ],
         "extraResources": [
+            {
+                "from": "../../apps-examples",
+                "to": "apps-examples"
+            },
             {
                 "from": "src/assets/images",
                 "to": "images",
@@ -215,7 +219,7 @@
         "react-toastify": "catalog:",
         "uuid": "catalog:",
         "ws": "^8.22.0",
-        "xllayoutcalcs": "file:..\\..\\libs\\xllayoutcalcs-0.4.3.tgz",
+        "xllayoutcalcs": "file:..\\..\\libs\\xllayoutcalcs-0.4.5.tgz",
         "zstd-codec": "^0.1.5",
         "zstddec": "^0.3.4"
     }

@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scene Objects Demo settings</title>
+<script src="_sdk.js"></script>
+<style>
+  :root { color-scheme: dark; --bg: #0b0d12; --panel: #161a24; --line: #2a3040; --text: #e8ebf2; --dim: #8b93a7; --accent: #4cc9f0; }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 16px; background: var(--bg); color: var(--text); font: 16px/1.4 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; max-width: 560px; margin-inline: auto; }
+  h1 { font-size: 20px; margin: 0 0 12px; }
+  label { display: block; margin: 12px 0 4px; color: var(--dim); font-size: 14px; }
+  input[type=number] { width: 100%; font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
+  .row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+  .check { display: flex; align-items: center; gap: 8px; margin-top: 14px; color: var(--text); }
+  .check input { width: 18px; height: 18px; }
+  button { font: inherit; font-weight: 600; color: #0b0d12; background: var(--accent); border: 0; border-radius: 10px; padding: 12px 20px; margin-top: 18px; cursor: pointer; }
+  button:disabled { opacity: 0.5; }
+  #note { margin-left: 12px; color: var(--dim); }
+  #remote { display: none; background: #2a2210; border: 1px solid #806000; border-radius: 8px; padding: 10px; margin: 12px 0; }
+  details { margin-top: 24px; }
+  pre { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px; font-size: 12px; overflow: auto; max-height: 50vh; white-space: pre-wrap; }
+  .hint { color: var(--dim); font-size: 13px; }
+</style>
+</head>
+<body>
+<h1>Scene Objects Demo settings</h1>
+<p class="hint">The objects sit around the center and spread about one size across, in xLights world units. Leave a field blank and it is fitted to the layout: the middle of it, its bottom edge, its width.</p>
+<div id="remote">Open this page on the home network to change settings.</div>
+
+<div class="row3">
+  <div><label for="cx">Center X</label><input id="cx" type="number" step="any" placeholder="auto"></div>
+  <div><label for="cy">Center Y</label><input id="cy" type="number" step="any" placeholder="auto"></div>
+  <div><label for="size">Size</label><input id="size" type="number" step="any" min="1" placeholder="auto"></div>
+</div>
+
+<label class="check"><input id="autoStart" type="checkbox"> Start as soon as the app starts</label>
+
+<button id="save" disabled>Save</button><span id="note"></span>
+
+<details>
+  <summary>Current status (debug)</summary>
+  <pre id="status">No status yet.</pre>
+</details>
+
+<script>
+  const el = (id) => document.getElementById(id);
+  let app;
+
+  async function init() {
+    app = EZApp.connect();
+    await app.ready;
+    app.onStatus((s) => { el('status').textContent = JSON.stringify(s, null, 2); });
+    let settings = null;
+    try { settings = await app.get('private', 'settings'); } catch { /* not readable here; the form keeps its defaults */ }
+    if (settings) {
+      if (typeof settings.centerX === 'number') el('cx').value = settings.centerX;
+      if (typeof settings.centerY === 'number') el('cy').value = settings.centerY;
+      if (typeof settings.size === 'number') el('size').value = settings.size;
+      el('autoStart').checked = settings.autoStart === true;
+    }
+    if (app.apiBase === null) {
+      el('remote').style.display = 'block';
+      return;
+    }
+    el('save').disabled = false;
+  }
+
+  const num = (id) => (el(id).value.trim() === '' ? undefined : Number(el(id).value));
+
+  el('save').addEventListener('click', async () => {
+    const body = { centerX: num('cx'), centerY: num('cy'), size: num('size'), autoStart: el('autoStart').checked };
+    if (body.size !== undefined && !(body.size > 0)) { el('note').textContent = 'Size must be above zero.'; return; }
+    el('save').disabled = true;
+    try {
+      await app.put('private', 'settings', body);
+      el('note').textContent = 'Saved. The next Start uses it.';
+    } catch (e) {
+      el('note').textContent = `Save failed: ${e.message}`;
+    }
+    el('save').disabled = false;
+  });
+
+  init().catch((e) => { el('note').textContent = `Could not load the app SDK: ${e.message}`; });
+</script>
+</body>
+</html>

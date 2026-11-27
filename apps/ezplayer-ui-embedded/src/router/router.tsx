@@ -2,15 +2,21 @@ import { Navigate, RouteObject } from 'react-router-dom';
 import { useState } from 'react';
 import { useSelector } from 'react-redux';
 import {
+    AppsSettings,
+    APPS_SETTINGS_SECTION_KEY,
     AudioSettings,
+    BrightnessSettings,
     CloudPage,
     ControllersScreen,
+    TestTweakScreen,
     DiagnosticsSettings,
     DIAGNOSTICS_SETTINGS_SECTION_KEY,
     JukeboxSettings,
     MediaFolderSettings,
     PlayerCloudRegistrationDialog,
     PlayerSettings,
+    VirtualMatrixSettings,
+    VIRTUAL_MATRIX_SETTINGS_SECTION_KEY,
     ContentSyncSettings,
     CONTENT_SYNC_SETTINGS_SECTION_KEY,
     ShowStatusScreen,
@@ -36,6 +42,7 @@ import {
 import type { MenuRoute, RootState, SettingsSection } from '@ezplayer/player-ui-components';
 
 import TableChartTwoToneIcon from '@mui/icons-material/TableChartTwoTone';
+import AppsIcon from '@mui/icons-material/Apps';
 import PlayArrow from '@mui/icons-material/PlayArrow';
 import InfoRounded from '@mui/icons-material/InfoRounded';
 import ListTwoToneIcon from '@mui/icons-material/ListTwoTone';
@@ -44,11 +51,14 @@ import ViewInArIcon from '@mui/icons-material/ViewInAr';
 import DisplaySettingsIcon from '@mui/icons-material/DisplaySettings';
 import CloudIcon from '@mui/icons-material/Cloud';
 import RouterIcon from '@mui/icons-material/Router';
+import ScienceIcon from '@mui/icons-material/Science';
 import ContrastIcon from '@mui/icons-material/Contrast';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import LibraryMusicIcon from '@mui/icons-material/LibraryMusic';
 import VolumeUpIcon from '@mui/icons-material/VolumeUp';
+import Brightness6Icon from '@mui/icons-material/Brightness6';
 import TuneIcon from '@mui/icons-material/Tune';
+import GridOnIcon from '@mui/icons-material/GridOn';
 import TroubleshootIcon from '@mui/icons-material/Troubleshoot';
 import SyncAltIcon from '@mui/icons-material/SyncAlt';
 import FolderIcon from '@mui/icons-material/Folder';
@@ -71,6 +81,7 @@ const KIOSK_HIDDEN_ROUTES = new Set<string>([
     ROUTES.PLAYBACKSETTINGS,
     ROUTES.CLOUD,
     ROUTES.CONTROLLERS,
+    ROUTES.TEST_TWEAK,
 ]);
 
 const getStatusArea = () => [];
@@ -119,6 +130,12 @@ const EmbeddedSettingsPage = () => {
             content: <AudioSettings />,
         },
         {
+            key: 'brightness',
+            label: 'Brightness',
+            icon: <Brightness6Icon sx={{ fontSize: 56 }} />,
+            content: <BrightnessSettings />,
+        },
+        {
             key: 'cloud',
             label: 'Cloud',
             icon: <CloudIcon sx={{ fontSize: 56 }} />,
@@ -130,6 +147,13 @@ const EmbeddedSettingsPage = () => {
             icon: <TuneIcon sx={{ fontSize: 56 }} />,
             title: 'Player Settings',
             content: <PlayerSettings />,
+        },
+        {
+            key: VIRTUAL_MATRIX_SETTINGS_SECTION_KEY,
+            label: 'Virtual Matrix',
+            icon: <GridOnIcon sx={{ fontSize: 56 }} />,
+            title: 'Virtual Matrix',
+            content: <VirtualMatrixSettings />,
         },
         {
             key: CONTENT_SYNC_SETTINGS_SECTION_KEY,
@@ -151,6 +175,12 @@ const EmbeddedSettingsPage = () => {
             title: 'Software Update',
             available: canUpdate,
             content: <SoftwareUpdateSettings />,
+        },
+        {
+            key: APPS_SETTINGS_SECTION_KEY,
+            label: 'Apps',
+            icon: <AppsIcon sx={{ fontSize: 56 }} />,
+            content: <AppsSettings />,
         },
         // Present only when available.
         shellSection,
@@ -231,6 +261,11 @@ const allMenuRoutes: MenuRoute[] = [
         path: ROUTES.CONTROLLERS,
         element: <ControllersScreen title="Controllers" statusArea={getStatusArea()} />,
         sidebar: { icon: <RouterIcon />, label: 'Controllers' },
+    },
+    {
+        path: ROUTES.TEST_TWEAK,
+        element: <TestTweakScreen title="Test + Tweak" statusArea={getStatusArea()} compressed />,
+        sidebar: { icon: <ScienceIcon />, label: 'Test + Tweak' },
     },
     {
         path: ROUTES.PLAYBACKSETTINGS,

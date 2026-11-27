@@ -21,6 +21,10 @@ export interface FixtureShowOptions {
     e131Universes?: { universe: number; size: number }[];
     /** Send those universes as ArtNet instead of E1.31. */
     artNet?: boolean;
+    /** <subModel> elements to put inside the model. */
+    subModelsXml?: string;
+    /** A whole <modelGroups> element for the layout. */
+    modelGroupsXml?: string;
 }
 
 export interface FixtureShow {
@@ -59,8 +63,9 @@ export async function createFixtureShow(opts: FixtureShowOptions = {}): Promise<
     const rgbeffects = `<?xml version="1.0" encoding="UTF-8"?>
 <xrgb>
   <models>
-    <model name="Line1" DisplayAs="Single Line" StringType="RGB Nodes" parm1="1" parm2="${pixels}" parm3="1" StartChannel="!${name}:1" Dir="L" Antialias="1" PixelSize="2" Transparency="0" LayoutGroup="Default" Controller="${name}" WorldPosX="0" WorldPosY="0" WorldPosZ="0" ScaleX="1" ScaleY="1" ScaleZ="1" RotateX="0" RotateY="0" RotateZ="0" versionNumber="7" StartSide="B"/>
+    <model name="Line1" DisplayAs="Single Line" StringType="RGB Nodes" parm1="1" parm2="${pixels}" parm3="1" StartChannel="!${name}:1" Dir="L" Antialias="1" PixelSize="2" Transparency="0" LayoutGroup="Default" Controller="${name}" WorldPosX="0" WorldPosY="0" WorldPosZ="0" ScaleX="1" ScaleY="1" ScaleZ="1" RotateX="0" RotateY="0" RotateZ="0" versionNumber="7" StartSide="B">${opts.subModelsXml ?? ""}</model>
   </models>
+  ${opts.modelGroupsXml ?? ''}
   <layoutGroups/>
   <viewpoints/>
   <colors/>

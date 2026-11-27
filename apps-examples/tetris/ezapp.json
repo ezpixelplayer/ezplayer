@@ -1,0 +1,13 @@
+{
+    "id": "tetris",
+    "name": "Tetris",
+    "version": "1",
+    "description": "Play Tetris on a matrix from your phone; sound effects on an audio bus",
+    "icon": "🧱",
+    "runtime": "node",
+    "start": ["tetris.mjs"],
+    "page": "page/",
+    "config": "config/",
+    "platforms": ["win32", "darwin", "linux"],
+    "events": { "perMinute": 1200, "perClientPerSecond": 15 }
+}

@@ -1,9 +1,28 @@
+import type { LayoutManifest } from '@ezplayer/epp';
+
+export interface DisplayInfo {
+    index: number;
+    id: number;
+    label: string;
+    width: number;
+    height: number;
+    x: number;
+    y: number;
+    primary: boolean;
+}
+import type { OverlayCommand, OverlayResult } from './overlaytypes';
+import type { TestTweakCommand, TestTweakResult } from './testtweak';
+import type { AudioCommand, AudioResult } from './audiotypes';
 /**
  * Types for communication between main thread and server worker
  */
 
 import { type ViewObject, type LayoutSettings, type MhFixtureInfo } from './playbacktypes';
 import type {
+    AudioChunk,
+    AppPageSource,
+    AppsCommand,
+    AppsState,
     AppSettingsCommand,
     CloudAudioMode,
     CloudCommand,
@@ -42,13 +61,18 @@ export type ServerWorkerToMainMessage =
           kioskPortSource?: string;
       }
     | { type: 'request'; id: string; method: string; args: unknown[] }
-    | { type: 'broadcast'; key: string; value: unknown };
+    | { type: 'broadcast'; key: string; value: unknown }
+    /** The buses that have subscribers; main forwards their chunks. */
+    | { type: 'busAudioWanted'; buses: string[] };
 
 export type MainToServerWorkerMessage =
     | { type: 'init'; data: ServerWorkerData }
     | { type: 'response'; id: string; result?: unknown; error?: string }
     | { type: 'updateFrameBuffer'; buffer: SharedArrayBuffer }
+    | { type: 'updatePixelPool'; buffer: SharedArrayBuffer | undefined; manifest: LayoutManifest | undefined }
     | { type: 'updateAudioBuffer'; buffer: SharedArrayBuffer }
+    /** A chunk of an injected-audio bus that has subscribers. */
+    | { type: 'busAudio'; chunk: AudioChunk }
     | { type: 'broadcast'; key: string; value: unknown }
     | {
           type: 'pushModelCoordinates';
@@ -101,7 +125,36 @@ export type MainToServerWorkerMessage =
           type: 'shellEvent';
           event: ShellEvent;
       }
+    | {
+          /** The app instances the worker serves, with the secrets the public
+           *  `apps` broadcast must not carry. Replaces the previous set. */
+          type: 'appsAuth';
+          instances: Record<string, AppsAuthEntry>;
+      }
     | { type: 'shutdown' };
+
+/** What the server worker needs to serve one app instance. */
+export interface AppsAuthEntry {
+    appId: string;
+    appDir: string;
+    dataDir: string;
+    page?: AppPageSource;
+    config?: AppPageSource;
+    /** Declared input names, for the inputs endpoint. */
+    inputs: string[];
+    /** Present while a process is up; its routes check this. */
+    token?: string;
+    /** The port the process was told to bind, when it serves its own page. */
+    port?: number;
+    running: boolean;
+    title: string;
+    icon?: string;
+    description?: string;
+    /** The owner's setting, else what the app asked for in its manifest. */
+    eventsPerMinute?: number;
+    /** What the app asked for in its manifest. */
+    clientPerSecond?: number;
+}
 
 /** pty → viewer events. `superseded` is what the displaced viewer sees when
  *  someone else opens a terminal, since only one session exists at a time. */
@@ -119,6 +172,14 @@ export interface ServerWorkerRPCAPI {
     putSequences(recs: unknown[]): Promise<unknown[]>;
     applySettingsFromRenderer(settingsPath: string, settings: unknown): void;
     sendPlayerCommand(command: unknown): void;
+    /** Displays attached to the player computer, for virtual matrix outputs. */
+    listDisplays(): Promise<DisplayInfo[]>;
+    /** Overlay lease operations, forwarded to the playback worker. */
+    overlayCommand(cmd: OverlayCommand): Promise<OverlayResult>;
+    /** Test + Tweak operations, forwarded to the playback worker. */
+    testTweakCommand(cmd: TestTweakCommand): Promise<TestTweakResult>;
+    /** Audio bus operations, forwarded to the playback worker. */
+    audioCommand(cmd: AudioCommand): Promise<AudioResult>;
     /** The baked song order of a playback item, for the detailed playback view. */
     getPlaybackItemOrder(key: string): Promise<unknown>;
     sendPlaybackSettings(settings: unknown): void;
@@ -149,4 +210,8 @@ export interface ServerWorkerRPCAPI {
     remoteAccessReloadConfig(): Promise<RemoteAccessAvailability>;
     /** Zip of logs, recent crash dumps and an environment summary. */
     buildSupportBundle(level: SupportBundleLevel): Promise<{ name: string; data: Uint8Array }>;
+    /** Apps card verb; resolves with the state after it. */
+    appsCommand(cmd: AppsCommand): Promise<AppsState>;
+    /** An instance published a status; its startup report notes the first. */
+    appsSawStatus(instance: string): void;
 }

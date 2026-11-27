@@ -84,3 +84,143 @@ export {
     FSeqPrefetchCache,
     FrameTimeOrNumber,
 } from './formats/FSeqPrefetcher';
+
+export {
+    FramePool,
+    FRAME_POOL_FORMAT,
+    SLOT_FREE,
+    SLOT_COMPOSING,
+    SLOT_READY,
+    X_MEANING_NONE,
+    X_MEANING_ALPHA,
+    X_MEANING_WHITE,
+    X_MEANING_PRIORITY,
+} from './pipeline/FramePool';
+export type { FrameMeta, FramePoolOptions, AcquiredFrame, XMeaning } from './pipeline/FramePool';
+
+export { compileLayout, classifyRoles, layoutManifest, findModel, nodeOffset, parseHexColor, fnv1a } from './pipeline/Layout';
+export type {
+    RoleKind,
+    ChannelRoleSpec,
+    NodeRun,
+    LayoutModelSpec,
+    LayoutModel,
+    LayoutOptions,
+    DisplayLayout,
+    LayoutManifest,
+    NodeCodec,
+    NodeCodecKind,
+    RawSpan,
+    BufferSpec,
+    SubModelSpec,
+} from './pipeline/Layout';
+
+export {
+    compileInputMap,
+    applyInputMap,
+    applyInputMapChunk,
+    inputMapProgram,
+    descriptorHash,
+    buildInverseLut,
+    IN_RAW,
+    IN_RGB,
+    IN_RGBW,
+    IN_MONO,
+    OP_INTS,
+} from './pipeline/InputMap';
+export type { ChannelDescriptor, ChannelDescriptorModel, InputMap, InputMapProgram } from './pipeline/InputMap';
+
+export { compileOutputMap, applyOutput, buildForwardLut, OUT_RAW, OUT_RGB, OUT_RGBW, OUT_MONO, OUT_OP_INTS } from './pipeline/OutputMap';
+export type { OutputSpec, OutputSegmentSpec, OutputModelAdjust, OutputPolicy, CompiledOutput, OutputMap } from './pipeline/OutputMap';
+
+export {
+    SpatialPatternRenderer,
+    patternTargets,
+    patternTargetOfModel,
+    patternTargetsForModels,
+    patternAnimates,
+} from './pipeline/SpatialPatterns';
+export type { SpatialPatternKind, SpatialPatternParams, SpatialPatternTarget, PatternSpace } from './pipeline/SpatialPatterns';
+
+export {
+    blendNodes,
+    blendModeFromName,
+    fillNodes,
+    lutNodes,
+    scaleNodes,
+    scaleNodesRgb,
+    isBlack,
+    dynamicGammaNodes,
+    hsvToRgb,
+    testPatternNodes,
+    BLEND_MAX,
+    BLEND_REPLACE,
+    BLEND_UNDERLAY,
+    BLEND_ADD,
+    BLEND_SUBTRACT,
+    BLEND_MULTIPLY,
+    BLEND_SCREEN,
+    BLEND_ALPHA,
+    BLEND_MIN,
+    BLEND_MODE_NAMES,
+} from './pipeline/Kernels';
+export type { BlendMode, TestPatternKind, TestPatternParams } from './pipeline/Kernels';
+
+export { ParamsBlock } from './pipeline/Params';
+export { colorTemperatureScale, COLOR_TEMP_NEUTRAL_K, COLOR_TEMP_MIN_K, COLOR_TEMP_MAX_K } from './pipeline/ColorTemperature';
+export { StatsBlock } from './pipeline/Stats';
+export type { DecompPost, Canonicalizer } from './formats/FSeqPrefetcher';
+export { runDecompPost } from './formats/FSeqPrefetcher';
+export { sharedInputMapProgram } from './pipeline/InputMap';
+export type { SparseRangeSpec } from './pipeline/InputMap';
+export {
+    layoutSpecsFromXlights,
+    descriptorFromSpecs,
+} from './pipeline/xlAdapter';
+export { FRAME_FLAG_IDLE, FRAME_FLAG_BLACK } from './pipeline/FramePool';
+export {
+    OverlayManager,
+    encodeOverlayPacket,
+    decodeOverlayPacket,
+    packetizeOverlayFrame,
+    OverlayConflictError,
+    overlayHolderLabel,
+    OVERLAY_MAGIC,
+    OVERLAY_HEADER_BYTES,
+    OVERLAY_MAX_DATA,
+} from './pipeline/Overlays';
+export type {
+    OverlayFormat,
+    OverlayOverlap,
+    OverlayLeaseRequest,
+    OverlayLeaseInfo,
+    OverlayMode,
+    OverlayOwner,
+    OverlayTargetQuery,
+    OverlayTargetInfo,
+    OverlayPacket,
+} from './pipeline/Overlays';
+export { TargetCatalog, targetRuns, strandKind, overlappingNodes } from './pipeline/Targets';
+export type { PixelTarget, StrandKind } from './pipeline/Targets';
+export type { ExtendedHeaderRef } from './formats/FSeqUtil';
+export {
+    readExtendedHeader,
+    readExtendedText,
+    decompressExtended,
+    compressExtended,
+    buildExtendedHeaders,
+    XL_RGBEFFECTS_HEADER,
+    XL_NETWORKS_HEADER,
+    XL_SEQUENCE_HEADER,
+} from './formats/FSeqExtended';
+export {
+    encodeDescriptorHeader,
+    decodeDescriptorHeader,
+    peekDescriptorPrefix,
+    descriptorFromEmbeddedXlights,
+    EZ_DESCRIPTOR_HEADER,
+    EZ_DESCRIPTOR_VERSION,
+    EZ_PREFIX_BYTES,
+} from './pipeline/Descriptor';
+export type { DescriptorPrefix } from './pipeline/Descriptor';
+export type { FileIdentity } from './formats/FSeqPrefetcher';

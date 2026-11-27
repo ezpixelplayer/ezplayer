@@ -1,3 +1,7 @@
+import type { LayoutManifest } from '@ezplayer/epp';
+import type { OverlayCommand, OverlayResult } from './overlaytypes';
+import type { TestTweakCommand, TestTweakResult } from './testtweak';
+import type { AudioCommand, AudioResult } from './audiotypes';
 import {
     GetNodeResult,
     type ImageInfo,
@@ -98,6 +102,12 @@ export type PlayWorkerRPCAPI = {
     getModelCoordinates: (args: Record<string, never>) => Promise<Record<string, GetNodeResult>>;
     getModelCoordinates2D: (args: Record<string, never>) => Promise<Record<string, GetNodeResult>>;
     getFrameExportBuffer: () => Promise<SharedArrayBuffer | undefined>;
+    /** Overlay lease operations (see overlaytypes.ts). */
+    overlay: (cmd: OverlayCommand) => Promise<OverlayResult>;
+    /** Test + Tweak operations (see testtweak.ts). */
+    testTweak: (cmd: TestTweakCommand) => Promise<TestTweakResult>;
+    /** Audio bus operations (see audiotypes.ts). */
+    audio: (cmd: AudioCommand) => Promise<AudioResult>;
     /** The baked song order of a loaded item, for the detailed playback view. */
     getPlaybackItemOrder: (args: { key: string }) => Promise<PlaybackItemOrder | undefined>;
 };
@@ -146,8 +156,12 @@ export type WorkerToMainMessage =
           /** Linear gain per output key (`DEFAULT_VOLUME_TARGET_ID` or
            *  `AudioOutputConfig.id`), mute applied. */
           outputGains?: Record<string, number>;
+          /** Volume of the bus named by `chunk.bus`, 0-1, mute applied. */
+          busGain?: number;
       }
     | { type: 'pixelbuffer'; buffer: SharedArrayBuffer | undefined }
+    /** The canonical frame pool and the layout that explains it (see epp FramePool / Layout). */
+    | { type: 'pixelpool'; buffer: SharedArrayBuffer | undefined; manifest: LayoutManifest | undefined }
     | { type: 'done' }
     | { type: 'error'; message: string }
     /** An uncaught exception or unhandled rejection the worker survived; main reports it. */
@@ -177,6 +191,8 @@ export type WorkerToMainMessage =
            *  side of the controller reconciliation grid. */
           controllers?: KnownController[];
       }
+    /** The known controllers again, after a wiring override changed their upload intent. */
+    | { type: 'knownControllers'; controllers: KnownController[] }
     | { type: 'audiobuffer'; buffer: SharedArrayBuffer }
     | { type: 'rpc'; rpc: RPCRequest }
     | { type: 'rpc-response'; response: RPCResponse };

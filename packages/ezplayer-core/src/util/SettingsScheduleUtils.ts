@@ -4,6 +4,8 @@ import {
     ViewerControlScheduleEntry,
     ViewerControlState,
     VolumeControlState,
+    BrightnessControlState,
+    BrightnessScheduleEntry,
     VolumeScheduleEntry,
 } from '../types/DataTypes';
 import { hasViewerControlBackend, viewerControlSchedule } from './viewerControlBackends';
@@ -143,6 +145,16 @@ export function getActiveViewerControlSchedule(
     }
 
     return findMatchingScheduleEntry(viewerControlSchedule(viewerControl, backend), now);
+}
+
+export function getActiveBrightnessSchedule(
+    brightnessControl: BrightnessControlState,
+    now: Date = new Date(),
+): BrightnessScheduleEntry | null {
+    if (!brightnessControl.schedule?.length) {
+        return null;
+    }
+    return findMatchingScheduleEntry(brightnessControl.schedule, now);
 }
 
 export function getActiveVolumeSchedule(

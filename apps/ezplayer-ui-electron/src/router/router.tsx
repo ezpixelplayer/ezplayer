@@ -4,9 +4,13 @@ import { Navigate, RouteObject } from 'react-router';
 import { SuspenseLoader } from '@ezplayer/shared-ui-components';
 
 import {
+    AppsSettings,
+    APPS_SETTINGS_SECTION_KEY,
     AudioSettings,
+    BrightnessSettings,
     CloudPage,
     ControllersScreen,
+    TestTweakScreen,
     CreateEditPlaylist,
     JukeboxScreen,
     JukeboxFullScreen,
@@ -14,6 +18,8 @@ import {
     PlayerCloudRegistrationDialog,
     PlayerScreen,
     PlayerSettings,
+    VirtualMatrixSettings,
+    VIRTUAL_MATRIX_SETTINGS_SECTION_KEY,
     DiagnosticsSettings,
     DIAGNOSTICS_SETTINGS_SECTION_KEY,
     ContentSyncSettings,
@@ -48,12 +54,16 @@ import ViewInArIcon from '@mui/icons-material/ViewInAr';
 import DisplaySettingsIcon from '@mui/icons-material/DisplaySettings';
 import CloudIcon from '@mui/icons-material/Cloud';
 import RouterIcon from '@mui/icons-material/Router';
+import ScienceIcon from '@mui/icons-material/Science';
 import FolderIcon from '@mui/icons-material/Folder';
+import AppsIcon from '@mui/icons-material/Apps';
 import ContrastIcon from '@mui/icons-material/Contrast';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import LibraryMusicIcon from '@mui/icons-material/LibraryMusic';
 import VolumeUpIcon from '@mui/icons-material/VolumeUp';
+import Brightness6Icon from '@mui/icons-material/Brightness6';
 import TuneIcon from '@mui/icons-material/Tune';
+import GridOnIcon from '@mui/icons-material/GridOn';
 import TroubleshootIcon from '@mui/icons-material/Troubleshoot';
 import SyncAltIcon from '@mui/icons-material/SyncAlt';
 import SystemUpdateAltIcon from '@mui/icons-material/SystemUpdateAlt';
@@ -114,6 +124,12 @@ const ElectronSettingsPage = () => {
             content: <AudioSettings />,
         },
         {
+            key: 'brightness',
+            label: 'Brightness',
+            icon: <Brightness6Icon sx={{ fontSize: 56 }} />,
+            content: <BrightnessSettings />,
+        },
+        {
             key: 'cloud',
             label: 'Cloud',
             icon: <CloudIcon sx={{ fontSize: 56 }} />,
@@ -125,6 +141,13 @@ const ElectronSettingsPage = () => {
             icon: <TuneIcon sx={{ fontSize: 56 }} />,
             title: 'Player Settings',
             content: <PlayerSettings />,
+        },
+        {
+            key: VIRTUAL_MATRIX_SETTINGS_SECTION_KEY,
+            label: 'Virtual Matrix',
+            icon: <GridOnIcon sx={{ fontSize: 56 }} />,
+            title: 'Virtual Matrix',
+            content: <VirtualMatrixSettings />,
         },
         {
             key: CONTENT_SYNC_SETTINGS_SECTION_KEY,
@@ -146,6 +169,12 @@ const ElectronSettingsPage = () => {
             title: 'Software Update',
             available: canControlUpdates(),
             content: <SoftwareUpdateSettings />,
+        },
+        {
+            key: APPS_SETTINGS_SECTION_KEY,
+            label: 'Apps',
+            icon: <AppsIcon sx={{ fontSize: 56 }} />,
+            content: <AppsSettings />,
         },
         shellSection,
         filesSection,
@@ -214,6 +243,11 @@ const menuRoutes: MenuRoute[] = [
         path: ROUTES.CONTROLLERS,
         element: <ControllersScreen title="Controllers" statusArea={getStatusArea()} />,
         sidebar: { icon: <RouterIcon />, label: 'Controllers' },
+    },
+    {
+        path: ROUTES.TEST_TWEAK,
+        element: <TestTweakScreen title="Test + Tweak" statusArea={getStatusArea()} />,
+        sidebar: { icon: <ScienceIcon />, label: 'Test + Tweak' },
     },
     {
         path: ROUTES.PLAYBACKSETTINGS,

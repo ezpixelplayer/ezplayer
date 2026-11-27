@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flashlight Tag settings</title>
+<script src="_sdk.js"></script>
+<style>
+  :root { color-scheme: dark; --bg: #0b0d12; --panel: #161a24; --line: #2a3040; --text: #e8ebf2; --dim: #8b93a7; --accent: #ffd000; }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 16px; background: var(--bg); color: var(--text); font: 16px/1.4 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; max-width: 560px; margin-inline: auto; }
+  h1 { font-size: 20px; margin: 0 0 12px; }
+  label { display: block; margin: 12px 0 4px; color: var(--dim); font-size: 14px; }
+  select, input[type=text], input[type=number] { width: 100%; font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
+  input[type=range] { width: 100%; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+  .check { display: flex; align-items: center; gap: 8px; margin-top: 14px; color: var(--text); }
+  .check input { width: 18px; height: 18px; }
+  button { font: inherit; font-weight: 600; color: #0b0d12; background: var(--accent); border: 0; border-radius: 10px; padding: 12px 20px; margin-top: 18px; cursor: pointer; }
+  button:disabled { opacity: 0.5; }
+  #note { margin-left: 12px; color: var(--dim); }
+  #remote { display: none; background: #2a2210; border: 1px solid #806000; border-radius: 8px; padding: 10px; margin: 12px 0; }
+  details { margin-top: 24px; }
+  pre { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px; font-size: 12px; overflow: auto; max-height: 50vh; white-space: pre-wrap; }
+  .hint { color: var(--dim); font-size: 13px; }
+</style>
+</head>
+<body>
+<h1>Flashlight Tag settings</h1>
+<p class="hint">The game is drawn as scene objects in the Show View. Leave the position fields blank and the field is fitted to the layout.</p>
+<div id="remote">Open this page on the home network to change settings.</div>
+
+<label for="plane">Plane</label>
+<select id="plane">
+  <option value="ground">Ground, in front of the layout (best in 3D)</option>
+  <option value="wall">Wall, over the layout (best in 2D)</option>
+</select>
+
+<label>Center of the field (x, y, z in world units; blank fits the layout)</label>
+<div class="row3">
+  <input id="cx" type="number" step="any" placeholder="x">
+  <input id="cy" type="number" step="any" placeholder="y">
+  <input id="cz" type="number" step="any" placeholder="z">
+</div>
+
+<div class="row">
+  <div><label for="size">Field width (blank fits the layout)</label><input id="size" type="number" step="any" min="1" placeholder="auto"></div>
+  <div><label for="figure">Figure height (blank fits the field)</label><input id="figure" type="number" step="any" min="0.1" placeholder="auto"></div>
+</div>
+
+<label for="bus">Audio bus for sound effects (blank for silence)</label>
+<input id="bus" type="text" list="buses" value="immediate" placeholder="immediate">
+<datalist id="buses"></datalist>
+
+<label for="volume">Sound volume: <span id="volv">0.6</span></label>
+<input id="volume" type="range" min="0" max="1" step="0.05" value="0.6">
+
+<label class="check"><input id="autoStart" type="checkbox"> Start the game as soon as the app starts</label>
+
+<button id="save" disabled>Save</button><span id="note"></span>
+
+<details>
+  <summary>Current status (debug)</summary>
+  <pre id="status">No status yet.</pre>
+</details>
+
+<script>
+  const el = (id) => document.getElementById(id);
+  let app;
+
+  el('volume').addEventListener('input', () => { el('volv').textContent = el('volume').value; });
+
+  async function loadBuses() {
+    const res = await fetch(`${app.apiBase}/api/ezp/audio/buses`);
+    const { buses = [] } = await res.json();
+    el('buses').replaceChildren(...buses.map((b) => new Option(b.name)));
+  }
+
+  async function init() {
+    app = EZApp.connect();
+    await app.ready;
+    app.onStatus((s) => { el('status').textContent = JSON.stringify(s, null, 2); });
+    let settings = null;
+    try { settings = await app.get('private', 'settings'); } catch { /* not readable here; the form keeps its defaults */ }
+    if (settings) {
+      if (settings.plane) el('plane').value = settings.plane;
+      if (Array.isArray(settings.center) && settings.center.length === 3) {
+        el('cx').value = settings.center[0]; el('cy').value = settings.center[1]; el('cz').value = settings.center[2];
+      }
+      if (settings.size) el('size').value = settings.size;
+      if (settings.figure) el('figure').value = settings.figure;
+      if (typeof settings.bus === 'string') el('bus').value = settings.bus;
+      if (typeof settings.volume === 'number') { el('volume').value = settings.volume; el('volv').textContent = settings.volume; }
+      el('autoStart').checked = settings.autoStart === true;
+    }
+    if (app.apiBase === null) {
+      el('remote').style.display = 'block';
+      return;
+    }
+    try { await loadBuses(); } catch { /* the bus can still be typed */ }
+    el('save').disabled = false;
+  }
+
+  el('save').addEventListener('click', async () => {
+    const nums = ['cx', 'cy', 'cz'].map((id) => el(id).value.trim());
+    const center = nums.every((v) => v !== '') ? nums.map(Number) : undefined;
+    if (nums.some((v) => v !== '') && !center) { el('note').textContent = 'Fill in all three of x, y, z or none.'; return; }
+    const body = {
+      plane: el('plane').value,
+      center,
+      size: Number(el('size').value) || undefined,
+      figure: Number(el('figure').value) || undefined,
+      bus: el('bus').value.trim(),
+      volume: Number(el('volume').value),
+      autoStart: el('autoStart').checked,
+    };
+    el('save').disabled = true;
+    try {
+      await app.put('private', 'settings', body);
+      el('note').textContent = 'Saved. The next game uses it.';
+    } catch (e) {
+      el('note').textContent = `Save failed: ${e.message}`;
+    }
+    el('save').disabled = false;
+  });
+
+  init().catch((e) => { el('note').textContent = `Could not load the app SDK: ${e.message}`; });
+</script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+{
+    "id": "flashlight-tag",
+    "name": "Flashlight Tag",
+    "version": "1",
+    "description": "Two figures chase each other with flashlights through the Show View while ghosts chase them",
+    "icon": "🔦",
+    "runtime": "node",
+    "start": ["flashlight-tag.mjs"],
+    "page": "page/",
+    "config": "config/",
+    "inputs": [
+        { "name": "start", "kind": "event" },
+        { "name": "stop", "kind": "event" }
+    ],
+    "platforms": ["win32", "darwin", "linux"]
+}

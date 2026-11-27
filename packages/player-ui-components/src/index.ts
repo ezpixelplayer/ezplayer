@@ -29,6 +29,7 @@ export { ShowStatusScreen } from './components/status/ShowStatusScreen';
 export { ViewerStatsScreen, ViewerStatsBody } from './components/viewer-stats/ViewerStatsScreen';
 export { ViewerControlCard } from './components/status/ViewerControlCard';
 export { ContentDistributionCard } from './components/status/ContentDistributionCard';
+export { VirtualMatrixCard } from './components/status/VirtualMatrixCard';
 export { ContentDistributionDialog } from './components/content-dist/ContentDistributionDialog';
 export { StatsDialog } from './components/status/StatsDialog';
 export { SettingsDrawer } from './components/playback-settings/SettingsDrawer';
@@ -46,7 +47,12 @@ export { UISettings } from './components/playback-settings/sections/UISettings';
 export { ViewerSettings } from './components/playback-settings/sections/ViewerSettings';
 export { JukeboxSettings } from './components/playback-settings/sections/JukeboxSettings';
 export { AudioSettings } from './components/playback-settings/sections/AudioSettings';
+export { BrightnessSettings } from './components/playback-settings/sections/BrightnessSettings';
 export { PlayerSettings } from './components/playback-settings/sections/PlayerSettings';
+export {
+    VirtualMatrixSettings,
+    VIRTUAL_MATRIX_SETTINGS_SECTION_KEY,
+} from './components/playback-settings/sections/VirtualMatrixSettings';
 export {
     DiagnosticsSettings,
     DIAGNOSTICS_SETTINGS_SECTION_KEY,
@@ -59,11 +65,14 @@ export {
     SoftwareUpdateSettings,
     canControlUpdates,
 } from './components/playback-settings/sections/SoftwareUpdateSettings';
+export { AppsSettings, APPS_SETTINGS_SECTION_KEY } from './components/playback-settings/sections/AppsSettings';
 export { PlayerCloudRegistrationDialog } from './components/player-cloud-registration/PlayerCloudRegistrationDialog';
 export { PlayerCloudRegistrationPanel } from './components/player-cloud-registration/PlayerCloudRegistrationPanel';
 export { PlayerCloudWelcomePanel } from './components/player-cloud-registration/PlayerCloudWelcomePanel';
 export { CloudPage } from './components/cloud/CloudPage';
 export { ControllersScreen } from './components/controllers/ControllersScreen';
+export { TestTweakScreen, TEST_TWEAK_PREVIEW_STORAGE_KEY } from './components/test-tweak/TestTweakScreen';
+export type { TestTweakScreenProps } from './components/test-tweak/TestTweakScreen';
 export { ColorPaletteDialog } from './components/theme/ColorPaletteDialog';
 export { ConnectivityStatus } from './components/status/ConnectivityStatus';
 export { BridgeStatusOverlay } from './components/status/BridgeStatusOverlay';
@@ -73,6 +82,9 @@ export { Preview3DPage, PREVIEW_3D_PAGE_STORAGE_KEY } from './components/preview
 export type { Preview3DPageProps } from './components/preview-3d/Preview3DPage';
 export { Viewer3D } from './components/preview-3d/Viewer3D';
 export type { Viewer3DProps } from './components/preview-3d/Viewer3D';
+export { SceneObjectsLayer } from './components/preview-3d/SceneObjectsLayer';
+export type { SceneObjectsLayerProps } from './components/preview-3d/SceneObjectsLayer';
+export { SceneObjectsStore, pollSceneObjects } from './services/sceneObjectsStore';
 export { Viewer2D } from './components/preview-3d/Viewer2D';
 export type { Viewer2DProps } from './components/preview-3d/Viewer2D';
 export { RenderBridge } from './components/preview-3d/RenderBridge';

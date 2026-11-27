@@ -1,3 +1,11 @@
+import { FramePool, type LayoutManifest } from '@ezplayer/epp';
+import { MATRIX_PAGE_HTML } from './matrixpage.js';
+import { MatrixReaders } from './matrix-readers.js';
+import type { OverlayCommand } from './overlaytypes.js';
+import type { TestTweakCommand } from './testtweak.js';
+import type { AudioCommand } from './audiotypes.js';
+import type { AudioLeaseRequest } from './audiobus.js';
+import type { OverlayLeaseRequest } from '@ezplayer/epp';
 /**
  * Server worker - runs Koa server in a worker thread
  */
@@ -28,7 +36,24 @@ import type {
     SequenceRecord,
 } from '@ezplayer/ezplayer-core';
 import { LatestFrameRingBuffer, AudioChunkRingBuffer, isSupportBundleLevel } from '@ezplayer/ezplayer-core';
-import type { AudioBridgeControlMessage, CloudAudioMode } from '@ezplayer/ezplayer-core';
+import {
+    AUDIO_BUS_MAIN,
+    AudioWireCodec,
+    MAX_AUDIO_BUSES,
+    addAudioListener,
+    audioBusesFull,
+    audioListenerNames,
+    buildAudioWireFrame,
+    cleanAudioBus,
+    isAudioName,
+    removeAudioBus,
+    removeAudioListener,
+    resolveAudioBuses,
+    upsertAudioBus,
+} from '@ezplayer/ezplayer-core';
+import type { AudioBusConfig, AudioChunk } from '@ezplayer/ezplayer-core';
+import type { AudioBridgeControlMessage, CloudAudioMode, VirtualMatrixStatus } from '@ezplayer/ezplayer-core';
+import * as os from 'os';
 import {
     activeWindowDescriptions,
     describeVolume,
@@ -36,6 +61,12 @@ import {
     replaceVolumeSchedule,
     setDefaultVolume,
 } from './volume-settings.js';
+import {
+    describeBrightness,
+    describeWindow as describeBrightnessWindow,
+    replaceBrightnessSchedule,
+    setDefaultBrightness,
+} from './brightness-settings.js';
 import { AudioStreamEncoder } from './audio-stream-encoder.js';
 import { BufferPool } from '@ezplayer/epp';
 import { ZstdCodec, ZstdSimple } from 'zstd-codec';
@@ -70,6 +101,15 @@ import {
 import { http09Request, isHeaderlessResponse } from './http09-fallback.js';
 import { registerScanApiRoutes } from './scan-api.js';
 import { registerControllersApiRoutes } from './controllers-api.js';
+import { SceneObjectRegistry } from './scene-objects.js';
+import { dispatchSceneRead, registerSceneReadRoutes, registerSceneWriteRoutes } from './scene-objects-api.js';
+import {
+    AppsRuntime,
+    appsPagesMiddleware,
+    attachAppsLiveUpgrade,
+    registerAppsRoutes,
+    type AppsApiDeps,
+} from './apps-api.js';
 import { ViewObject, LayoutSettings, type MhFixtureInfo } from './playbacktypes.js';
 import { trustSystemCAs } from '../trustSystemCAs.js';
 import { throwLater } from '../faultinject.js';
@@ -211,6 +251,23 @@ throwLater('server-worker-throw', 3000);
 
 const wsBroadcaster = new WebSocketBroadcaster();
 
+// Display-only objects injected into the live preview (see scene-objects.ts).
+const sceneObjects = new SceneObjectRegistry();
+// Frees expired leases even when no viewer is polling.
+setInterval(() => sceneObjects.sweep(), 5_000).unref();
+
+// Player apps: events, status, documents and pages (see apps-api.ts). Main tells us
+// which instances exist through `appsAuth` messages.
+const appsDeps: AppsApiDeps = {
+    appsCommand: (cmd) => rpc.call('appsCommand', cmd),
+    sawStatus: (name) => {
+        void rpc.call('appsSawStatus', name).catch(() => {});
+    },
+    getState: (key) => wsBroadcaster.get(key) as FullPlayerState[typeof key] | undefined,
+    setState: (key, value) => wsBroadcaster.set(key, value),
+};
+const appsRuntime = new AppsRuntime(appsDeps);
+
 /** The port the web server actually bound (after any EADDRINUSE walk-up). Set
  *  once the listener is up; used to dial our own remote-access sockets from the
  *  cloud bridge. */
@@ -294,6 +351,7 @@ async function applyPlaybackSettings(settings: PlaybackSettings): Promise<void> 
     }
     await rpc.call('sendPlaybackSettings', settings);
     wsBroadcaster.set('playbackSettings', settings);
+    reportBusAudioWanted();
 }
 
 /** Reply body for a volume write: the state after it, and whether the default
@@ -330,6 +388,37 @@ async function handleSetVolume(cmd: {
     }
     if (cmd.mute !== undefined) await rpc.call('sendPlayerCommand', { command: 'setvolume', mute: cmd.mute });
     return { status: 200, body: { ...reply, message: 'Command sent' } };
+}
+
+/** Reply body for a brightness write: the state after it, and whether the
+ *  defaults are what the lights show right now or a schedule window is in effect. */
+function brightnessReply(settings: PlaybackSettings): Record<string, unknown> {
+    const brightness = describeBrightness(settings, currentPStatus());
+    const w = brightness.activeWindow;
+    return {
+        success: true,
+        defaultInEffect: !w,
+        ...(w
+            ? {
+                  warning: `A scheduled brightness window is in effect (${describeBrightnessWindow(w)}); the default applies when it ends`,
+              }
+            : {}),
+        brightness,
+    };
+}
+
+/** `setbrightness`: writes the default brightness and/or color temperature; the
+ *  player's slew then ramps the live values to them. */
+async function handleSetBrightness(cmd: {
+    brightness?: unknown;
+    colorTemperature?: unknown;
+}): Promise<{ status: number; body: Record<string, unknown> }> {
+    const settings = currentPlaybackSettings();
+    if (!settings) return { status: 503, body: { error: 'Playback settings not loaded yet' } };
+    const r = setDefaultBrightness(settings, cmd.brightness, cmd.colorTemperature);
+    if (!r.ok) return { status: r.status, body: { error: r.error } };
+    await applyPlaybackSettings(r.settings);
+    return { status: 200, body: { ...brightnessReply(r.settings), message: 'Command sent' } };
 }
 
 // Forward client → server WebSocket commands to main via RPC. Main pushes
@@ -389,6 +478,28 @@ let cachedLayoutSettings: LayoutSettings = {};
 let cachedMovingHeads: Array<MhFixtureInfo> = [];
 
 let curFrameBuffer: SharedArrayBuffer | undefined = undefined;
+// Canonical frame pool from the playback worker, read by the /api/ezp/pool endpoints.
+let curPixelPool: FramePool | undefined = undefined;
+let curPoolManifest: LayoutManifest | undefined = undefined;
+const matrixReaders = new MatrixReaders();
+/** Longest a frame request may wait for the next frame. */
+const MATRIX_MAX_WAIT_MS = 2000;
+const VIRTUAL_ADAPTER = /vethernet|vmware|virtualbox|hyper-v|wsl|docker|^br-|^veth|tailscale|zerotier|loopback/i;
+
+/** What the Virtual Matrix settings show: open readers, and this computer's LAN addresses. */
+function virtualMatrixStatus(port: number | string | undefined): VirtualMatrixStatus {
+    const suffix = port ? `:${port}` : '';
+    const real: string[] = [];
+    const virtual: string[] = [];
+    for (const [name, list] of Object.entries(os.networkInterfaces())) {
+        for (const a of list ?? []) {
+            if (a.family !== 'IPv4' || a.internal) continue;
+            (VIRTUAL_ADAPTER.test(name) ? virtual : real).push(`http://${a.address}${suffix}`);
+        }
+    }
+    // Adapters of virtual machines and tunnels last: other computers rarely reach those.
+    return { readers: matrixReaders.list(), lanUrls: [...real, ...virtual] };
+}
 let curAudioRing: AudioChunkRingBuffer | undefined = undefined;
 let serverStarted = false;
 
@@ -404,11 +515,21 @@ parentPort.on('message', async (msg: MainToServerWorkerMessage) => {
         }
     } else if (msg.type === 'response') {
         rpc.handleResponse(msg.id, msg.result, msg.error);
+    } else if (msg.type === 'updatePixelPool') {
+        try {
+            curPixelPool = msg.buffer ? new FramePool(msg.buffer) : undefined;
+        } catch (e) {
+            console.error('[server-worker] bad pixel pool:', e);
+            curPixelPool = undefined;
+        }
+        curPoolManifest = msg.manifest;
     } else if (msg.type === 'updateFrameBuffer') {
         curFrameBuffer = msg.buffer;
     } else if (msg.type === 'updateAudioBuffer') {
         curAudioRing = new AudioChunkRingBuffer(msg.buffer, false);
         audioPumpAfterSeq = curAudioRing.latestSeq;
+    } else if (msg.type === 'busAudio') {
+        sendBusAudio(msg.chunk);
     } else if (msg.type === 'cloudAudioMode') {
         setCloudAudioMode(msg.mode);
     } else if (msg.type === 'rtcOffset') {
@@ -423,6 +544,8 @@ parentPort.on('message', async (msg: MainToServerWorkerMessage) => {
         }
         // Forward broadcast from main thread to WebSocket clients
         wsBroadcaster.set(msg.key as keyof FullPlayerState, msg.value as FullPlayerState[keyof FullPlayerState]);
+        // The buses sent to listeners may have changed.
+        if (msg.key === 'playbackSettings') reportBusAudioWanted();
     } else if (msg.type === 'clearShowData') {
         // Show folder changed — clear all cached data so stale data is never served
         cachedModelCoordinates3D = {};
@@ -431,6 +554,8 @@ parentPort.on('message', async (msg: MainToServerWorkerMessage) => {
         cachedLayoutSettings = {};
         cachedMovingHeads = [];
         curFrameBuffer = undefined;
+        curPixelPool = undefined;
+        curPoolManifest = undefined;
     } else if (msg.type === 'pushModelCoordinates') {
         cachedModelCoordinates3D = msg.coords3D;
         cachedModelCoordinates2D = msg.coords2D;
@@ -445,6 +570,8 @@ parentPort.on('message', async (msg: MainToServerWorkerMessage) => {
         }
     } else if (msg.type === 'shellEvent') {
         dispatchShellEvent(msg.event);
+    } else if (msg.type === 'appsAuth') {
+        appsRuntime.setInstances(msg.instances);
     } else if (msg.type === 'cloudBridgeOpen') {
         openCloudBridge(msg.wsUrl, msg.proxyWsUrl, msg.audioWsUrl, msg.sessionId, msg.ttlSeconds);
     } else if (msg.type === 'cloudBridgeClose') {
@@ -830,12 +957,164 @@ audioStreamWss.on('connection', (ws) => {
     ensureAudioPump();
 });
 
-/** LAN / kiosk listeners: `ws://<player>/api/ezp/audiostream`. Same trust
- *  level as the rest of the LAN API (none). */
+/**
+ * A client receiving injected-audio buses: a subscriber to one bus by name,
+ * or a listener that gave its own name and gets the buses settings send to it.
+ */
+interface BusAudioClient {
+    ws: WebSocket;
+    bus?: string;
+    listener?: string;
+    /** 16-bit samples asked for; floats otherwise. */
+    s16: boolean;
+    address: string;
+}
+const busAudioClients = new Set<BusAudioClient>();
+const busAudioWss = new WebSocketServer({ noServer: true });
+let busAudioSeq = 0;
+let busAudioWantedSent = '';
+
+function joinBusAudio(client: BusAudioClient): void {
+    busAudioClients.add(client);
+    const leave = () => {
+        if (busAudioClients.delete(client)) reportBusAudioWanted();
+    };
+    client.ws.on('close', leave);
+    client.ws.on('error', leave);
+    reportBusAudioWanted();
+    // A listener seen for the first time is kept in settings, so buses can be sent to it.
+    const name = client.listener;
+    if (!name) return;
+    void audioSettingsTurn(async () => {
+        const settings = currentPlaybackSettings();
+        if (!settings || audioListenerNames(settings).includes(name)) return;
+        await applyPlaybackSettings(addAudioListener(settings, name));
+    }).catch((err) => console.error('[server-worker] could not save audio listener:', err));
+}
+
+/** The tail of the audio settings changes in progress. */
+let audioSettingsQueue: Promise<unknown> = Promise.resolve();
+
+/**
+ * Run one change to the audio settings after those already under way. A
+ * change reads the settings inside its turn, so two made at once (two
+ * programs each naming a new bus, say) both end up stored.
+ */
+function audioSettingsTurn<T>(change: () => Promise<T>): Promise<T> {
+    const turn = audioSettingsQueue.then(change, change);
+    audioSettingsQueue = turn.catch(() => undefined);
+    return turn;
+}
+
+/** The names of the listeners each bus is sent to, as of the last settings change. */
+let busListeners = new Map<string, string[]>();
+
+/** Tell main which buses somebody receives, when that changes. */
+function reportBusAudioWanted(): void {
+    busListeners = new Map(resolveAudioBuses(currentPlaybackSettings()).map((b) => [b.name, b.listeners]));
+    const sentTo = busListeners;
+    const buses = new Set<string>();
+    for (const c of busAudioClients) {
+        if (c.bus) buses.add(c.bus);
+        else for (const [bus, names] of sentTo) if (names.includes(c.listener!)) buses.add(bus);
+    }
+    const list = [...buses].sort();
+    const key = list.join('\n');
+    if (key === busAudioWantedSent) return;
+    busAudioWantedSent = key;
+    parentPort?.postMessage({ type: 'busAudioWanted', buses: list } satisfies ServerWorkerToMainMessage);
+}
+
+/** Listeners known from settings or connected now, with the buses sent to each. */
+function audioListenerStatus() {
+    const sentTo = busListeners;
+    const names = new Set(audioListenerNames(currentPlaybackSettings()));
+    for (const c of busAudioClients) if (c.listener) names.add(c.listener);
+    return [...names].map((name) => {
+        const addresses = [...busAudioClients].filter((c) => c.listener === name).map((c) => c.address);
+        return {
+            name,
+            connected: addresses.length > 0,
+            addresses,
+            buses: [...sentTo].filter(([, to]) => to.includes(name)).map(([bus]) => bus),
+        };
+    });
+}
+
+/** One bus chunk to those who receive that bus, as uncompressed PCM: a bus is too sparse and too prompt for the opus stream. */
+function sendBusAudio(chunk: AudioChunk): void {
+    if (!chunk.bus || busAudioClients.size === 0) return;
+    const sentTo = busListeners.get(chunk.bus) ?? [];
+    const floats = new Float32Array(chunk.buffer);
+    const frames = floats.length / chunk.channels;
+    const header = {
+        serverNow: rtcNow(),
+        playAt: chunk.clockTime ?? chunk.playAtRealTime,
+        incarnation: chunk.incarnation,
+        seq: ++busAudioSeq,
+        sampleRate: chunk.sampleRate,
+        channels: chunk.channels,
+        preSkip: 0,
+        frames,
+        hopFrames: frames,
+    };
+    let f32: Uint8Array | undefined;
+    let s16: Uint8Array | undefined;
+    for (const client of busAudioClients) {
+        if (client.bus ? client.bus !== chunk.bus : !sentTo.includes(client.listener!)) continue;
+        const ws = client.ws;
+        if (ws.readyState !== WebSocket.OPEN || ws.bufferedAmount > AUDIO_MAX_BUFFERED_BYTES) continue;
+        let frame: Uint8Array;
+        if (client.s16) {
+            if (!s16) {
+                const ints = new Int16Array(floats.length);
+                for (let i = 0; i < floats.length; i++) {
+                    ints[i] = Math.round(Math.max(-1, Math.min(1, floats[i])) * 32767);
+                }
+                s16 = buildAudioWireFrame({ codec: AudioWireCodec.PcmS16, ...header }, new Uint8Array(ints.buffer));
+            }
+            frame = s16;
+        } else {
+            f32 ??= buildAudioWireFrame({ codec: AudioWireCodec.PcmF32, ...header }, new Uint8Array(chunk.buffer));
+            frame = f32;
+        }
+        try {
+            ws.send(frame, { binary: true });
+        } catch {
+            /* per-client */
+        }
+    }
+}
+
+/** LAN / kiosk listeners: `ws://<player>/api/ezp/audiostream`; with
+ *  `?bus=NAME` one injected-audio bus; with `?listener=NAME` the buses
+ *  settings send to that listener. Same trust level as the rest of the
+ *  LAN API (none). */
 function attachAudioStreamUpgrade(server: ReturnType<typeof createServer>): void {
     server.on('upgrade', (req, socket, head) => {
-        const pathname = (req.url ?? '').split('?')[0];
-        if (pathname !== '/api/ezp/audiostream') return; // leave for the other upgrade handlers
+        let url: URL;
+        try {
+            url = new URL(req.url ?? '', 'http://localhost');
+        } catch {
+            return; // not a target of ours; the other upgrade handlers see it too
+        }
+        if (url.pathname !== '/api/ezp/audiostream') return; // leave for the other upgrade handlers
+        const bus = url.searchParams.get('bus');
+        const listener = url.searchParams.get('listener');
+        const s16 = url.searchParams.get('format') === 's16';
+        const address = req.socket.remoteAddress ?? '';
+        if (bus && bus !== AUDIO_BUS_MAIN) {
+            busAudioWss.handleUpgrade(req, socket, head, (ws) => joinBusAudio({ ws, bus, s16, address }));
+            return;
+        }
+        if (listener !== null) {
+            if (!isAudioName(listener)) {
+                socket.end('HTTP/1.1 400 Bad Request\r\n\r\n');
+                return;
+            }
+            busAudioWss.handleUpgrade(req, socket, head, (ws) => joinBusAudio({ ws, listener, s16, address }));
+            return;
+        }
         audioStreamWss.handleUpgrade(req, socket, head, (ws) => audioStreamWss.emit('connection', ws, req));
     });
 }
@@ -1324,6 +1603,66 @@ function findHeader(headers: Record<string, string>, name: string): string | und
     return entry?.[1];
 }
 
+/** Forward a proxied request to our own web server, buffered both ways. */
+function dispatchSelfForward(
+    pathStr: string,
+    query: Record<string, string> | undefined,
+    req?: { method?: string; headers?: Record<string, string>; bodyBase64?: string },
+): Promise<{ status: number; headers?: Record<string, string>; body?: Buffer }> {
+    if (!boundWebPort) return Promise.resolve({ status: 503 });
+    const body = req?.bodyBase64 ? Buffer.from(req.bodyBase64, 'base64') : undefined;
+    if (body && body.length > PROXY_MAX_BODY_BYTES) return Promise.resolve({ status: 413 });
+    const qs = query && Object.keys(query).length > 0 ? `?${new URLSearchParams(query).toString()}` : '';
+    const headers: Record<string, string> = {};
+    for (const [k, v] of Object.entries(req?.headers ?? {})) {
+        const lower = k.toLowerCase();
+        if (lower === 'host' || lower === 'connection' || lower === 'transfer-encoding' || lower === 'upgrade')
+            continue;
+        if (lower === 'x-ezp-source') continue; // ours to set
+        headers[k] = v;
+    }
+    headers['x-ezp-source'] = 'cloud';
+    headers['host'] = `127.0.0.1:${boundWebPort}`;
+    return new Promise((resolve) => {
+        const fwd = httpMod.request(
+            {
+                hostname: '127.0.0.1',
+                port: boundWebPort,
+                path: pathStr + qs,
+                method: (req?.method ?? 'GET').toUpperCase(),
+                headers,
+                timeout: 65_000,
+            },
+            (res) => {
+                const chunks: Buffer[] = [];
+                let size = 0;
+                res.on('data', (c: Buffer) => {
+                    size += c.length;
+                    if (size <= DEVICE_PROXY_MAX_RESPONSE_BYTES) chunks.push(c);
+                });
+                res.on('end', () => {
+                    if (size > DEVICE_PROXY_MAX_RESPONSE_BYTES) return resolve({ status: 502 });
+                    const out: Record<string, string> = {};
+                    for (const [k, v] of Object.entries(res.headers)) {
+                        if (v === undefined) continue;
+                        const lower = k.toLowerCase();
+                        if (lower === 'connection' || lower === 'transfer-encoding' || lower === 'keep-alive') continue;
+                        out[k] = Array.isArray(v) ? v.join(', ') : v;
+                    }
+                    resolve({ status: res.statusCode ?? 502, headers: out, body: Buffer.concat(chunks) });
+                });
+                res.on('error', () => resolve({ status: 502 }));
+            },
+        );
+        fwd.on('timeout', () => {
+            fwd.destroy();
+            resolve({ status: 504 });
+        });
+        fwd.on('error', () => resolve({ status: 502 }));
+        fwd.end(body);
+    });
+}
+
 /** Dispatch HTTP-over-WS proxy requests; mirrors the Koa route per path. */
 async function dispatchHttpProxy(
     pathStr: string,
@@ -1334,6 +1673,16 @@ async function dispatchHttpProxy(
     // Device web-UI bridge — must run before the method split so device POSTs
     // (login forms, config writes) work too.
     if (pathStr.startsWith('/proxy/')) return dispatchDeviceProxy(pathStr, query, req);
+    // App pages, events, status, documents, show inputs and Test + Tweak: our own Koa
+    // routes answer these, so forward to ourselves and mark the traffic as the cloud's.
+    if (
+        pathStr.startsWith('/apps/') ||
+        pathStr.startsWith('/api/ezp/apps') ||
+        pathStr.startsWith('/api/ezp/inputs/') ||
+        pathStr.startsWith('/api/ezp/testtweak')
+    ) {
+        return dispatchSelfForward(pathStr, query, req);
+    }
     if (method !== 'GET') return dispatchProxyWrite(pathStr, method, req);
 
     // GET /api/files/:dirName — show-folder name listing for the cloud file
@@ -1385,6 +1734,10 @@ async function dispatchHttpProxy(
     if (pathStr === '/api/ezp/layout-settings') return jsonResult(cachedLayoutSettings);
     if (pathStr === '/api/ezp/moving-heads') return jsonResult(cachedMovingHeads);
 
+    // Injected scene objects: the viewer feed and uploaded asset bytes.
+    const sceneRead = dispatchSceneRead(sceneObjects, pathStr, query);
+    if (sceneRead) return sceneRead;
+
     // /api/ezp/show-file?path=… — OBJ/MTL/textures for the 3D viewer.
     // Same validation as the Koa route; deviations would create a path the
     // LAN-only consumer can hit but cloud can't (or vice versa).
@@ -1398,6 +1751,18 @@ async function dispatchHttpProxy(
     // wire format: [frameSize u32 LE][seq u32 LE][zstd payload].
     if (pathStr === '/api/ezp/frames-zstd') {
         return dispatchFramesZstd();
+    }
+
+    // The Virtual Matrix settings tile reads these three when it is opened over the cloud.
+    if (pathStr === '/api/ezp/displays') return jsonResult({ displays: await rpc.call('listDisplays') });
+    if (pathStr === '/api/ezp/matrix/status') return jsonResult(virtualMatrixStatus(boundWebPort));
+    if (pathStr === '/api/ezp/overlays/targets') {
+        const detail = query?.detail === 'submodels' || query?.detail === 'nodes' ? query.detail : undefined;
+        const model = query?.model ? query.model : undefined;
+        const groups = query?.groups === '1';
+        const res = await rpc.call('overlayCommand', { op: 'targets', model, detail, groups });
+        if (res.ok) return jsonResult(res);
+        return { ...jsonResult(res), status: res.error === 'player not running' ? 503 : 400 };
     }
 
     // /api/ezp/time — server-clock sample for client RTT/offset estimation.
@@ -1534,6 +1899,8 @@ async function startServer(config: ServerWorkerData) {
     // Proxy middleware must be before bodyParser so it can stream raw request bodies
     webApp.use(createProxyRefererRescue());
     webApp.use(createProxyMiddleware(proxyTargetAllowed));
+    // App pages (static or proxied to the instance) also stream bodies through.
+    webApp.use(appsPagesMiddleware(appsRuntime));
 
     // File-transfer routes stream raw bodies, so they also sit before jsonBody().
     // Deliberately NOT mounted on the kiosk app: the public jukebox port gets no
@@ -1758,6 +2125,12 @@ async function startServer(config: ServerWorkerData) {
                 ctx.body = reply.body;
                 return;
             }
+            if (command.command === 'setbrightness') {
+                const reply = await handleSetBrightness(command);
+                ctx.status = reply.status;
+                ctx.body = reply.body;
+                return;
+            }
             await rpc.call('sendPlayerCommand', command);
             ctx.body = { success: true, message: 'Command sent' };
         } catch (error) {
@@ -1819,6 +2192,7 @@ async function startServer(config: ServerWorkerData) {
         'backgroundSequence',
         'viewerControl',
         'volumeControl',
+        'brightnessControl',
         'jukebox',
         'testSequenceTags',
         'sendIdleBlackFrames',
@@ -1829,6 +2203,9 @@ async function startServer(config: ServerWorkerData) {
         'mediaFolder',
         'useDefaultAudioOutput',
         'audioOutputs',
+        'audioBuses',
+        'audioListeners',
+        'virtualMatrixOutputs',
     ]);
     /** The player reads these unconditionally; a part write may not remove them. */
     const REQUIRED_KEYS = new Set<string>(['viewerControl', 'volumeControl']);
@@ -2029,6 +2406,61 @@ async function startServer(config: ServerWorkerData) {
     });
 
     // ----------------------------------------------
+    // API: GET  /api/ezp/brightness — defaults, windows and live values
+    //      POST /api/ezp/brightness { brightness?, colorTemperature? } — set the defaults
+    //      GET/POST /api/ezp/brightness/schedule — the windows
+    // One control for the whole display, so no target id.
+    // ----------------------------------------------
+    router.get('/api/ezp/brightness', (ctx) => {
+        const settings = settingsOr503(ctx);
+        if (settings) ctx.body = describeBrightness(settings, currentPStatus());
+    });
+
+    router.post('/api/ezp/brightness', async (ctx) => {
+        const settings = settingsOr503(ctx);
+        if (!settings) return;
+        try {
+            const body = ctx.request.body as { brightness?: unknown; colorTemperature?: unknown } | undefined;
+            const r = setDefaultBrightness(settings, body?.brightness, body?.colorTemperature);
+            if (!r.ok) {
+                ctx.status = r.status;
+                ctx.body = { error: r.error };
+                return;
+            }
+            await applyPlaybackSettings(r.settings);
+            ctx.body = brightnessReply(r.settings);
+        } catch (error) {
+            console.error('[server-worker] Error setting default brightness:', error);
+            ctx.status = 500;
+            ctx.body = { error: 'Internal server error' };
+        }
+    });
+
+    router.get('/api/ezp/brightness/schedule', (ctx) => {
+        const settings = settingsOr503(ctx);
+        if (settings) ctx.body = describeBrightness(settings).schedule;
+    });
+
+    router.post('/api/ezp/brightness/schedule', async (ctx) => {
+        const settings = settingsOr503(ctx);
+        if (!settings) return;
+        try {
+            const r = replaceBrightnessSchedule(settings, ctx.request.body);
+            if (!r.ok) {
+                ctx.status = r.status;
+                ctx.body = { error: r.error };
+                return;
+            }
+            await applyPlaybackSettings(r.settings);
+            ctx.body = brightnessReply(r.settings);
+        } catch (error) {
+            console.error('[server-worker] Error replacing brightness schedule:', error);
+            ctx.status = 500;
+            ctx.body = { error: 'Internal server error' };
+        }
+    });
+
+    // ----------------------------------------------
     // API: GET /api/ezp/model-coordinates - get model coordinates for 3D preview (local cache)
     // ----------------------------------------------
     router.get('/api/ezp/model-coordinates', async (ctx) => {
@@ -2140,6 +2572,311 @@ async function startServer(config: ServerWorkerData) {
     // API: GET /api/ezp/frames - binary frame data for 3D viewer
     // ----------------------------------------------
     const frameBufferPool = new BufferPool();
+
+    // ----------------------------------------------
+    // Overlay leases: an external producer paints a model (or the whole
+    // display) through a lease; payloads arrive over UDP (see overlaytypes.ts
+    // and epp Overlays.ts) or as a raw PUT for simple clients.
+    // ----------------------------------------------
+    const overlayCall = async (ctx: Koa.Context, cmd: OverlayCommand) => {
+        try {
+            const res = await rpc.call('overlayCommand', cmd);
+            if (!res.ok) {
+                // Not up yet (player starting) is a 503; a model another exclusive lease holds is a 409; a bad request is a 400.
+                ctx.status = res.error === 'player not running' ? 503 : res.code === 'conflict' ? 409 : 400;
+                ctx.body = res;
+                return;
+            }
+            ctx.body = res;
+        } catch (error) {
+            console.error('[server-worker] overlay command failed:', error);
+            ctx.status = 500;
+            ctx.body = { ok: false, error: 'Internal server error' };
+        }
+    };
+    const overlayId = (ctx: Koa.Context) => Number(ctx.params.id);
+    const overlayToken = (ctx: Koa.Context) => Number(ctx.query.token ?? ctx.get('x-ezp-token') ?? 0);
+    // Models only by default; detail=submodels adds submodels, detail=nodes adds per-node coordinates.
+    router.get('/api/ezp/overlays/targets', (ctx) => {
+        const detail = ctx.query.detail === 'submodels' || ctx.query.detail === 'nodes' ? ctx.query.detail : undefined;
+        const model = typeof ctx.query.model === 'string' && ctx.query.model ? ctx.query.model : undefined;
+        return overlayCall(ctx, { op: 'targets', model, detail, groups: ctx.query.groups === '1' });
+    });
+    router.get('/api/ezp/overlays', (ctx) => overlayCall(ctx, { op: 'list' }));
+    router.post('/api/ezp/overlays', (ctx) => {
+        // An app that sends its token holds the lease under its instance title; nobody can claim one in the body.
+        const { owner: _claimed, ...request } = (ctx.request.body ?? {}) as OverlayLeaseRequest;
+        const owner = appsRuntime.ownerOf(ctx.get('x-ezp-app-token') || undefined);
+        return overlayCall(ctx, { op: 'open', request: owner ? { ...request, owner } : request });
+    });
+    router.delete('/api/ezp/overlays/:id', (ctx) =>
+        overlayCall(ctx, { op: 'close', id: overlayId(ctx), token: overlayToken(ctx) }),
+    );
+    router.post('/api/ezp/overlays/:id/keepalive', (ctx) =>
+        overlayCall(ctx, { op: 'keepalive', id: overlayId(ctx), token: overlayToken(ctx) }),
+    );
+    router.put('/api/ezp/overlays/:id/frame', async (ctx) => {
+        const raw = await getRawBody(ctx.req, { limit: '16mb' });
+        const seq = Number(ctx.query.seq ?? Date.now() & 0x7fffffff);
+        await overlayCall(ctx, {
+            op: 'frame',
+            id: overlayId(ctx),
+            token: overlayToken(ctx),
+            seq,
+            data: new Uint8Array(raw),
+        });
+    });
+
+    // ----------------------------------------------
+    // Audio injection: an external producer streams PCM or plays uploaded
+    // clips into a named bus through a lease (see audiobus.ts). Buses beyond
+    // the built-in two are kept in playback settings.
+    // ----------------------------------------------
+    const audioCall = async (ctx: Koa.Context, cmd: AudioCommand) => {
+        try {
+            const res = await rpc.call('audioCommand', cmd);
+            if (!res.ok) {
+                ctx.status = res.error === 'player not running' ? 503 : /^unknown lease/.test(res.error) ? 404 : 400;
+            }
+            ctx.body = res;
+        } catch (error) {
+            console.error('[server-worker] audio command failed:', error);
+            ctx.status = 500;
+            ctx.body = { ok: false, error: 'Internal server error' };
+        }
+    };
+    const audioRef = (ctx: Koa.Context) => ({
+        id: Number(ctx.params.id),
+        token: Number(ctx.query.token ?? ctx.get('x-ezp-token') ?? 0),
+    });
+    const optionalNumber = (v: unknown) => (v === undefined || v === '' ? undefined : Number(v));
+    const audioBody = (ctx: Koa.Context) => (ctx.request.body ?? {}) as Record<string, unknown>;
+
+    router.get('/api/ezp/audio/buses', (ctx) => audioCall(ctx, { op: 'buses' }));
+    const refuse = (ctx: Koa.Context, status: number, error: string) => {
+        ctx.status = status;
+        ctx.body = { ok: false, error };
+        return false;
+    };
+    const busesFull = `the player has all ${MAX_AUDIO_BUSES} of its audio buses; remove one first`;
+
+    router.post('/api/ezp/audio/buses', async (ctx) => {
+        const r = cleanAudioBus(ctx.request.body);
+        if (!r.ok) return void refuse(ctx, 400, r.error);
+        const stored = await audioSettingsTurn(async () => {
+            const settings = settingsOr503(ctx);
+            if (!settings) return false;
+            if (audioBusesFull(settings, r.bus.name)) return refuse(ctx, 400, busesFull);
+            await applyPlaybackSettings(upsertAudioBus(settings, r.bus));
+            return true;
+        });
+        if (stored) await audioCall(ctx, { op: 'buses' });
+    });
+    router.delete('/api/ezp/audio/buses/:name', async (ctx) => {
+        const name = String(ctx.params.name);
+        const removed = await audioSettingsTurn(async () => {
+            const settings = settingsOr503(ctx);
+            if (!settings) return false;
+            const buses = resolveAudioBuses(settings);
+            const bus = buses.find((b) => b.name === name);
+            const stored = Array.isArray(settings.audioBuses) && settings.audioBuses.some((b) => b?.name === name);
+            if (!stored)
+                return refuse(ctx, bus ? 400 : 404, bus ? `${name} is built in` : `no audio bus named ${name}`);
+            await applyPlaybackSettings(removeAudioBus(settings, name));
+            return true;
+        });
+        if (removed) await audioCall(ctx, { op: 'buses' });
+    });
+
+    router.get('/api/ezp/audio/listeners', (ctx) => {
+        ctx.body = { ok: true, listeners: audioListenerStatus() };
+    });
+    router.delete('/api/ezp/audio/listeners/:name', async (ctx) => {
+        const name = String(ctx.params.name);
+        const removed = await audioSettingsTurn(async () => {
+            const settings = settingsOr503(ctx);
+            if (!settings) return false;
+            if (!audioListenerStatus().some((l) => l.name === name)) {
+                return refuse(ctx, 404, `no audio listener named ${name}`);
+            }
+            await applyPlaybackSettings(removeAudioListener(settings, name));
+            return true;
+        });
+        if (removed) ctx.body = { ok: true, listeners: audioListenerStatus() };
+    });
+
+    router.get('/api/ezp/audio/leases', (ctx) => audioCall(ctx, { op: 'list' }));
+    router.post('/api/ezp/audio/leases', async (ctx) => {
+        const request = audioBody(ctx) as AudioLeaseRequest;
+        // A lease on a bus nobody has defined registers it, so it shows in settings.
+        let newBus: AudioBusConfig | undefined;
+        const ready = await audioSettingsTurn(async () => {
+            const settings = currentPlaybackSettings();
+            const bus = request.bus;
+            if (bus === undefined || !settings || resolveAudioBuses(settings).some((b) => b.name === bus)) return true;
+            const r = cleanAudioBus({ name: bus });
+            if (!r.ok) return refuse(ctx, 400, `bus ${r.error}`);
+            if (audioBusesFull(settings, r.bus.name)) return refuse(ctx, 400, busesFull);
+            newBus = r.bus;
+            await applyPlaybackSettings(upsertAudioBus(settings, newBus));
+            return true;
+        });
+        if (ready) await audioCall(ctx, { op: 'open', request, newBus });
+    });
+    router.delete('/api/ezp/audio/leases/:id', (ctx) => audioCall(ctx, { op: 'close', ...audioRef(ctx) }));
+    router.post('/api/ezp/audio/leases/:id/keepalive', (ctx) => audioCall(ctx, { op: 'keepalive', ...audioRef(ctx) }));
+    router.post('/api/ezp/audio/leases/:id/gain', (ctx) =>
+        audioCall(ctx, { op: 'gain', ...audioRef(ctx), gain: Number(audioBody(ctx).gain) }),
+    );
+    router.put('/api/ezp/audio/leases/:id/stream', async (ctx) => {
+        const raw = await getRawBody(ctx.req, { limit: '8mb' });
+        await audioCall(ctx, {
+            op: 'stream',
+            ...audioRef(ctx),
+            data: new Uint8Array(raw),
+            at: optionalNumber(ctx.query.at),
+            seq: optionalNumber(ctx.query.seq),
+        });
+    });
+    router.put('/api/ezp/audio/leases/:id/clips/:name', async (ctx) => {
+        const raw = await getRawBody(ctx.req, { limit: '64mb' });
+        await audioCall(ctx, {
+            op: 'clip',
+            ...audioRef(ctx),
+            name: String(ctx.params.name),
+            data: new Uint8Array(raw),
+        });
+    });
+    router.delete('/api/ezp/audio/leases/:id/clips/:name', (ctx) =>
+        audioCall(ctx, { op: 'unclip', ...audioRef(ctx), name: String(ctx.params.name) }),
+    );
+    router.post('/api/ezp/audio/leases/:id/play', (ctx) => {
+        const b = audioBody(ctx);
+        return audioCall(ctx, {
+            op: 'play',
+            ...audioRef(ctx),
+            request: {
+                clip: String(b.clip ?? ''),
+                at: optionalNumber(b.at),
+                gain: optionalNumber(b.gain),
+                loop: b.loop === true,
+            },
+        });
+    });
+    router.post('/api/ezp/audio/leases/:id/stop', (ctx) => {
+        const b = audioBody(ctx);
+        return audioCall(ctx, {
+            op: 'stop',
+            ...audioRef(ctx),
+            voice: optionalNumber(b.voice),
+            fadeMs: optionalNumber(b.fadeMs),
+        });
+    });
+
+    // ----------------------------------------------
+    // Canonical frame pool: RGB per node in layout order. The manifest says
+    // which nodes belong to which model; /pool/model/:name serves one model's
+    // run (row-major for grids) for virtual matrix outputs and other viewers.
+    // ----------------------------------------------
+    router.get('/api/ezp/pool/manifest', (ctx) => {
+        if (!curPoolManifest) {
+            ctx.status = 204;
+            return;
+        }
+        ctx.set('Cache-Control', 'no-store');
+        ctx.body = curPoolManifest;
+    });
+    // Binary: u16 width, u16 height, u32 seq, u8 stride, u8 flags (bit0: rows bottom-first), u16 reserved, then pixels.
+    // ?after=SEQ answers 204 when nothing is newer; with &wait=MS it first waits that long for a newer frame.
+    router.get('/api/ezp/pool/model/:name', async (ctx) => {
+        ctx.set('Access-Control-Allow-Origin', '*');
+        ctx.set('Cache-Control', 'no-store');
+        const after = Number(ctx.query.after ?? -1);
+        const wait = Math.min(MATRIX_MAX_WAIT_MS, Math.max(0, Number(ctx.query.wait) || 0));
+        if (wait > 0 && curPixelPool && curPixelPool.latestSeq() === after) await curPixelPool.waitForSeq(after, wait);
+        // Read these after the wait: a layout change replaces both.
+        const pool = curPixelPool;
+        const manifest = curPoolManifest;
+        if (!pool || !manifest) {
+            ctx.status = 204;
+            return;
+        }
+        // Exact name first; a hand-typed URL may get the case wrong.
+        const wanted = String(ctx.params.name);
+        const lower = wanted.toLowerCase();
+        const m =
+            manifest.models.find((x) => x.name === wanted) ??
+            manifest.models.find((x) => x.name.toLowerCase() === lower);
+        if (!m || m.nodeStart < 0) {
+            ctx.status = 404;
+            ctx.body = { error: 'no such pixel model' };
+            return;
+        }
+        // The layout's own spelling of the name, for the page's title.
+        ctx.set('X-EZP-Model', encodeURIComponent(m.name));
+        ctx.set('Access-Control-Expose-Headers', 'X-EZP-Model');
+        const one = (v: unknown) => (typeof v === 'string' && v !== '' ? v.slice(0, 64) : undefined);
+        const painted = Number(ctx.query.painted);
+        const note = (served: boolean) =>
+            matrixReaders.note({
+                model: m.name,
+                client: one(ctx.query.client),
+                output: one(ctx.query.out),
+                ip: ctx.ip,
+                seq: pool.latestSeq(),
+                served,
+                painted: Number.isFinite(painted) && ctx.query.painted !== undefined ? painted : undefined,
+            });
+        const f = pool.acquireLatest();
+        if (!f) {
+            note(false);
+            ctx.status = 204;
+            return;
+        }
+        try {
+            if (f.seq === after) {
+                note(false);
+                ctx.status = 204;
+                return;
+            }
+            const stride = pool.pixelStride;
+            const w = m.grid?.width ?? m.nodeCount;
+            const h = m.grid?.height ?? 1;
+            const bytes = m.nodeCount * stride;
+            const out = frameBufferPool.get(12 + bytes);
+            out.writeUInt16LE(w, 0);
+            out.writeUInt16LE(h, 2);
+            out.writeUInt32LE(f.seq >>> 0, 4);
+            out.writeUInt8(stride, 8);
+            out.writeUInt8(1, 9);
+            out.writeUInt16LE(0, 10);
+            out.set(f.bytes.subarray(m.nodeStart * stride, m.nodeStart * stride + bytes), 12);
+            ctx.res.on('finish', () => frameBufferPool.release(out));
+            ctx.type = 'application/octet-stream';
+            ctx.body = out.subarray(0, 12 + bytes);
+            note(true);
+        } finally {
+            pool.release(f.slot);
+        }
+    });
+    // Who is reading model pixels and how fast, plus where other computers can reach the /matrix page.
+    router.get('/api/ezp/matrix/status', (ctx) => {
+        ctx.set('Access-Control-Allow-Origin', '*');
+        ctx.set('Cache-Control', 'no-store');
+        ctx.body = virtualMatrixStatus(ctx.URL.port);
+    });
+    router.get('/api/ezp/displays', async (ctx) => {
+        try {
+            ctx.body = { displays: await rpc.call('listDisplays') };
+        } catch (e) {
+            ctx.status = 500;
+            ctx.body = { error: (e as Error).message };
+        }
+    });
+    router.get('/matrix', (ctx) => {
+        ctx.type = 'text/html';
+        ctx.body = MATRIX_PAGE_HTML;
+    });
 
     router.get('/api/ezp/frames', async (ctx) => {
         // CORS headers for Electron renderer (file:// origin)
@@ -2267,6 +3004,9 @@ async function startServer(config: ServerWorkerData) {
         ctx.body = { now: rtcNow(), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone };
     });
 
+    // Scene object reads (viewer feed, asset bytes); writes are web-app-only below.
+    registerSceneReadRoutes(router, sceneObjects);
+
     webApp.use(router.routes());
     webApp.use(router.allowedMethods());
 
@@ -2295,6 +3035,33 @@ async function startServer(config: ServerWorkerData) {
             },
         isIpAllowed: proxyTargetAllowed,
     });
+    // Scene object writes change what every viewer sees, so not on the kiosk.
+    registerSceneWriteRoutes(scanRouter, sceneObjects);
+    // Player apps: owner commands, instance events/status/documents, show inputs. Web app only.
+    registerAppsRoutes(scanRouter, appsRuntime, appsDeps);
+    // Test + Tweak: the show's tweak document (per-model output trims, wiring
+    // overrides, test groups, saved patterns) and the running test pattern.
+    // Web app only: these change what the lights do.
+    const testTweakCall = async (ctx: Koa.Context, cmd: TestTweakCommand) => {
+        try {
+            const res = await rpc.call('testTweakCommand', cmd);
+            // Not up yet (player starting) is a 503; a bad request is a 400.
+            if (!res.ok) ctx.status = res.error === 'player not running' ? 503 : 400;
+            ctx.body = res;
+        } catch (error) {
+            console.error('[server-worker] test+tweak command failed:', error);
+            ctx.status = 500;
+            ctx.body = { ok: false, error: 'Internal server error' };
+        }
+    };
+    // ?xlgroups=1 adds the show's xLights model groups, flattened to models and submodels.
+    scanRouter.get('/api/ezp/testtweak', (ctx) =>
+        testTweakCall(ctx, { op: 'get', ...(ctx.query.xlgroups === '1' ? { xlGroups: true } : {}) }),
+    );
+    scanRouter.put('/api/ezp/testtweak/doc', (ctx) => testTweakCall(ctx, { op: 'setDoc', doc: ctx.request.body }));
+    scanRouter.post('/api/ezp/testtweak/test', (ctx) => testTweakCall(ctx, { op: 'start', test: ctx.request.body }));
+    scanRouter.delete('/api/ezp/testtweak/test', (ctx) => testTweakCall(ctx, { op: 'stop' }));
+
     // Support zip; web app only, like the routes above. ?level= picks what it holds.
     scanRouter.get('/api/ezp/support/logs.zip', async (ctx) => {
         const level = ctx.query.level ?? 'logs';
@@ -2463,6 +3230,7 @@ async function startServer(config: ServerWorkerData) {
     attachRemoteAccessUpgrade(httpServer, '/terminal', terminalWss, terminalEndpointEnabled);
     attachRemoteAccessUpgrade(httpServer, '/filemanager', fileManagerWss, fileManagerEndpointEnabled);
     attachAudioStreamUpgrade(httpServer);
+    attachAppsLiveUpgrade(httpServer, appsRuntime);
 
     // ----------------------------
     // Kiosk server — second port, same API, limited sidebar

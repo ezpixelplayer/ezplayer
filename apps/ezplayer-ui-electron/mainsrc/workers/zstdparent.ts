@@ -1,7 +1,7 @@
 // parent.ts
 import { Worker } from 'node:worker_threads';
 import * as path from 'path';
-import { type DecompZStd } from '@ezplayer/epp';
+import { type DecompPost, type DecompZStd } from '@ezplayer/epp';
 import { fileURLToPath } from 'node:url';
 
 // Polyfill for `__dirname` in ES Modules
@@ -13,6 +13,7 @@ type WorkerOk = {
     ok: true;
     decompBuf: ArrayBuffer;
     compBuf: ArrayBuffer;
+    outBuf?: ArrayBuffer;
     decompTime: number;
 };
 type WorkerErr = {
@@ -21,6 +22,7 @@ type WorkerErr = {
     error: string;
     decompBuf: ArrayBuffer;
     compBuf: ArrayBuffer;
+    outBuf?: ArrayBuffer;
 };
 
 let nextId = 1;
@@ -44,7 +46,7 @@ export function resetZstdStats() {
 
 const decompressWithWorker =
     (codec: 'zstd' | 'zlib'): DecompZStd =>
-    (decomp: ArrayBuffer, comp: ArrayBuffer, compOff: number, compLen: number, expLen: number) => {
+    (decomp: ArrayBuffer, comp: ArrayBuffer, compOff: number, compLen: number, expLen: number, post?: DecompPost) => {
         const id = nextId++;
         const worker = workers.pop();
         if (!worker) throw new Error('Too many outstanding requests');
@@ -65,16 +67,14 @@ const decompressWithWorker =
                 decompTime += msg.ok ? msg.decompTime : 0;
 
                 // Recreate views on the returned (transferred-back) buffers
-                resolve({ decompBuf: msg.decompBuf, compBuf: msg.compBuf });
+                resolve({ decompBuf: msg.decompBuf, compBuf: msg.compBuf, outBuf: msg.outBuf });
             };
 
             worker.on('message', onMessage);
 
-            // Transfer BOTH buffers to the worker (zero-copy). After this, these views are detached here.
-            worker.postMessage({ id, codec, expLen, compOff, compLen, decompBuf: decomp, compBuf: comp }, [
-                decomp,
-                comp,
-            ]);
+            // Transfer the buffers to the worker (zero-copy); the map program is SharedArrayBuffer-backed.
+            const transfer = post ? [decomp, comp, post.outBuf] : [decomp, comp];
+            worker.postMessage({ id, codec, expLen, compOff, compLen, decompBuf: decomp, compBuf: comp, post }, transfer);
         });
     };
 

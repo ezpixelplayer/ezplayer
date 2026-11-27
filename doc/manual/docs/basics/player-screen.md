@@ -59,6 +59,18 @@ The level follows your volume schedule, so the meter is read-only. You can
 mute/unmute with the speaker icon, and adjust default and scheduled volumes by
 clicking the meter or the tune icon — see [Volume](../advanced/volume.md).
 
+### Brightness
+
+:::note
+Requires EZPlayer 0.7 or later.
+:::
+
+Below the volume meter, a second meter shows the output brightness the player
+is sending right now (0–100%), with the color temperature in kelvin when it is
+not neutral. It follows your brightness schedule, so it too is read-only;
+clicking it or its tune icon opens the brightness settings — see
+[Brightness](../advanced/brightness.md).
+
 ### Now Playing and Up Next
 
 When a song or sequence is active:
@@ -178,5 +190,6 @@ public-facing display while hiding management screens and destructive controls.
 | View Player screen   | Yes         | Yes             | Yes                  |
 | Live mute toggle     | Yes         | Yes             | No (read-only meter) |
 | Volume settings      | Yes         | Yes             | No                   |
+| Brightness settings  | Yes         | Yes             | No                   |
 | End / Abort controls | Yes         | Yes             | Hidden               |
 | Today's timeline     | Yes         | Yes             | Yes                  |

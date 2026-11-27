@@ -1,0 +1,14 @@
+{
+    "id": "input-playground",
+    "name": "Input Playground",
+    "version": "1",
+    "description": "Pretend show-input buttons, switches, sliders and a text box that call the player exactly like a real controller would",
+    "icon": "🎛️",
+    "runtime": "node",
+    "start": ["playground.mjs"],
+    "page": "page/",
+    "config": "config/",
+    "inputs": [],
+    "platforms": ["win32", "darwin", "linux"],
+    "events": { "perMinute": 3000, "perClientPerSecond": 20 }
+}

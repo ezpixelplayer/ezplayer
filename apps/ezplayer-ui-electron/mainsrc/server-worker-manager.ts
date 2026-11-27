@@ -1,3 +1,8 @@
+import type { LayoutManifest } from '@ezplayer/epp';
+import { listDisplays, setMatrixWindowsWebPort, syncMatrixWindowsFromSettings } from './matrixWindows.js';
+import type { OverlayCommand } from './workers/overlaytypes.js';
+import type { TestTweakCommand } from './workers/testtweak.js';
+import type { AudioCommand } from './workers/audiotypes.js';
 /**
  * Server Worker Manager - manages the Koa server running in a worker thread
  */
@@ -6,7 +11,7 @@ import { Worker } from 'node:worker_threads';
 import * as path from 'path';
 import * as fs from 'fs';
 import { fileURLToPath } from 'url';
-import type { CloudAudioMode } from '@ezplayer/ezplayer-core';
+import type { AudioChunk, CloudAudioMode } from '@ezplayer/ezplayer-core';
 import { app, BrowserWindow } from 'electron';
 import type {
     ServerWorkerToMainMessage,
@@ -21,6 +26,9 @@ import {
     loadShowFolder,
     dispatchCloudCommand,
     putSequencesWithDurations,
+    playWorkerOverlay,
+    playWorkerTestTweak,
+    playWorkerAudio,
     getPlaybackItemOrder,
 } from './ipcezplayer.js';
 import { getCurrentShowFolder } from '../showfolder.js';
@@ -52,6 +60,9 @@ import {
 import { dispatchUpdateCommand, setAutoUpdateOpsBroadcaster, publishAutoUpdateOps } from './ipcautoupdate.js';
 import { dispatchAppSettingsCommand, setAppSettingsBroadcaster } from './appSettings.js';
 import { ezpVersions } from '../versions.js';
+import { appsCommand, appsSawStatus, appsServerReady } from './apps/apps.js';
+import type { AppsAuthEntry } from './workers/serverworkertypes.js';
+export type { AppsAuthEntry };
 import type {
     PlaybackSettings,
     EZPlayerCommand,
@@ -114,6 +125,12 @@ const rpcHandlers: ServerWorkerRPCAPI = {
     applySettingsFromRenderer: (settingsPath: string, settings: unknown) => {
         applySettingsFromRenderer(settingsPath, settings as PlaybackSettings);
     },
+    overlayCommand: (cmd: unknown) => playWorkerOverlay(cmd as OverlayCommand),
+    testTweakCommand: (cmd: unknown) => playWorkerTestTweak(cmd as TestTweakCommand),
+    audioCommand: (cmd: unknown) => playWorkerAudio(cmd as AudioCommand),
+    appsCommand: (cmd) => appsCommand(cmd),
+    appsSawStatus: (instance) => appsSawStatus(instance),
+    listDisplays: async () => listDisplays(),
     sendPlayerCommand: (command: unknown) => {
         const cmd = command as EZPlayerCommand;
         if (cmd.command === 'resetplayback') {
@@ -139,6 +156,7 @@ const rpcHandlers: ServerWorkerRPCAPI = {
     sendPlaybackSettings: (settings: unknown) => {
         const playbackSettings = settings as PlaybackSettings;
         syncAudioOutputsFromSettings(playbackSettings);
+        syncMatrixWindowsFromSettings(playbackSettings);
         if (playWorkerRef) {
             playWorkerRef.postMessage({
                 type: 'settings',
@@ -286,6 +304,7 @@ export async function setUpServerWorker(config: ServerWorkerConfig): Promise<voi
                     kioskPort: msg.kioskPort,
                     kioskPortSource: msg.kioskPortSource,
                 };
+                setMatrixWindowsWebPort(msg.status === 'listening' ? msg.port : undefined);
                 console.log(
                     `[server-worker-manager] Server status: ${msg.status} on port ${msg.port}` +
                         (msg.kioskPort ? ` (kiosk ${msg.kioskPort})` : ''),
@@ -295,6 +314,9 @@ export async function setUpServerWorker(config: ServerWorkerConfig): Promise<voi
                     // Seed the broadcaster's key cache so late-joining LAN/cloud
                     // clients get update state in their first snapshot.
                     publishAutoUpdateOps();
+                    // App processes need the web port, and the worker needs their secrets.
+                    if (lastAppsAuth) setAppsAuth(lastAppsAuth);
+                    void appsServerReady();
                     // Record what we actually bound.
                     const showFolder = getCurrentShowFolder();
                     if (showFolder) {
@@ -305,6 +327,9 @@ export async function setUpServerWorker(config: ServerWorkerConfig): Promise<voi
                         }).catch((err) => console.warn('[server-worker-manager] could not record ports:', err));
                     }
                 }
+                break;
+            case 'busAudioWanted':
+                wantedBuses = new Set(msg.buses);
                 break;
             case 'request':
                 // Handle RPC request from server worker
@@ -473,6 +498,13 @@ async function handleRPCRequest(id: string, method: string, args: unknown[]) {
 /**
  * Update frame buffer in server worker
  */
+/** Hand the canonical frame pool (and its layout manifest) to the server worker. */
+export function updatePixelPool(buffer: SharedArrayBuffer | undefined, manifest: LayoutManifest | undefined) {
+    if (!serverWorker) return;
+    const message: MainToServerWorkerMessage = { type: 'updatePixelPool', buffer, manifest };
+    serverWorker.postMessage(message);
+}
+
 export function updateFrameBuffer(buffer: SharedArrayBuffer) {
     if (!serverWorker) return;
 
@@ -483,6 +515,15 @@ export function updateFrameBuffer(buffer: SharedArrayBuffer) {
     // SharedArrayBuffer must NOT be in the transferList — it is automatically
     // shared (not transferred) via structured clone when referenced in the message.
     serverWorker.postMessage(message);
+}
+
+/** Buses somebody is subscribed to, as the server worker last reported. */
+let wantedBuses = new Set<string>();
+
+/** Pass a bus chunk to the server worker when that bus has subscribers. */
+export function forwardBusAudio(chunk: AudioChunk): void {
+    if (!serverWorker || !chunk.bus || !wantedBuses.has(chunk.bus)) return;
+    serverWorker.postMessage({ type: 'busAudio', chunk } satisfies MainToServerWorkerMessage);
 }
 
 /**
@@ -511,6 +552,14 @@ export function broadcastToWebSocket(key: string, value: unknown) {
         value,
     };
     serverWorker.postMessage(message);
+}
+
+let lastAppsAuth: Record<string, AppsAuthEntry> | undefined;
+
+/** The app instances the worker serves, with their secrets. Remembered for a worker started later. */
+export function setAppsAuth(instances: Record<string, AppsAuthEntry>) {
+    lastAppsAuth = instances;
+    serverWorker?.postMessage({ type: 'appsAuth', instances } satisfies MainToServerWorkerMessage);
 }
 
 /**

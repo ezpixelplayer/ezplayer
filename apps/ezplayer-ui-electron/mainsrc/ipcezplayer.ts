@@ -1,3 +1,7 @@
+import { setMatrixWindowMovedHandler, syncMatrixWindowsFromSettings } from './matrixWindows.js';
+import type { OverlayCommand, OverlayResult } from './workers/overlaytypes.js';
+import type { TestTweakCommand, TestTweakResult } from './workers/testtweak.js';
+import type { AudioCommand, AudioResult } from './workers/audiotypes.js';
 //import { app } from "electron";
 import { fileURLToPath } from 'url';
 import { ezpVersions } from '../versions.js';
@@ -114,7 +118,8 @@ import {
     pickAnotherShowFolder,
     pickCloudShowFolder,
 } from '../showfolder.js';
-import { getServerStatus, setCloudAudioMode, setRtcOffset } from './server-worker-manager.js';
+import { forwardBusAudio, getServerStatus, setCloudAudioMode, setRtcOffset } from './server-worker-manager.js';
+import { appsLoadShow } from './apps/apps.js';
 import {
     dispatchControllerCommand,
     cancelQueuedAutomaticReads,
@@ -133,6 +138,7 @@ import {
 import type { ControllerCommand, PlayerNStatusContent } from '@ezplayer/ezplayer-core';
 import {
     updateFrameBuffer,
+    updatePixelPool,
     updateAudioBuffer,
     broadcastToWebSocket,
     pushModelCoordinates,
@@ -307,6 +313,24 @@ function applyStatusSummary() {
 }
 export let curFrameBuffer: SharedArrayBuffer | undefined = undefined;
 let rpcc: RPCClient<PlayWorkerRPCAPI> | undefined = undefined;
+
+/** Forward an overlay lease command to the playback worker. */
+export async function playWorkerOverlay(cmd: OverlayCommand): Promise<OverlayResult> {
+    if (!rpcc) return { ok: false, error: 'player not running' };
+    return rpcc.call('overlay', cmd);
+}
+
+/** Forward a Test + Tweak command to the playback worker. */
+export async function playWorkerTestTweak(cmd: TestTweakCommand): Promise<TestTweakResult> {
+    if (!rpcc) return { ok: false, error: 'player not running' };
+    return rpcc.call('testTweak', cmd);
+}
+
+/** Forward an audio bus command to the playback worker. */
+export async function playWorkerAudio(cmd: AudioCommand): Promise<AudioResult> {
+    if (!rpcc) return { ok: false, error: 'player not running' };
+    return rpcc.call('audio', cmd);
+}
 
 /** Ledger of files the cloud has installed into the show folder. `runGcSweep` deletes
  *  any tracked file no longer referenced by a current sequence record or by live
@@ -608,6 +632,7 @@ export async function updateSettingsHandler(cloud: CloudPlayerSettings): Promise
     applySettingsFromRenderer(settingsPath(showFolder, 'playbackSettings.json'), next);
     await saveCloudSettingsMeta(metaPath, newMeta);
     syncAudioOutputsFromSettings(next);
+    syncMatrixWindowsFromSettings(next);
     safeSend(updateWindow, 'update:playbacksettings', next);
     broadcastToWebSocket('playbackSettings', next);
     playWorker?.postMessage({ type: 'settings', settings: next } as PlayerCommand);
@@ -854,6 +879,8 @@ async function loadShowData(showFolder: string, forceRestart?: boolean) {
 
     // Broadcast via WebSocket (for React web app)
     broadcastToWebSocket('showFolder', showFolder);
+    // Player apps belong to the show: stop the old show's, start this one's.
+    await appsLoadShow(showFolder);
     void publishRemoteAccessAvailability();
     broadcastToWebSocket(
         'sequences',
@@ -874,6 +901,7 @@ async function loadShowData(showFolder: string, forceRestart?: boolean) {
     const settings = getSettingsCache();
     if (settings) {
         syncAudioOutputsFromSettings(settings);
+        syncMatrixWindowsFromSettings(settings);
         playWorker?.postMessage({
             type: 'settings',
             settings,
@@ -1129,6 +1157,23 @@ export async function registerContentHandlers(mainWindow: BrowserWindow | null, 
     updateWindow = mainWindow;
     playWorker = nPlayWorker;
 
+    // A floating matrix window was dragged: remember where it is.
+    setMatrixWindowMovedHandler((id, x, y) => {
+        const showFolder = getCurrentShowFolder();
+        const current = getSettingsCache();
+        const outputs = current?.virtualMatrixOutputs;
+        if (!showFolder || !current || !outputs?.some((o) => o.id === id)) return;
+        const next = {
+            ...current,
+            virtualMatrixOutputs: outputs.map((o) => (o.id === id ? { ...o, windowX: x, windowY: y } : o)),
+        };
+        applySettingsFromRenderer(settingsPath(showFolder, 'playbackSettings.json'), next);
+        syncMatrixWindowsFromSettings(next);
+        safeSend(updateWindow, 'update:playbacksettings', next);
+        broadcastToWebSocket('playbackSettings', next);
+        playWorker?.postMessage({ type: 'settings', settings: next } as PlayerCommand);
+    });
+
     ipcMain.handle('ipcUIConnect', async (_event): Promise<UIConnectSnapshot> => {
         await loadShowFolder();
         // Return the initial state directly — the invoke reply cannot be lost,
@@ -1290,6 +1335,7 @@ export async function registerContentHandlers(mainWindow: BrowserWindow | null, 
         const showFolder = getCurrentShowFolder();
         if (showFolder) applySettingsFromRenderer(settingsPath(showFolder, 'playbackSettings.json'), settings);
         syncAudioOutputsFromSettings(settings);
+        syncMatrixWindowsFromSettings(settings);
         playWorker?.postMessage({
             type: 'settings',
             settings,
@@ -1426,7 +1472,12 @@ export async function registerContentHandlers(mainWindow: BrowserWindow | null, 
         switch (msg.type) {
             case 'audioChunk': {
                 if (msg.chunk.rtcOffsetMs !== undefined) setRtcOffset(msg.chunk.rtcOffsetMs);
-                broadcastAudioChunk(msg.chunk, msg.volumeSF, msg.outputGains);
+                broadcastAudioChunk(msg.chunk, msg.volumeSF, msg.outputGains, msg.busGain);
+                forwardBusAudio(msg.chunk);
+                break;
+            }
+            case 'pixelpool': {
+                updatePixelPool(msg.buffer, msg.manifest);
                 break;
             }
             case 'pixelbuffer': {
@@ -1487,6 +1538,10 @@ export async function registerContentHandlers(mainWindow: BrowserWindow | null, 
             case 'modelCoordinates': {
                 pushModelCoordinates(msg.coords3D, msg.coords2D, msg.viewObjects, msg.layoutSettings, msg.movingHeads);
                 if (msg.controllers) setKnownControllers(msg.controllers);
+                break;
+            }
+            case 'knownControllers': {
+                setKnownControllers(msg.controllers);
                 break;
             }
             case 'rpc': {

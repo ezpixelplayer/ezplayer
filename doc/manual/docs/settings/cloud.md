@@ -58,8 +58,10 @@ for later.
 
 Expand **Advanced** for infrequently changed options:
 
-- **Cloud Service URL** — click **Edit** to override the default EZRGB cloud
-  endpoint (for development/staging or self-hosted installs).
+- **Cloud service** — **Production** (`api.ezplayer.dev`, the default),
+  **Development** (`dev.ezplayer.dev`), or **Other address** for a self-hosted
+  install, which shows a field for the full URL. Picking a cloud restarts
+  registration and sync against it.
 - **Current Player ID** — the ID for this show folder, masked by default; use
   the eye icon to reveal it or the copy icon to copy it. **Generate New**
   creates a fresh ID (requires re-registration). **Enter Manually** lets you
