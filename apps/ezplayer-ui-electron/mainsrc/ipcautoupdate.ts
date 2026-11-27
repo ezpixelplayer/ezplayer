@@ -323,7 +323,9 @@ function registerIPCHandlers() {
 
 // ── Public API ─────────────────────────────────────────────────────
 
-export function registerAutoUpdateHandlers(win: BrowserWindow) {
+/** `win` is null in headless mode: status then reaches clients only through
+ *  the ops broadcaster (LAN/cloud), and commands arrive the same way. */
+export function registerAutoUpdateHandlers(win: BrowserWindow | null) {
     mainWin = win;
 
     autoUpdater.autoDownload = false;

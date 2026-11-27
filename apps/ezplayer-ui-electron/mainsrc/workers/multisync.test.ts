@@ -158,6 +158,26 @@ describe('MultiSyncSender', () => {
         ]);
     });
 
+    it('restarts the same file with stop/open/start when it loops', async () => {
+        sender.onFrame({ seq: seqAt(0), media: { file: 'Song.mp3', secondsElapsed: 0 } }, 0);
+        sender.onFrame({ seq: seqAt(599), media: { file: 'Song.mp3', secondsElapsed: 29.95 } }, 29950);
+        await drain(7);
+        sender.onFrame({ seq: seqAt(0), media: { file: 'Song.mp3', secondsElapsed: 0 } }, 30000);
+        const pk = await drain(7);
+        expect(pk.map((p) => [p.action, p.fileType, p.frame])).toEqual([
+            ['stop', 1, 0],
+            ['stop', 0, 0],
+            ['open', 0, 0],
+            ['start', 0, 0],
+            ['sync', 0, 0],
+            ['open', 1, 0],
+            ['start', 1, 0],
+        ]);
+        // Playing on is not a restart.
+        sender.onFrame({ seq: seqAt(1), media: { file: 'Song.mp3', secondsElapsed: 0.05 } }, 30050);
+        expect((await drain(1))[0]).toMatchObject({ action: 'sync', fileType: 0, frame: 1 });
+    });
+
     it('keeps the sequence packets and drops media when mediaSync is off', async () => {
         sender.configure({ enabled: true, remotes: [`127.0.0.1:${port}`], mediaSync: false });
         sender.onFrame({ seq: seqAt(0), media: { file: 'Song.mp3', secondsElapsed: 0 } }, 0);
