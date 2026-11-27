@@ -9,7 +9,7 @@
  * pose the page reports goes to the player's show inputs the way a base station would
  * send it:
  *
- *     POST /api/ezp/inputs/<source>/pose   { "value": { "x", "z", "yaw", "pitch", "on" } }
+ *     POST /api/ezp/inputs/<source>/pose   { "value": { "x", "z", "yaw", "pitch", "on", "t" } }
  *
  * with x and z in meters (x right, z toward the holder's back), yaw and pitch in degrees
  * (yaw 0 faces the display, pitch up), and on true while the beam is lit. The Apps card's
@@ -75,7 +75,8 @@ async function refreshSettings() {
 
 /** The controller-style call: no app token, no instance, just what a base station would send. */
 async function sendPose() {
-    const value = { x: round(pose.x, 3), z: round(pose.z, 3), yaw: round(pose.yaw, 1), pitch: round(pose.pitch, 1), on: pose.on };
+    // t is this clock's time of sending, so a game on the same machine can say how far behind it runs.
+    const value = { x: round(pose.x, 3), z: round(pose.z, 3), yaw: round(pose.yaw, 1), pitch: round(pose.pitch, 1), on: pose.on, t: Date.now() };
     const body = JSON.stringify({ value });
     lastSentJson = body;
     lastSentAt = Date.now();

@@ -56,6 +56,9 @@ describe('pattern leases', () => {
         // Move the band onto A with a uniform update; B goes dark.
         expect(ov.write(lease.id, lease.token, 1, 0, uniforms({ offset: 20 }), true, 2000)).toBe(true);
         expect(lease.frames).toBe(1);
+        // Every output frame is one paint; the cost is smoothed, not summed.
+        expect(ov.list()[0].renders).toBeGreaterThanOrEqual(1);
+        expect(ov.list()[0].renderMs).toBeGreaterThanOrEqual(0);
         frame.fill(0);
         ov.composite(frame, 3, 2000);
         expect(red(2)).toBe(255);

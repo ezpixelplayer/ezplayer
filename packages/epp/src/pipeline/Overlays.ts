@@ -128,6 +128,10 @@ export interface OverlayLeaseInfo {
     openedAt: number;
     /** Frames committed so far (uniform updates for a pattern lease). */
     frames: number;
+    /** Pattern leases: how many output frames the pattern has painted, i.e. the player's frame rate over time. */
+    renders?: number;
+    /** Pattern leases: how long one paint takes, in ms, smoothed over the last few dozen frames. */
+    renderMs?: number;
     /** Pattern leases: what runs, on which evaluator, and the uniforms it paints with now. */
     pattern?: { preset?: string; backend: string; uniforms: PatternUniforms };
 }
@@ -391,7 +395,13 @@ class OverlayLayer {
     evaluate(nowMs: number): void {
         const p = this.pattern;
         if (!p) return;
+        const t0 = performance.now();
         p.renderer.render(p.uniforms, (nowMs - this.info.openedAt) / 1000, this.front);
+        const took = performance.now() - t0;
+        // What a client asking "is the GPU keeping up?" wants: a count to rate, and a smoothed cost.
+        this.info.renders = (this.info.renders ?? 0) + 1;
+        this.info.renderMs =
+            this.info.renderMs === undefined ? took : this.info.renderMs + (took - this.info.renderMs) / 32;
     }
 
     /** Blend the committed layer into a canonical frame. */
@@ -717,6 +727,8 @@ export class OverlayManager {
             expiresAt: now + ttlMs,
             openedAt: now,
             frames: 0,
+            renders: patternInfo ? 0 : undefined,
+            renderMs: patternInfo ? 0 : undefined,
             pattern: patternInfo,
         };
         this.layers.set(info.id, new OverlayLayer(info, target, nodes, pattern));

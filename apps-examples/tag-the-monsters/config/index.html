@@ -82,6 +82,7 @@
     <label>Heading offset (degrees)<input id="heading" type="number" step="1"></label>
     <label>World units per meter (blank: from the layout’s ruler)<input id="scale" type="number" step="1" min="0.01"></label>
     <label>Eye height (meters)<input id="eyeHeight" type="number" step="0.05" min="0"></label>
+    <label>Show View smoothing (ms; 0 snaps)<input id="smoothMs" type="number" step="10" min="0" max="1000"></label>
   </div>
   <div class="row">
     <label>Or: how wide is the whole display, in meters?<input id="widthM" type="number" step="0.5" min="0.5" placeholder="sets the units per meter"></label>
@@ -287,6 +288,7 @@
     el('heading').value = w.heading ?? 0;
     el('scale').value = w.scale ?? '';
     el('eyeHeight').value = w.eyeHeight ?? 1.6;
+    el('smoothMs').value = w.smoothMs ?? 50;
     const r = s.rules ?? {};
     el('roundSeconds').value = r.roundSeconds ?? 90;
     el('dwellMs').value = r.dwellMs ?? 350;
@@ -313,7 +315,7 @@
       spriteModels: checked('spriteModels'),
       beam: { halfAngle: n('halfAngle'), softness: n('softness'), range: n('range'), color: el('color').value, noise: n('noise'), blend: el('blend').value },
       background: { foe: el('bgFoe').value, friend: el('bgFriend').value, alpha: n('bgAlpha') },
-      wand: { origin, heading: n('heading'), scale: el('scale').value === '' ? null : n('scale'), eyeHeight: n('eyeHeight') },
+      wand: { origin, heading: n('heading'), scale: el('scale').value === '' ? null : n('scale'), eyeHeight: n('eyeHeight'), smoothMs: n('smoothMs') },
       rules: { roundSeconds: n('roundSeconds'), dwellMs: n('dwellMs'), coverage: n('coverage'), foePoints: n('foePoints'), friendPenalty: n('friendPenalty'), respawnMs: n('respawnMs'), restMs: n('restMs') },
       useUdp: el('useUdp').checked,
       autoStart: el('autoStart').checked,

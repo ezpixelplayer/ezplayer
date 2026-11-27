@@ -50,7 +50,8 @@ const DEFAULTS = {
     beamModels: [],
     spriteModels: [],
     beam: { halfAngle: 0.12, softness: 0.35, range: 1500, color: '#fff0c0', noise: 0.15, blend: 'add' },
-    wand: { origin: null, heading: 0, scale: 100, eyeHeight: 1.6 },
+    // smoothMs: how the Show View glides the holder and beam to each new pose; the pixels are never smoothed.
+    wand: { origin: null, heading: 0, scale: 100, eyeHeight: 1.6, smoothMs: 50 },
     rules: { roundSeconds: 90, dwellMs: 350, coverage: 0.4, foePoints: 10, friendPenalty: 5, respawnMs: 1200, restMs: 2500 },
     background: { foe: '#40001a', friend: '#003020', alpha: 0.4 },
     useUdp: true,
@@ -86,6 +87,7 @@ function normalize(raw) {
             // null: take the layout's ruler, or 100 without one.
             scale: typeof w.scale === 'number' && Number.isFinite(w.scale) && w.scale > 0 ? Math.min(100000, w.scale) : null,
             eyeHeight: num(w.eyeHeight, DEFAULTS.wand.eyeHeight, 0, 10),
+            smoothMs: num(w.smoothMs, DEFAULTS.wand.smoothMs, 0, 1000),
         },
         rules: {
             roundSeconds: num(ru.roundSeconds, DEFAULTS.rules.roundSeconds, 10, 3600),
@@ -287,6 +289,12 @@ let targetsError = '';
 
 /** The latest wand report in device units, and the world pose derived from it. */
 const pose = { x: 0, z: 0, yaw: 0, pitch: 10, on: false, at: 0, seen: 0 };
+/** How fast things move through the pipe, for the page; read once a second while playing. */
+const rates = { poseHz: 0, poseLagMs: null, beamFps: null, beamRenderMs: null, spriteFps: null, holderUnits: 0 };
+let poseCount = 0;
+let poseLagSum = 0;
+let poseLagN = 0;
+let lastLeaseSample = null; // { at, renders, frames }
 let world = { origin: [0, 0, 0], dir: [0, 0, -1], beam: [0, 0, 0], on: false };
 let layoutBounds = null;
 let layoutRuler = null; // the xLights Ruler view object, from the player's layout settings
@@ -692,12 +700,15 @@ function holderBody() {
 async function defineObjects() {
     const b = settings.beam;
     const h = settings.wand.eyeHeight * unitsPerMeter();
-    await putObject('holder', { ...holderBody(), placement: { position: world.origin, direction: [world.dir[0], 0, world.dir[2]] }, smoothMs: 80 });
+    // The Show View approaches each new placement with this time constant, so while the wand moves the
+    // drawn beam trails the target by about this much; the pixels step to each pose at once.
+    const smoothMs = settings.wand.smoothMs;
+    await putObject('holder', { ...holderBody(), placement: { position: world.origin, direction: [world.dir[0], 0, world.dir[2]] }, smoothMs });
     await putObject('beam', {
         content: { type: 'beam', length: b.range, angle: (b.halfAngle * 180) / Math.PI, radius: h * 0.02 },
         placement: { position: world.beam, direction: world.dir },
         appearance: { color: b.color, visible: world.on },
-        smoothMs: 60,
+        smoothMs,
     });
     objectsDefined = true;
 }
@@ -806,12 +817,50 @@ async function stop(result) {
     console.log(`round ${result ? 'over' : 'stopped'}: score ${score}, ${tags} tagged, ${misses} friends lit`);
 }
 
+/** Once a second: poses per second and lag, the player's paint rate for the beam, and the sprites' send rate. */
+async function sampleRates(now) {
+    rates.poseHz = poseCount;
+    rates.poseLagMs = poseLagN ? Math.round(poseLagSum / poseLagN) : null;
+    poseCount = 0;
+    poseLagSum = 0;
+    poseLagN = 0;
+    rates.holderUnits = Math.round((settings.wand.eyeHeight * unitsPerMeter() * 1.76) / 1.7);
+    if (!beamLease) {
+        rates.beamFps = rates.beamRenderMs = rates.spriteFps = null;
+        lastLeaseSample = null;
+        return;
+    }
+    try {
+        const res = await api('GET', '/api/ezp/overlays');
+        const beam = (res.leases ?? []).find((l) => l.id === beamLease.id);
+        const mine = new Set(sprites.map((s) => s.lease?.id));
+        const spriteFrames = (res.leases ?? []).filter((l) => mine.has(l.id)).reduce((a, l) => a + l.frames, 0);
+        if (beam && lastLeaseSample) {
+            const dt = (now - lastLeaseSample.at) / 1000;
+            if (dt > 0) {
+                rates.beamFps = Math.round(((beam.renders ?? 0) - lastLeaseSample.renders) / dt);
+                rates.spriteFps = sprites.length ? Math.round((spriteFrames - lastLeaseSample.frames) / dt / sprites.length) : null;
+            }
+            rates.beamRenderMs = typeof beam.renderMs === 'number' ? Math.round(beam.renderMs * 100) / 100 : null;
+        }
+        lastLeaseSample = beam ? { at: now, renders: beam.renders ?? 0, frames: spriteFrames } : null;
+        publishDirty = true;
+    } catch {
+        /* the numbers just go stale */
+    }
+}
+
+let lastRates = 0;
 let lastTick = Date.now();
 async function tick() {
     const now = Date.now();
     const dt = Math.min(0.25, (now - lastTick) / 1000);
     lastTick = now;
     updateWorldPose();
+    if (now - lastRates >= 1000) {
+        lastRates = now;
+        void sampleRates(now);
+    }
     if (phase !== 'playing') return;
     if (now >= roundEndsAt) {
         await stop({ score, tags, misses, reason: 'time' });
@@ -865,6 +914,7 @@ async function publish(force = false) {
         result: roundResult,
         beam: { on: world.on, fresh: !!world.fresh, lease: beamLease ? { id: beamLease.id, nodes: beamLease.nodeCount, backend: beamLease.pattern?.backend, group: beamLease.group ?? null, models: beamLease.models?.length ?? null } : null },
         pose: { x: pose.x, z: pose.z, yaw: pose.yaw, pitch: pose.pitch, on: pose.on, ageMs: pose.seen ? now - pose.seen : null },
+        rates,
         wand: {
             origin: world.origin.map((v) => Math.round(v)),
             beam: world.beam.map((v) => Math.round(v)),
@@ -918,6 +968,15 @@ function handleEvent(ev) {
         pose.pitch = num(v.pitch, pose.pitch, -90, 90);
         pose.on = v.on === true || v.on === 1 || v.on === '1' || v.on === 'true';
         pose.seen = Date.now();
+        poseCount++;
+        // A sender on this machine stamps its clock; another machine's clock is not comparable.
+        if (typeof v.t === 'number') {
+            const lag = pose.seen - v.t;
+            if (lag > -1000 && lag < 10_000) {
+                poseLagSum += lag;
+                poseLagN++;
+            }
+        }
     }
 }
 

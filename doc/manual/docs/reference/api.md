@@ -1305,7 +1305,7 @@ Response:
 }
 ```
 
-`frameBytes` is the exact payload size the lease expects (`width * height * channels`, or `nodeCount * channels`; 0 for a pattern lease, whose payload is JSON). The `token` must accompany every payload and every later call. A lease on a submodel also reports `subModel`, and its `nodeStart` is -1 when the submodel's nodes are not next to each other in the frame. A multi-target lease reports `models` (and `group` when it was opened by group); a pattern lease reports `pattern` with the preset, the evaluator in use (`gpu` or `js`) and the current uniform values. Every lease carries `channels` and `openedAt`.
+`frameBytes` is the exact payload size the lease expects (`width * height * channels`, or `nodeCount * channels`; 0 for a pattern lease, whose payload is JSON). The `token` must accompany every payload and every later call. A lease on a submodel also reports `subModel`, and its `nodeStart` is -1 when the submodel's nodes are not next to each other in the frame. A multi-target lease reports `models` (and `group` when it was opened by group); a pattern lease reports `pattern` with the preset, the evaluator in use (`gpu` or `js`) and the current uniform values, plus `renders` (output frames it has painted, so two reads a second apart give the player's frame rate) and `renderMs` (how long one paint takes, smoothed). Every lease carries `channels` and `openedAt`; `frames` counts the payloads a client has sent.
 
 When an exclusive lease is refused the status is `409` and the body names the holder, so a game can tell its players who has the lights and try again when that lease closes or expires:
 

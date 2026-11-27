@@ -94,9 +94,14 @@
       `<td><div class="bar"><i style="width:${p.lit}%"></i></div></td></tr>`);
     el('sprites').innerHTML = rows.join('') || '<tr><td colspan="3" style="color:var(--dim)">No sprite matrices until a round starts.</td></tr>';
     const lease = s.beam.lease;
+    const rt = s.rates || {};
+    const speed = [];
+    if (rt.poseHz) speed.push(`wand ${rt.poseHz}/s${rt.poseLagMs != null ? `, ${rt.poseLagMs} ms behind` : ''}`);
+    if (rt.beamFps != null) speed.push(`beam painted ${rt.beamFps} fps${rt.beamRenderMs != null ? ` at ${rt.beamRenderMs} ms` : ''} on the ${lease && lease.backend === 'gpu' ? 'GPU' : 'CPU'}`);
+    if (rt.spriteFps != null) speed.push(`sprites sent ${rt.spriteFps} fps`);
     el('hint').textContent = lease
-      ? `Beam over ${lease.nodes} nodes${lease.group ? ` of group "${lease.group}"` : ''} on the ${lease.backend === 'gpu' ? 'GPU' : 'CPU'}; wand at ${s.wand.origin.join(', ')} via ${s.transport}.`
-      : s.pose.ageMs == null ? 'Waiting for a wand: map the Wand Simulator (or the base station) to this app\'s pose input on the Apps card.' : '';
+      ? `Beam over ${lease.nodes} nodes${lease.group ? ` of group "${lease.group}"` : ''}; wand at ${s.wand.origin.join(', ')} via ${s.transport}, ${s.wand.scale} units/m from the ${s.wand.scaleFrom === 'ruler' ? 'layout\u2019s ruler' : s.wand.scaleFrom === 'settings' ? 'settings' : 'default'}, holder ${rt.holderUnits} units tall.${speed.length ? ' ' + speed.join('; ') + '.' : ''}`
+      : s.pose.ageMs == null ? 'Waiting for a wand: on the Apps card, expand this instance and give its pose input the wand\u2019s feed.' : speed.length ? speed.join('; ') + '.' : '';
   }
 
   const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));

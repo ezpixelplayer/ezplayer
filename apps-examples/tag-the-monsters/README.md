@@ -36,7 +36,8 @@ POST http://<player>:3000/api/ezp/inputs/<source>/pose
 
 `x` and `z` are meters in the wand frame (x to the right, z toward the holder's back), `yaw` and
 `pitch` are degrees (yaw 0 faces the display, pitch up), `on` says the beam is lit. A pose older than
-two and a half seconds switches the beam off.
+two and a half seconds switches the beam off. An optional `t`, the sender's clock in epoch ms, lets
+the page show how far behind the wand the game runs when both share a clock.
 
 ## Configure
 
@@ -57,7 +58,10 @@ Open the instance's settings page (the gear on the Apps tile).
   height. Leave the units per meter blank and the game takes them from the layout's xLights
   **Ruler** view object (the player reports it under `/api/ezp/layout-settings`); a layout
   without a ruler is taken to be in centimeters. A holder that looks too big or too small in the
-  Show View means the scale is off: draw a ruler, or type the number. Changes apply at once.
+  Show View means the scale is off: draw a ruler, or type the number. Show View smoothing is how
+  the drawn holder and beam glide to each new pose (50 ms by default, about one pose interval; 0
+  snaps): while the wand moves, the drawn beam trails its target by about that much, whereas the
+  pixels step to each pose as it arrives. Changes apply at the next round.
 - **Rules**: round length, how long the beam must stay on a creature, what share of its lit pixels
   must be inside the cone, points and penalty, the pause after a tag, and the rest between runs
   (2.5 s by default, give or take half): raise it when the creatures come too thick and fast.
@@ -81,6 +85,7 @@ Published with every change and at least twice a second:
   "phase": "playing", "cast": "halloween", "score": 40, "tags": 4, "misses": 1, "timeLeft": 61,
   "beam": { "on": true, "fresh": true, "lease": { "id": 12, "nodes": 352190, "backend": "gpu", "group": "Beam Coverage" } },
   "pose": { "x": 0.4, "z": 2.1, "yaw": -12, "pitch": 8, "on": true, "ageMs": 31 },
+  "rates": { "poseHz": 20, "poseLagMs": 34, "beamFps": 40, "beamRenderMs": 0.4, "spriteFps": 25, "holderUnits": 55 },
   "wand": { "origin": [124, 160, 1089], "beam": [130, 154, 1083], "dir": [-0.21, 0.14, -0.97], "scale": 32.8, "scaleFrom": "ruler", "ruler": { "name": "Ruler", "unitName": "ft", "length": 1, "worldLength": 10, "unitsPerMeter": 32.8 } },
   "sprites": [{ "model": "Matrix", "kind": "grid", "size": "64x32", "creature": "ghost", "role": "foe", "x": 17, "lit": 72, "dwell": 210 }],
   "groups": [{ "name": "Beam Coverage", "models": 598, "subModels": 4 }],
@@ -89,7 +94,10 @@ Published with every change and at least twice a second:
 ```
 
 `beam.lease.backend` says where the player evaluates the beam: `gpu` through the xlgl addon, `js` on
-the CPU. `groups` and `surfaces` feed the settings page's pick lists; a surface's `kind` is `grid`
+the CPU. `rates` is the page's speedometer, read once a second while a round runs: poses arriving per
+second and how far behind the wand's own clock they arrive, the player's output frame rate as the beam
+pattern sees it and how long one paint takes, the sprite frames the game sends per second, and how
+tall the holder is drawn in world units. `groups` and `surfaces` feed the settings page's pick lists; a surface's `kind` is `grid`
 for a matrix or `buffer` for a model drawn through its 2D render buffer.
 
 ## How the pieces fit

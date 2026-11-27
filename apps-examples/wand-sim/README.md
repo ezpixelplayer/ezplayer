@@ -13,6 +13,8 @@ POST http://<player>:3000/api/ezp/inputs/<source>/pose
 - `x`, `z`: meters in the wand frame, x to the right, z toward the holder's back.
 - `yaw`, `pitch`: degrees; yaw 0 faces the display, pitch up.
 - `on`: the beam is lit.
+- `t` (optional): the sender's clock at the time of sending, epoch ms. A game on the same machine
+  reports how far behind the wand it runs; a base station with its own clock can leave it out.
 
 ## Install
 
