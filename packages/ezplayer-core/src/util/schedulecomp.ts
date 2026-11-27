@@ -1235,7 +1235,12 @@ class PlaybackItem implements SchedulerHeapItem {
     }
 }
 
-// Loop a schedule for time
+/**
+ * Shuffled play order covering at least `minMS`, deterministic for a seed.
+ * Picks are by playlist position, so a song listed twice comes up about twice
+ * as often; the last half of the playlist's picks can't come up again yet, and
+ * a song doesn't play twice in a row unless nothing else can.
+ */
 export function createShuffleList(
     plist: PlaylistRecord,
     seed: number,
@@ -1245,17 +1250,15 @@ export function createShuffleList(
     const rng = new Xoroshiro128Plus(BigInt(seed).valueOf() + Xoroshiro128Plus.uuidToseed(plist.id));
     for (let i = 0; i < 10; ++i) rng.nextInt(100);
 
-    // TODO: Check for no way of getting any time... no choices with > 0 time.
+    const items = plist.items;
+    if (!items.length) return [];
 
-    if (!plist.items.length) return [];
+    const ndontuse = Math.floor(items.length / 2);
+    // Positions, oldest first, are exactly the last doNotUse.size selections.
+    const doNotUse = new Set<number>();
+    const sellist = items.map((_, i) => i);
 
-    const nitems = plist.items.length;
-    const ndontuse = Math.floor(nitems / 2);
-    const doNotUse: Set<string> = new Set(); // Keeps random from being too random
-
-    const sellist = plist.items.map((e) => e.id);
-
-    const selections: string[] = [];
+    const selections: number[] = [];
     let totalMS = 0;
     while (totalMS < minMS) {
         // Put back in the mix
@@ -1263,28 +1266,38 @@ export function createShuffleList(
             doNotUse.delete(selections[selections.length - doNotUse.size]);
         }
         if (!sellist.length) {
-            sellist.push(...plist.items.map((e) => e.id)); // Repopulate the list
+            sellist.push(...items.keys()); // Repopulate the list
         }
+        const prevId = selections.length ? items[selections[selections.length - 1]].id : undefined;
+        const freeOther = (i: number) => !doNotUse.has(i) && items[i].id !== prevId;
+        if (prevId !== undefined && !sellist.some(freeOther)) {
+            // Only copies of the song that just played are left; start the next pass early.
+            const inList = new Set(sellist);
+            for (const i of items.keys()) if (!inList.has(i)) sellist.push(i);
+        }
+        // A free position always exists: held-back positions in sellist are
+        // older than every pick since it was refilled, so the trim frees them first.
+        const avoidPrev = sellist.some(freeOther);
         while (true) {
             const pick = rng.nextInt(sellist.length);
-            const sid = sellist[pick];
-            if (doNotUse.has(sid)) {
+            const pos = sellist[pick];
+            if (doNotUse.has(pos) || (avoidPrev && items[pos].id === prevId)) {
                 continue;
             }
-            doNotUse.add(sid);
-            selections.push(sid);
+            doNotUse.add(pos);
+            selections.push(pos);
             if (pick < sellist.length - 1) {
                 sellist[pick] = sellist.pop()!;
             } else {
                 sellist.pop();
             }
-            const s = smap.get(sid);
+            const s = smap.get(items[pos].id);
             const len = s ? getSeqTimesMS(s).totalSeqTimeMS || 1000 : 1000;
             totalMS += len;
             break;
         }
     }
-    return selections;
+    return selections.map((pos) => items[pos].id);
 }
 
 export interface PlaybackStateSnapshot {
