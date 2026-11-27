@@ -5,12 +5,14 @@
  * - renderer-hang: a renderer whose main thread stops answering pings.
  *   Electron's 'unresponsive' only fires when input is waiting, so it misses a
  *   hang on an unattended show computer.
+ * - unresponsive: Electron's own signal, for input left waiting.
+ * Hang reports carry the script stack the page is stuck in, when there is one.
  * Also picks up [ezp-report] console lines, which the page uses to report
  * errors when the preload's API is missing.
  */
 
-import { ipcMain, type BrowserWindow, type IpcMainEvent } from 'electron';
-import { reportDiagEvent } from './diagnostics.js';
+import { ipcMain, type BrowserWindow, type IpcMainEvent, type WebContents } from 'electron';
+import { reportDiagEvent, type DiagEventKind } from './diagnostics.js';
 import { injectRendererFaults } from './faultinject-main.js';
 
 export const READY_TIMEOUT_MS = 45_000;
@@ -19,7 +21,11 @@ const PING_INTERVAL_MS = 5_000;
 /** A tick later than this means the system slept or the clock jumped. */
 const MAX_TICK_GAP_MS = PING_INTERVAL_MS * 3;
 const PROBE_TIMEOUT_MS = 2_000;
+/** The stack request only settles once script runs, so an idle page never answers. */
+export const JS_STACK_TIMEOUT_MS = 3_000;
 const REPORT_PREFIX = '[ezp-report] ';
+/** Our pages: the packaged app and the Vite dev server. */
+const APP_PAGE_URLS = ['file:///*', 'http://localhost:5173/*'];
 
 const PAGE_PROBE = `(() => ({
     title: document.title,
@@ -29,8 +35,44 @@ const PAGE_PROBE = `(() => ({
     hasElectronApi: !!window.electronAPI,
 }))()`;
 
+/**
+ * Opts our pages in to collectJavaScriptCallStack. A session takes one
+ * onHeadersReceived listener, so this must stay the only one.
+ */
+function allowJsStacks(wc: WebContents): void {
+    wc.session.webRequest.onHeadersReceived({ urls: APP_PAGE_URLS }, (details, callback) => {
+        if (details.resourceType !== 'mainFrame') return callback({});
+        callback({
+            responseHeaders: {
+                ...details.responseHeaders,
+                'Document-Policy': ['include-js-call-stacks-in-crash-reports'],
+            },
+        });
+    });
+}
+
+/** The script stack the page is running, or undefined when there is none to be had in time. */
+export async function collectJsStack(wc: WebContents): Promise<string | undefined> {
+    try {
+        const stack = await Promise.race([
+            wc.mainFrame.collectJavaScriptCallStack(),
+            new Promise<undefined>((r) => setTimeout(r, JS_STACK_TIMEOUT_MS)),
+        ]);
+        return typeof stack === 'string' && stack.trim() ? stack : undefined;
+    } catch {
+        return undefined;
+    }
+}
+
 export function watchRenderer(win: BrowserWindow, recentErrors: () => string[]): void {
     const wc = win.webContents;
+    allowJsStacks(wc);
+
+    const reportStuck = (kind: DiagEventKind, message: string, jsStack: string | undefined, extra?: unknown) => {
+        if (jsStack) console.warn(`[renderer:main] ${kind}: page running${jsStack}`);
+        reportDiagEvent(kind, message, jsStack, extra);
+    };
+
     let ready = false;
     let loadStartedAt = 0;
     let readyTimer: NodeJS.Timeout | undefined;
@@ -51,11 +93,11 @@ export function watchRenderer(win: BrowserWindow, recentErrors: () => string[]):
         loadStartedAt = Date.now();
         clearTimeout(readyTimer);
         readyTimer = setTimeout(() => {
-            void probePage().then((page) => {
+            const secs = Math.round((Date.now() - loadStartedAt) / 1000);
+            void Promise.all([probePage(), collectJsStack(wc)]).then(([page, jsStack]) => {
                 if (ready || wc.isDestroyed()) return;
-                const secs = Math.round((Date.now() - loadStartedAt) / 1000);
                 console.warn(`[renderer:main] app not up ${secs}s after load started: ${JSON.stringify(page)}`);
-                reportDiagEvent('renderer-not-ready', `main window app not up after ${secs}s`, undefined, {
+                reportStuck('renderer-not-ready', `main window app not up after ${secs}s`, jsStack, {
                     url: wc.getURL(),
                     page,
                     recentErrors: recentErrors(),
@@ -107,12 +149,22 @@ export function watchRenderer(win: BrowserWindow, recentErrors: () => string[]):
             hangReported = true;
             const secs = Math.round(silentMs / 1000);
             console.warn(`[renderer:main] not answering for ${secs}s`);
-            reportDiagEvent('renderer-hang', `main window not answering for ${secs}s`, undefined, {
-                url: wc.getURL(),
-                recentErrors: recentErrors(),
-            });
+            const extra = { url: wc.getURL(), recentErrors: recentErrors() };
+            void collectJsStack(wc).then((jsStack) =>
+                reportStuck('renderer-hang', `main window not answering for ${secs}s`, jsStack, extra),
+            );
         }
     }, PING_INTERVAL_MS);
+
+    // The "white screen" signal: the renderer's event loop stopped servicing
+    // input. render-process-gone catches crashes; this catches hangs.
+    wc.on('unresponsive', () => {
+        console.error('main window unresponsive');
+        void collectJsStack(wc).then((jsStack) => reportStuck('unresponsive', 'main window unresponsive', jsStack));
+    });
+    wc.on('responsive', () => {
+        console.error('main window responsive again');
+    });
 
     wc.on('console-message', (event) => {
         if (!event.message.startsWith(REPORT_PREFIX)) return;

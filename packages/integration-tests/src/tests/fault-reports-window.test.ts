@@ -79,6 +79,9 @@ describe('main window faults', () => {
         await start(['renderer-hang']);
         const r = await mock.waitFor('renderer-hang', 'not answering', 60_000);
         expect(r.message).toMatch(/not answering for \d+s/);
+        // The fault's busy loop, run from a page timer.
+        expect(r.stack).toMatch(/^\s+at /m);
+        expect(await mainLog(app!)).toContain('[renderer:main] renderer-hang: page running');
     });
 
     it('reports a renderer process that crashes', async () => {
