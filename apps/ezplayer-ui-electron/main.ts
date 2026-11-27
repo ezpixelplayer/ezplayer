@@ -420,6 +420,12 @@ async function startHeadless() {
     registerFileListHandlers();
     await registerContentHandlers(null, playWorker);
 
+    // Without this the updater keeps electron-updater's defaults (silent
+    // auto-download, install on quit) and never reports status to web clients.
+    if (app.isPackaged) {
+        registerAutoUpdateHandlers(null);
+    }
+
     // Stop playback, then app.quit() so 'before-quit' releases the folder lock.
     const shutdown = (signal: NodeJS.Signals) => {
         if (isQuitting) return;
