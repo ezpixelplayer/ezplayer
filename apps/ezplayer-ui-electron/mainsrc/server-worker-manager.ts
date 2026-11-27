@@ -60,7 +60,7 @@ import {
 import { dispatchUpdateCommand, setAutoUpdateOpsBroadcaster, publishAutoUpdateOps } from './ipcautoupdate.js';
 import { dispatchAppSettingsCommand, setAppSettingsBroadcaster } from './appSettings.js';
 import { ezpVersions } from '../versions.js';
-import { appsCommand, appsSawStatus, appsServerReady } from './apps/apps.js';
+import { appsCommand, appsSawStatus, appsServerReady, appsTraffic } from './apps/apps.js';
 import type { AppsAuthEntry } from './workers/serverworkertypes.js';
 export type { AppsAuthEntry };
 import type {
@@ -130,6 +130,7 @@ const rpcHandlers: ServerWorkerRPCAPI = {
     audioCommand: (cmd: unknown) => playWorkerAudio(cmd as AudioCommand),
     appsCommand: (cmd) => appsCommand(cmd),
     appsSawStatus: (instance) => appsSawStatus(instance),
+    appsTraffic: (counts) => appsTraffic(counts),
     listDisplays: async () => listDisplays(),
     sendPlayerCommand: (command: unknown) => {
         const cmd = command as EZPlayerCommand;

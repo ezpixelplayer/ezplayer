@@ -16,6 +16,7 @@ import type {
     AppsCommand,
     AppsState,
     AppStatuses,
+    AppTraffic,
     FullPlayerState,
 } from '@ezplayer/ezplayer-core';
 import { inputShapeOf } from '@ezplayer/ezplayer-core';
@@ -59,6 +60,8 @@ export class AppsRuntime {
     private readonly statuses: AppStatuses = {};
     private readonly live = new Map<string, Set<WebSocket>>();
     private readonly recent = new Map<string, AppRecentInput>();
+    /** Visitor requests since the last `takeTraffic`; main adds them to the usage ledger. */
+    private traffic: Record<string, AppTraffic> = {};
 
     constructor(private readonly deps: AppsApiDeps) {}
 
@@ -82,6 +85,21 @@ export class AppsRuntime {
         }
         this.instances = next;
         this.deps.setState('appStatuses', { ...this.statuses });
+    }
+
+    /** A visitor asked for one of the instance's pages, or sent it an event that was accepted. */
+    countRequest(instance: string, kind: 'page' | 'event'): void {
+        const t = (this.traffic[instance] ??= { requests: 0, events: 0 });
+        t.requests++;
+        if (kind === 'event') t.events++;
+    }
+
+    /** The counts so far, and start again; undefined when there were none. */
+    takeTraffic(): Record<string, AppTraffic> | undefined {
+        const t = this.traffic;
+        if (Object.keys(t).length === 0) return undefined;
+        this.traffic = {};
+        return t;
     }
 
     /** The running instance behind an app token, for leases the process opens in its own name. */
@@ -306,6 +324,7 @@ export function registerAppsRoutes(router: Router, apps: AppsRuntime, deps: Apps
             ctx.body = { error: r.refused };
             return;
         }
+        apps.countRequest(ctx.params.name, 'event');
         ctx.body = { ok: true, id: r.id };
     });
 
@@ -489,6 +508,8 @@ export function appsPagesMiddleware(apps: AppsRuntime): Koa.Middleware {
             return;
         }
         const isConfig = rest === '/config' || rest.startsWith('/config/');
+        // Visitors' page requests count toward the instance's usage; the owner's settings pages do not.
+        if (!isConfig) apps.countRequest(name, 'page');
         if (rest === '/config') {
             ctx.redirect(`${ctx.path}/${ctx.search}`);
             return;

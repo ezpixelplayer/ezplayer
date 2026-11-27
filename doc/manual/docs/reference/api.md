@@ -1854,6 +1854,8 @@ Open a lease.
 
 The `token` must accompany every later call, as `?token=` or an `x-ezp-token` header. A wrong id or token answers 404.
 
+An app process sends its `x-ezp-app-token` header too; the lease then carries `owner` (`instance` and `title`), and the time it is held counts as the instance's active time.
+
 #### GET /api/ezp/audio/leases
 
 Open leases, each with its clips, the number of sounds playing (`voices`), stream audio queued ahead (`bufferedMs`) and stream audio that arrived too late to play (`lateMs`, a running total).
@@ -2432,14 +2434,17 @@ event with source `input:<source>`. Answers `{ "ok": true, "delivered": n }`.
 #### Owner
 
 `GET /api/ezp/apps` returns the apps state: installed packages, instances with state, startup report
-and log tail, default schedule, Python path, input mappings, and `recentInputs`: the last fifty
-senders heard at `/api/ezp/inputs`, newest first, each with its post count, last time, how many
-instances the last post reached, a short rendering of the last value and its `shape` (`none`,
-`boolean`, `number`, `text` or `object`). `POST /api/ezp/apps/command` takes one
+and log tail, default schedule, Python path, input mappings, `recentInputs` and `usage`.
+`recentInputs` lists the last fifty senders heard at `/api/ezp/inputs`, newest first, each with its
+post count, last time, how many instances the last post reached, a short rendering of the last value
+and its `shape` (`none`, `boolean`, `number`, `text` or `object`). `usage` is by instance name:
+`runs`, `runMs`, `activeMs` while it held an overlay or audio lease, `requests` from visitors and
+the `events` among them, `firstRunAt`, `lastRunAt`, `lastActiveAt`; counted by the player, kept in
+`.ezplayer/apps-usage.json`. `POST /api/ezp/apps/command` takes one
 of: `rescan`, `install` (`source`: `{kind:"folder",path}`, `{kind:"url",url}` or `{kind:"contrib"}`),
 `uninstall`, `createInstance`, `removeInstance`, `setInstance` (patch `enabled`, `schedule`, `title`,
 `eventsPerMinute`), `start`, `stop`, `restart`, `setDefaultSchedule`, `setPythonPath`,
-`setInputMappings`. The same state is in the WebSocket snapshot under `apps`, and the latest status of
+`setInputMappings`, `resetUsage`. The same state is in the WebSocket snapshot under `apps`, and the latest status of
 every instance under `appStatuses`.
 
 ---

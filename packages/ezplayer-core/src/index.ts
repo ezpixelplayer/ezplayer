@@ -114,6 +114,8 @@ export type {
     AppEvent,
     AppInstallSource,
     AppsCommand,
+    AppUsage,
+    AppTraffic,
 } from './types/DataTypes';
 
 export {

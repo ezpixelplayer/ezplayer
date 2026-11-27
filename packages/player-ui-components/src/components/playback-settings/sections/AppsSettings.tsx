@@ -22,6 +22,11 @@ import {
     Select,
     Stack,
     Switch,
+    Table,
+    TableBody,
+    TableCell,
+    TableHead,
+    TableRow,
     TextField,
     Tooltip,
     Typography,
@@ -45,6 +50,7 @@ import type {
     AppInstanceStatus,
     AppsCommand,
     AppsState,
+    AppUsage,
     CloudPollScheduleEntry,
     InstalledApp,
 } from '@ezplayer/ezplayer-core';
@@ -169,6 +175,8 @@ export const AppsSettings: React.FC = () => {
             <InputsSection state={state} busy={busy} command={command} />
             <Divider />
             <RuntimeSection state={state} busy={busy} command={command} />
+            <Divider />
+            <UsageSection state={state} appsById={appsById} busy={busy} command={command} />
         </Box>
     );
 };
@@ -368,6 +376,7 @@ const InstanceRow: React.FC<{
                     {open ? <ExpandLessIcon /> : <ExpandMoreIcon />}
                 </IconButton>
             </Box>
+            <UsageLine usage={state.usage?.[inst.name]} />
             <Collapse in={open}>
                 <Stack spacing={1} sx={{ mt: 1.5 }}>
                     {!manifest && (
@@ -802,6 +811,167 @@ const AddAppsSection: React.FC<{ state: AppsState; busy: string | null; command:
                     </Box>
                 </Paper>
             </Stack>
+        </Box>
+    );
+};
+
+// -- usage --------------------------------------------------------------------------
+
+/** "20 s", "48 min", "3 h 12 min", "2.5 days". */
+function fmtDuration(ms: number): string {
+    const s = Math.round(ms / 1000);
+    if (s < 60) return `${s} s`;
+    const m = Math.round(s / 60);
+    if (m < 60) return `${m} min`;
+    const h = Math.floor(m / 60);
+    if (h < 48) return `${h} h ${m % 60} min`;
+    return `${(h / 24).toFixed(1)} days`;
+}
+
+function fmtAgo(at: number): string {
+    const s = Math.max(0, Math.round((Date.now() - at) / 1000));
+    if (s < 60) return 'just now';
+    const m = Math.round(s / 60);
+    if (m < 90) return `${m} min ago`;
+    const h = Math.round(m / 60);
+    if (h < 48) return `${h} h ago`;
+    return `${Math.round(h / 24)} days ago`;
+}
+
+const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString()} ${n === 1 ? one : many}`;
+
+/** One line of what the player counted for an instance; nothing until it has run or been visited. */
+const UsageLine: React.FC<{ usage: AppUsage | undefined }> = ({ usage }) => {
+    if (!usage || (usage.runs === 0 && usage.requests === 0)) return null;
+    const share = usage.runMs > 0 ? Math.round((100 * usage.activeMs) / usage.runMs) : 0;
+    return (
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+            Ran {fmtDuration(usage.runMs)} over {plural(usage.runs, 'start')} · active {fmtDuration(usage.activeMs)} (
+            {share}%) · {plural(usage.requests, 'visitor request')}, {plural(usage.events, 'event')}
+            {usage.lastActiveAt ? ` · last active ${fmtAgo(usage.lastActiveAt)}` : ''}
+        </Typography>
+    );
+};
+
+interface AppTotals {
+    appId: string;
+    name: string;
+    installed: boolean;
+    instances: number;
+    runs: number;
+    runMs: number;
+    activeMs: number;
+    requests: number;
+    events: number;
+}
+
+/** Every app's totals over its instances, past ones included, most active first. */
+const UsageSection: React.FC<{
+    state: AppsState;
+    appsById: Map<string, InstalledApp>;
+    busy: string | null;
+    command: Command;
+}> = ({ state, appsById, busy, command }) => {
+    const [confirm, setConfirm] = useState(false);
+    const rows = useMemo(() => {
+        const byApp = new Map<string, AppTotals>();
+        for (const u of Object.values(state.usage ?? {})) {
+            let t = byApp.get(u.appId);
+            if (!t) {
+                const m = appsById.get(u.appId)?.manifest;
+                t = {
+                    appId: u.appId,
+                    name: m ? `${m.icon ? `${m.icon} ` : ''}${m.name}` : u.appId,
+                    installed: !!m,
+                    instances: 0,
+                    runs: 0,
+                    runMs: 0,
+                    activeMs: 0,
+                    requests: 0,
+                    events: 0,
+                };
+                byApp.set(u.appId, t);
+            }
+            t.instances++;
+            t.runs += u.runs;
+            t.runMs += u.runMs;
+            t.activeMs += u.activeMs;
+            t.requests += u.requests;
+            t.events += u.events;
+        }
+        return [...byApp.values()].sort(
+            (a, b) => b.activeMs - a.activeMs || b.requests - a.requests || b.runMs - a.runMs,
+        );
+    }, [state.usage, appsById]);
+
+    return (
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Typography variant="h6">Most used apps</Typography>
+                {rows.length > 0 &&
+                    (confirm ? (
+                        <Box sx={{ display: 'flex', gap: 1 }}>
+                            <Button size="small" onClick={() => setConfirm(false)}>
+                                Keep
+                            </Button>
+                            <Button
+                                size="small"
+                                color="error"
+                                variant="contained"
+                                disabled={busy !== null}
+                                onClick={() => {
+                                    setConfirm(false);
+                                    void command({ op: 'resetUsage' });
+                                }}
+                            >
+                                Reset every count
+                            </Button>
+                        </Box>
+                    ) : (
+                        <Button size="small" disabled={busy !== null} onClick={() => setConfirm(true)}>
+                            Reset
+                        </Button>
+                    ))}
+            </Box>
+            <Typography color="text.secondary" variant="body2">
+                Counted by the player, so every app is measured the same way: how long its process was up, how long it
+                was active (holding a lease, so painting pixels or playing sound), how many times visitors asked for its
+                pages, and how many events they sent it. Instances you removed still count toward their app.
+            </Typography>
+            {rows.length === 0 ? (
+                <Typography color="text.secondary" variant="body2">
+                    Nothing has run yet.
+                </Typography>
+            ) : (
+                <Table size="small">
+                    <TableHead>
+                        <TableRow>
+                            <TableCell>App</TableCell>
+                            <TableCell align="right">Active</TableCell>
+                            <TableCell align="right">Ran</TableCell>
+                            <TableCell align="right">Starts</TableCell>
+                            <TableCell align="right">Visitor requests</TableCell>
+                            <TableCell align="right">Events</TableCell>
+                        </TableRow>
+                    </TableHead>
+                    <TableBody>
+                        {rows.map((r) => (
+                            <TableRow key={r.appId}>
+                                <TableCell>
+                                    {r.name}
+                                    {!r.installed ? ' (not installed)' : ''}
+                                    {r.instances > 1 ? ` · ${r.instances} instances` : ''}
+                                </TableCell>
+                                <TableCell align="right">{fmtDuration(r.activeMs)}</TableCell>
+                                <TableCell align="right">{fmtDuration(r.runMs)}</TableCell>
+                                <TableCell align="right">{r.runs.toLocaleString()}</TableCell>
+                                <TableCell align="right">{r.requests.toLocaleString()}</TableCell>
+                                <TableCell align="right">{r.events.toLocaleString()}</TableCell>
+                            </TableRow>
+                        ))}
+                    </TableBody>
+                </Table>
+            )}
         </Box>
     );
 };

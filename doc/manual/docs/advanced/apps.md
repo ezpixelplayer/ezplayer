@@ -33,6 +33,18 @@ Each instance has:
 - a **startup report**: which runtime was used, the port it was given, when it started, when its first
   status arrived, and the last lines it printed.
 - its own **data**, under `<show folder>/apps-data/<name>/`, which a reinstall of the app keeps.
+- a line of **usage**: how long it ran and over how many starts, how long it was active, how many
+  requests visitors made and how many events they sent (see below).
+
+## Usage
+
+The player counts, for every instance, how long its process was up, how long it was **active**
+(holding an overlay or audio lease, so painting pixels or playing sound), how many requests visitors
+made for its pages and how many events they sent that were accepted. The apps report nothing; every
+app is measured the same way. Each instance shows its own line on the Apps card, and **Most used
+apps** at the bottom ranks the apps by active time, adding up their instances, removed ones included.
+The counts live in `<show folder>/.ezplayer/apps-usage.json` and survive restarts; **Reset** forgets
+them. Time while the computer sleeps is not counted.
 
 ## Installing
 

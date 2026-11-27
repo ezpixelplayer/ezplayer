@@ -1412,6 +1412,33 @@ export interface AppInstanceStatus extends AppInstanceRecord {
     report: AppStartupReport;
 }
 
+/**
+ * How much an instance has been used, as the player counts it; apps report nothing. Kept per show
+ * in `.ezplayer/apps-usage.json`, and kept for instances that were removed, so an app's total stands.
+ */
+export interface AppUsage {
+    appId: string;
+    /** Times the process was started, by the player or again after it died. */
+    runs: number;
+    /** Time the process was up, ms. */
+    runMs: number;
+    /** Time it held an overlay or audio lease, ms: when it was putting something into the show. */
+    activeMs: number;
+    /** Requests visitors made for its pages, plus the events they sent. */
+    requests: number;
+    /** Events visitors sent that the player accepted; counted within `requests` too. */
+    events: number;
+    firstRunAt?: number;
+    lastRunAt?: number;
+    lastActiveAt?: number;
+}
+
+/** Visitor requests the web server counted for an instance since it last reported them. */
+export interface AppTraffic {
+    requests: number;
+    events: number;
+}
+
 /** Routes a named show input to an instance input. */
 export interface AppInputMapping {
     source: string;
@@ -1450,6 +1477,8 @@ export interface AppsState {
     inputMappings: AppInputMapping[];
     /** Inputs posted lately, newest first; only the server answering `GET /api/ezp/apps` fills it. */
     recentInputs?: AppRecentInput[];
+    /** Usage counted by the player, by instance name. */
+    usage?: Record<string, AppUsage>;
     /** The last install or command error, for the Apps card. */
     lastError?: string;
     /** Whether bundled example apps are available to install. */
@@ -1477,10 +1506,7 @@ export interface AppEvent {
 
 /** `url` is a `.tar.gz` link or a GitHub repository page; `examples` are the apps bundled with the player. */
 export type AppInstallSource =
-    | { kind: 'folder'; path: string }
-    | { kind: 'url'; url: string }
-    | { kind: 'contrib' }
-    | { kind: 'examples' };
+    { kind: 'folder'; path: string } | { kind: 'url'; url: string } | { kind: 'contrib' } | { kind: 'examples' };
 
 /** Verbs the Apps settings card sends. */
 export type AppsCommand =
@@ -1506,7 +1532,9 @@ export type AppsCommand =
     | { op: 'restart'; name: string }
     | { op: 'setDefaultSchedule'; schedule: CloudPollScheduleEntry[] }
     | { op: 'setPythonPath'; path: string }
-    | { op: 'setInputMappings'; mappings: AppInputMapping[] };
+    | { op: 'setInputMappings'; mappings: AppInputMapping[] }
+    /** Forget every usage count. */
+    | { op: 'resetUsage' };
 
 /**
  * Whether the player is offering each password-gated remote-access feature.

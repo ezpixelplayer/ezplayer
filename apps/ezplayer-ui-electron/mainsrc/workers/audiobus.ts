@@ -31,11 +31,19 @@ const DEFAULT_STOP_FADE_MS = 10;
 
 export type PcmEncoding = 's16le' | 'f32le';
 
+/** The app instance that opened a lease; the server fills this in from the app token. */
+export interface AudioLeaseOwner {
+    instance: string;
+    title: string;
+}
+
 export interface AudioLeaseRequest {
     /** Bus to play on; `main` when omitted. */
     bus?: string;
     /** Label shown in listings. */
     name?: string;
+    /** Never taken from a client; see AudioLeaseOwner. */
+    owner?: AudioLeaseOwner;
     ttlMs?: number;
     /** Linear gain of everything on the lease; 1 when omitted. */
     gain?: number;
@@ -55,6 +63,7 @@ export interface AudioLeaseInfo {
     token: number;
     bus: string;
     name: string;
+    owner?: AudioLeaseOwner;
     gain: number;
     sampleRate: number;
     channels: number;
@@ -452,6 +461,7 @@ export class AudioBusEngine {
                 token: (Math.random() * 0xffffffff) >>> 0,
                 bus: busName,
                 name: (req.name ?? '').slice(0, 80),
+                owner: req.owner,
                 gain,
                 sampleRate,
                 channels,
