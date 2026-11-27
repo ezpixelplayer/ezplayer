@@ -821,6 +821,9 @@ function ago(ms: number): string {
 const FEED_RE = /^[a-z0-9][a-z0-9-]{0,39}\/[a-z0-9][a-z0-9-]{0,39}$/;
 const feedKey = (m: { source: string; name: string }) => `${m.source}/${m.name}`;
 
+/** Pick lists read best in name order, "Arch 2" before "Arch 10". */
+const byName = (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+
 /** What a sender sends, in words. */
 const SHAPE_WORDS: Record<AppRecentInput['shape'], string> = {
     none: 'no value',
@@ -924,8 +927,8 @@ const FeedPicker: React.FC<{ options: FeedOption[]; disabled: boolean; onPick: (
     const [text, setText] = useState('');
     const valid = FEED_RE.test(text);
     const unfit = options.find((o) => o.key === text && !o.fits);
-    // Grouped lists want their groups contiguous: the ones that fit first.
-    const sorted = [...options].sort((a, b) => Number(b.fits) - Number(a.fits));
+    // Grouped lists want their groups contiguous: the ones that fit first, each group by name.
+    const sorted = [...options].sort((a, b) => Number(b.fits) - Number(a.fits) || byName(a.key, b.key));
     const pick = (key: string) => {
         if (!FEED_RE.test(key) || options.some((o) => o.key === key && !o.fits)) return;
         onPick(key);
@@ -983,14 +986,16 @@ const InputsSection: React.FC<{ state: AppsState; busy: string | null; command: 
     const appsById = useMemo(() => new Map(state.apps.map((a) => [a.id, a])), [state.apps]);
     const titleOf = (instance: string) => state.instances.find((i) => i.name === instance)?.title ?? instance;
     // Every input every instance declares, so a heard post can be wired from here too.
-    const targets = state.instances.flatMap((i) =>
-        (appsById.get(i.appId)?.manifest?.inputs ?? []).map((inp) => ({
-            instance: i.name,
-            title: i.title ?? i.name,
-            input: inp.name,
-            kind: inp.kind,
-        })),
-    );
+    const targets = state.instances
+        .flatMap((i) =>
+            (appsById.get(i.appId)?.manifest?.inputs ?? []).map((inp) => ({
+                instance: i.name,
+                title: i.title ?? i.name,
+                input: inp.name,
+                kind: inp.kind,
+            })),
+        )
+        .sort((a, b) => byName(a.title, b.title) || byName(a.input, b.input));
     const save = (next: AppInputMapping[]) => void command({ op: 'setInputMappings', mappings: next });
 
     return (

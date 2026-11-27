@@ -119,6 +119,8 @@
   let layoutError = '';
 
   const fmt = (v, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v.toFixed(d) : '?');
+  /** Pick lists read best in name order, "Arch 2" before "Arch 10". */
+  const byName = (key) => (a, b) => String(a[key]).localeCompare(String(b[key]), undefined, { numeric: true, sensitivity: 'base' });
 
   /** Everything the pick lists need, from the player's own API; the game does not have to be running. */
   async function loadLayout() {
@@ -223,7 +225,7 @@
   function fillModels(container, models, chosen, labelOf) {
     const have = new Set(chosen);
     container.innerHTML = models.length ? '' : '<span class="hint">' + (layoutError || (layout ? 'The layout has no models of this kind.' : 'Reading the layout from the player…')) + '</span>';
-    for (const m of models) {
+    for (const m of [...models].sort(byName('model'))) {
       const l = document.createElement('label');
       l.className = 'check';
       const c = document.createElement('input');
@@ -243,7 +245,7 @@
     const sel = el('beamGroup');
     const want = settings.beamGroup ?? '';
     sel.innerHTML = '<option value="">(pick models below instead)</option>';
-    for (const g of layout?.groups ?? status?.groups ?? []) {
+    for (const g of [...(layout?.groups ?? status?.groups ?? [])].sort(byName('name'))) {
       const o = document.createElement('option');
       o.value = g.name;
       o.textContent = `${g.name} (${g.models} models${g.subModels ? ', ' + g.subModels + ' submodels' : ''})`;
