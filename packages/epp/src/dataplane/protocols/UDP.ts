@@ -141,6 +141,16 @@ export class UdpClient {
         this._suspended = false;
     }
 
+    /** The IP the connected socket sends to: a hostname, resolved. */
+    remoteAddress(): string | undefined {
+        if (!this._isConnected || this.destinationPerPacket) return undefined;
+        try {
+            return this.socket?.remoteAddress().address;
+        } catch {
+            return undefined;
+        }
+    }
+
     /**
      * Resolves a hostname and connects the socket.
      */
@@ -406,6 +416,9 @@ export abstract class UDPSender implements Sender {
     }
     resume(): void {
         this.client?.resume();
+    }
+    destination(): string | undefined {
+        return this.client?.remoteAddress();
     }
 
     startBatch(): void {
