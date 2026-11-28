@@ -254,6 +254,10 @@ export const TestPanel: React.FC<TestPanelProps> = ({
                 columnGap: 3,
                 rowGap: 1.5,
                 alignItems: 'start',
+                // The parent scrolls and clips at its edge: leave room for the floating "Pattern" label and the
+                // remove-color buttons that overhang their swatches.
+                pt: 1.5,
+                pr: 1,
             }}
         >
             <Stack direction="row" spacing={1} alignItems="center">
