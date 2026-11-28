@@ -70,6 +70,7 @@ import {
     syncRemotesFromXlights,
     SyncRemoteTarget,
     ControllerState,
+    type Sender,
     FrameReference,
     CacheStats,
     loadXmlFile,
@@ -539,12 +540,26 @@ async function openOrReopenSenders(): Promise<void> {
     }
 }
 
-/** Controllers whose data is held for a read, with the lease that frees them. */
-const dataHolds = new Map<string, NodeJS.Timeout>();
+/** Controllers whose data is held for a read: the senders held and the lease that frees them. */
+const dataHolds = new Map<string, { lease: NodeJS.Timeout; senders: Sender[] }>();
 
-/** The sender for one controller, by the address the show records use. */
-function senderFor(address: string) {
-    return controllerStates?.find((c) => c.setup.address === address)?.sender;
+/**
+ * The senders for one controller: every show record at the address xLights
+ * gave it, however it is spelled, plus any whose socket resolved a hostname
+ * to that IP.
+ */
+function sendersFor(address: string): Sender[] {
+    const key = address.trim().toLowerCase();
+    return (controllerStates ?? [])
+        .filter((c) => c.setup.address?.trim().toLowerCase() === key || c.sender?.destination?.() === key)
+        .map((c) => c.sender)
+        .filter((s): s is Sender => s !== undefined);
+}
+
+/** Send again, except where another hold still covers the sender. */
+function resumeUnheld(senders: Sender[]): void {
+    const held = [...dataHolds.values()].flatMap((h) => h.senders);
+    for (const s of senders) if (!held.includes(s)) s.resume();
 }
 
 /**
@@ -552,31 +567,31 @@ function senderFor(address: string) {
  * Its lights hold their last frame meanwhile.
  */
 function holdControllerData(address: string, leaseMs: number): void {
-    const sender = senderFor(address);
-    if (!sender) return;
-
     const existing = dataHolds.get(address);
-    if (existing) clearTimeout(existing);
+    const senders = existing?.senders ?? sendersFor(address);
+    if (!senders.length) return;
+
+    if (existing) clearTimeout(existing.lease);
     else {
-        sender.suspend();
+        for (const s of senders) s.suspend();
         emitInfo(`Holding data to ${address} while it is read`);
     }
 
     const lease = setTimeout(() => {
         dataHolds.delete(address);
-        sender.resume();
+        resumeUnheld(senders);
         emitWarning(`Hold on ${address} expired after ${Math.round(leaseMs / 1000)}s; sending again`);
     }, leaseMs);
     lease.unref?.();
-    dataHolds.set(address, lease);
+    dataHolds.set(address, { lease, senders });
 }
 
 function releaseControllerData(address: string): void {
-    const lease = dataHolds.get(address);
-    if (!lease) return;
-    clearTimeout(lease);
+    const held = dataHolds.get(address);
+    if (!held) return;
+    clearTimeout(held.lease);
     dataHolds.delete(address);
-    senderFor(address)?.resume();
+    resumeUnheld(held.senders);
     emitInfo(`Sending to ${address} again`);
 }
 
@@ -2468,6 +2483,9 @@ function buildSerialIntent(models: XlModelChannelInfo[]): Map<string, Controller
         g.models.sort((a, b) => a.startChannel - b.startChannel);
         const first = g.models[0];
         const last = g.models[g.models.length - 1];
+        // The frame starts where the first fixture's DMX address puts it: a PAR
+        // addressed at channel 10 sits nine channels into the frame.
+        const startChannel = first.startChannel - (Math.max(1, first.controllerConnection?.dmxChannel ?? 1) - 1);
         const arr = out.get(g.controller) ?? [];
         arr.push({
             port: g.port,
@@ -2477,10 +2495,10 @@ function buildSerialIntent(models: XlModelChannelInfo[]): Map<string, Controller
                 startChannel: m.startChannel,
                 channels: m.channelCount,
             })),
-            // The span the port must carry: first channel through the last
+            // The span the port must carry: frame start through the last
             // model's last channel (gaps between models included).
-            channels: last.startChannel + last.channelCount - first.startChannel,
-            startChannel: first.startChannel,
+            channels: last.startChannel + last.channelCount - startChannel,
+            startChannel,
             // The name is the controller's own: xLights writes whichever
             // spelling the target's capability list declares (a Falcon "dmx",
             // an FPP TTY cape "DMX-Open" or "DMX-Pro"), and the upload check
