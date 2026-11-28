@@ -433,6 +433,41 @@ describe('holding data while a controller is read', () => {
     });
 });
 
+describe('holding data under every name a controller goes by', () => {
+    afterEach(() => {
+        setControllerDataHold(() => undefined);
+    });
+
+    it('also holds the address xLights gives a controller it names by hostname', async () => {
+        const events: string[] = [];
+        setControllerDataHold((address: string) => {
+            events.push(`hold ${address}`);
+            return () => events.push(`release ${address}`);
+        });
+        setKnownControllers([
+            { name: 'K', address: 'f48.local', active: true, enableState: 'enabled', source: 'xlights' },
+        ]);
+
+        // The first read learns the hostname...
+        const first = startRead('10.9.4.5');
+        await probeCalled(1);
+        expect(events).toEqual(['hold 10.9.4.5']);
+        await settleRead({
+            success: true,
+            report: { ip: '10.9.4.5', driverType: 'Falcon', hostname: 'f48.local' },
+        } as never);
+        await first;
+
+        // ...so the next one holds the show's name for the device too.
+        const second = startRead('10.9.4.5');
+        await probeCalled(2);
+        expect(events.slice(2)).toEqual(['hold 10.9.4.5', 'hold f48.local']);
+        await settleRead({ success: true, report: { ip: '10.9.4.5', driverType: 'Falcon' } } as never);
+        await second;
+        expect(events.slice(4).sort()).toEqual(['release 10.9.4.5', 'release f48.local']);
+    });
+});
+
 describe('the port-settings choice on a record', () => {
     it("sits beside the layout's flag, and an empty one clears it", async () => {
         await loadControllerRecords(await fsp.mkdtemp(path.join(os.tmpdir(), 'ezp-ops-')));

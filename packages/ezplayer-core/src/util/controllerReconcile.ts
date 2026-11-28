@@ -258,6 +258,9 @@ export interface PortSettingsCheckOptions {
      *  unset setting; 100% and 1.0 when xLights gives none. */
     defaultBrightness?: number;
     defaultGamma?: number;
+    /** The device's fixed gamma steps, when it has them; a layout value between
+     *  two steps is met by either. */
+    gammaSteps?: number[];
 }
 
 /** The settings a port is held to: what the layout sets, plus the controller's
@@ -268,15 +271,34 @@ export function intendedPortSettings(layout: PortSettingsValues, opts: PortSetti
     const colorOrder = layout.colorOrder ?? (opts.check === 'all' ? 'RGB' : undefined);
     const brightness = layout.brightness ?? (opts.check === 'all' ? (opts.defaultBrightness ?? 100) : undefined);
     const gamma = layout.gamma ?? (opts.check === 'all' ? (opts.defaultGamma ?? 1.0) : undefined);
+    // A managed reconfigure writes no nulls where the layout sets none.
+    const nullPixels = layout.nullPixels ?? (opts.check === 'all' ? 0 : undefined);
+    const endNullPixels = layout.endNullPixels ?? (opts.check === 'all' ? 0 : undefined);
     if (colorOrder !== undefined) out.colorOrder = colorOrder;
     if (brightness !== undefined) out.brightness = brightness;
     if (gamma !== undefined) out.gamma = gamma;
+    if (nullPixels !== undefined) out.nullPixels = nullPixels;
+    if (endNullPixels !== undefined) out.endNullPixels = endNullPixels;
     return out;
+}
+
+/** Whether a device gamma meets the intended one: equal to a tenth, or, on a
+ *  device with fixed steps, the step on either side of the intended value. */
+function gammaMet(intended: number, actual: number, steps?: number[]): boolean {
+    if (Math.abs(intended - actual) < 0.05) return true;
+    if (!steps?.length) return false;
+    const below = Math.max(...steps.filter((s) => s <= intended));
+    const above = Math.min(...steps.filter((s) => s >= intended));
+    return Math.abs(actual - below) < 0.05 || Math.abs(actual - above) < 0.05;
 }
 
 /** One line per setting on which the device differs from what it is held to.
  *  A setting either side leaves out is not compared. */
-export function portSettingsDrift(intended: PortSettingsValues, actual: PortSettingsValues): string[] {
+export function portSettingsDrift(
+    intended: PortSettingsValues,
+    actual: PortSettingsValues,
+    gammaSteps?: number[],
+): string[] {
     const notes: string[] = [];
     if (
         intended.colorOrder !== undefined &&
@@ -293,10 +315,42 @@ export function portSettingsDrift(intended: PortSettingsValues, actual: PortSett
         notes.push(`brightness ${actual.brightness}% (xLights ${intended.brightness}%)`);
     }
     // Gamma to a tenth, the precision devices report.
-    if (intended.gamma !== undefined && actual.gamma !== undefined && Math.abs(intended.gamma - actual.gamma) >= 0.05) {
+    if (
+        intended.gamma !== undefined &&
+        actual.gamma !== undefined &&
+        !gammaMet(intended.gamma, actual.gamma, gammaSteps)
+    ) {
         notes.push(`gamma ${actual.gamma} (xLights ${intended.gamma})`);
     }
+    if (
+        intended.nullPixels !== undefined &&
+        actual.nullPixels !== undefined &&
+        intended.nullPixels !== actual.nullPixels
+    ) {
+        notes.push(`null pixels ${actual.nullPixels} (xLights ${intended.nullPixels})`);
+    }
+    if (
+        intended.endNullPixels !== undefined &&
+        actual.endNullPixels !== undefined &&
+        intended.endNullPixels !== actual.endNullPixels
+    ) {
+        notes.push(`end null pixels ${actual.endNullPixels} (xLights ${intended.endNullPixels})`);
+    }
     return notes;
+}
+
+/** A protocol name as compared: "DMX-Open" and "dmx" are both dmx. */
+function serialProtocolKey(protocol: string): string {
+    return protocol.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+/** A note when the device runs the port under a different protocol family. */
+function serialProtocolDrift(intended?: string, actual?: string): string[] {
+    if (intended === undefined || actual === undefined) return [];
+    const i = serialProtocolKey(intended);
+    const a = serialProtocolKey(actual);
+    if (i.startsWith(a) || a.startsWith(i)) return [];
+    return [`protocol ${actual} (xLights ${intended})`];
 }
 
 /** The settings a device reports for a port, leaving out what it does not say. */
@@ -305,6 +359,8 @@ function reportedPortSettings(a: ControllerPort): PortSettingsValues {
     if (a.colorOrder !== undefined) out.colorOrder = a.colorOrder;
     if (a.brightness !== undefined) out.brightness = a.brightness;
     if (a.gamma !== undefined) out.gamma = a.gamma;
+    if (a.nullPixels !== undefined) out.nullPixels = a.nullPixels;
+    if (a.endNullPixels !== undefined) out.endNullPixels = a.endNullPixels;
     return out;
 }
 
@@ -371,7 +427,7 @@ export function reconcilePorts(
                 if (settings && settings.check !== 'none') {
                     const want = intendedPortSettings(intentByPort.get(a.port) ?? {}, settings);
                     const have = reportedPortSettings(a);
-                    const notes = portSettingsDrift(want, have);
+                    const notes = portSettingsDrift(want, have, settings.gammaSteps);
                     if (notes.length) {
                         row.drift = 'settings';
                         row.intendedSettings = want;
@@ -400,15 +456,22 @@ export function reconcilePorts(
 }
 
 /**
- * Serial ports: intent against the device's serial outputs .
+ * Serial ports: intent against the device's serial outputs. `controllerStart`
+ * lets a device that numbers channels from its own first one agree with the
+ * layout's absolute numbers.
  */
 export function reconcileSerialPorts(
     intent: ControllerSerialPortIntent[] | undefined,
     actual: ControllerSerialPort[] | undefined,
+    controllerStart?: number,
 ): SerialPortReconcile[] {
     const byPort = new Map<number, SerialPortReconcile>();
+    const intendedStarts = new Map<number, number | undefined>();
+    const startOk = (intended: number, actualStart: number): boolean =>
+        actualStart === intended || (controllerStart !== undefined && actualStart === intended - (controllerStart - 1));
     for (const i of intent ?? []) {
         if (!i.models.length && !i.channels) continue;
+        intendedStarts.set(i.port, i.startChannel);
         byPort.set(i.port, {
             port: i.port,
             intendedModels: i.models,
@@ -418,18 +481,42 @@ export function reconcileSerialPorts(
         });
     }
     for (const a of actual ?? []) {
-        const active = (a.channels ?? 0) > 0;
+        // A port the device describes is configured; a channel count is one way
+        // of saying so, but a Falcon gives none and sends a whole frame.
+        const active =
+            a.channels !== undefined ? a.channels > 0 : a.protocol !== undefined || a.startChannel !== undefined;
         const row = byPort.get(a.port);
         if (row) {
             row.actualModel = a.model;
             row.actualChannels = a.channels;
             row.actualProtocol = a.protocol;
+            const intendedStart = intendedStarts.get(a.port);
             if (!active) row.drift = 'missing';
             // A controller may pad a short DMX stream (FPP/HinksPix floor at
             // 16); more channels than intended is harmless, fewer is drift.
-            else if (row.intendedChannels !== undefined && (a.channels ?? 0) < row.intendedChannels)
+            else if (
+                row.intendedChannels !== undefined &&
+                a.channels !== undefined &&
+                a.channels < row.intendedChannels
+            )
                 row.drift = 'count';
-            else row.drift = 'ok';
+            else if (
+                intendedStart !== undefined &&
+                a.startChannel !== undefined &&
+                a.universe === undefined &&
+                !startOk(intendedStart, a.startChannel)
+            ) {
+                row.drift = 'start';
+                row.intendedStart = intendedStart;
+                row.actualStart = a.startChannel;
+            } else {
+                row.drift = 'ok';
+                const notes = serialProtocolDrift(row.intendedProtocol, a.protocol);
+                if (notes.length) {
+                    row.drift = 'settings';
+                    row.settingsNotes = notes;
+                }
+            }
         } else if (active) {
             byPort.set(a.port, {
                 port: a.port,

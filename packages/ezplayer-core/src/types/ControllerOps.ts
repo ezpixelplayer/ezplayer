@@ -45,6 +45,9 @@ export interface DiscoveredController {
     pixelPorts?: ControllerPort[];
     /** Pixel ports physically fitted, when the device says (full depth). */
     pixelPortCount?: number;
+    /** Gamma values the ports can take, ascending, when the firmware offers
+     *  fixed steps; a layout value between two steps lands on one of them. */
+    gammaSteps?: number[];
     /** Actual serial (DMX/…) port config read from the device (full depth). */
     serialPorts?: ControllerSerialPort[];
     /** Serial ports physically fitted, when the device says (full depth). */
@@ -1211,6 +1214,8 @@ export interface ControllerPortIntent {
     colorOrder?: string;
     brightness?: number;
     gamma?: number;
+    nullPixels?: number;
+    endNullPixels?: number;
 }
 
 /** One input universe as configured on the device (E1.31/ArtNet). */
@@ -1250,6 +1255,9 @@ export interface ControllerPort {
     /** Percent, as the device reports it. */
     brightness?: number;
     gamma?: number;
+    /** Null pixels before and after the first string, when the device says. */
+    nullPixels?: number;
+    endNullPixels?: number;
     startChannel?: number;
     endChannel?: number;
     /** Set when the port is addressed by universe (e.g. AlphaPix); its
@@ -1265,8 +1273,8 @@ export interface ControllerPort {
  *                 difference in its configuration (see the row's `notes`)
  *  - `start`      counts agree but the port starts at the wrong channel, so it
  *                 shows another part of the show
- *  - `settings`   counts and start agree but the brightness, gamma or color
- *                 order is not what the show wants */
+ *  - `settings`   counts and start agree but the brightness, gamma, color
+ *                 order or null pixels are not what the show wants */
 export type PortDriftKind = 'ok' | 'missing' | 'unexpected' | 'count' | 'start' | 'settings';
 
 /**
@@ -1291,6 +1299,9 @@ export interface PortSettingsValues {
     /** Percent. */
     brightness?: number;
     gamma?: number;
+    /** Null pixels before and after the string. */
+    nullPixels?: number;
+    endNullPixels?: number;
 }
 
 /** One port's intent-vs-actual reconciliation. */
@@ -1337,6 +1348,11 @@ export interface SerialPortReconcile {
     actualModel?: string;
     actualChannels?: number;
     actualProtocol?: string;
+    /** Set when the drift is `start`: the two first channels. */
+    intendedStart?: number;
+    actualStart?: number;
+    /** Set when the drift is `settings`: what differs, one line each. */
+    settingsNotes?: string[];
     /** Same vocabulary as pixel ports; `count` means the channel counts differ. */
     drift: PortDriftKind;
     /** How much it matters. Absent on a row built by hand in a test;

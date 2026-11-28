@@ -327,7 +327,7 @@ EZPlayer controller upload <name> [--scope inputs|strings|full] [--full-control 
 | Option              | Description                                                                    |
 | ------------------- | ------------------------------------------------------------------------------ |
 | `--scope`           | `inputs` (universes), `strings` (port outputs), or `full` (both — the default). |
-| `--full-control`    | Settings xLights doesn't specify are reset to the controller defaults (brightness/gamma/color order), wiping per-port tweaks made on the device. |
+| `--full-control`    | Settings xLights doesn't specify are reset to the controller defaults (brightness/gamma/color order/null pixels), wiping per-port tweaks made on the device. |
 | `--no-full-control` | Settings xLights doesn't specify are left as they are on the device. |
 
 Without either flag, the controller's [port settings](../advanced/controllers/controllerlist.md#port-settings)
