@@ -3,8 +3,8 @@ import { Box } from '../box/Box';
 import { useSelector } from 'react-redux';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Alert, Badge, IconButton, Stack, Tooltip, useMediaQuery, useTheme } from '@mui/material';
-import AnimationIcon from '@mui/icons-material/Animation';
 import PaletteOutlinedIcon from '@mui/icons-material/PaletteOutlined';
+import ScienceOutlinedIcon from '@mui/icons-material/ScienceOutlined';
 import StopCircleIcon from '@mui/icons-material/StopCircle';
 import { PageHeader, ExtendedTheme } from '@ezplayer/shared-ui-components';
 import type { TestTargets, TweakModelInfo } from '@ezplayer/ezplayer-core';
@@ -42,8 +42,9 @@ const count = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 export const TestTweakScreen: React.FC<TestTweakScreenProps> = ({ title, statusArea, compressed = false }) => {
     const theme = useTheme<ExtendedTheme>();
     const navigate = useNavigate();
-    // Asked without the server-render pass, so the very first render already knows: it decides whether the list starts open.
-    const wide = useMediaQuery(theme.breakpoints.up('md'), { noSsr: true });
+    // The list starts open, except on a phone, where it would cover the layout. Asked without the
+    // server-render pass, so the very first render already knows.
+    const roomForList = useMediaQuery(theme.breakpoints.up('sm'), { noSsr: true });
     const showDirectory = useSelector((state: RootState) => state.auth.showDirectory);
     const { url } = useFrameServerUrl();
     const { snapshot, doc, updateDoc, startTest, stopTest, loadXlGroups, error, saving } = useTestTweak(url);
@@ -137,7 +138,7 @@ export const TestTweakScreen: React.FC<TestTweakScreenProps> = ({ title, statusA
                     onClick={() => setPatternOpen((o) => !o)}
                 >
                     <Badge color="warning" variant="dot" invisible={!active}>
-                        <AnimationIcon />
+                        <ScienceOutlinedIcon />
                     </Badge>
                 </IconButton>
             </Tooltip>
@@ -214,10 +215,12 @@ export const TestTweakScreen: React.FC<TestTweakScreenProps> = ({ title, statusA
                         selectableModels
                         selectedModelName={single}
                         onSelectedModelChange={pickInLayout}
-                        // A selected model is painted over; while it is being tested, let the test show through.
-                        selectionStrength={active ? 0.3 : 1}
+                        // A selected model is painted over and has its wiring drawn; while a test runs, let the test show.
+                        selectionStrength={active ? 0.25 : 1}
+                        // The pattern here is the real one, on the lights.
+                        hideRainbowToggle
                         showList
-                        initialShowList={wide}
+                        initialShowList={roomForList}
                         sidePanelLabel="what to test"
                         renderSidePanel={({ close }) => (
                             <SelectionPanel

@@ -256,6 +256,9 @@ const playbackSettingsSlice = createSlice({
         setSendIdleBlackFrames(state, action: PayloadAction<boolean>) {
             state.settings.sendIdleBlackFrames = action.payload;
         },
+        setDefaultFps(state, action: PayloadAction<number>) {
+            state.settings.defaultFps = action.payload;
+        },
 
         // Virtual matrix outputs (machine-local)
         addVirtualMatrixOutput(state, action: PayloadAction<VirtualMatrixOutput>) {
@@ -498,6 +501,7 @@ export const {
     updateViewerControlScheduleEntry,
     moveViewerControlScheduleEntry,
     setSendIdleBlackFrames,
+    setDefaultFps,
     setControllerRefresh,
     setManagePortSettings,
     setNormalizeNewSongs,

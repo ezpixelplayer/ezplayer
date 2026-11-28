@@ -962,6 +962,10 @@ export interface PlaybackSettings {
      *  the wire is then left untouched outside active playback, and lights
      *  hold their last frame on stop. */
     sendIdleBlackFrames?: boolean;
+    /** Frames per second for what the player makes itself with no sequence
+     *  playing: test patterns and overlays (default 40).  A sequence plays at
+     *  its own rate, and plain idle black stays slow. */
+    defaultFps?: number;
     /** Outbound sync strategies for followers of this player. */
     sync?: SyncOutputSettings;
     /** Whether and when the player sends show content to the devices that play it. */

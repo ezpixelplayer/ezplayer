@@ -287,9 +287,9 @@ export class PixelPipeline {
         this.overlaySocket = sock;
     }
 
-    /** Idle frames can go slower unless an overlay or a test pattern is running. */
-    idleIntervalMs(fallback: number): number {
-        return this.overlays.size > 0 || this.test ? Math.min(fallback, 50) : fallback;
+    /** Idle frames go slowly (`fallback`) unless an overlay or a test pattern is running (`activeMs`). */
+    idleIntervalMs(fallback: number, activeMs: number): number {
+        return this.overlays.size > 0 || this.test ? Math.min(fallback, activeMs) : fallback;
     }
 
     /**

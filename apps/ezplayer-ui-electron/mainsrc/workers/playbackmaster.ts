@@ -3612,10 +3612,12 @@ async function processQueue() {
                     `No foreground actions ${targetFrameRTC - Date.now()} ${foregroundPlayerRunState.currentTime - Date.now()}`,
                 );
                 multiSync.onIdle();
-                presentIdleBlack(pipeline, targetFrameRTC);
-                targetFrameRTC += pipeline.idleIntervalMs(playbackParams.idleSleepInterval);
+                const idleMs = idleFrameMs(pipeline);
+                presentIdleBlack(pipeline, targetFrameRTC, idleMs);
+                targetFrameRTC += idleMs;
 
-                await sleepUntil(targetFrameRTC - 50);
+                // One interval ahead, as a sequence is composed: further and a fast rate's frames pile up unsent.
+                await sleepUntil(targetFrameRTC - Math.min(50, idleMs));
                 continue;
             }
             const foregroundAction = upcomingForeground.curPLActions?.actions[0];
@@ -3623,9 +3625,11 @@ async function processQueue() {
             if (isPaused || !foregroundAction?.seqId) {
                 emitFrameDebug(isPaused ? `Paused - sending black` : `No foreground action seq`);
                 multiSync.onIdle();
-                presentIdleBlack(pipeline, targetFrameRTC);
-                targetFrameRTC += pipeline.idleIntervalMs(playbackParams.idleSleepInterval);
-                await sleepUntil(targetFrameRTC - 50);
+                const idleMs = idleFrameMs(pipeline);
+                presentIdleBlack(pipeline, targetFrameRTC, idleMs);
+                targetFrameRTC += idleMs;
+                // One interval ahead, as a sequence is composed: further and a fast rate's frames pile up unsent.
+                await sleepUntil(targetFrameRTC - Math.min(50, idleMs));
                 continue;
             }
 
@@ -3921,12 +3925,26 @@ function overlayCommand(cmd: OverlayCommand): OverlayResult {
     return { ok: false, error: 'unknown op' };
 }
 
+/**
+ * How long until the next frame with no sequence playing: slow for plain
+ * black, the default frame rate setting while a test pattern or an overlay runs.
+ */
+function idleFrameMs(pipeline: PixelPipeline): number {
+    const fps = Number(latestSettings?.defaultFps);
+    const activeMs = 1000 / (Number.isFinite(fps) ? Math.min(60, Math.max(5, fps)) : 40);
+    return pipeline.idleIntervalMs(playbackParams.idleSleepInterval, activeMs);
+}
+
 /** An idle black frame: previews see it, and the output worker sends it only when idle black is enabled. */
-function presentIdleBlack(pipeline: PixelPipeline, targetRTC: number) {
+function presentIdleBlack(
+    pipeline: PixelPipeline,
+    targetRTC: number,
+    frameIntervalMs = playbackParams.idleSleepInterval,
+) {
     // Overlays and test patterns still light the display while idle, so the show brightness and tint apply.
     pipeline.compose({
         timeMs: targetRTC,
-        frameIntervalMs: playbackParams.idleSleepInterval,
+        frameIntervalMs,
         frameNumber: -1,
         idle: true,
         brightness: brightnessNow / 100,

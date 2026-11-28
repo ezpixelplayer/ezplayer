@@ -484,11 +484,16 @@ export class GeometryManager {
         });
     }
 
-    /** How much of the selection color covers a selected pixel: 1 all of it, less lets the pixel's own color show. */
+    /**
+     * How much of the selection color covers a selected pixel: 1 all of it, less lets the pixel's own
+     * color show.  Anything less also takes the wiring lines away: they lie over the very pixels
+     * the host wants seen.
+     */
     setSelectionStrength(strength: number): void {
         const v = Math.max(0, Math.min(1, Number.isFinite(strength) ? strength : 1));
         if (v === this.selectionStrength) return;
         this.selectionStrength = v;
+        this.wiringGroup.visible = v >= 1;
         this.renderers.forEach((renderer) => {
             renderer.material.uniforms.selectionStrength.value = v;
         });

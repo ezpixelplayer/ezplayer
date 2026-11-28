@@ -372,7 +372,7 @@ export const WiringPanel: React.FC<WiringPanelProps> = ({
                             {!local.length && !fromPlayer.length && (
                                 <Alert severity={isRewired ? 'success' : 'info'}>
                                     {isRewired
-                                        ? 'The player is sending this model by this wiring. Upload the controller configuration so the ports match.'
+                                        ? 'The player is sending this model by this wiring. Reconfigure the controller so its ports match.'
                                         : 'Waiting for the player to take this wiring.'}
                                 </Alert>
                             )}
@@ -388,14 +388,13 @@ export const WiringPanel: React.FC<WiringPanelProps> = ({
                         <Box sx={{ flex: 1 }} />
                         {onOpenControllers && (
                             <Button size="small" variant="outlined" onClick={onOpenControllers}>
-                                Upload from Controllers
+                                Reconfigure Controllers
                             </Button>
                         )}
                     </Stack>
                     <Typography variant="body2" color="text.secondary" component="div" sx={{ mb: 1 }}>
-                        The player's data already follows these overrides. The controllers do not until their string
-                        configuration is uploaded again, which you do from the Controllers screen; its port map shows
-                        the same wiring.
+                        The player's data already follows these overrides. The controllers do not until they are
+                        reconfigured, which you do from the Controllers screen; its port map shows the same wiring.
                     </Typography>
                     {dupes.map((d, k) => (
                         <Alert key={k} severity="info" sx={{ mb: 1 }}>

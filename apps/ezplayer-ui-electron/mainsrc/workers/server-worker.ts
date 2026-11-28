@@ -2201,6 +2201,7 @@ async function startServer(config: ServerWorkerData) {
         'jukebox',
         'testSequenceTags',
         'sendIdleBlackFrames',
+        'defaultFps',
         'sync',
         'controllerRefresh',
         'managePortSettings',

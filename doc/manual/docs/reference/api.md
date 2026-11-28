@@ -838,6 +838,7 @@ control, sync output (FPP MultiSync master), and advanced overrides.
         ]
     },
     "sendIdleBlackFrames": true,
+    "defaultFps": 40,
     "sync": {
         "multisync": {
             "enabled": false,
@@ -853,7 +854,8 @@ control, sync output (FPP MultiSync master), and advanced overrides.
 ```
 
 `sendIdleBlackFrames` (default `true`) controls whether black frames are sent
-while idle/paused/stopped. `sync.multisync` configures FPP MultiSync master
+while idle/paused/stopped. `defaultFps` (default 40, 5 to 60) is the frame
+rate of test patterns and overlays while no sequence is playing. `sync.multisync` configures FPP MultiSync master
 output (see [FPP compatibility](./fpp-compat.md#multisync-master)); empty
 `remotes` means multicast, and `port`/`multicastAddress` are optional
 overrides. `advanced.ddpPort` overrides the DDP output port (default 4048)

@@ -92,6 +92,15 @@ describe('test + tweak over the xLights settings', () => {
         await waitForFirstPixel([32, 128, 0], 'the model as xLights has it');
     });
 
+    it('runs a test at the default frame rate, not the idle one', async () => {
+        mock.ddp.reset();
+        await new Promise((r) => setTimeout(r, 2000));
+        // 40 a second unless set otherwise; plain idle black is 5.
+        const frames = mock.ddp.framesReceived();
+        expect(frames).toBeGreaterThan(60);
+        expect(frames).toBeLessThan(100);
+    });
+
     it('replaces only what a profile sets', async () => {
         const doc: TestTweakDoc = {
             ...emptyDoc(),

@@ -149,6 +149,24 @@ export const PlayerSettings: React.FC = () => {
                     Send black frames while nothing is playing so lights are consistently dark.
                 </Typography>
             </Box>
+            <FormControl fullWidth size="small" sx={{ mt: 2 }}>
+                <Select
+                    options={[20, 25, 30, 40, 50, 60].map((fps) => ({
+                        id: String(fps),
+                        name: `${fps} frames per second${fps === 40 ? ' (recommended)' : ''}`,
+                    }))}
+                    itemText="name"
+                    itemValue="id"
+                    onChange={(e) =>
+                        dispatch(playbackSettingsActions.setDefaultFps(Number((e.target as HTMLSelectElement).value)))
+                    }
+                    label="Default frame rate"
+                    value={String(settings.defaultFps ?? 40)}
+                />
+            </FormControl>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                Used for test patterns and overlays while no sequence is playing. A sequence plays at its own rate.
+            </Typography>
 
             <Divider sx={{ my: 3 }} />
             <Typography variant="subtitle2" sx={{ mb: 0.5 }}>

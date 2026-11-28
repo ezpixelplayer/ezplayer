@@ -175,6 +175,8 @@ export interface Preview3DProps {
     allowExpand?: boolean;
     /** 0..1: how solid the selection color is over a selected model's own colors. Default 1. */
     selectionStrength?: number;
+    /** Leave the expanded view's "show test pattern" (the built-in rainbow) button out. */
+    hideRainbowToggle?: boolean;
 }
 
 /**
@@ -214,6 +216,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
     toolbarExtras,
     allowExpand,
     selectionStrength,
+    hideRainbowToggle = false,
 }) => {
     const theme = useTheme();
     const preferOrbitControls = useOrbitPreference();
@@ -1452,15 +1455,17 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                                     </IconButton>
                                 </Tooltip>
                             )}
-                            <Tooltip title={forceTestPattern ? 'Show live pixel data' : 'Show test pattern'}>
-                                <IconButton
-                                    size="small"
-                                    onClick={() => setForceTestPattern((v) => !v)}
-                                    sx={forceTestPattern ? overlayActiveSx : undefined}
-                                >
-                                    <GradientIcon />
-                                </IconButton>
-                            </Tooltip>
+                            {!hideRainbowToggle && (
+                                <Tooltip title={forceTestPattern ? 'Show live pixel data' : 'Show test pattern'}>
+                                    <IconButton
+                                        size="small"
+                                        onClick={() => setForceTestPattern((v) => !v)}
+                                        sx={forceTestPattern ? overlayActiveSx : undefined}
+                                    >
+                                        <GradientIcon />
+                                    </IconButton>
+                                </Tooltip>
+                            )}
                             <Tooltip title="Exit expanded preview">
                                 <IconButton size="small" onClick={() => setExpanded(false)}>
                                     <FullscreenExitIcon />

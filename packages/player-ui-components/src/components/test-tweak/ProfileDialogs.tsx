@@ -3,6 +3,7 @@ import { Box } from '../box/Box';
 import {
     Alert,
     Button,
+    ButtonBase,
     Checkbox,
     Dialog,
     DialogActions,
@@ -23,6 +24,8 @@ import {
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import ExpandLessIcon from '@mui/icons-material/ExpandLess';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import TuneIcon from '@mui/icons-material/Tune';
 import {
     assignProfile,
@@ -259,6 +262,8 @@ export const ProfilesDialog: React.FC<{
     }
     const [note, setNote] = useState('');
     useEffect(() => setNote(''), [profile?.id]);
+    const [membersOpen, setMembersOpen] = useState(false);
+    const membersShown = !small || membersOpen;
 
     const members = useMemo(() => (profile ? profileMembers(doc, profile.id) : []), [doc, profile]);
     const memberSet = useMemo(() => new Set(members), [members]);
@@ -417,17 +422,37 @@ export const ProfilesDialog: React.FC<{
                             sx={{
                                 flex: 1,
                                 minWidth: 0,
-                                minHeight: { xs: 380, md: 0 },
+                                minHeight: { xs: membersShown ? 380 : 0, md: 0 },
                                 display: 'flex',
                                 flexDirection: 'column',
                             }}
                         >
-                            <Typography variant="subtitle2" sx={{ px: 2, pt: 1.5 }}>
-                                Models that use it ({members.length})
-                            </Typography>
-                            <Typography variant="body2" color="text.secondary" sx={{ fontSize: 12, px: 2 }}>
-                                Ticking a model that is in another profile moves it here.
-                            </Typography>
+                            {small ? (
+                                // On a phone the list waits folded under the settings, which then fit the screen.
+                                <ButtonBase
+                                    onClick={() => setMembersOpen((o) => !o)}
+                                    aria-expanded={membersOpen}
+                                    sx={{
+                                        justifyContent: 'space-between',
+                                        px: 2,
+                                        py: 1.5,
+                                        borderTop: 1,
+                                        borderColor: 'divider',
+                                    }}
+                                >
+                                    <Typography variant="subtitle2">Models that use it ({members.length})</Typography>
+                                    {membersOpen ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+                                </ButtonBase>
+                            ) : (
+                                <Typography variant="subtitle2" sx={{ px: 2, pt: 1.5 }}>
+                                    Models that use it ({members.length})
+                                </Typography>
+                            )}
+                            {membersShown && (
+                                <Typography variant="body2" color="text.secondary" sx={{ fontSize: 12, px: 2 }}>
+                                    Ticking a model that is in another profile moves it here.
+                                </Typography>
+                            )}
                             {fitting.length > 0 && (
                                 <Alert
                                     severity="info"
@@ -449,7 +474,7 @@ export const ProfilesDialog: React.FC<{
                                     already sent this way: {some(fitting, 3)}
                                 </Alert>
                             )}
-                            <Box sx={{ flex: 1, minHeight: 0 }}>
+                            <Box sx={{ flex: 1, minHeight: 0, display: membersShown ? undefined : 'none' }}>
                                 <ModelChecklist
                                     key={profile.id}
                                     models={models}
