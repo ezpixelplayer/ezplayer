@@ -9,13 +9,32 @@ vi.mock('electron', () => ({ ipcMain }));
 vi.mock('./diagnostics.js', () => ({ reportDiagEvent }));
 vi.mock('./faultinject-main.js', () => ({ injectRendererFaults }));
 
-const { watchRenderer, READY_TIMEOUT_MS, HANG_AFTER_MS } = await import('./rendererwatch.js');
+const { watchRenderer, READY_TIMEOUT_MS, HANG_AFTER_MS, JS_STACK_TIMEOUT_MS } = await import('./rendererwatch.js');
+
+type HeadersListener = (
+    details: { resourceType: string; responseHeaders?: Record<string, string[]> },
+    callback: (r: { responseHeaders?: Record<string, string[]> }) => void,
+) => void;
+
+const STUCK_STACK = '\n    at spin (file:///app/assets/main.js:1:2)';
 
 class FakeContents extends EventEmitter {
     answering = true;
     isDestroyed = () => false;
     getURL = () => 'file:///app/index.html';
     executeJavaScript = vi.fn(async () => ({ rootChildren: 0 }));
+    headersFilter: unknown;
+    headersListener: HeadersListener | undefined;
+    session = {
+        webRequest: {
+            onHeadersReceived: (filter: unknown, listener: HeadersListener) => {
+                this.headersFilter = filter;
+                this.headersListener = listener;
+            },
+        },
+    };
+    // Like an idle page: the stack request settles only once script runs.
+    mainFrame = { collectJavaScriptCallStack: vi.fn((): Promise<string | void> => new Promise(() => {})) };
     // Async, like real IPC.
     send = (channel: string, seq: number) => {
         if (channel === 'ezp:ping' && this.answering)
@@ -56,7 +75,7 @@ afterEach(() => {
 describe('watchRenderer', () => {
     it('reports a page whose app never comes up, with what the page shows', async () => {
         setup();
-        await vi.advanceTimersByTimeAsync(READY_TIMEOUT_MS + 1);
+        await vi.advanceTimersByTimeAsync(READY_TIMEOUT_MS + JS_STACK_TIMEOUT_MS);
         expect(reportDiagEvent).toHaveBeenCalledWith(
             'renderer-not-ready',
             expect.stringContaining('not up after 45s'),
@@ -99,6 +118,62 @@ describe('watchRenderer', () => {
         win.webContents.answering = false;
         await vi.advanceTimersByTimeAsync(HANG_AFTER_MS + 10_000);
         expect(kinds()).toEqual(['renderer-hang', 'renderer-hang']);
+    });
+
+    it('reports the stack a stuck page is running', async () => {
+        const win = setup();
+        ready(win);
+        win.webContents.mainFrame.collectJavaScriptCallStack.mockResolvedValue(STUCK_STACK);
+        win.webContents.answering = false;
+        await vi.advanceTimersByTimeAsync(HANG_AFTER_MS + 10_000);
+        expect(reportDiagEvent).toHaveBeenCalledWith(
+            'renderer-hang',
+            expect.stringContaining('not answering'),
+            STUCK_STACK,
+            expect.objectContaining({ recentErrors: ['E boom'] }),
+        );
+
+        win.webContents.emit('unresponsive');
+        await vi.advanceTimersByTimeAsync(0);
+        expect(reportDiagEvent).toHaveBeenLastCalledWith(
+            'unresponsive',
+            'main window unresponsive',
+            STUCK_STACK,
+            undefined,
+        );
+    });
+
+    it('reports a hang without a stack when none comes back in time', async () => {
+        const win = setup();
+        ready(win);
+        win.webContents.answering = false;
+        await vi.advanceTimersByTimeAsync(HANG_AFTER_MS + 10_000);
+        expect(reportDiagEvent).toHaveBeenCalledWith('renderer-hang', expect.any(String), undefined, expect.anything());
+
+        win.webContents.mainFrame.collectJavaScriptCallStack.mockRejectedValue(new Error('frame gone'));
+        win.webContents.emit('unresponsive');
+        await vi.advanceTimersByTimeAsync(0);
+        expect(reportDiagEvent).toHaveBeenLastCalledWith(
+            'unresponsive',
+            'main window unresponsive',
+            undefined,
+            undefined,
+        );
+    });
+
+    it('opts our page documents in to stack collection', () => {
+        const wc = setup().webContents;
+        expect(wc.headersFilter).toEqual({ urls: ['file:///*', 'http://localhost:5173/*'] });
+        const headers = (resourceType: string) => {
+            let out: Record<string, string[]> | undefined;
+            wc.headersListener!({ resourceType, responseHeaders: { a: ['1'] } }, (r) => (out = r.responseHeaders));
+            return out;
+        };
+        expect(headers('mainFrame')).toEqual({
+            a: ['1'],
+            'Document-Policy': ['include-js-call-stacks-in-crash-reports'],
+        });
+        expect(headers('script')).toBeUndefined();
     });
 
     it('does not count system sleep or a wall-clock jump as a hang', async () => {

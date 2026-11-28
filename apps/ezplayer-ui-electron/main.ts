@@ -256,15 +256,6 @@ const createWindow = (showFolder?: string, showWelcomeOnLaunch?: boolean) => {
         console.error('did-fail-load', { code, desc, url });
         reportDiagEvent('did-fail-load', desc, undefined, { code, url });
     });
-    // The "white screen" signal: the renderer's event loop stopped servicing
-    // input. render-process-gone catches crashes; this catches hangs.
-    mainWindow.webContents.on('unresponsive', () => {
-        console.error('main window unresponsive');
-        reportDiagEvent('unresponsive', 'main window unresponsive');
-    });
-    mainWindow.webContents.on('responsive', () => {
-        console.error('main window responsive again');
-    });
     // Windows only: logoff / shutdown / restart is now unstoppable, so the
     // process deaths that follow are not crashes.
     mainWindow.on('session-end', () => {
@@ -428,6 +419,12 @@ async function startHeadless() {
 
     registerFileListHandlers();
     await registerContentHandlers(null, playWorker);
+
+    // Without this the updater keeps electron-updater's defaults (silent
+    // auto-download, install on quit) and never reports status to web clients.
+    if (app.isPackaged) {
+        registerAutoUpdateHandlers(null);
+    }
 
     // Stop playback, then app.quit() so 'before-quit' releases the folder lock.
     const shutdown = (signal: NodeJS.Signals) => {
