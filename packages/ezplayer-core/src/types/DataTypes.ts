@@ -1324,7 +1324,7 @@ export type AppRuntime = 'node' | 'python3' | 'binary';
 /** An input an app instance accepts from the show (buttons, sensors), declared in its manifest. */
 export interface AppInputDecl {
     name: string;
-    /** `event` is a press; `value` is a level or open/closed; `text` is a string; `object` is structured (a pose). */
+    /** `event` is a press; `value` is a level or open/closed; `text` is a string; `object` is structured value. */
     kind: 'event' | 'value' | 'text' | 'object';
     min?: number;
     max?: number;
