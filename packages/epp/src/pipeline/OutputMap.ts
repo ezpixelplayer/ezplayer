@@ -8,7 +8,7 @@
 import { DisplayLayout, LayoutModel, NodeCodec, fnv1a } from './Layout';
 import { X_MEANING_WHITE } from './FramePool';
 
-export type OutputPolicy = 'controller' | 'player';
+export type OutputPolicy = 'controller' | 'player' | 'intent';
 
 /** A run of one model's nodes placed at a wire offset: the port-map form. */
 export interface OutputSegmentSpec {
@@ -35,7 +35,13 @@ export interface OutputSpec {
     /** Channel-space range this output carries; wire offset = channel - channelStart. */
     channelStart: number;
     channelCount: number;
-    /** 'controller' sends renderer intent (default); 'player' applies gamma and brightness here. */
+    /**
+     * 'controller' (default) sends what the renderer wrote: the model's own dimming curve and string
+     * type color order, leaving the controller connection's settings to the controller.  'player'
+     * applies the controller connection's gamma, brightness and color order here as well.  'intent'
+     * is the frame as it is, in string type order with no curve at all: the export the previews
+     * read, which are told there is nothing to undo.
+     */
     policy?: OutputPolicy;
     /** Explicit segments replace the channel-range derivation for pixel models. */
     segments?: OutputSegmentSpec[];
@@ -48,19 +54,22 @@ export interface OutputSpec {
     /** Models the channel-range derivation leaves out, because they are wired somewhere else. */
     skipModels?: string[];
     /**
-     * Player-side trims by model name, applied under either policy on top of
-     * whatever the policy already does: the tweak layer.
+     * Output settings by model name that take the place of the model's own (its dimming curve
+     * and string type color order), under either policy: the tweak layer.
      */
     adjust?: Record<string, OutputModelAdjust>;
 }
 
-/** A per-model trim applied while encoding to the wire. */
+/**
+ * A model's output settings as set in the player.  Each one given replaces what the
+ * layout has for the model; each one left out keeps the layout's.
+ */
 export interface OutputModelAdjust {
-    /** Wire order of the color channels, e.g. 'GRB'; replaces the model's own. */
+    /** Wire order of the color channels, e.g. 'GRB'; replaces the string type's order. */
     colorOrder?: string;
-    /** Replaces the gamma the policy would apply. */
+    /** Replaces the gamma of the model's dimming curve. */
     gamma?: number;
-    /** 0..1, multiplies the brightness the policy would apply. */
+    /** 0..1; replaces the brightness of the model's dimming curve. */
     brightness?: number;
     /** Per-channel scale (r, g, b), each 0..1: white balance. */
     gain?: [number, number, number];
@@ -196,6 +205,10 @@ interface NodeSeg {
     brightness?: number;
 }
 
+function positive(v: number | undefined): number | undefined {
+    return v !== undefined && Number.isFinite(v) && v > 0 ? v : undefined;
+}
+
 function validGain(g: [number, number, number] | undefined): [number, number, number] {
     if (!g || g.length !== 3) return [1, 1, 1];
     const c = (v: number) => (Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 1);
@@ -205,11 +218,24 @@ function validGain(g: [number, number, number] | undefined): [number, number, nu
 function emitNodeSeg(b: OutBuilder, layout: DisplayLayout, s: NodeSeg, policy: OutputPolicy, adj?: OutputModelAdjust) {
     const lm = s.lm;
     const codec = lm.codec;
-    const wo = wireOffsets(codec, adj?.colorOrder || s.colorOrder || lm.outputColorOrder);
-    // The policy's own curve, then the trim on top of it.
-    const gamma = adj?.gamma ?? (policy === 'player' ? (s.gamma ?? lm.outputGamma) : undefined);
-    const bright = (policy === 'player' ? (s.brightness ?? lm.outputBrightness ?? 1) : 1) * Math.min(1, Math.max(0, adj?.brightness ?? 1));
-    const gain = validGain(adj?.gain);
+    const player = policy === 'player';
+    // The wire carries the string type's order unless a profile says otherwise. The controller connection's
+    // order is the controller's to apply (a swap on top of this), so only the player policy applies it here.
+    const wo = wireOffsets(
+        codec,
+        policy === 'intent' ? undefined : adj?.colorOrder || s.colorOrder || (player ? lm.outputColorOrder : undefined),
+    );
+    // The model's curve is the layout's dimming curve, which the frames had undone on the way in, unless a
+    // profile replaces it. The player policy then runs the controller connection's curve after it:
+    // ((v^g1)*b1)^g2*b2 = v^(g1*g2) * b1^g2 * b2.
+    const intent = policy === 'intent';
+    const g1 = intent ? 1 : (positive(adj?.gamma) ?? positive(lm.gamma) ?? 1);
+    const b1 = intent ? 1 : adj?.brightness !== undefined ? Math.min(1, Math.max(0, adj.brightness)) : (lm.brightness ?? 1);
+    const g2 = player ? (positive(s.gamma ?? lm.outputGamma) ?? 1) : 1;
+    const b2 = player ? (s.brightness ?? lm.outputBrightness ?? 1) : 1;
+    const gamma = g1 * g2;
+    const bright = Math.pow(b1, g2) * b2;
+    const gain = validGain(intent ? undefined : adj?.gain);
     // White and single-color channels take the brightness without the color balance.
     const lutW = b.lutFor(gamma, bright);
     const mono = codec.kind === 'mono';

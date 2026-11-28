@@ -293,10 +293,10 @@ export class PixelPipeline {
     }
 
     /**
-     * Set the per-model output trims (the tweak layer) and the rewired model
-     * runs, and recompile the controller outputs over them. The preview
-     * export is left as renderer intent in xLights channel space. Takes
-     * effect on the next frame.
+     * Set the per-model output settings (the tweak layer) and the rewired
+     * model runs, and recompile the controller outputs over them. The preview
+     * export is left as the frame is (string type order, no dimming curve, no
+     * profile). Takes effect on the next frame.
      */
     configureOutputs(cfg: { adjust: Record<string, OutputModelAdjust>; strings: WiredRun[]; skipModels: string[] }) {
         this.adjust = cfg.adjust;
@@ -420,7 +420,8 @@ export class PixelPipeline {
             id: '<preview>',
             channelStart: 0,
             channelCount: opts.nChannels,
-            policy: 'controller',
+            // The frame as it is. The viewers are told the models have no curve to undo (see viewerCoords).
+            policy: 'intent',
         };
         const omap = compileOutputMap(layout, [...outputSpecs, legacySpec]);
         const legacyOutput = omap.outputs[omap.outputs.length - 1];

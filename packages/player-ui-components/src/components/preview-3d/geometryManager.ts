@@ -472,6 +472,8 @@ export class GeometryManager {
      * renderer. This is an O(groups) operation — no geometry or material is
      * recreated, so it returns in < 1 ms even for large models.
      */
+    private selectionStrength = 1;
+
     updatePixelSizeMultiplier(multiplier: number): void {
         const clampedMultiplier = Math.max(0.1, Math.min(10.0, Number(multiplier) || 1.0));
         if (Math.abs(this.pixelSizeMultiplier - clampedMultiplier) < 0.001) return;
@@ -479,6 +481,16 @@ export class GeometryManager {
         this.pixelSizeMultiplier = clampedMultiplier;
         this.renderers.forEach((renderer) => {
             renderer.material.uniforms.size.value = renderer.basePointSize * clampedMultiplier;
+        });
+    }
+
+    /** How much of the selection color covers a selected pixel: 1 all of it, less lets the pixel's own color show. */
+    setSelectionStrength(strength: number): void {
+        const v = Math.max(0, Math.min(1, Number.isFinite(strength) ? strength : 1));
+        if (v === this.selectionStrength) return;
+        this.selectionStrength = v;
+        this.renderers.forEach((renderer) => {
+            renderer.material.uniforms.selectionStrength.value = v;
         });
     }
 

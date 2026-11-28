@@ -38,6 +38,8 @@ export interface Viewer3DProps {
     showStats?: boolean;
     pointSize?: number; // Base point size (will be multiplied by pixelSizeMultiplier)
     selectedModelNames?: Set<string>;
+    /** 0..1: how solid the selection color is over a selected model's own colors. Default 1. */
+    selectionStrength?: number;
     modelMetadata?: ModelMetadata[];
     viewObjects?: ViewObject[];
     frameServerUrl?: string;
@@ -78,6 +80,7 @@ function OptimizedPointCloud({
     hoveredId,
     pointSize,
     selectedModelNames,
+    selectionStrength,
     modelMetadata,
     pixelSizeMultiplier,
 }: {
@@ -87,12 +90,16 @@ function OptimizedPointCloud({
     hoveredId?: string | null;
     pointSize?: number;
     selectedModelNames?: Set<string>;
+    /** 0..1: how solid the selection color is over a selected model's own colors. Default 1. */
+    selectionStrength?: number;
     modelMetadata?: ModelMetadata[];
     onPointClick?: (pointId: string) => void;
     pixelSizeMultiplier?: number;
 }) {
     const animationTimeRef = useRef(0);
     const geometryManagerRef = useRef<GeometryManager | null>(null);
+    const selectionStrengthRef = useRef(selectionStrength);
+    selectionStrengthRef.current = selectionStrength;
     const [group, setGroup] = useState<THREE.Group | null>(null);
 
     // Initialize geometry manager
@@ -223,6 +230,7 @@ function OptimizedPointCloud({
         animationTimeRef.current += delta;
 
         // Update time for procedural colors
+        geometryManagerRef.current.setSelectionStrength(selectionStrengthRef.current ?? 1);
         geometryManagerRef.current.updateTime(animationTimeRef.current);
 
         // Update live data colors
@@ -837,6 +845,7 @@ function SceneContent({
     onPointHover,
     pointSize,
     selectedModelNames,
+    selectionStrength,
     modelMetadata,
     viewObjects,
     frameServerUrl,
@@ -861,6 +870,8 @@ function SceneContent({
     onPointHover?: (pointId: string | null) => void;
     pointSize?: number;
     selectedModelNames?: Set<string>;
+    /** 0..1: how solid the selection color is over a selected model's own colors. Default 1. */
+    selectionStrength?: number;
     modelMetadata?: ModelMetadata[];
     viewObjects?: ViewObject[];
     frameServerUrl?: string;
@@ -1177,6 +1188,7 @@ function SceneContent({
                 hoveredId={hoveredId}
                 pointSize={pointSize}
                 selectedModelNames={selectedModelNames}
+                selectionStrength={selectionStrength}
                 modelMetadata={modelMetadata}
                 onPointClick={onPointClick}
                 pixelSizeMultiplier={pixelSizeMultiplier}
@@ -1303,6 +1315,7 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
     showStats = false,
     pointSize = 1.2,
     selectedModelNames,
+    selectionStrength,
     modelMetadata,
     viewObjects,
     frameServerUrl,
@@ -1551,6 +1564,7 @@ export const Viewer3D: React.FC<Viewer3DProps> = ({
                             onPointHover={onPointHover}
                             pointSize={pointSize}
                             selectedModelNames={selectedModelNames}
+                            selectionStrength={selectionStrength}
                             modelMetadata={modelMetadata}
                             viewObjects={viewObjects}
                             frameServerUrl={frameServerUrl}

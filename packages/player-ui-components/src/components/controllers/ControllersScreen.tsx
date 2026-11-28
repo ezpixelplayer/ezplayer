@@ -64,9 +64,7 @@ import { PageHeader } from '@ezplayer/shared-ui-components';
 import { Box } from '../box/Box';
 import { CompactDialog } from '../dialog/CompactDialog';
 import { PortVisualizerDialog } from './PortVisualizerDialog';
-import { useNavigate } from 'react-router-dom';
-import { TEST_TWEAK } from '../../constants/routes';
-import { useRouteBase } from '../../util/RouteBaseProvider';
+import { RewireDialog } from '../test-tweak/WiringDialog';
 import type { AppDispatch, RootState } from '../../store/Store';
 import { issueControllerCommand } from '../../store/slices/ControllerOpsStore';
 import { callImmediateCommand } from '../../store/slices/RuntimeStore';
@@ -846,8 +844,8 @@ const GridRow: React.FC<{
     const [errorAnchor, setErrorAnchor] = useState<HTMLElement | null>(null);
     const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
     const [portDialog, setPortDialog] = useState<'compare' | 'map' | null>(null);
-    const navigate = useNavigate();
-    const routeBase = useRouteBase();
+    // undefined: closed. null: open with no model picked yet.
+    const [rewiring, setRewiring] = useState<string | null | undefined>(undefined);
     const [uploadOpen, setUploadOpen] = useState(false);
     const managePortSettings = useSelector((s: RootState) => s.playbackSettings.settings.managePortSettings);
     const d = row.device;
@@ -1640,10 +1638,11 @@ const GridRow: React.FC<{
                     panelActual={d?.panelMatrices}
                     virtualIntent={row.virtualMatrixIntent}
                     virtualActual={d?.virtualMatrices}
-                    onEditWiring={() => navigate(`${routeBase}${TEST_TWEAK}?view=wiring`)}
+                    onEditWiring={(model) => setRewiring(model ?? null)}
                     onClose={() => setPortDialog(null)}
                 />
             )}
+            {rewiring !== undefined && <RewireDialog model={rewiring} onClose={() => setRewiring(undefined)} />}
             {uploadOpen && d && (
                 <UploadDialog
                     name={row.name ?? d.hostname ?? ip ?? 'this controller'}

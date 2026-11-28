@@ -136,9 +136,7 @@ export const WiringPanel: React.FC<WiringPanelProps> = ({
 
             {!model && (
                 <Alert severity="info">
-                    {selectedModels.length > 1
-                        ? 'Select a single model to edit its wiring.'
-                        : 'Select a model on the left to edit its wiring.'}
+                    Pick a model above to edit its wiring.
                 </Alert>
             )}
 

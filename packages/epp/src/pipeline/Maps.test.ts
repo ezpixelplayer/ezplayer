@@ -176,10 +176,10 @@ describe('OutputMap', () => {
         // xLights order: gamma first, then brightness, so -50 at gamma 2 lights at half, not a quarter.
         const lut = (v: number) => Math.round(255 * 0.5 * Math.pow(v / 255, 2));
         expect(Array.from(wire)).toEqual([lut(0), lut(255), lut(128), lut(255), lut(0), lut(0)]);
-        // Controller policy is a pure permutation of intent.
+        // Controller policy leaves the connection's settings to the controller: the wire is in string type order.
         const cmap = compileOutputMap(layout, [{ id: 'c', channelStart: 0, channelCount: 6 }]);
         applyOutput(cmap.outputs[0], 3, frame, 0, wire);
-        expect(Array.from(wire)).toEqual([0, 255, 128, 255, 0, 0]);
+        expect(Array.from(wire)).toEqual([255, 0, 128, 0, 255, 0]);
     });
 
     it('lays out explicit port segments with nulls, grouping and reversal', () => {

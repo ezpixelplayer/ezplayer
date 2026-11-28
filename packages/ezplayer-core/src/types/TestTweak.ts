@@ -116,11 +116,15 @@ export interface TestTweakStatus {
 // Tweaks
 // ---------------------------------------------------------------------------
 
-/** Output trims. Every field is optional; absent means "leave it alone". */
+/**
+ * Output settings.  Every field is optional; absent means "not set here", and
+ * what xLights has (string type order, dimming curve) then applies.  A value
+ * given replaces the xLights one.
+ */
 export interface OutputTweak {
     /** Wire order of the color channels, e.g. 'GRB'. */
     colorOrder?: string;
-    /** Percent, 0..100. Group and model brightness multiply. */
+    /** Percent, 0..100. */
     brightness?: number;
     gamma?: number;
     /** White point in kelvin; 6500 is neutral. */
@@ -381,8 +385,8 @@ export function normalizeTestTweakDoc(v: unknown): TestTweakDoc {
 
 export interface EffectiveTweak {
     colorOrder?: string;
-    /** 0..1 */
-    brightness: number;
+    /** 0..1; absent when neither the model nor its profile sets it. */
+    brightness?: number;
     gamma?: number;
     colorTempK?: number;
     /** Id of the profile the model is assigned to, when it has one. */
@@ -402,7 +406,9 @@ export function effectiveTweak(doc: TestTweakDoc, model: string): EffectiveTweak
     const own = doc.models[model];
     const profile = own?.profile ? doc.profiles.find((p) => p.id === own.profile) : undefined;
     const pick = <K extends TweakKey>(k: K): OutputTweak[K] => own?.[k] ?? profile?.[k];
-    const eff: EffectiveTweak = { brightness: Math.min(1, Math.max(0, (pick('brightness') ?? 100) / 100)) };
+    const eff: EffectiveTweak = {};
+    const brightness = pick('brightness');
+    if (brightness !== undefined) eff.brightness = Math.min(1, Math.max(0, brightness / 100));
     const colorOrder = pick('colorOrder');
     const gamma = pick('gamma');
     const colorTempK = pick('colorTempK');
@@ -413,12 +419,12 @@ export function effectiveTweak(doc: TestTweakDoc, model: string): EffectiveTweak
     return eff;
 }
 
-/** True when the effective tweak changes nothing on the wire. */
+/** True when nothing is set: the model goes out as xLights has it. */
 export function isNeutralTweak(e: EffectiveTweak): boolean {
     return (
         e.colorOrder === undefined &&
-        e.brightness === 1 &&
-        (e.gamma === undefined || e.gamma === 1) &&
+        e.brightness === undefined &&
+        e.gamma === undefined &&
         (e.colorTempK === undefined || e.colorTempK === NEUTRAL_COLOR_TEMP_K)
     );
 }
@@ -484,6 +490,212 @@ export function setModelTweak<K extends TweakKey>(
 export function deleteProfile(doc: TestTweakDoc, profileId: string): TestTweakDoc {
     const out = assignProfile(doc, profileMembers(doc, profileId), undefined);
     return { ...out, profiles: out.profiles.filter((p) => p.id !== profileId) };
+}
+
+// ---------------------------------------------------------------------------
+// What xLights has, and profiles suggested from it
+// ---------------------------------------------------------------------------
+
+/** The four output settings, all present: what a model ends up with. */
+export interface OutputSettings {
+    /** Absent when the string type is not a plain three-color order; the layout's order is then used as it is. */
+    colorOrder?: string;
+    /** Percent. */
+    brightness: number;
+    gamma: number;
+    colorTempK: number;
+}
+
+export type OutputSource = 'model' | 'profile' | 'xlights';
+
+export interface ModelOutput extends OutputSettings {
+    /** Where each setting comes from. */
+    from: Record<TweakKey, OutputSource>;
+}
+
+/** What the xLights layout gives a model when nothing is set here: its string type and dimming curve. */
+export function xlOutputOf(m: TweakModelInfo): OutputSettings {
+    return {
+        ...(m.xlStringOrder ? { colorOrder: m.xlStringOrder } : {}),
+        brightness: m.xlDimBrightness ?? 100,
+        gamma: m.xlDimGamma ?? 1,
+        colorTempK: NEUTRAL_COLOR_TEMP_K,
+    };
+}
+
+/** What a model is sent with: each setting its own, else its profile's, else what xLights has. */
+export function modelOutput(doc: TestTweakDoc, m: TweakModelInfo): ModelOutput {
+    const own = doc.models[m.name];
+    const profile = own?.profile ? doc.profiles.find((p) => p.id === own.profile) : undefined;
+    const xl = xlOutputOf(m);
+    const from = {} as Record<TweakKey, OutputSource>;
+    const pick = <K extends TweakKey>(k: K): OutputSettings[K] => {
+        from[k] = own?.[k] !== undefined ? 'model' : profile?.[k] !== undefined ? 'profile' : 'xlights';
+        return (own?.[k] ?? profile?.[k] ?? xl[k]) as OutputSettings[K];
+    };
+    const colorOrder = pick('colorOrder');
+    return {
+        ...(colorOrder ? { colorOrder } : {}),
+        brightness: pick('brightness'),
+        gamma: pick('gamma'),
+        colorTempK: pick('colorTempK'),
+        from,
+    };
+}
+
+const round = (v: number, step: number) => Math.round(v / step) * step;
+
+/** Two models with the same key are set up the same way. */
+export function outputKey(o: OutputSettings): string {
+    return [
+        o.colorOrder ?? '',
+        round(o.gamma, 0.01).toFixed(2),
+        round(o.brightness, 0.1).toFixed(1),
+        Math.round(o.colorTempK),
+    ].join('|');
+}
+
+/** Short words for a set of output settings, e.g. "GRB · γ 2.2 · 80%". */
+export function describeOutput(o: OutputSettings): string {
+    return [
+        o.colorOrder,
+        `γ ${Number(o.gamma.toFixed(2))}`,
+        `${Number(o.brightness.toFixed(1))}%`,
+        Math.round(o.colorTempK) !== NEUTRAL_COLOR_TEMP_K ? `${Math.round(o.colorTempK)} K` : undefined,
+    ]
+        .filter(Boolean)
+        .join(' · ');
+}
+
+/** The settings as a profile would hold them: everything stated, so that the profile pins it. */
+export function tweakFromOutput(o: OutputSettings): OutputTweak {
+    return {
+        ...(o.colorOrder ? { colorOrder: o.colorOrder } : {}),
+        brightness: Number(o.brightness.toFixed(1)),
+        gamma: Number(o.gamma.toFixed(2)),
+        ...(Math.round(o.colorTempK) !== NEUTRAL_COLOR_TEMP_K ? { colorTempK: Math.round(o.colorTempK) } : {}),
+    };
+}
+
+/**
+ * How well a profile fits settings: the number of things the profile sets,
+ * when every one of them equals the settings' value; 0 when any differs or
+ * the profile sets none of color order, gamma and brightness.
+ */
+export function profileFit(p: OutputTweak, o: OutputSettings): number {
+    let n = 0;
+    if (p.colorOrder !== undefined) {
+        if (p.colorOrder !== o.colorOrder) return 0;
+        ++n;
+    }
+    if (p.gamma !== undefined) {
+        if (Math.abs(p.gamma - o.gamma) > 0.005) return 0;
+        ++n;
+    }
+    if (p.brightness !== undefined) {
+        if (Math.abs(p.brightness - o.brightness) > 0.05) return 0;
+        ++n;
+    }
+    if (!n) return 0;
+    if (p.colorTempK !== undefined) {
+        if (Math.round(p.colorTempK) !== Math.round(o.colorTempK)) return 0;
+        ++n;
+    }
+    return n;
+}
+
+/** The profile to suggest for a model that has none: the one that best fits what the model is sent with now. */
+export function suggestProfile(doc: TestTweakDoc, m: TweakModelInfo): OutputProfile | undefined {
+    if (!m.pixel || doc.models[m.name]?.profile) return undefined;
+    const out = modelOutput(doc, m);
+    let best: OutputProfile | undefined;
+    let fit = 0;
+    for (const p of doc.profiles) {
+        const f = profileFit(p, out);
+        if (f > fit) {
+            fit = f;
+            best = p;
+        }
+    }
+    return best;
+}
+
+/** Pixel models in no profile that a profile fits, sorted. */
+export function profileCandidates(doc: TestTweakDoc, models: TweakModelInfo[], profile: OutputTweak): string[] {
+    return models
+        .filter((m) => m.pixel && !doc.models[m.name]?.profile && profileFit(profile, modelOutput(doc, m)) > 0)
+        .map((m) => m.name)
+        .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+}
+
+/** Models in no profile that are set up alike, as the start of a profile. */
+export interface ProfileSuggestion {
+    key: string;
+    /** e.g. "GRB · γ 2.2 · 80%" */
+    label: string;
+    settings: OutputTweak;
+    models: string[];
+}
+
+/**
+ * Profiles worth making: the pixel models in no profile, grouped by what they
+ * are sent with now (xLights string type and dimming curve, or their own
+ * settings here).  Biggest group first.
+ */
+export function suggestProfiles(doc: TestTweakDoc, models: TweakModelInfo[]): ProfileSuggestion[] {
+    const byKey = new Map<string, ProfileSuggestion>();
+    for (const m of models) {
+        if (!m.pixel || doc.models[m.name]?.profile) continue;
+        const out = modelOutput(doc, m);
+        const key = outputKey(out);
+        let s = byKey.get(key);
+        if (!s) {
+            s = { key, label: describeOutput(out), settings: tweakFromOutput(out), models: [] };
+            byKey.set(key, s);
+        }
+        s.models.push(m.name);
+    }
+    const out = [...byKey.values()];
+    for (const s of out) s.models.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+    return out.sort((a, b) => b.models.length - a.models.length || a.label.localeCompare(b.label));
+}
+
+/** The suggestion a model belongs to: its settings, and every model in no profile set up the same way (itself included). */
+export function suggestionForModel(doc: TestTweakDoc, models: TweakModelInfo[], m: TweakModelInfo): ProfileSuggestion {
+    const out = modelOutput(doc, m);
+    const key = outputKey(out);
+    const alike = suggestProfiles(doc, models).find((s) => s.key === key)?.models ?? [];
+    return {
+        key,
+        label: describeOutput(out),
+        settings: tweakFromOutput(out),
+        models: alike.includes(m.name) ? alike : [m.name, ...alike],
+    };
+}
+
+/** A name not yet used by a profile: `base`, else "base 2", "base 3"... */
+export function freeProfileName(doc: TestTweakDoc, base: string): string {
+    const used = new Set(doc.profiles.map((p) => p.name));
+    if (!used.has(base)) return base;
+    for (let i = 2; ; ++i) if (!used.has(`${base} ${i}`)) return `${base} ${i}`;
+}
+
+/**
+ * Add a profile (or take one that is there) and put models in it.  A member's
+ * own setting that the profile states is dropped, so the profile is what
+ * governs it.
+ */
+export function createProfile(doc: TestTweakDoc, profile: OutputProfile, members: Iterable<string> = []): TestTweakDoc {
+    const there = doc.profiles.some((p) => p.id === profile.id);
+    let out: TestTweakDoc = there ? doc : { ...doc, profiles: [...doc.profiles, profile] };
+    for (const m of members) {
+        out = withModel(out, m, (t) => {
+            for (const k of TWEAK_KEYS) if (profile[k] !== undefined) delete t[k];
+            t.profile = profile.id;
+            return t;
+        });
+    }
+    return out;
 }
 
 /** Model and submodel names a set of targets covers, in first-seen order. `allModels` backs the `all` flag. */
@@ -686,7 +898,15 @@ export interface TweakModelInfo {
     port: number;
     smartRemote?: number;
     protocol?: string;
-    /** Color order, brightness (percent) and gamma xLights has on the model's controller connection. */
+    /** Wire order of the model's xLights string type, e.g. 'GRB'; absent for types that are not a plain three-color order. */
+    xlStringOrder?: string;
+    /** The model's xLights dimming curve: gamma, and brightness in percent. Baked into rendered sequences. */
+    xlDimGamma?: number;
+    xlDimBrightness?: number;
+    /**
+     * Color order, brightness (percent) and gamma on the model's xLights controller connection.
+     * These are the controller's to apply, on top of what the player sends.
+     */
     xlColorOrder?: string;
     xlBrightness?: number;
     xlGamma?: number;

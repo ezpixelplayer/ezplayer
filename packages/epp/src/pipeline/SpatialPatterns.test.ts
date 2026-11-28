@@ -343,7 +343,7 @@ describe('OutputMap adjust', () => {
         expect(Array.from(wire.subarray(6))).toEqual([200, 100, 50, 255, 255, 255]);
     });
 
-    it('multiplies the trim into the player policy brightness', () => {
+    it('runs the controller connection curve after the model curve under player policy', () => {
         const spec = { ...strip('A', 0, 1, 0, 0), outputBrightness: 0.5, outputGamma: 2 };
         const layout = compileLayout([spec]);
         const omap = compileOutputMap(layout, [
@@ -353,7 +353,52 @@ describe('OutputMap adjust', () => {
         frame.set([255, 128, 0]);
         const wire = new Uint8Array(3);
         applyOutput(omap.outputs[0], 3, frame, 0, wire);
-        expect(Array.from(wire)).toEqual([lut(255, 2, 0.25), lut(128, 2, 0.25), 0]);
+        // (v * 0.5)^2 * 0.5
+        expect(Array.from(wire)).toEqual([lut(255, 2, 0.125), lut(128, 2, 0.125), 0]);
+    });
+
+    it('sends the layout dimming curve and string type order when nothing is set, and a profile replaces them', () => {
+        const dimmed = (name: string, ch: number, x: number): LayoutModelSpec => ({
+            ...strip(name, ch, 1, 0, x),
+            gamma: 2,
+            brightness: 0.5,
+            // The controller connection's own settings are the controller's to apply.
+            outputColorOrder: 'BGR',
+            outputGamma: 3,
+            outputBrightness: 0.1,
+        });
+        const layout = compileLayout([dimmed('A', 0, 0), dimmed('B', 3, 1), dimmed('C', 6, 2)]);
+        const omap = compileOutputMap(layout, [
+            {
+                id: 'c',
+                channelStart: 0,
+                channelCount: 9,
+                adjust: { B: { gamma: 1, brightness: 1 }, C: { brightness: 0.8, colorOrder: 'GRB' } },
+            },
+        ]);
+        const frame = new Uint8Array(layout.frameBytes);
+        for (const m of layout.models) frame.set([200, 100, 50], m.nodeStart * 3);
+        const wire = new Uint8Array(9);
+        applyOutput(omap.outputs[0], 3, frame, 0, wire);
+        // A: as xLights rendered it.
+        expect(Array.from(wire.subarray(0, 3))).toEqual([lut(200, 2, 0.5), lut(100, 2, 0.5), lut(50, 2, 0.5)]);
+        // B: the profile's straight curve takes the dimming curve's place.
+        expect(Array.from(wire.subarray(3, 6))).toEqual([200, 100, 50]);
+        // C: each setting on its own; the gamma left out stays the layout's.
+        expect(Array.from(wire.subarray(6, 9))).toEqual([lut(100, 2, 0.8), lut(200, 2, 0.8), lut(50, 2, 0.8)]);
+
+        // The preview export is the frame as it is: no curve, no profile, for viewers told there is nothing to undo.
+        const pmap = compileOutputMap(layout, [
+            {
+                id: 'v',
+                channelStart: 0,
+                channelCount: 9,
+                policy: 'intent',
+                adjust: { C: { brightness: 0.8, colorOrder: 'GRB' } },
+            },
+        ]);
+        applyOutput(pmap.outputs[0], 3, frame, 0, wire);
+        expect(Array.from(wire)).toEqual([200, 100, 50, 200, 100, 50, 200, 100, 50]);
     });
 
     it('places rewired models over the range derivation and skips the ones wired elsewhere', () => {

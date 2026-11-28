@@ -1,5 +1,6 @@
 import React from 'react';
-import { alpha, Chip, Link, Typography, useTheme } from '@mui/material';
+import { alpha, Button, Chip, Typography, useTheme } from '@mui/material';
+import CableIcon from '@mui/icons-material/Cable';
 import type { Theme } from '@mui/material';
 import { Box } from '../box/Box';
 import { CompactDialog } from '../dialog/CompactDialog';
@@ -22,11 +23,22 @@ import type {
 const srLetter = (n: number): string => String.fromCharCode(64 + n);
 
 /** One prop box on the CSS grid (row = physical port, span = ports its strings cover). */
-const PropBox: React.FC<{ box: PortMapBox; drifted: boolean; theme: Theme }> = ({ box, drifted, theme }) => {
+const PropBox: React.FC<{ box: PortMapBox; drifted: boolean; theme: Theme; onRewire?: (model: string) => void }> = ({
+    box,
+    drifted,
+    theme,
+    onRewire,
+}) => {
     const multi = box.strings.length > 1;
     return (
         <div
+            role={onRewire ? 'button' : undefined}
+            tabIndex={onRewire ? 0 : undefined}
+            title={onRewire ? `Rewire ${box.model}` : undefined}
+            onClick={onRewire ? () => onRewire(box.model) : undefined}
+            onKeyDown={onRewire ? (e) => (e.key === 'Enter' || e.key === ' ') && onRewire(box.model) : undefined}
             style={{
+                cursor: onRewire ? 'pointer' : undefined,
                 gridColumn: box.column + 1,
                 gridRow: `${box.firstPort} / span ${box.span}`,
                 border: `1px solid ${drifted ? theme.palette.warning.main : alpha(theme.palette.primary.main, 0.4)}`,
@@ -181,8 +193,8 @@ export const PortVisualizerDialog: React.FC<{
     panelActual?: ControllerPanelMatrix[];
     virtualIntent?: ControllerVirtualMatrixIntent[];
     virtualActual?: ControllerVirtualMatrix[];
-    /** Offer a way to the Test + Tweak wiring editor, where models are split and moved between ports. */
-    onEditWiring?: () => void;
+    /** Offer rewiring, where a model is split and moved between ports; with the model whose name was clicked, if one was. */
+    onEditWiring?: (model?: string) => void;
     onClose: () => void;
 }> = ({
     title,
@@ -222,13 +234,15 @@ export const PortVisualizerDialog: React.FC<{
     return (
         <CompactDialog title={`Port map — ${title}`} onClose={onClose} fullScreen>
             {onEditWiring && (
-                <Typography variant="body2" sx={{ color: 'text.secondary', mb: 1 }}>
-                    To split a model or move it to another port, use{' '}
-                    <Link component="button" variant="body2" onClick={onEditWiring}>
-                        Test + Tweak → Wiring
-                    </Link>
-                    .
-                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap', mb: 1 }}>
+                    <Button size="small" variant="outlined" startIcon={<CableIcon />} onClick={() => onEditWiring()}>
+                        Rewire…
+                    </Button>
+                    <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                        Move a model to another port, or split it across ports. Click a prop below to start with
+                        it.
+                    </Typography>
+                </Box>
             )}
             {map.rows.length === 0 &&
             map.serial.length === 0 &&
@@ -292,7 +306,13 @@ export const PortVisualizerDialog: React.FC<{
                                 </div>
                             ))}
                             {map.boxes.map((b) => (
-                                <PropBox key={b.model} box={b} drifted={boxDrifted(b)} theme={theme} />
+                                <PropBox
+                                    key={b.model}
+                                    box={b}
+                                    drifted={boxDrifted(b)}
+                                    theme={theme}
+                                    onRewire={onEditWiring}
+                                />
                             ))}
                         </div>
                     </Box>

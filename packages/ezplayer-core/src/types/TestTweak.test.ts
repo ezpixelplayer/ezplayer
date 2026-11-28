@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
     assignProfile,
+    createProfile,
     deleteProfile,
+    modelOutput,
+    profileCandidates,
+    suggestProfile,
+    suggestProfiles,
+    suggestionForModel,
     effectiveTweak,
     ownTweakKeys,
     profileMembers,
@@ -20,6 +26,7 @@ import {
     validateChunks,
     type ModelPortChunk,
     type TestTweakDoc,
+    type TweakModelInfo,
     type WiringModel,
 } from './TestTweak';
 
@@ -125,7 +132,7 @@ describe('effectiveTweak', () => {
     it('takes each setting from the model, else from its one profile', () => {
         expect(effectiveTweak(doc, 'Arch')).toEqual({ brightness: 0.5, gamma: 2.2, colorOrder: 'GRB', profile: 'p1' });
         expect(effectiveTweak(doc, 'Star')).toEqual({ brightness: 0.8, gamma: 1.8, colorOrder: 'GRB', profile: 'p1' });
-        expect(effectiveTweak(doc, 'Tree')).toEqual({ brightness: 1, colorTempK: 4000, profile: 'p2' });
+        expect(effectiveTweak(doc, 'Tree')).toEqual({ colorTempK: 4000, profile: 'p2' });
         expect(effectiveTweak(doc, 'Loose')).toEqual({ brightness: 0.3 });
     });
 
@@ -350,5 +357,102 @@ describe('planChunkWiring', () => {
                 reverse: true,
             },
         ]);
+    });
+});
+
+describe('profiles from what xLights has', () => {
+    const info = (name: string, p: Partial<TweakModelInfo> = {}): TweakModelInfo => ({
+        name,
+        type: 'Single Line',
+        nodeCount: 50,
+        channelsPerNode: 3,
+        startChannel: 1,
+        pixel: true,
+        stringNodeCounts: [50],
+        controller: 'C1',
+        port: 1,
+        xlStringOrder: 'RGB',
+        xlDimGamma: 1,
+        xlDimBrightness: 100,
+        ...p,
+    });
+    const bullets = { xlStringOrder: 'GRB', xlDimGamma: 2.2, xlDimBrightness: 80 };
+    const models = [
+        info('Arch 1', bullets),
+        info('Arch 2', bullets),
+        info('Star', bullets),
+        info('Strip'),
+        info('Tree', { xlStringOrder: 'GRB', xlDimGamma: 2.2, xlDimBrightness: 50 }),
+        info('Head', { pixel: false }),
+    ];
+
+    it('sends a model with its own value, else its profile, else what xLights has', () => {
+        const doc: TestTweakDoc = {
+            ...emptyTestTweakDoc(),
+            profiles: [{ id: 'p', name: 'P', gamma: 1.8 }],
+            models: { 'Arch 1': { profile: 'p', brightness: 60 } },
+        };
+        expect(modelOutput(doc, models[0])).toEqual({
+            colorOrder: 'GRB',
+            brightness: 60,
+            gamma: 1.8,
+            colorTempK: 6500,
+            from: { colorOrder: 'xlights', brightness: 'model', gamma: 'profile', colorTempK: 'xlights' },
+        });
+        expect(modelOutput(emptyTestTweakDoc(), models[3]).from.gamma).toBe('xlights');
+    });
+
+    it('suggests a profile per set of models xLights sets up alike, biggest first', () => {
+        const s = suggestProfiles(emptyTestTweakDoc(), models);
+        expect(s.map((x) => [x.label, x.models])).toEqual([
+            ['GRB · γ 2.2 · 80%', ['Arch 1', 'Arch 2', 'Star']],
+            ['GRB · γ 2.2 · 50%', ['Tree']],
+            ['RGB · γ 1 · 100%', ['Strip']],
+        ]);
+        expect(s[0].settings).toEqual({ colorOrder: 'GRB', gamma: 2.2, brightness: 80 });
+    });
+
+    it('goes by what a model sets for itself over xLights, and leaves out models already in a profile', () => {
+        const doc: TestTweakDoc = {
+            ...emptyTestTweakDoc(),
+            profiles: [{ id: 'p', name: 'P' }],
+            models: { 'Arch 2': { profile: 'p' }, Strip: { colorOrder: 'GRB', gamma: 2.2, brightness: 80 } },
+        };
+        const mine = suggestionForModel(doc, models, models[3]);
+        expect(mine.label).toBe('GRB · γ 2.2 · 80%');
+        expect(mine.models).toEqual(['Arch 1', 'Star', 'Strip']);
+        // A model already in a profile still gets its own suggestion, with itself in it.
+        expect(suggestionForModel(doc, models, models[1]).models).toEqual(['Arch 2', 'Arch 1', 'Star', 'Strip']);
+    });
+
+    it('creates a profile, moves the members in and drops what they set for themselves', () => {
+        const doc: TestTweakDoc = {
+            ...emptyTestTweakDoc(),
+            models: { Strip: { colorOrder: 'GRB', gamma: 2.2, brightness: 80, colorTempK: 3000 } },
+        };
+        const made = createProfile(doc, { id: 'b', name: 'Bullets', colorOrder: 'GRB', gamma: 2.2, brightness: 80 }, [
+            'Strip',
+            'Star',
+        ]);
+        expect(made.profiles).toEqual([{ id: 'b', name: 'Bullets', colorOrder: 'GRB', gamma: 2.2, brightness: 80 }]);
+        expect(made.models).toEqual({ Strip: { profile: 'b', colorTempK: 3000 }, Star: { profile: 'b' } });
+    });
+
+    it('suggests the best fitting profile for a model in none, and lists who a profile fits', () => {
+        const doc: TestTweakDoc = {
+            ...emptyTestTweakDoc(),
+            profiles: [
+                { id: 'loose', name: 'Any GRB', colorOrder: 'GRB' },
+                { id: 'b', name: 'Bullets', colorOrder: 'GRB', gamma: 2.2, brightness: 80 },
+                { id: 'warm', name: 'Warm', colorTempK: 3000 },
+            ],
+            models: { Star: { profile: 'loose' } },
+        };
+        expect(suggestProfile(doc, models[0])?.id).toBe('b');
+        expect(suggestProfile(doc, models[4])?.id).toBe('loose');
+        // Nothing but a color temperature says nothing about the kind of pixel.
+        expect(suggestProfile(doc, models[3])).toBeUndefined();
+        expect(suggestProfile(doc, models[2])).toBeUndefined();
+        expect(profileCandidates(doc, models, doc.profiles[1])).toEqual(['Arch 1', 'Arch 2']);
     });
 });

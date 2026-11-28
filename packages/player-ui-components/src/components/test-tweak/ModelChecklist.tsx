@@ -1,12 +1,16 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Box } from '../box/Box';
 import {
+    Badge,
     Button,
     Checkbox,
+    Chip,
     IconButton,
     InputAdornment,
     List,
     ListItemButton,
+    MenuItem,
+    Popover,
     Stack,
     TextField,
     Tooltip,
@@ -14,6 +18,7 @@ import {
 } from '@mui/material';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import FilterListIcon from '@mui/icons-material/FilterList';
 import SearchIcon from '@mui/icons-material/Search';
 import type { TweakModelInfo } from '@ezplayer/ezplayer-core';
 
@@ -46,6 +51,17 @@ async function fetchSubModels(baseUrl: string, model: string): Promise<SubModelR
         }));
 }
 
+/** Something to narrow the list by, picked from the values the models have. */
+export interface ModelFacet {
+    label: string;
+    of: (m: TweakModelInfo) => string | undefined;
+}
+
+const BUILT_IN_FACETS: ModelFacet[] = [
+    { label: 'Type', of: (m) => m.type },
+    { label: 'Controller', of: (m) => m.controller || 'No controller' },
+];
+
 export interface ModelChecklistProps {
     models: TweakModelInfo[];
     /** Ticked models. */
@@ -68,6 +84,10 @@ export interface ModelChecklistProps {
     testing?: Set<string>;
     /** Shown above the list, beside the count. */
     toolbar?: React.ReactNode;
+    /** More to narrow the list by, after type and controller (e.g. the profile). */
+    facets?: ModelFacet[];
+    /** A model to bring into view and mark, e.g. the one just clicked in the layout. */
+    focus?: string | null;
     emptyText?: string;
 }
 
@@ -89,10 +109,16 @@ export const ModelChecklist: React.FC<ModelChecklistProps> = ({
     action,
     testing,
     toolbar,
+    facets,
+    focus,
     emptyText,
 }) => {
     const withSubs = !!checkedSubModels && !!onChangeSubModels && !single;
     const [search, setSearch] = useState('');
+    const [filters, setFilters] = useState<Record<string, string>>({});
+    const [filterAnchor, setFilterAnchor] = useState<HTMLElement | null>(null);
+    const allFacets = useMemo(() => [...BUILT_IN_FACETS, ...(facets ?? [])], [facets]);
+    const rows = useRef(new Map<string, HTMLElement>());
     const [open, setOpen] = useState<Set<string>>(() => new Set());
     const [subModels, setSubModels] = useState<Record<string, SubModelList>>({});
 
@@ -129,21 +155,39 @@ export const ModelChecklist: React.FC<ModelChecklistProps> = ({
 
     const shown = useMemo(() => {
         const q = search.trim().toLowerCase();
-        const hit = q
-            ? models.filter(
-                  (m) =>
-                      m.name.toLowerCase().includes(q) ||
-                      m.type.toLowerCase().includes(q) ||
-                      m.controller.toLowerCase().includes(q) ||
-                      (note?.(m) ?? '').toLowerCase().includes(q),
-              )
-            : models;
+        const active = allFacets.filter((f) => filters[f.label]);
+        const hit = models.filter(
+            (m) =>
+                active.every((f) => f.of(m) === filters[f.label]) &&
+                (!q ||
+                    m.name.toLowerCase().includes(q) ||
+                    m.type.toLowerCase().includes(q) ||
+                    m.controller.toLowerCase().includes(q) ||
+                    (note?.(m) ?? '').toLowerCase().includes(q)),
+        );
         if (!checkedFirst) return hit;
         // Stable: members keep their order among themselves, as do the rest.
         return [...hit.filter((m) => checked.has(m.name)), ...hit.filter((m) => !checked.has(m.name))];
         // The order is settled when the filter changes, not on every tick, so a row does not jump from under the pointer.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [models, search, checkedFirst]);
+    }, [models, search, checkedFirst, filters, allFacets]);
+
+    // The model to mark is scrolled to; a filter that hides it is dropped first.
+    useEffect(() => {
+        if (!focus) return;
+        if (!shown.some((m) => m.name === focus)) {
+            if (models.some((m) => m.name === focus) && (search || Object.keys(filters).length)) {
+                setSearch('');
+                setFilters({});
+            }
+            return;
+        }
+        rows.current.get(focus)?.scrollIntoView({ block: 'nearest' });
+        // Only when the model to mark changes, or the list it is in does.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [focus, shown]);
+
+    const narrowed = !!search.trim() || Object.keys(filters).length > 0;
 
     const pickable = shown.filter((m) => m.pixel);
     const shownChecked = pickable.filter((m) => checked.has(m.name)).length;
@@ -188,7 +232,7 @@ export const ModelChecklist: React.FC<ModelChecklistProps> = ({
                 <TextField
                     size="small"
                     fullWidth
-                    placeholder="Find by name, type or controller"
+                    placeholder="Find a model"
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     InputProps={{
@@ -197,8 +241,82 @@ export const ModelChecklist: React.FC<ModelChecklistProps> = ({
                                 <SearchIcon fontSize="small" />
                             </InputAdornment>
                         ),
+                        endAdornment: (
+                            <InputAdornment position="end">
+                                <Tooltip title="Narrow the list by type, controller…">
+                                    <IconButton
+                                        size="small"
+                                        edge="end"
+                                        aria-label="Narrow the list"
+                                        onClick={(e) => setFilterAnchor(e.currentTarget)}
+                                    >
+                                        <Badge color="primary" variant="dot" invisible={!Object.keys(filters).length}>
+                                            <FilterListIcon fontSize="small" />
+                                        </Badge>
+                                    </IconButton>
+                                </Tooltip>
+                            </InputAdornment>
+                        ),
                     }}
                 />
+                <Popover
+                    open={!!filterAnchor}
+                    anchorEl={filterAnchor}
+                    onClose={() => setFilterAnchor(null)}
+                    anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                    transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+                >
+                    <Stack spacing={1.5} sx={{ p: 2, width: 260 }}>
+                        {allFacets.map((f) => {
+                            const values = [
+                                ...new Set(models.map((m) => f.of(m)).filter((v): v is string => !!v)),
+                            ].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+                            return (
+                                <TextField
+                                    key={f.label}
+                                    select
+                                    size="small"
+                                    label={f.label}
+                                    value={filters[f.label] ?? ''}
+                                    onChange={(e) =>
+                                        setFilters(({ [f.label]: _old, ...rest }) =>
+                                            e.target.value ? { ...rest, [f.label]: e.target.value } : rest,
+                                        )
+                                    }
+                                    SelectProps={{ displayEmpty: true }}
+                                    InputLabelProps={{ shrink: true }}
+                                >
+                                    <MenuItem value="">Any</MenuItem>
+                                    {values.map((v) => (
+                                        <MenuItem key={v} value={v}>
+                                            {v}
+                                        </MenuItem>
+                                    ))}
+                                </TextField>
+                            );
+                        })}
+                        <Stack direction="row" justifyContent="flex-end" spacing={1}>
+                            <Button size="small" disabled={!Object.keys(filters).length} onClick={() => setFilters({})}>
+                                Clear
+                            </Button>
+                            <Button size="small" variant="contained" onClick={() => setFilterAnchor(null)}>
+                                Done
+                            </Button>
+                        </Stack>
+                    </Stack>
+                </Popover>
+                {Object.keys(filters).length > 0 && (
+                    <Stack direction="row" spacing={0.5} sx={{ flexWrap: 'wrap', rowGap: 0.5, mt: 0.5 }}>
+                        {Object.entries(filters).map(([label, value]) => (
+                            <Chip
+                                key={label}
+                                size="small"
+                                label={`${label}: ${value}`}
+                                onDelete={() => setFilters(({ [label]: _old, ...rest }) => rest)}
+                            />
+                        ))}
+                    </Stack>
+                )}
                 {!single && (
                     <Stack
                         direction="row"
@@ -207,13 +325,13 @@ export const ModelChecklist: React.FC<ModelChecklistProps> = ({
                         sx={{ flexWrap: 'wrap', rowGap: 0.5, mt: 0.5 }}
                     >
                         <Typography variant="body2" color="text.secondary" sx={{ fontSize: 12, mr: 'auto' }}>
-                            {checked.size} ticked{search.trim() ? `, ${shownChecked} of ${pickable.length} shown` : ''}
+                            {checked.size} ticked{narrowed ? `, ${shownChecked} of ${pickable.length} shown` : ''}
                         </Typography>
                         <Button size="small" disabled={shownChecked === pickable.length} onClick={() => setShown(true)}>
-                            {search.trim() ? 'Tick shown' : 'Tick all'}
+                            {narrowed ? 'Tick shown' : 'Tick all'}
                         </Button>
                         <Button size="small" disabled={!shownChecked} onClick={() => setShown(false)}>
-                            {search.trim() ? 'Clear shown' : 'Clear all'}
+                            {narrowed ? 'Clear shown' : 'Clear all'}
                         </Button>
                         {toolbar}
                     </Stack>
@@ -230,8 +348,12 @@ export const ModelChecklist: React.FC<ModelChecklistProps> = ({
                             <ListItemButton
                                 dense
                                 disabled={!m.pixel}
-                                selected={!!single && isOn}
+                                selected={(!!single && isOn) || focus === m.name}
                                 onClick={() => toggle(m.name)}
+                                ref={(el: HTMLElement | null) => {
+                                    if (el) rows.current.set(m.name, el);
+                                    else rows.current.delete(m.name);
+                                }}
                                 sx={{ py: 0.25, pl: 1, pr: 0.5 }}
                             >
                                 {!single && (
@@ -266,22 +388,31 @@ export const ModelChecklist: React.FC<ModelChecklistProps> = ({
                                     </Typography>
                                 </Box>
                                 {action?.(m)}
-                                {withSubs && !!m.subModels && m.pixel && (
-                                    <Tooltip title={`${m.subModels} submodel${m.subModels === 1 ? '' : 's'}`}>
-                                        <IconButton
-                                            size="small"
-                                            aria-label={`${open.has(m.name) ? 'Hide' : 'Show'} the submodels of ${m.name}`}
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                toggleOpen(m.name);
-                                            }}
-                                        >
-                                            {open.has(m.name) ? (
-                                                <ExpandLessIcon fontSize="small" />
-                                            ) : (
-                                                <ExpandMoreIcon fontSize="small" />
-                                            )}
-                                        </IconButton>
+                                {withSubs && (
+                                    <Tooltip
+                                        title={
+                                            m.subModels && m.pixel
+                                                ? `${m.subModels} submodel${m.subModels === 1 ? '' : 's'}`
+                                                : ''
+                                        }
+                                    >
+                                        <span>
+                                            <IconButton
+                                                size="small"
+                                                disabled={!m.subModels || !m.pixel}
+                                                aria-label={`${open.has(m.name) ? 'Hide' : 'Show'} the submodels of ${m.name}`}
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    toggleOpen(m.name);
+                                                }}
+                                            >
+                                                {open.has(m.name) ? (
+                                                    <ExpandLessIcon fontSize="small" />
+                                                ) : (
+                                                    <ExpandMoreIcon fontSize="small" />
+                                                )}
+                                            </IconButton>
+                                        </span>
                                     </Tooltip>
                                 )}
                             </ListItemButton>

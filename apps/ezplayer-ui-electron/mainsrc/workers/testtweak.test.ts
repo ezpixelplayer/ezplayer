@@ -37,7 +37,7 @@ const baseIntent = (m: XlModelChannelInfo): ControllerModelIntent => ({
 });
 
 describe('adjustFromDoc', () => {
-    it('turns effective tweaks into output trims and leaves neutral models out', () => {
+    it('turns effective tweaks into output settings and leaves out models that set nothing', () => {
         const doc: TestTweakDoc = {
             ...emptyTestTweakDoc(),
             profiles: [{ id: 'p', name: 'P', brightness: 50, gamma: 2 }],
@@ -49,7 +49,9 @@ describe('adjustFromDoc', () => {
             },
         };
         const adj = adjustFromDoc(doc);
-        expect(Object.keys(adj).sort()).toEqual(['A', 'C', 'D']);
+        // B sets a straight curve on purpose: that replaces the layout's dimming curve, so it is passed on.
+        expect(Object.keys(adj).sort()).toEqual(['A', 'B', 'C', 'D']);
+        expect(adj.B).toEqual({ gamma: 1, brightness: 1 });
         expect(adj.A).toEqual({ colorOrder: 'GRB', gamma: 2, brightness: 0.25 });
         expect(adj.D).toEqual({ gamma: 2, brightness: 0.5 });
         expect(adj.C.gain![0]).toBe(1);

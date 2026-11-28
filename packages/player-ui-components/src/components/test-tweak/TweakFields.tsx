@@ -36,6 +36,8 @@ export interface TweakFieldsProps {
     onLabel: string;
     /** Says what an unticked box means, e.g. "Leave each member's as it is". */
     offLabel: string;
+    /** Where an unticked setting comes from instead, when that differs by setting; used in place of `offLabel`. */
+    offLabelFor?: (key: TweakKey) => string;
 }
 
 const DEFAULTS: Required<OutputTweak> = {
@@ -70,10 +72,18 @@ function describe(key: TweakKey, v: OutputTweak): string {
  * here at all.  Ticked: this value is used.  Unticked: nothing is set here,
  * and the slider shows what applies instead.
  */
-export const TweakFields: React.FC<TweakFieldsProps> = ({ value, onChange, inherited, onLabel, offLabel }) => {
+export const TweakFields: React.FC<TweakFieldsProps> = ({
+    value,
+    onChange,
+    inherited,
+    onLabel,
+    offLabel,
+    offLabelFor,
+}) => {
     const row = (key: TweakKey, control: (v: Required<OutputTweak>, on: boolean) => React.ReactNode) => {
         const on = value[key] !== undefined;
         const fallback = inherited?.[key];
+        const off = offLabelFor?.(key) ?? offLabel;
         const live = { ...DEFAULTS, ...(inherited ?? {}), ...value } as Required<OutputTweak>;
         return (
             <Box key={key}>
@@ -98,8 +108,8 @@ export const TweakFields: React.FC<TweakFieldsProps> = ({ value, onChange, inher
                         {on
                             ? `${onLabel}: ${describe(key, value)}`
                             : fallback !== undefined
-                              ? `${offLabel} (${describe(key, inherited!)})`
-                              : offLabel}
+                              ? `${off} (${describe(key, inherited!)})`
+                              : off}
                     </Typography>
                 </Stack>
                 <Box sx={{ pl: 4, pr: 1 }}>{control(live, on)}</Box>
@@ -171,8 +181,9 @@ export const TweakFields: React.FC<TweakFieldsProps> = ({ value, onChange, inher
                 />
             ))}
             <Typography variant="body2" color="text.secondary" sx={{ fontSize: 12 }}>
-                Color temperature: lower is warmer, higher is cooler, {NEUTRAL_COLOR_TEMP_K} K leaves white alone; it
-                only ever dims a channel. The player applies these as it sends, on top of whatever the controller does.
+                A setting made here takes the place of what xLights has for the model (its string type's color order,
+                its dimming curve). Whatever the controller is set to do still happens after. Color temperature: lower
+                is warmer, higher is cooler, {NEUTRAL_COLOR_TEMP_K} K leaves white alone; it only ever dims a channel.
             </Typography>
         </Stack>
     );

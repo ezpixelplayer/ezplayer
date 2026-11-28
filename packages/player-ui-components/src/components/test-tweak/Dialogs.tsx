@@ -15,6 +15,7 @@ import {
     MenuItem,
     Stack,
     TextField,
+    Tooltip,
     Typography,
     useMediaQuery,
     useTheme,
@@ -22,10 +23,15 @@ import {
 import PlaylistAddIcon from '@mui/icons-material/PlaylistAdd';
 import {
     assignProfile,
-    effectiveTweak,
+    createProfile,
+    describeOutput,
+    modelOutput,
     ownTweakKeys,
     profileMembers,
     setModelTweak,
+    suggestProfile,
+    tweakFromOutput,
+    xlOutputOf,
     type TestGroup,
     type TestTweakDoc,
     type TweakModelInfo,
@@ -341,66 +347,147 @@ export const XlGroupImportDialog: React.FC<{
     );
 };
 
-/** One model's output settings: which profile it is in, and what it sets for itself over that profile. */
+const SOURCE_WORDS = { model: 'this model', profile: 'its profile', xlights: 'xLights' } as const;
+
+/**
+ * One model: what xLights has for it, which profile it is in, what it sets
+ * for itself over that, and the way to its wiring.
+ */
 export const ModelSettingsDialog: React.FC<{
     model: TweakModelInfo | undefined;
     onClose: () => void;
     doc: TestTweakDoc;
     updateDoc: UpdateDoc;
-}> = ({ model, onClose, doc, updateDoc }) => {
+    /** Make a profile out of this model's settings. */
+    onNewProfile?: (model: TweakModelInfo) => void;
+    /** Open the profile for editing. */
+    onEditProfile?: (profileId: string) => void;
+    /** Open the model's wiring. */
+    onRewire?: (model: TweakModelInfo) => void;
+    /** True when the model's wiring is overridden here. */
+    rewired?: boolean;
+}> = ({ model, onClose, doc, updateDoc, onNewProfile, onEditProfile, onRewire, rewired }) => {
     const theme = useTheme();
     const small = useMediaQuery(theme.breakpoints.down('sm'));
     if (!model) return null;
     const own = doc.models[model.name] ?? {};
     const profile = own.profile ? doc.profiles.find((p) => p.id === own.profile) : undefined;
-    const eff = tweakChips(effectiveTweak(doc, model.name), true);
-    const xl = [
-        model.xlColorOrder,
-        model.xlBrightness !== undefined ? `${model.xlBrightness}%` : undefined,
-        model.xlGamma !== undefined ? `γ ${model.xlGamma}` : undefined,
+    const xl = xlOutputOf(model);
+    const out = modelOutput(doc, model);
+    const suggested = suggestProfile(doc, model);
+    const connection = [
+        model.xlColorOrder ? `color order ${model.xlColorOrder}` : undefined,
+        model.xlBrightness !== undefined ? `brightness ${model.xlBrightness}%` : undefined,
+        model.xlGamma !== undefined ? `gamma ${model.xlGamma}` : undefined,
     ].filter(Boolean);
     return (
         <Dialog open onClose={onClose} fullScreen={small} fullWidth maxWidth="xs">
-            <DialogTitle>{model.name}</DialogTitle>
+            <DialogTitle sx={{ pb: 0.5 }}>{model.name}</DialogTitle>
             <DialogContent>
                 <Stack spacing={2} sx={{ pt: 1 }}>
-                    <TextField
-                        select
-                        size="small"
-                        label="Profile"
-                        value={profile?.id ?? ''}
-                        onChange={(e) => updateDoc((d) => assignProfile(d, [model.name], e.target.value || undefined))}
-                        helperText={
-                            profile
-                                ? `${profile.name} sets ${tweakChips(profile).join(', ') || 'nothing yet'}.`
-                                : 'A model is in one profile at most.'
-                        }
-                        SelectProps={{ displayEmpty: true }}
-                        InputLabelProps={{ shrink: true }}
-                    >
-                        <MenuItem value="">None</MenuItem>
-                        {doc.profiles.map((p) => (
-                            <MenuItem key={p.id} value={p.id}>
-                                {p.name}
-                            </MenuItem>
-                        ))}
-                    </TextField>
+                    <Box>
+                        <Typography variant="body2">
+                            <b>xLights has:</b>{' '}
+                            {model.xlStringOrder ? `${model.xlStringOrder} string type` : 'its own string type'},
+                            dimming curve gamma {Number(xl.gamma.toFixed(2))} at {Number(xl.brightness.toFixed(1))}%.
+                        </Typography>
+                        {!!connection.length && (
+                            <Typography variant="body2" color="text.secondary" sx={{ fontSize: 12 }}>
+                                Its controller connection also has {connection.join(', ')}. That is the controller's to
+                                apply, after what the player sends.
+                            </Typography>
+                        )}
+                        <Typography variant="body2" sx={{ mt: 0.5 }}>
+                            <b>Sent with:</b> {describeOutput(out)}
+                        </Typography>
+                    </Box>
+                    <Stack direction="row" spacing={1} alignItems="flex-start">
+                        <TextField
+                            select
+                            fullWidth
+                            size="small"
+                            label="Profile"
+                            value={profile?.id ?? ''}
+                            onChange={(e) =>
+                                updateDoc((d) => assignProfile(d, [model.name], e.target.value || undefined))
+                            }
+                            helperText={
+                                profile
+                                    ? `${profile.name} sets ${tweakChips(profile).join(', ') || 'nothing yet'}.`
+                                    : 'A model is in one profile at most.'
+                            }
+                            SelectProps={{ displayEmpty: true }}
+                            InputLabelProps={{ shrink: true }}
+                        >
+                            <MenuItem value="">None</MenuItem>
+                            {doc.profiles.map((p) => (
+                                <MenuItem key={p.id} value={p.id}>
+                                    {p.name}
+                                </MenuItem>
+                            ))}
+                        </TextField>
+                        {profile && onEditProfile && (
+                            <Button size="small" onClick={() => onEditProfile(profile.id)} sx={{ mt: 0.5 }}>
+                                Edit
+                            </Button>
+                        )}
+                    </Stack>
+                    {!profile && (suggested || onNewProfile) && (
+                        <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', rowGap: 1 }}>
+                            {suggested && (
+                                <Tooltip
+                                    title={`${suggested.name} sets ${tweakChips(suggested).join(', ')}, which is what this model is sent with now`}
+                                >
+                                    <Button
+                                        size="small"
+                                        variant="contained"
+                                        onClick={() => updateDoc((d) => createProfile(d, suggested, [model.name]))}
+                                    >
+                                        Use {suggested.name}
+                                    </Button>
+                                </Tooltip>
+                            )}
+                            {onNewProfile && (
+                                <Button size="small" variant="outlined" onClick={() => onNewProfile(model)}>
+                                    New profile from this model…
+                                </Button>
+                            )}
+                        </Stack>
+                    )}
                     <Typography variant="subtitle2">Just for this model</Typography>
                     <TweakFields
                         value={own}
-                        inherited={profile}
+                        inherited={{ ...tweakFromOutput(xl), colorTempK: xl.colorTempK, ...(profile ?? {}) }}
                         onLabel="Set for this model"
-                        offLabel={profile ? "Use the profile's" : 'Leave as it is'}
+                        offLabel="From xLights"
+                        offLabelFor={(key) => (profile?.[key] !== undefined ? 'From its profile' : 'From xLights')}
                         onChange={(key, value) => updateDoc((d) => setModelTweak(d, model.name, key, value))}
                     />
-                    <Typography variant="body2" color="text.secondary">
-                        In effect: {eff.length ? eff.join(', ') : 'no change'}
-                        {ownTweakKeys(own).length && profile ? ' (this model overrides its profile)' : ''}.
-                        {xl.length ? ` xLights has ${xl.join(', ')} on this model's controller connection.` : ''}
-                    </Typography>
+                    {ownTweakKeys(own).length > 0 && (
+                        <Typography variant="body2" color="text.secondary" sx={{ fontSize: 12 }}>
+                            Set by {SOURCE_WORDS.model}:{' '}
+                            {ownTweakKeys(own)
+                                .map(
+                                    (k) =>
+                                        ({
+                                            colorOrder: 'color order',
+                                            brightness: 'brightness',
+                                            gamma: 'gamma',
+                                            colorTempK: 'color temperature',
+                                        })[k],
+                                )
+                                .join(', ')}
+                            . Untick one to go back to {profile ? SOURCE_WORDS.profile : SOURCE_WORDS.xlights}.
+                        </Typography>
+                    )}
                 </Stack>
             </DialogContent>
             <DialogActions>
+                {onRewire && (
+                    <Button onClick={() => onRewire(model)} sx={{ mr: 'auto' }}>
+                        {rewired ? 'Wiring (changed here)…' : 'Rewire…'}
+                    </Button>
+                )}
                 <Button variant="contained" onClick={onClose}>
                     Done
                 </Button>

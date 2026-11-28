@@ -33,6 +33,8 @@ export interface Viewer2DProps {
     viewPlane?: 'xy' | 'xz' | 'yz';
     pointSize?: number; // Base point size (will be multiplied by pixelSizeMultiplier)
     selectedModelNames?: Set<string>;
+    /** 0..1: how solid the selection color is over a selected model's own colors. Default 1. */
+    selectionStrength?: number;
     modelMetadata?: ModelMetadata[];
     layoutSettings?: LayoutSettings;
     frameServerUrl?: string;
@@ -70,6 +72,7 @@ function Optimized2DPointCloud({
     pointSize,
     viewPlane,
     selectedModelNames,
+    selectionStrength,
     modelMetadata,
     pixelSizeMultiplier,
 }: {
@@ -80,10 +83,14 @@ function Optimized2DPointCloud({
     pointSize?: number;
     viewPlane: 'xy' | 'xz' | 'yz';
     selectedModelNames?: Set<string>;
+    /** 0..1: how solid the selection color is over a selected model's own colors. Default 1. */
+    selectionStrength?: number;
     modelMetadata?: ModelMetadata[];
     pixelSizeMultiplier?: number;
 }) {
     const geometryManagerRef = useRef<GeometryManager | null>(null);
+    const selectionStrengthRef = useRef(selectionStrength);
+    selectionStrengthRef.current = selectionStrength;
     const [group, setGroup] = useState<THREE.Group | null>(null);
     const animationTimeRef = useRef(0);
 
@@ -193,6 +200,7 @@ function Optimized2DPointCloud({
         animationTimeRef.current += delta;
 
         // Update time for procedural colors
+        geometryManagerRef.current.setSelectionStrength(selectionStrengthRef.current ?? 1);
         geometryManagerRef.current.updateTime(animationTimeRef.current);
 
         // Update live data colors
@@ -613,6 +621,7 @@ function Scene2DContent({
     viewPlane,
     pointSize,
     selectedModelNames,
+    selectionStrength,
     modelMetadata,
     layoutSettings,
     frameServerUrl,
@@ -638,6 +647,8 @@ function Scene2DContent({
     viewPlane: 'xy' | 'xz' | 'yz';
     pointSize?: number;
     selectedModelNames?: Set<string>;
+    /** 0..1: how solid the selection color is over a selected model's own colors. Default 1. */
+    selectionStrength?: number;
     modelMetadata?: ModelMetadata[];
     layoutSettings?: LayoutSettings;
     frameServerUrl?: string;
@@ -995,6 +1006,7 @@ function Scene2DContent({
                 pointSize={pointSize}
                 viewPlane={viewPlane}
                 selectedModelNames={selectedModelNames}
+                selectionStrength={selectionStrength}
                 modelMetadata={modelMetadata}
                 pixelSizeMultiplier={pixelSizeMultiplier}
             />
@@ -1022,6 +1034,7 @@ export const Viewer2D: React.FC<Viewer2DProps> = ({
     viewPlane = 'xy',
     pointSize = 3.0,
     selectedModelNames,
+    selectionStrength,
     modelMetadata,
     layoutSettings,
     frameServerUrl,
@@ -1184,6 +1197,7 @@ export const Viewer2D: React.FC<Viewer2DProps> = ({
                             viewPlane={viewPlane}
                             pointSize={pointSize}
                             selectedModelNames={selectedModelNames}
+                            selectionStrength={selectionStrength}
                             modelMetadata={modelMetadata}
                             layoutSettings={layoutSettings}
                             frameServerUrl={frameServerUrl}

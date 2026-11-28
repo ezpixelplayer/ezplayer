@@ -2,18 +2,22 @@ import React, { useMemo, useState } from 'react';
 import { Box } from '../box/Box';
 import { useSelector } from 'react-redux';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Alert, Button, Paper, Stack, Tab, Tabs, Typography, useTheme } from '@mui/material';
-import StopIcon from '@mui/icons-material/Stop';
+import { Alert, Badge, IconButton, Stack, Tooltip, useMediaQuery, useTheme } from '@mui/material';
+import AnimationIcon from '@mui/icons-material/Animation';
+import PaletteOutlinedIcon from '@mui/icons-material/PaletteOutlined';
+import StopCircleIcon from '@mui/icons-material/StopCircle';
 import { PageHeader, ExtendedTheme } from '@ezplayer/shared-ui-components';
+import type { TestTargets, TweakModelInfo } from '@ezplayer/ezplayer-core';
 import { Preview3D } from '../preview-3d/Preview3D';
 import { useFrameServerUrl } from '../../hooks/useFrameServerUrl';
 import { useFrameBuffer } from '../../hooks/useFrameBuffer';
 import { CONTROLLERS } from '../../constants/routes';
 import type { RootState } from '../../store/Store';
-import { ModelChecklist } from './ModelChecklist';
-import { ProfilesView } from './ProfilesView';
-import { TestView } from './TestView';
-import { WiringPanel } from './WiringPanel';
+import { ModelSettingsDialog } from './Dialogs';
+import { NewProfileDialog, ProfilesDialog } from './ProfileDialogs';
+import { SelectionPanel, type SelectionTab } from './SelectionPanel';
+import { TestPatternDialog } from './TestPatternDialog';
+import { WiringDialog } from './WiringDialog';
 import { useTestTweak } from './useTestTweak';
 
 /** Its own preview settings, so the camera here does not move the Show View's. */
@@ -26,47 +30,132 @@ export interface TestTweakScreenProps {
     compressed?: boolean;
 }
 
-type Mode = 'test' | 'profiles' | 'wiring';
+const count = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 /**
- * Test + Tweak, one job at a time:
- *  - Test: pick a group or models, watch them in the layout, run a pattern.
- *  - Profiles: output settings per kind of pixel, and which models use each.
- *  - Wiring: how one model is cut into strings and put on controller ports.
- * A bar under the tabs always says what is being tested and can stop it.
+ * Test + Tweak.  The layout fills the screen and stays there; everything
+ * else comes to it:
+ *  - what to test, in a panel that opens at the right from its tool button;
+ *  - the test pattern, in a panel floating over the bottom;
+ *  - output profiles, one model's settings and a model's wiring, in dialogs.
  */
 export const TestTweakScreen: React.FC<TestTweakScreenProps> = ({ title, statusArea, compressed = false }) => {
     const theme = useTheme<ExtendedTheme>();
     const navigate = useNavigate();
+    // Asked without the server-render pass, so the very first render already knows: it decides whether the list starts open.
+    const wide = useMediaQuery(theme.breakpoints.up('md'), { noSsr: true });
     const showDirectory = useSelector((state: RootState) => state.auth.showDirectory);
     const { url } = useFrameServerUrl();
     const { snapshot, doc, updateDoc, startTest, stopTest, loadXlGroups, error, saving } = useTestTweak(url);
 
-    // Other screens link here with ?model=Name and ?submodel=Model/Sub (both repeatable) ?view=wiring|profiles, ?group=id and ?profile=id.
+    // Other screens link here with ?model=Name and ?submodel=Model/Sub (both repeatable), ?group=id, ?profile=id
+    // and ?view= one of pattern, profiles, newprofile, settings (of the first model) and wiring (of the first model).
     const [params] = useSearchParams();
     const linked = params.getAll('model');
     const view = params.get('view');
-    const [mode, setMode] = useState<Mode>(view === 'wiring' ? 'wiring' : view === 'profiles' ? 'profiles' : 'test');
+    const [tab, setTab] = useState<SelectionTab>(params.get('group') ? 'groups' : 'models');
     const [selectedModels, setSelectedModels] = useState<Set<string>>(() => new Set(linked));
     const [selectedSubModels, setSelectedSubModels] = useState<Set<string>>(() => new Set(params.getAll('submodel')));
     const [selectedGroup, setSelectedGroup] = useState<string | null>(params.get('group'));
     const [selectedProfile, setSelectedProfile] = useState<string | null>(params.get('profile'));
-    const [wiringModel, setWiringModel] = useState<string | null>(linked[0] ?? null);
+    const [focus, setFocus] = useState<string | null>(linked[0] ?? null);
 
-    // The preview is only fed while it is on screen.
+    const [patternOpen, setPatternOpen] = useState(view === 'pattern');
+    const [profilesOpen, setProfilesOpen] = useState(view === 'profiles' || !!params.get('profile'));
+    const [settingsFor, setSettingsFor] = useState<string | null>(view === 'settings' ? (linked[0] ?? null) : null);
+    // undefined: closed. null: open with no model picked yet.
+    const [wiringFor, setWiringFor] = useState<string | null | undefined>(
+        view === 'wiring' ? (linked[0] ?? null) : undefined,
+    );
+    const [newProfile, setNewProfile] = useState<{ from?: TweakModelInfo } | null>(null);
+    const [linkedNewProfile, setLinkedNewProfile] = useState(view === 'newprofile');
+
     const { buffer: liveData } = useFrameBuffer({
         baseUrl: url,
-        enabled: !!url && mode === 'test',
+        enabled: !!url,
         compressed,
         resetKey: showDirectory,
     });
 
-    const models = snapshot?.models ?? [];
+    const models = useMemo(() => snapshot?.models ?? [], [snapshot?.models]);
     const rewired = useMemo(() => new Set(snapshot?.rewired ?? []), [snapshot?.rewired]);
     const active = snapshot?.status.active;
     const activeNames = snapshot?.status.activeModels ?? [];
-    const bar = !!active && mode !== 'test';
     const single = selectedModels.size === 1 && !selectedSubModels.size ? [...selectedModels][0] : null;
+
+    // What a test runs on follows the list in view: the chosen group, or the ticked models.
+    const group = selectedGroup ? doc.groups.find((g) => g.id === selectedGroup) : undefined;
+    const modelList = useMemo(() => [...selectedModels].sort(), [selectedModels]);
+    const subList = useMemo(() => [...selectedSubModels].sort(), [selectedSubModels]);
+    const useGroup = tab === 'groups' && !!group;
+    const picked = modelList.length + subList.length;
+    const targets: TestTargets = useGroup
+        ? { groups: [group.id] }
+        : { models: modelList, ...(subList.length ? { subModels: subList } : {}) };
+    const targetLabel = useGroup
+        ? group.models.length + (group.subModels?.length ?? 0)
+            ? `group ${group.name}`
+            : ''
+        : tab === 'groups' || !picked
+          ? ''
+          : picked === 1
+            ? (modelList[0] ?? subList[0])
+            : !subList.length
+              ? count(modelList.length, 'model')
+              : !modelList.length
+                ? count(subList.length, 'submodel')
+                : `${count(modelList.length, 'model')} and ${count(subList.length, 'submodel')}`;
+
+    const pickInLayout = (name: string | null) => {
+        if (!name) return;
+        setSelectedModels(new Set([name]));
+        setSelectedSubModels(new Set());
+        setTab('models');
+        setFocus(name);
+    };
+
+    const toolbarExtras = (
+        <>
+            {active && (
+                <Tooltip
+                    title={`Stop the test on ${
+                        activeNames.length <= 3
+                            ? activeNames.join(', ')
+                            : `${activeNames.slice(0, 2).join(', ')} and ${activeNames.length - 2} more`
+                    }`}
+                >
+                    <IconButton size="small" color="warning" aria-label="Stop the test" onClick={() => void stopTest()}>
+                        <StopCircleIcon />
+                    </IconButton>
+                </Tooltip>
+            )}
+            <Tooltip title={patternOpen ? 'Hide the test pattern controls' : 'Test pattern'}>
+                <IconButton
+                    size="small"
+                    aria-label="Test pattern"
+                    color={patternOpen ? 'primary' : 'default'}
+                    onClick={() => setPatternOpen((o) => !o)}
+                >
+                    <Badge color="warning" variant="dot" invisible={!active}>
+                        <AnimationIcon />
+                    </Badge>
+                </IconButton>
+            </Tooltip>
+            <Tooltip title="Output profiles: color order, brightness, gamma and color temperature per kind of pixel">
+                <IconButton size="small" aria-label="Output profiles" onClick={() => setProfilesOpen(true)}>
+                    <PaletteOutlinedIcon />
+                </IconButton>
+            </Tooltip>
+        </>
+    );
+
+    const settingsModel = settingsFor ? models.find((m) => m.name === settingsFor) : undefined;
+
+    // A link to "new profile" waits for the player's model list, which the suggestions are made from.
+    if (linkedNewProfile && snapshot) {
+        setLinkedNewProfile(false);
+        setNewProfile({ from: models.find((m) => m.name === linked[0]) });
+    }
 
     return (
         <Box
@@ -90,47 +179,9 @@ export const TestTweakScreen: React.FC<TestTweakScreenProps> = ({ title, statusA
             <Box sx={{ padding: 2, paddingBottom: 0, flexShrink: 0 }}>
                 <PageHeader heading={title} children={statusArea} />
             </Box>
-            <Stack
-                direction="row"
-                alignItems="center"
-                sx={{ px: 2, flexShrink: 0, borderBottom: 1, borderColor: 'divider', flexWrap: 'wrap' }}
-            >
-                <Tabs value={mode} onChange={(_, v) => setMode(v)} variant="scrollable" scrollButtons="auto">
-                    <Tab value="test" label="Test" />
-                    <Tab value="profiles" label={`Profiles${doc.profiles.length ? ` (${doc.profiles.length})` : ''}`} />
-                    <Tab value="wiring" label={`Wiring${rewired.size ? ` (${rewired.size})` : ''}`} />
-                </Tabs>
-                <Box sx={{ flex: 1 }} />
-                <Typography variant="body2" color="text.secondary" sx={{ fontSize: 12 }}>
-                    {saving ? 'Saving…' : snapshot ? 'Saved with the show' : 'Connecting to the player…'}
-                </Typography>
-            </Stack>
-            {(error || bar || !!snapshot?.status.unknownModels?.length) && (
+            {(error || !!snapshot?.status.unknownModels?.length) && (
                 <Stack spacing={1} sx={{ px: 2, pt: 1, flexShrink: 0 }}>
                     {error && <Alert severity="error">{error}</Alert>}
-                    {bar && (
-                        <Alert
-                            severity="warning"
-                            icon={false}
-                            sx={{ py: 0, alignItems: 'center' }}
-                            action={
-                                <Button
-                                    color="inherit"
-                                    size="small"
-                                    startIcon={<StopIcon />}
-                                    onClick={() => void stopTest()}
-                                >
-                                    Stop
-                                </Button>
-                            }
-                        >
-                            Test running on{' '}
-                            {activeNames.length <= 3
-                                ? activeNames.join(', ')
-                                : `${activeNames.slice(0, 2).join(', ')} and ${activeNames.length - 2} more`}
-                            .
-                        </Alert>
-                    )}
                     {!!snapshot?.status.unknownModels?.length && (
                         <Alert severity="info" sx={{ py: 0 }}>
                             Saved settings name models this layout does not have:{' '}
@@ -142,107 +193,140 @@ export const TestTweakScreen: React.FC<TestTweakScreenProps> = ({ title, statusA
                 </Stack>
             )}
 
-            <Box sx={{ flex: 1, minHeight: 0, display: 'flex', p: 2, overflow: 'hidden' }}>
-                {mode === 'test' && (
-                    <TestView
-                        doc={doc}
-                        updateDoc={updateDoc}
-                        snapshot={snapshot}
-                        baseUrl={url}
-                        loadXlGroups={loadXlGroups}
-                        startTest={startTest}
-                        stopTest={stopTest}
-                        selectedModels={selectedModels}
-                        onSelectModels={setSelectedModels}
-                        selectedSubModels={selectedSubModels}
-                        onSelectSubModels={setSelectedSubModels}
-                        selectedGroup={selectedGroup}
-                        onSelectGroup={setSelectedGroup}
-                        preview={
-                            <Preview3D
-                                mode="embedded"
-                                selectableModels
-                                selectedModelName={single}
-                                onSelectedModelChange={(name) => {
-                                    if (!name) return;
-                                    setSelectedModels(new Set([name]));
-                                    setSelectedSubModels(new Set());
-                                }}
-                                showList={false}
-                                showControls={true}
-                                frameServerUrl={url}
-                                liveData={liveData}
-                                compact={compressed}
-                                previewSettingsStorageKey={TEST_TWEAK_PREVIEW_STORAGE_KEY}
-                                defaultViewMode="2d"
-                            />
-                        }
-                    />
-                )}
-
-                {mode === 'profiles' && (
-                    <ProfilesView
-                        doc={doc}
-                        updateDoc={updateDoc}
-                        snapshot={snapshot}
-                        loadXlGroups={loadXlGroups}
-                        startTest={startTest}
-                        selectedProfile={selectedProfile}
-                        onSelectProfile={setSelectedProfile}
-                    />
-                )}
-
-                {mode === 'wiring' && (
-                    <Box
-                        sx={{
-                            flex: 1,
-                            minHeight: 0,
-                            display: 'flex',
-                            flexDirection: { xs: 'column', md: 'row' },
-                            gap: 2,
-                            overflow: 'hidden',
-                        }}
-                    >
-                        <Paper
-                            sx={{
-                                width: { xs: '100%', md: 280 },
-                                height: { xs: '35%', md: 'auto' },
-                                flexShrink: 0,
-                                minHeight: 0,
-                                overflow: 'hidden',
-                            }}
-                        >
-                            <ModelChecklist
-                                single
-                                models={models}
-                                checked={new Set(wiringModel ? [wiringModel] : [])}
-                                onChange={(next) => setWiringModel([...next][0] ?? null)}
-                                note={(m) =>
-                                    [
-                                        m.controller ? `${m.controller}${m.port ? `:${m.port}` : ''}` : 'no controller',
-                                        rewired.has(m.name) ? 'rewired here' : undefined,
-                                    ]
-                                        .filter(Boolean)
-                                        .join(' · ')
-                                }
-                            />
-                        </Paper>
-                        <Paper sx={{ flex: 1, minWidth: 0, minHeight: 0, overflow: 'auto' }}>
-                            <WiringPanel
+            {/* Gap lives inside the clipping box so the panel's top shadow isn't cut off. */}
+            <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', p: 2, overflow: 'hidden' }}>
+                <Box
+                    sx={{
+                        flex: 1,
+                        minHeight: 0,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        backgroundColor: 'background.paper',
+                        borderRadius: 2,
+                        overflow: 'hidden',
+                        boxShadow: 3,
+                        border: (t) => `1px solid ${t.palette.divider}`,
+                    }}
+                >
+                    <Preview3D
+                        mode="embedded"
+                        allowExpand
+                        selectableModels
+                        selectedModelName={single}
+                        onSelectedModelChange={pickInLayout}
+                        // A selected model is painted over; while it is being tested, let the test show through.
+                        selectionStrength={active ? 0.3 : 1}
+                        showList
+                        initialShowList={wide}
+                        sidePanelLabel="what to test"
+                        renderSidePanel={({ close }) => (
+                            <SelectionPanel
                                 doc={doc}
                                 updateDoc={updateDoc}
-                                models={models}
-                                controllers={snapshot?.controllers ?? []}
-                                selectedModels={wiringModel ? [wiringModel] : []}
-                                problems={snapshot?.problems ?? []}
-                                rewired={snapshot?.rewired ?? []}
-                                onSelectModel={setWiringModel}
-                                onOpenControllers={() => navigate(CONTROLLERS)}
+                                snapshot={snapshot}
+                                baseUrl={url}
+                                loadXlGroups={loadXlGroups}
+                                tab={tab}
+                                onTab={setTab}
+                                selectedModels={selectedModels}
+                                onSelectModels={setSelectedModels}
+                                selectedSubModels={selectedSubModels}
+                                onSelectSubModels={setSelectedSubModels}
+                                selectedGroup={selectedGroup}
+                                onSelectGroup={setSelectedGroup}
+                                focus={focus}
+                                onModelSettings={setSettingsFor}
+                                onClose={close}
                             />
-                        </Paper>
-                    </Box>
-                )}
+                        )}
+                        toolbarExtras={toolbarExtras}
+                        showControls={true}
+                        frameServerUrl={url}
+                        liveData={liveData}
+                        compact={compressed}
+                        previewSettingsStorageKey={TEST_TWEAK_PREVIEW_STORAGE_KEY}
+                        defaultViewMode="2d"
+                    />
+                </Box>
             </Box>
+
+            <TestPatternDialog
+                open={patternOpen}
+                onClose={() => setPatternOpen(false)}
+                doc={doc}
+                updateDoc={updateDoc}
+                targets={targets}
+                targetLabel={targetLabel}
+                status={snapshot?.status}
+                onStart={startTest}
+                onStop={stopTest}
+            />
+            <ProfilesDialog
+                open={profilesOpen}
+                onClose={() => setProfilesOpen(false)}
+                doc={doc}
+                updateDoc={updateDoc}
+                models={models}
+                loadXlGroups={loadXlGroups}
+                startTest={startTest}
+                selectedProfile={selectedProfile}
+                onSelectProfile={setSelectedProfile}
+                onNewProfile={() => setNewProfile({})}
+                onModelSettings={setSettingsFor}
+            />
+            <ModelSettingsDialog
+                model={settingsModel}
+                onClose={() => setSettingsFor(null)}
+                doc={doc}
+                updateDoc={updateDoc}
+                rewired={!!settingsModel && rewired.has(settingsModel.name)}
+                onNewProfile={(m) => setNewProfile({ from: m })}
+                onEditProfile={(id) => {
+                    setSelectedProfile(id);
+                    setSettingsFor(null);
+                    setProfilesOpen(true);
+                }}
+                onRewire={(m) => {
+                    setSettingsFor(null);
+                    setWiringFor(m.name);
+                }}
+            />
+            <NewProfileDialog
+                open={!!newProfile}
+                onClose={() => setNewProfile(null)}
+                onCreated={setSelectedProfile}
+                doc={doc}
+                updateDoc={updateDoc}
+                models={models}
+                fromModel={newProfile?.from}
+            />
+            <WiringDialog
+                open={wiringFor !== undefined}
+                onClose={() => setWiringFor(undefined)}
+                model={wiringFor}
+                doc={doc}
+                updateDoc={updateDoc}
+                snapshot={snapshot}
+                onOpenControllers={() => navigate(CONTROLLERS)}
+            />
+            {saving && (
+                <Box
+                    sx={{
+                        position: 'absolute',
+                        left: 24,
+                        bottom: 22,
+                        px: 1,
+                        borderRadius: 1,
+                        fontSize: 12,
+                        color: 'text.secondary',
+                        backgroundColor: 'background.paper',
+                        opacity: 0.85,
+                        pointerEvents: 'none',
+                    }}
+                >
+                    Saving…
+                </Box>
+            )}
         </Box>
     );
 };

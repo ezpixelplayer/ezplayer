@@ -1922,6 +1922,18 @@ let curPlaylists: PlaylistRecord[] | undefined = undefined;
 let curSchedule: ScheduledPlaylist[] | undefined = undefined;
 let modelRecs: ModelRec[] | undefined = undefined;
 let controllerStates: ControllerState[] | undefined = undefined;
+/**
+ * A model as the viewers are given it.  The viewers can undo an xLights dimming
+ * curve baked into the data they are fed, which they need for a file played
+ * straight (the cloud, an older player).  The data this player feeds them has
+ * no curve in it: the curve is undone on the way in and applied once, on the
+ * way out to the controllers.  So the viewers are told gamma 1 at full
+ * brightness, and correct nothing.
+ */
+function viewerCoords(nr: GetNodeResult): GetNodeResult {
+    return nr.colorProfile ? { ...nr, colorProfile: { ...nr.colorProfile, allGamma: 1, allBrightness: 1 } } : nr;
+}
+
 let modelCoordinates: Map<string, GetNodeResult> | undefined = undefined;
 let modelCoordinates2D: Map<string, GetNodeResult> | undefined = undefined;
 let modelSubModels = new Map<string, SubModelResult[]>();
@@ -2116,11 +2128,11 @@ async function loadXmlCoordinates() {
             // model and surfaces the Active flag on ModelResult.
             for (const [name, mr] of gmc3d.models) {
                 if (!mr.active) continue;
-                modelCoordinates.set(name, mr.nodeResult);
+                modelCoordinates.set(name, viewerCoords(mr.nodeResult));
                 if (mr.subModels?.length) modelSubModels.set(name, mr.subModels);
                 const nr2d = gmc2d.models.get(name)?.nodeResult;
                 if (nr2d) {
-                    modelCoordinates2D.set(name, nr2d);
+                    modelCoordinates2D.set(name, viewerCoords(nr2d));
                 }
             }
 

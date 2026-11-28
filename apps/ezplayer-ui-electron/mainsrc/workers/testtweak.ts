@@ -51,7 +51,18 @@ function channelsPerNode(m: XlModelChannelInfo): number {
     return m.nodeCount > 0 ? Math.max(1, Math.round(m.channelCount / m.nodeCount)) : 3;
 }
 
-/** The output trims a document asks for, by model, leaving out the ones that change nothing. */
+/** 'GRB' and the like from a plain three-color string type's channel offsets. */
+function stringOrderOf(m: XlModelChannelInfo): string | undefined {
+    if (!m.simple || !m.rgbOffsets) return undefined;
+    const o: string[] = [];
+    o[m.rgbOffsets.r] = 'R';
+    o[m.rgbOffsets.g] = 'G';
+    o[m.rgbOffsets.b] = 'B';
+    const s = o.join('');
+    return s.length === 3 ? s : undefined;
+}
+
+/** The output settings a document asks for, by model, leaving out the models it sets nothing on. */
 export function adjustFromDoc(doc: TestTweakDoc): Record<string, OutputModelAdjust> {
     const out: Record<string, OutputModelAdjust> = {};
     for (const name of tweakedModelNames(doc)) {
@@ -59,8 +70,9 @@ export function adjustFromDoc(doc: TestTweakDoc): Record<string, OutputModelAdju
         if (isNeutralTweak(e)) continue;
         const a: OutputModelAdjust = {};
         if (e.colorOrder) a.colorOrder = e.colorOrder;
-        if (e.gamma !== undefined && e.gamma !== 1) a.gamma = e.gamma;
-        if (e.brightness !== 1) a.brightness = e.brightness;
+        // A value set here takes the place of the layout's, so 1 and 100% are passed on like any other.
+        if (e.gamma !== undefined) a.gamma = e.gamma;
+        if (e.brightness !== undefined) a.brightness = e.brightness;
         if (e.colorTempK !== undefined && e.colorTempK !== NEUTRAL_COLOR_TEMP_K)
             a.gain = colorTemperatureScale(e.colorTempK);
         out[name] = a;
@@ -298,6 +310,10 @@ export class TestTweakService {
                 if (subs) info.subModels = subs;
                 if (cc?.smartRemote) info.smartRemote = cc.smartRemote;
                 if (m.controllerProtocol) info.protocol = m.controllerProtocol;
+                const order = stringOrderOf(m);
+                if (order) info.xlStringOrder = order;
+                if (typeof m.gamma === 'number' && m.gamma > 0) info.xlDimGamma = m.gamma;
+                if (typeof m.brightness === 'number') info.xlDimBrightness = Math.round(m.brightness * 1000) / 10;
                 if (cc?.colorOrder) info.xlColorOrder = cc.colorOrder;
                 if (cc?.brightness !== undefined) info.xlBrightness = cc.brightness;
                 if (cc?.gamma !== undefined) info.xlGamma = cc.gamma;

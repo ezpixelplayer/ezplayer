@@ -5,6 +5,7 @@ import {
     ToggleButtonGroup,
     Button,
     IconButton,
+    useMediaQuery,
     Tooltip,
     useTheme,
     Paper,
@@ -161,6 +162,19 @@ export interface Preview3DProps {
     selectedModelName?: string | null;
     /** Reports the selected model (null when cleared) on user-driven changes. */
     onSelectedModelChange?: (modelName: string | null) => void;
+    /**
+     * What the list button opens at the right in place of the built-in model list (needs
+     * `showList`).  On a narrow screen it lies over the view instead of beside it.
+     */
+    renderSidePanel?: (api: { close: () => void }) => React.ReactNode;
+    /** Tooltip words for the list button, e.g. "what to test". Default "model library". */
+    sidePanelLabel?: string;
+    /** More tool buttons, shown on the toolbar and on the expanded view's floating cluster. */
+    toolbarExtras?: React.ReactNode;
+    /** Offer the expanded (whole window) view. Default: only when not `'embedded'`. */
+    allowExpand?: boolean;
+    /** 0..1: how solid the selection color is over a selected model's own colors. Default 1. */
+    selectionStrength?: number;
 }
 
 /**
@@ -195,12 +209,19 @@ export const Preview3D: React.FC<Preview3DProps> = ({
     selectableModels = false,
     selectedModelName: hostSelectedModelName,
     onSelectedModelChange,
+    renderSidePanel,
+    sidePanelLabel = 'model library',
+    toolbarExtras,
+    allowExpand,
+    selectionStrength,
 }) => {
     const theme = useTheme();
     const preferOrbitControls = useOrbitPreference();
     const embedded = mode === 'embedded';
     const disableModelSelection = embedded && !selectableModels;
     const hideAudioControls = embedded;
+    const canExpand = allowExpand ?? !embedded;
+    const narrow = useMediaQuery(theme.breakpoints.down('sm'));
     const [viewMode, setViewMode] = useState<ViewMode>(defaultViewMode);
     // True once the mode came from somewhere deliberate — an explicit
     // "Set as Default" (the persisted top-level `mode`) or the user's live
@@ -1119,7 +1140,9 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                         p: 1.5,
                         display: 'flex',
                         alignItems: 'center',
-                        gap: 2,
+                        flexWrap: 'wrap',
+                        columnGap: 2,
+                        rowGap: 1,
                         borderBottom: `1px solid ${theme.palette.divider}`,
                         backgroundColor:
                             theme.palette.mode === 'dark' ? theme.palette.grey[900] : theme.palette.background.paper,
@@ -1286,8 +1309,9 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                                 </IconButton>
                             </Tooltip>
                         )}
+                        {toolbarExtras}
                         {showList && (
-                            <Tooltip title={showItemList ? 'Hide model library' : 'Show model library'}>
+                            <Tooltip title={`${showItemList ? 'Hide' : 'Show'} ${sidePanelLabel}`}>
                                 <IconButton
                                     size="small"
                                     onClick={() => setShowItemList(!showItemList)}
@@ -1297,7 +1321,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                                 </IconButton>
                             </Tooltip>
                         )}
-                        {!embedded && (
+                        {canExpand && (
                             <Tooltip title="Expand preview (Esc exits)">
                                 <IconButton size="small" onClick={() => setExpanded(true)}>
                                     <FullscreenIcon />
@@ -1308,7 +1332,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                 </Paper>
             )}
 
-            <Box sx={{ display: 'flex', flex: 1, overflow: 'hidden', minHeight: 0 }}>
+            <Box sx={{ display: 'flex', flex: 1, overflow: 'hidden', minHeight: 0, position: 'relative' }}>
                 <Box sx={{ flex: 1, position: 'relative', minWidth: 0, minHeight: 0 }}>
                     {isEmptySelectedGroup ? (
                         <Box
@@ -1339,6 +1363,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                                     onPointHover={disableModelSelection ? undefined : handleItemHover}
                                     pointSize={pointSize}
                                     selectedModelNames={selectedModelNames}
+                                    selectionStrength={selectionStrength}
                                     modelMetadata={renderedModelData?.metadata?.models}
                                     viewObjects={viewObjects}
                                     frameServerUrl={effectiveFrameServerUrl}
@@ -1370,6 +1395,7 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                                     viewPlane={'xy'}
                                     pointSize={pointSize}
                                     selectedModelNames={selectedModelNames}
+                                    selectionStrength={selectionStrength}
                                     modelMetadata={renderedModelData2D.metadata?.models}
                                     layoutSettings={effectiveLayoutSettings}
                                     frameServerUrl={effectiveFrameServerUrl}
@@ -1407,8 +1433,9 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                                 opacity: 0.9,
                             }}
                         >
+                            {toolbarExtras}
                             {showList && (
-                                <Tooltip title={showItemList ? 'Hide model library' : 'Show model library'}>
+                                <Tooltip title={`${showItemList ? 'Hide' : 'Show'} ${sidePanelLabel}`}>
                                     <IconButton
                                         size="small"
                                         onClick={() => setShowItemList(!showItemList)}
@@ -1447,10 +1474,21 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                     <Paper
                         elevation={3}
                         sx={{
-                            width: 320,
+                            width: renderSidePanel ? 360 : 320,
                             minWidth: 280,
-                            maxWidth: '35%',
+                            maxWidth: renderSidePanel ? '45%' : '35%',
                             height: '100%',
+                            // A host's panel is worked in, not glanced at: on a phone it lies over the view at full height.
+                            ...(renderSidePanel &&
+                                narrow && {
+                                    position: 'absolute',
+                                    top: 0,
+                                    right: 0,
+                                    bottom: 0,
+                                    width: 'min(360px, 92%)',
+                                    maxWidth: 'none',
+                                    zIndex: 20,
+                                }),
                             display: 'flex',
                             flexDirection: 'column',
                             borderLeft: `1px solid ${theme.palette.divider}`,
@@ -1461,13 +1499,17 @@ export const Preview3D: React.FC<Preview3DProps> = ({
                             overflow: 'hidden',
                         }}
                     >
-                        <ModelList
-                            selectedModelNames={selectedModelNames}
-                            onModelSelect={handleModelSelect}
-                            searchable={true}
-                            modelData={renderedModelData}
-                            onClose={() => setShowItemList(false)}
-                        />
+                        {renderSidePanel ? (
+                            renderSidePanel({ close: () => setShowItemList(false) })
+                        ) : (
+                            <ModelList
+                                selectedModelNames={selectedModelNames}
+                                onModelSelect={handleModelSelect}
+                                searchable={true}
+                                modelData={renderedModelData}
+                                onClose={() => setShowItemList(false)}
+                            />
+                        )}
                     </Paper>
                 )}
             </Box>

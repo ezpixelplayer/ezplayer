@@ -231,6 +231,7 @@ uniform vec3 selectedColor;
 uniform vec3 hoveredColor;
 uniform int pixelStyle; // 0 = square, 1 = circle/round, 2 = blended circle
 uniform float opacity; // 1.0 = fully opaque (default), 0.0 = fully transparent (from xLights Transparency)
+uniform float selectionStrength; // 1.0 = selected pixels are the selection color; less lets their own color show through
 
 varying vec3 vColor;
 varying float vSelectionState;
@@ -277,7 +278,7 @@ void main() {
     
     // Apply selection color (yellow)
     if (vSelectionState > 0.5) {
-        color = selectedColor;
+        color = mix(vColor, selectedColor, clamp(selectionStrength, 0.0, 1.0));
     }
     // Apply hover color (white) - hover takes precedence over selection
     else if (vHoverState > 0.5) {
@@ -338,6 +339,7 @@ export function createPointShaderMaterial(
         maxPointSize: { value: 2048.0 }, // Safe default; actual value is set at render time.
         // Opacity derived from xLights Transparency (0–100 → 1.0–0.0); 1.0 = fully opaque
         opacity: { value: options?.opacity ?? 1.0 },
+        selectionStrength: { value: 1.0 },
     };
 
     // Merge provided uniforms
