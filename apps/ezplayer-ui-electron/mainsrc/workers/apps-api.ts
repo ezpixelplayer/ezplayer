@@ -10,7 +10,17 @@ import type { Duplex } from 'node:stream';
 import type Koa from 'koa';
 import getRawBody from 'raw-body';
 import { WebSocketServer, type WebSocket } from 'ws';
-import type { AppInputMapping, AppsCommand, AppsState, AppStatuses, FullPlayerState } from '@ezplayer/ezplayer-core';
+import type {
+    AppInputMapping,
+    AppInputSender,
+    AppRecentInput,
+    AppsCommand,
+    AppsState,
+    AppStatuses,
+    AppTraffic,
+    FullPlayerState,
+} from '@ezplayer/ezplayer-core';
+import { inputShapeOf } from '@ezplayer/ezplayer-core';
 import { AppEventFeed } from './apps-events.js';
 import {
     DATA_KEY_RE,
@@ -32,6 +42,8 @@ const POLL_MAX_WAIT_MS = 60_000;
 const PAGE_PROXY_MAX_BODY = 2 * 1024 * 1024;
 const PAGE_PROXY_TIMEOUT_MS = 30_000;
 const INSTANCE_RE = /^[a-z0-9][a-z0-9-]{0,39}$/;
+const RECENT_INPUTS_MAX = 50;
+const RECENT_VALUE_MAX = 60;
 
 export interface AppsApiDeps {
     appsCommand(cmd: AppsCommand): Promise<AppsState>;
@@ -48,6 +60,9 @@ export class AppsRuntime {
     private readonly feeds = new Map<string, AppEventFeed>();
     private readonly statuses: AppStatuses = {};
     private readonly live = new Map<string, Set<WebSocket>>();
+    private readonly recent = new Map<string, AppRecentInput>();
+    /** Visitor requests since the last `takeTraffic`; main adds them to the usage ledger. */
+    private traffic: Record<string, AppTraffic> = {};
 
     constructor(private readonly deps: AppsApiDeps) {}
 
@@ -71,6 +86,25 @@ export class AppsRuntime {
         }
         this.instances = next;
         this.deps.setState('appStatuses', { ...this.statuses });
+    }
+
+    /** A visitor asked for one of the instance's pages or sent it an accepted event, or the instance posted an input. */
+    countRequest(instance: string, kind: 'page' | 'event' | 'sent'): void {
+        const t = (this.traffic[instance] ??= { requests: 0, events: 0, sent: 0 });
+        if (kind === 'sent') {
+            t.sent++;
+            return;
+        }
+        t.requests++;
+        if (kind === 'event') t.events++;
+    }
+
+    /** The counts so far, and start again; undefined when there were none. */
+    takeTraffic(): Record<string, AppTraffic> | undefined {
+        const t = this.traffic;
+        if (Object.keys(t).length === 0) return undefined;
+        this.traffic = {};
+        return t;
     }
 
     /** The running instance behind an app token, for leases the process opens in its own name. */
@@ -126,7 +160,7 @@ export class AppsRuntime {
     }
 
     /** Deliver a show input to every instance mapped to it. Returns how many got it. */
-    input(source: string, name: string, value: unknown): number {
+    input(source: string, name: string, value: unknown, sender?: AppInputSender): number {
         const mappings = (this.deps.getState('apps')?.inputMappings ?? []) as AppInputMapping[];
         let n = 0;
         for (const m of mappings) {
@@ -142,7 +176,49 @@ export class AppsRuntime {
             });
             if (!('refused' in r)) n++;
         }
+        this.remember(source, name, value, n, sender);
+        if (sender?.instance) this.countRequest(sender.instance, 'sent');
         return n;
+    }
+
+    /** Inputs heard lately, newest first, so the Apps card can offer them instead of asking for typing. */
+    recentInputs(): AppRecentInput[] {
+        // Every post re-inserts its key, so the map runs oldest to newest.
+        return [...this.recent.values()].reverse();
+    }
+
+    private remember(
+        source: string,
+        name: string,
+        value: unknown,
+        delivered: number,
+        sender: AppInputSender | undefined,
+    ): void {
+        const key = `${source}/${name}`;
+        const was = this.recent.get(key);
+        let lastValue: string | undefined;
+        if (value !== undefined) {
+            try {
+                lastValue = typeof value === 'string' ? value : JSON.stringify(value);
+            } catch {
+                lastValue = String(value);
+            }
+            if (lastValue && lastValue.length > RECENT_VALUE_MAX)
+                lastValue = lastValue.slice(0, RECENT_VALUE_MAX - 1) + '…';
+        }
+        // Re-insert so the map stays in arrival order and the oldest key is first to go.
+        this.recent.delete(key);
+        this.recent.set(key, {
+            source,
+            name,
+            count: (was?.count ?? 0) + 1,
+            lastAt: Date.now(),
+            delivered,
+            lastValue,
+            shape: inputShapeOf(value),
+            sender,
+        });
+        while (this.recent.size > RECENT_INPUTS_MAX) this.recent.delete(this.recent.keys().next().value!);
     }
 
     addLive(name: string, ws: WebSocket): void {
@@ -163,6 +239,11 @@ function tokenOf(ctx: Koa.Context): string | undefined {
     if (h) return h;
     const q = ctx.query.token;
     return typeof q === 'string' ? q : undefined;
+}
+
+/** Who posted an input: the instance behind an app token, otherwise the address it came from. */
+function senderOf(ctx: Koa.Context, apps: AppsRuntime): AppInputSender {
+    return apps.ownerOf(tokenOf(ctx)) ?? { address: ctx.ip };
 }
 
 /** Routes the app process and its pages call. Web app only; never on the kiosk. */
@@ -190,6 +271,7 @@ export function registerAppsRoutes(router: Router, apps: AppsRuntime, deps: Apps
         ctx.set('Cache-Control', 'no-store');
         ctx.body = {
             ...(deps.getState('apps') ?? { apps: [], instances: [], defaultSchedule: [], inputMappings: [] }),
+            recentInputs: apps.recentInputs(),
         };
     });
 
@@ -200,7 +282,7 @@ export function registerAppsRoutes(router: Router, apps: AppsRuntime, deps: Apps
             ctx.body = { error: 'op is required' };
             return;
         }
-        ctx.body = await deps.appsCommand(cmd);
+        ctx.body = { ...(await deps.appsCommand(cmd)), recentInputs: apps.recentInputs() };
     });
 
     router.get('/api/ezp/apps/public', (ctx) => {
@@ -260,6 +342,7 @@ export function registerAppsRoutes(router: Router, apps: AppsRuntime, deps: Apps
             ctx.body = { error: r.refused };
             return;
         }
+        apps.countRequest(ctx.params.name, 'event');
         ctx.body = { ok: true, id: r.id };
     });
 
@@ -370,7 +453,7 @@ export function registerAppsRoutes(router: Router, apps: AppsRuntime, deps: Apps
         }
         const body = ctx.request.body as { value?: unknown } | undefined;
         const value = body?.value ?? (typeof ctx.query.value === 'string' ? ctx.query.value : undefined);
-        ctx.body = { ok: true, delivered: apps.input(source, name, value) };
+        ctx.body = { ok: true, delivered: apps.input(source, name, value, senderOf(ctx, apps)) };
     });
     // Boards that can only GET.
     router.get('/api/ezp/inputs/:source/:name', (ctx) => {
@@ -380,7 +463,7 @@ export function registerAppsRoutes(router: Router, apps: AppsRuntime, deps: Apps
             ctx.body = { error: 'source and name: lower-case letters, digits and dashes' };
             return;
         }
-        ctx.body = { ok: true, delivered: apps.input(source, name, ctx.query.value) };
+        ctx.body = { ok: true, delivered: apps.input(source, name, ctx.query.value, senderOf(ctx, apps)) };
     });
 }
 
@@ -443,6 +526,8 @@ export function appsPagesMiddleware(apps: AppsRuntime): Koa.Middleware {
             return;
         }
         const isConfig = rest === '/config' || rest.startsWith('/config/');
+        // Visitors' page requests count toward the instance's usage; the owner's settings pages do not.
+        if (!isConfig) apps.countRequest(name, 'page');
         if (rest === '/config') {
             ctx.redirect(`${ctx.path}/${ctx.search}`);
             return;

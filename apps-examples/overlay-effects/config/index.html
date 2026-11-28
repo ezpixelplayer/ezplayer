@@ -73,8 +73,8 @@
 <div id="effects" class="list"></div>
 
 <h2>Pinned effects</h2>
-<p class="hint" id="pinsHint">A pin fixes one target's effect regardless of the draw and of the checkboxes above. Changing a pin while the loop runs applies at once; Save keeps it.</p>
-<table><thead><tr><th>Target</th><th>Nodes</th><th>Effect</th></tr></thead><tbody id="pins"></tbody></table>
+<p class="hint" id="pinsHint">A pin fixes a model's effect (every target on it) regardless of the draw and of the checkboxes above. Changing a pin while the loop runs applies at once; Save keeps it.</p>
+<table><thead><tr><th>Model</th><th>Targets</th><th>Effect</th></tr></thead><tbody id="pins"></tbody></table>
 
 <button id="save" disabled>Save</button><button id="apply" class="minor" hidden style="margin-left: 8px">Restart the loop to apply</button><span id="note"></span>
 
@@ -127,24 +127,24 @@
     const body = el('pins');
     body.replaceChildren();
     if (!targets.length) {
-      el('pinsHint').textContent = status?.targetsListed === false
-        ? `${status.targetCount} targets is too many to list for pinning; pins saved earlier still apply by name.`
-        : 'The target list comes from the running app; save the models first and this table fills in within a few seconds.';
+      el('pinsHint').textContent = status?.modelsListed === false
+        ? `${status.modelCount} models is too many to list for pinning; pins saved earlier still apply by name.`
+        : 'The model list comes from the running app; save the models first and this table fills in within a few seconds.';
       return;
     }
     for (const t of targets) {
       const tr = document.createElement('tr');
       tr.innerHTML = `<td class="target"></td><td class="num"></td><td><select></select></td>`;
-      tr.children[0].textContent = t.target;
-      tr.children[1].textContent = `${t.nodes} (${t.format})`;
+      tr.children[0].textContent = t.model;
+      tr.children[1].textContent = `${t.targets} (${t.nodes} nodes)`;
       const sel = tr.querySelector('select');
       sel.append(new Option('Random from enabled', ''));
       for (const e of effects) sel.append(new Option(e.title, e.name));
-      sel.value = pins[t.target] && effects.some((e) => e.name === pins[t.target]) ? pins[t.target] : '';
+      sel.value = pins[t.model] && effects.some((e) => e.name === pins[t.model]) ? pins[t.model] : '';
       sel.addEventListener('change', () => {
-        if (sel.value) pins[t.target] = sel.value; else delete pins[t.target];
+        if (sel.value) pins[t.model] = sel.value; else delete pins[t.model];
         // Live, so the owner sees it on the display right away; Save makes it stick.
-        app.send({ type: 'setEffect', target: t.target, effect: sel.value || null }).catch(() => undefined);
+        app.send({ type: 'setEffect', target: t.model, effect: sel.value || null }).catch(() => undefined);
       });
       body.appendChild(tr);
     }
@@ -241,8 +241,8 @@
       if (!s) return;
       if (Array.isArray(s.effects) && s.effects.length) { effects = s.effects; renderEffects(); }
       // The rows ride along only when the list changed or every few seconds; otherwise the table stands.
-      if (Array.isArray(s.targets)) {
-        const list = s.targets.map((t) => ({ target: t.target, nodes: t.nodes, format: t.format }));
+      if (Array.isArray(s.models)) {
+        const list = s.models.map((m) => ({ model: m.model, targets: m.targets, nodes: m.nodes }));
         if (JSON.stringify(list) !== JSON.stringify(targets)) { targets = list; renderPins(); }
       }
       el('apply').hidden = s.phase !== 'running';

@@ -1,0 +1,383 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tag the Monsters settings</title>
+<style>
+  :root { color-scheme: dark; --bg: #0b0d12; --panel: #161a24; --line: #2a3040; --text: #e8ebf2; --dim: #8b93a7; --accent: #ffb347; --bad: #ff5c5c; --good: #5fe39a; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.4 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+  body { max-width: 720px; margin: 0 auto; padding: 16px; }
+  h1 { font-size: 20px; margin: 0 0 12px; }
+  h2 { font-size: 14px; text-transform: uppercase; letter-spacing: 1px; color: var(--dim); margin: 22px 0 8px; }
+  section { background: var(--panel); border-radius: 12px; padding: 12px 14px; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 16px; }
+  label { display: block; font-size: 13px; color: var(--dim); margin-top: 8px; }
+  input, select { font: inherit; color: var(--text); background: #0f131c; border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px; width: 100%; margin-top: 3px; }
+  input[type=checkbox] { width: auto; margin: 0 8px 0 0; }
+  .check { display: flex; align-items: center; margin-top: 8px; color: var(--text); }
+  .models { max-height: 240px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; margin-top: 6px; }
+  .models .check { margin-top: 4px; font-size: 14px; }
+  .models small { color: var(--dim); margin-left: 6px; }
+  button { font: inherit; font-weight: 600; color: #0b0d12; background: var(--accent); border: 0; border-radius: 10px; padding: 10px 18px; cursor: pointer; margin-top: 16px; }
+  #msg { margin-top: 10px; min-height: 1.3em; color: var(--dim); }
+  #msg.bad { color: var(--bad); }
+  #msg.good { color: var(--good); }
+  #state { margin: -6px 0 10px; }
+  #state.bad { color: var(--bad); }
+  .hint { color: var(--dim); font-size: 13px; margin-top: 6px; }
+</style>
+</head>
+<body>
+<h1>Tag the Monsters settings</h1>
+<div id="state" class="hint">Connecting to the player…</div>
+
+<h2>Cast</h2>
+<section>
+  <label>Season
+    <select id="cast">
+      <option value="halloween">Halloween: ghosts, witches and goblins vs pumpkins, kids and candy</option>
+      <option value="christmas">Christmas: Krampus, gremlins and a yeti vs Santa, reindeer, elves and gingerbread</option>
+    </select>
+  </label>
+</section>
+
+<h2>Beam coverage</h2>
+<section>
+  <label>xLights model group the beam can land on
+    <select id="beamGroup"><option value="">(pick models below instead)</option></select>
+  </label>
+  <div class="hint">The whole group is one pattern lease; the player evaluates the beam per node, on the GPU when it has one. A group of "everything but the matrices" works well.</div>
+  <label>Or these models</label>
+  <div class="models" id="beamModels"></div>
+  <div class="row">
+    <label>Half angle (radians)<input id="halfAngle" type="number" step="0.01" min="0.02" max="1.2"></label>
+    <label>Rim softness (0..1)<input id="softness" type="number" step="0.05" min="0" max="1"></label>
+    <label>Range (world units; nothing farther can be tagged)<input id="range" type="number" step="10" min="10"></label>
+    <label>Color<input id="color" type="color"></label>
+    <label>Cloudiness (0..1)<input id="noise" type="number" step="0.05" min="0" max="1"></label>
+    <label>Blend<select id="blend"><option value="add">add (light)</option><option value="max">max</option><option value="over">over</option></select></label>
+  </div>
+</section>
+
+<h2>Sprite surfaces</h2>
+<section>
+  <div class="hint">Where the monsters and friends run, as RGBA sprites over the show that keeps playing: matrices, and any other model with at least 500 nodes and a 2D render buffer (an HD spinner, a big tree), drawn onto that buffer. Each gets an exclusive lease while a round runs.</div>
+  <div class="models" id="spriteModels"></div>
+  <div class="row">
+    <label>Monster background<input id="bgFoe" type="color"></label>
+    <label>Friend background<input id="bgFriend" type="color"></label>
+    <label>Background alpha (0..1)<input id="bgAlpha" type="number" step="0.05" min="0" max="1"></label>
+  </div>
+</section>
+
+<h2>Wand calibration</h2>
+<section>
+  <div class="hint">The wand reports position in meters and angles in degrees in its own frame: x to the right, z toward the holder's back, yaw 0 facing the display, pitch up. These map that frame onto the layout.</div>
+  <div class="row">
+    <label>Origin x<input id="ox" type="number" step="1" placeholder="auto"></label>
+    <label>Origin y<input id="oy" type="number" step="1" placeholder="auto"></label>
+    <label>Origin z<input id="oz" type="number" step="1" placeholder="auto"></label>
+    <label>Heading offset (degrees)<input id="heading" type="number" step="1"></label>
+    <label>World units per meter (blank: from the layout’s ruler)<input id="scale" type="number" step="1" min="0.01"></label>
+    <label>Eye height (meters)<input id="eyeHeight" type="number" step="0.05" min="0"></label>
+    <label>Pose smoothing (ms; 0 is off)<input id="smoothMs" type="number" step="10" min="0" max="1000"></label>
+  </div>
+  <div class="row">
+    <label>Or: how wide is the whole display, in meters?<input id="widthM" type="number" step="0.5" min="0.5" placeholder="sets the units per meter"></label>
+  </div>
+  <div class="hint" id="calib">Leave the origin blank to stand in front of the layout's middle.</div>
+</section>
+
+<h2>Rules</h2>
+<section>
+  <div class="row">
+    <label>Round length (seconds)<input id="roundSeconds" type="number" step="5" min="10"></label>
+    <label>Dwell to tag (ms)<input id="dwellMs" type="number" step="50" min="0"></label>
+    <label>Coverage to count (0..1)<input id="coverage" type="number" step="0.05" min="0.05" max="1"></label>
+    <label>Points per monster<input id="foePoints" type="number" step="1" min="0"></label>
+    <label>Penalty per friend<input id="friendPenalty" type="number" step="1" min="0"></label>
+    <label>Respawn delay after a tag (ms)<input id="respawnMs" type="number" step="100" min="0"></label>
+    <label>Rest between runs (ms)<input id="restMs" type="number" step="250" min="0"></label>
+    <label>Creatures out at once (0: one per surface)<input id="maxActive" type="number" step="1" min="0"></label>
+  </div>
+</section>
+
+<h2>Delivery</h2>
+<section>
+  <label class="check"><input id="useUdp" type="checkbox"> Send beam uniforms and sprite frames over UDP</label>
+  <label class="check"><input id="autoStart" type="checkbox"> Start a round when the app starts</label>
+</section>
+
+<button id="save">Save</button>
+<div id="msg"></div>
+
+<script>
+(function () {
+  const el = (id) => document.getElementById(id);
+  let app, settings = {}, status = null;
+  let layout = null; // { groups, surfaces, all, bounds, ruler } read from the player, independent of the game process
+  let layoutError = '';
+
+  const fmt = (v, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v.toFixed(d) : '?');
+  /** Pick lists read best in name order, "Arch 2" before "Arch 10". */
+  const byName = (key) => (a, b) => String(a[key]).localeCompare(String(b[key]), undefined, { numeric: true, sensitivity: 'base' });
+
+  /** Everything the pick lists need, from the player's own API; the game does not have to be running. */
+  async function loadLayout() {
+    if (app.apiBase === null) { layoutError = 'This page has no access to the player API; open it from the Apps card.'; return; }
+    try {
+      const res = await fetch(app.apiBase + '/api/ezp/overlays/targets?groups=1&detail=submodels', { cache: 'no-store' });
+      const body = await res.json().catch(() => null);
+      if (res.status === 503) throw new Error('the player has not loaded its layout yet (open the show in EZPlayer first)');
+      if (!res.ok) throw new Error(body?.error || ('HTTP ' + res.status));
+      const targets = (body.targets || []).filter((t) => !t.subModel);
+      layout = {
+        groups: (body.groups || []).map((g) => ({ name: g.name, models: g.models.length, subModels: (g.subModels || []).length })),
+        surfaces: targets.map(surfaceOf).filter(Boolean),
+        all: targets.map((t) => ({ model: t.model, type: (t.type ? t.type + ', ' : '') + t.nodeCount + ' nodes' })),
+        bounds: layout?.bounds ?? null,
+        ruler: layout?.ruler ?? null,
+      };
+      layoutError = '';
+    } catch (e) {
+      layoutError = 'Could not read the layout: ' + e.message;
+    }
+    try {
+      // The 3D preview's coordinates give the layout's extent, for the calibration hints.
+      const res = await fetch(app.apiBase + '/api/ezp/model-coordinates', { cache: 'no-store' });
+      if (res.ok) {
+        const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+        const walk = (v) => {
+          if (!v || typeof v !== 'object') return;
+          if (typeof v.wX === 'number' && typeof v.wY === 'number') {
+            const p = [v.wX, v.wY, typeof v.wZ === 'number' ? v.wZ : 0];
+            for (let k = 0; k < 3; ++k) { if (p[k] < lo[k]) lo[k] = p[k]; if (p[k] > hi[k]) hi[k] = p[k]; }
+          }
+          for (const x of Object.values(v)) walk(x);
+        };
+        walk(await res.json());
+        if (Number.isFinite(lo[0]) && layout) layout.bounds = { lo, hi };
+      }
+    } catch { /* the hints just stay generic */ }
+    try {
+      // The xLights Ruler view object, when the layout has one, says how long a meter is.
+      const res = await fetch(app.apiBase + '/api/ezp/layout-settings', { cache: 'no-store' });
+      if (res.ok && layout) {
+        const body = await res.json();
+        layout.ruler = body?.ruler && body.ruler.unitsPerMeter > 0 ? body.ruler : null;
+      }
+    } catch { /* no ruler, then */ }
+  }
+
+  const rulerOf = () => layout?.ruler ?? status?.wand?.ruler ?? null;
+
+  /** The same rule as the game: a matrix at least 8x8, or a model with 500+ nodes and a 2D buffer at least 8x8. */
+  function surfaceOf(t) {
+    if (t.width && t.height && t.width >= 8 && t.height >= 8) return { model: t.model, width: t.width, height: t.height, kind: 'grid', nodes: t.nodeCount, type: t.type };
+    const b = t.buffer;
+    if (b && t.nodeCount >= 500 && b.width >= 8 && b.height >= 8) return { model: t.model, width: b.width, height: b.height, kind: 'buffer', nodes: t.nodeCount, type: t.type };
+    return null;
+  }
+
+  function showState() {
+    const box = el('state');
+    const parts = [];
+    if (layoutError) parts.push(layoutError);
+    else if (layout) parts.push(layout.all.length + ' models and ' + layout.groups.length + ' groups in the layout.');
+    if (!status) parts.push('The game is not running right now; settings save either way, and the Apps card starts it.');
+    else {
+      parts.push('Game: ' + (status.phase || 'idle') + (status.message ? ' (' + status.message + ')' : '') + '.');
+      const age = status.pose?.ageMs;
+      if (age === null || age === undefined) parts.push('No wand pose has arrived yet: on the Apps card, expand this instance and give its pose input the feed wand-sim/pose.');
+      else parts.push('Last wand pose ' + (age / 1000).toFixed(1) + ' s ago, beam ' + (status.beam?.on ? 'on' : 'off') + '.');
+    }
+    box.textContent = parts.join(' ');
+    box.className = layoutError ? 'hint bad' : 'hint';
+  }
+
+  /** What the calibration fields mean against this layout, in plain numbers. */
+  function showCalib() {
+    const b = layout?.bounds ?? status?.layoutBounds ?? null;
+    const typed = Number(el('scale').value) || 0;
+    const ruler = rulerOf();
+    const scale = typed > 0 ? typed : ruler ? ruler.unitsPerMeter : 100;
+    el('scale').placeholder = ruler ? 'auto: ' + fmt(ruler.unitsPerMeter, 1) + ' from the ruler' : 'auto: 100';
+    const eye = Number(el('eyeHeight').value) || 0;
+    const parts = [];
+    if (ruler) {
+      parts.push('The layout’s ruler “' + ruler.name + '” is ' + ruler.length + ' ' + ruler.unitName + ' over ' + fmt(ruler.worldLength, 1) + ' units, so a meter is ' + fmt(ruler.unitsPerMeter, 1) + ' units' + (typed > 0 ? '; the number typed above overrides it.' : '; that is used while the field above is blank.'));
+    } else if (!(typed > 0)) {
+      parts.push('The layout has no Ruler view object, so 100 units per meter is assumed; draw one in xLights (View Objects, Ruler) and the player reads it, or type the number above.');
+    }
+    if (b) {
+      const w = b.hi[0] - b.lo[0], h = b.hi[1] - b.lo[1], d = b.hi[2] - b.lo[2];
+      parts.push('The layout spans ' + fmt(w) + ' units wide, ' + fmt(h) + ' tall and ' + fmt(d) + ' deep (x ' + fmt(b.lo[0]) + '..' + fmt(b.hi[0]) + ', y ' + fmt(b.lo[1]) + '..' + fmt(b.hi[1]) + ', z ' + fmt(b.lo[2]) + '..' + fmt(b.hi[2]) + ').');
+      parts.push('At ' + fmt(scale, 1) + ' units per meter that is ' + fmt(w / scale, 1) + ' m wide; a 1 m step moves the holder ' + fmt(scale) + ' units.');
+      const ox = el('ox').value, oy = el('oy').value, oz = el('oz').value;
+      const o = ox !== '' && oy !== '' && oz !== '' ? [Number(ox), Number(oy), Number(oz)] : [(b.lo[0] + b.hi[0]) / 2, b.lo[1], b.hi[2] + d * 0.25];
+      parts.push('The holder starts at (' + fmt(o[0]) + ', ' + fmt(o[1]) + ', ' + fmt(o[2]) + ') with eyes ' + fmt(eye * scale) + ' units up, facing -z.');
+    } else {
+      parts.push('Leave the origin blank to stand in front of the layout\u2019s middle.');
+    }
+    el('calib').textContent = parts.join(' ');
+  }
+
+  function fillModels(container, models, chosen, labelOf) {
+    const have = new Set(chosen);
+    container.innerHTML = models.length ? '' : '<span class="hint">' + (layoutError || (layout ? 'The layout has no models of this kind.' : 'Reading the layout from the player…')) + '</span>';
+    for (const m of [...models].sort(byName('model'))) {
+      const l = document.createElement('label');
+      l.className = 'check';
+      const c = document.createElement('input');
+      c.type = 'checkbox';
+      c.value = m.model;
+      c.checked = have.has(m.model);
+      l.appendChild(c);
+      l.appendChild(document.createTextNode(m.model));
+      const s = document.createElement('small');
+      s.textContent = labelOf(m);
+      l.appendChild(s);
+      container.appendChild(l);
+    }
+  }
+
+  function fillGroups() {
+    const sel = el('beamGroup');
+    const want = settings.beamGroup ?? '';
+    sel.innerHTML = '<option value="">(pick models below instead)</option>';
+    for (const g of [...(layout?.groups ?? status?.groups ?? [])].sort(byName('name'))) {
+      const o = document.createElement('option');
+      o.value = g.name;
+      o.textContent = `${g.name} (${g.models} models${g.subModels ? ', ' + g.subModels + ' submodels' : ''})`;
+      sel.appendChild(o);
+    }
+    if (want && ![...sel.options].some((o) => o.value === want)) {
+      const o = document.createElement('option');
+      o.value = want;
+      o.textContent = `${want} (not in this layout)`;
+      sel.appendChild(o);
+    }
+    sel.value = want;
+  }
+
+  function show() {
+    const s = settings;
+    el('cast').value = s.cast ?? 'halloween';
+    fillGroups();
+    const surfaces = layout?.surfaces ?? status?.surfaces ?? [];
+    fillModels(el('spriteModels'), surfaces, s.spriteModels ?? [], (m) => `${m.width}x${m.height}${m.kind === 'buffer' ? ' buffer, ' + m.nodes + ' nodes' : ''}${m.type ? ' ' + m.type : ''}`);
+    const all = layout?.all ?? surfaces;
+    fillModels(el('beamModels'), all, s.beamModels ?? [], (m) => m.type ?? '');
+    const b = s.beam ?? {};
+    el('halfAngle').value = b.halfAngle ?? 0.12;
+    el('softness').value = b.softness ?? 0.35;
+    el('range').value = b.range ?? 1500;
+    el('color').value = b.color ?? '#fff0c0';
+    el('noise').value = b.noise ?? 0.15;
+    el('blend').value = b.blend ?? 'add';
+    const bg = s.background ?? {};
+    el('bgFoe').value = bg.foe ?? '#40001a';
+    el('bgFriend').value = bg.friend ?? '#003020';
+    el('bgAlpha').value = bg.alpha ?? 0.4;
+    const w = s.wand ?? {};
+    const o = Array.isArray(w.origin) ? w.origin : [null, null, null];
+    el('ox').value = o[0] ?? '';
+    el('oy').value = o[1] ?? '';
+    el('oz').value = o[2] ?? '';
+    el('heading').value = w.heading ?? 0;
+    el('scale').value = w.scale ?? '';
+    el('eyeHeight').value = w.eyeHeight ?? 1.6;
+    el('smoothMs').value = w.smoothMs ?? 0;
+    const r = s.rules ?? {};
+    el('roundSeconds').value = r.roundSeconds ?? 90;
+    el('dwellMs').value = r.dwellMs ?? 350;
+    el('coverage').value = r.coverage ?? 0.4;
+    el('foePoints').value = r.foePoints ?? 10;
+    el('friendPenalty').value = r.friendPenalty ?? 5;
+    el('respawnMs').value = r.respawnMs ?? 1200;
+    el('restMs').value = r.restMs ?? 2500;
+    el('maxActive').value = r.maxActive ?? 0;
+    el('useUdp').checked = s.useUdp !== false;
+    el('autoStart').checked = s.autoStart === true;
+    showCalib();
+  }
+
+  const n = (id) => { const v = Number(el(id).value); return Number.isFinite(v) ? v : undefined; };
+  const checked = (id) => [...el(id).querySelectorAll('input:checked')].map((c) => c.value);
+
+  async function save() {
+    const ox = el('ox').value, oy = el('oy').value, oz = el('oz').value;
+    const origin = ox !== '' && oy !== '' && oz !== '' ? [Number(ox), Number(oy), Number(oz)] : null;
+    const next = {
+      cast: el('cast').value,
+      beamGroup: el('beamGroup').value,
+      beamModels: checked('beamModels'),
+      spriteModels: checked('spriteModels'),
+      beam: { halfAngle: n('halfAngle'), softness: n('softness'), range: n('range'), color: el('color').value, noise: n('noise'), blend: el('blend').value },
+      background: { foe: el('bgFoe').value, friend: el('bgFriend').value, alpha: n('bgAlpha') },
+      wand: { origin, heading: n('heading'), scale: el('scale').value === '' ? null : n('scale'), eyeHeight: n('eyeHeight'), smoothMs: n('smoothMs') },
+      rules: { roundSeconds: n('roundSeconds'), dwellMs: n('dwellMs'), coverage: n('coverage'), foePoints: n('foePoints'), friendPenalty: n('friendPenalty'), respawnMs: n('respawnMs'), restMs: n('restMs'), maxActive: n('maxActive') },
+      useUdp: el('useUdp').checked,
+      autoStart: el('autoStart').checked,
+    };
+    try {
+      await app.put('private', 'settings', next);
+      settings = next;
+      el('msg').textContent = 'Saved. Beam and cast changes apply at the next round; the wand calibration applies at once.';
+      el('msg').className = 'good';
+    } catch (e) {
+      el('msg').textContent = `Could not save: ${e.message}`;
+      el('msg').className = 'bad';
+    }
+  }
+
+  async function init() {
+    app = window.EZApp.connect();
+    await app.ready;
+    try { settings = (await app.get('private', 'settings')) || {}; } catch { settings = {}; }
+    show();
+    showState();
+    await loadLayout();
+    show();
+    showState();
+    let drawn = JSON.stringify([layout?.groups, layout?.surfaces]);
+    let lastStatusAt = 0;
+    app.onStatus((s) => {
+      if (!s) return;
+      status = s;
+      lastStatusAt = Date.now();
+      // Without the player API the lists come from the game; rebuild them only when they change.
+      if (!layout) {
+        const key = JSON.stringify([s.groups, s.surfaces]);
+        if (key !== drawn) { drawn = key; show(); }
+      }
+      showState();
+    });
+    // A status that stops arriving means the game stopped.
+    setInterval(() => { if (status && Date.now() - lastStatusAt > 6000) { status = null; showState(); } }, 2000);
+    setInterval(async () => {
+      await loadLayout();
+      const key = JSON.stringify([layout?.groups, layout?.surfaces]);
+      if (key !== drawn) { drawn = key; show(); }
+      showState();
+    }, 15000);
+    for (const id of ['ox', 'oy', 'oz', 'scale', 'eyeHeight']) el(id).addEventListener('input', showCalib);
+    el('widthM').addEventListener('input', () => {
+      const b = layout?.bounds ?? status?.layoutBounds;
+      const m = Number(el('widthM').value);
+      if (b && m > 0) { el('scale').value = Math.round(((b.hi[0] - b.lo[0]) / m) * 10) / 10; showCalib(); }
+    });
+    el('save').addEventListener('click', save);
+  }
+
+  const sdk = document.createElement('script');
+  sdk.src = '_sdk.js';
+  sdk.onload = init;
+  sdk.onerror = () => { el('msg').textContent = 'Could not load the app SDK.'; el('msg').className = 'bad'; };
+  document.head.appendChild(sdk);
+})();
+</script>
+</body>
+</html>

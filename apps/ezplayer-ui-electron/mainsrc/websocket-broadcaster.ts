@@ -28,6 +28,8 @@ class Conn {
     wantAnotherRound = false; // set when updates occur mid-round
 
     lastPongMs = Date.now();
+    // A socket we dialed (the cloud bridge); its liveness is the dialer's job, not the heartbeat's.
+    outbound = false;
     closed = false;
 
     constructor(ws: WebSocket) {
@@ -102,7 +104,7 @@ export class WebSocketBroadcaster {
      *  the existing fanout pipeline does the rest. Returns the Conn so the
      *  caller can correlate it (e.g. for explicit close on session change). */
     attachClient(ws: WebSocket): void {
-        this.onConnection(ws);
+        this.onConnection(ws).outbound = true;
     }
 
     /** Read a single cached value */
@@ -206,10 +208,11 @@ export class WebSocketBroadcaster {
     }
     */
 
-    private onConnection(ws: WebSocket) {
+    private onConnection(ws: WebSocket): Conn {
         const c = new Conn(ws);
 
         ws.on('message', (raw) => this.onMessage(c, raw));
+        ws.on('pong', () => { c.lastPongMs = Date.now(); });
         ws.on('close', () => this.closeConn(c, 'socket closed'));
         ws.on('error', () => this.closeConn(c, 'socket error'));
 
@@ -218,6 +221,7 @@ export class WebSocketBroadcaster {
         queueMicrotask(() => this.runRounds(c));
 
         this.conns.add(c);
+        return c;
     }
 
     private onMessage(c: Conn, raw: WebSocket.RawData) {
@@ -239,7 +243,7 @@ export class WebSocketBroadcaster {
             if (c.closed) continue;
 
             // kill dead conns
-            if (now - c.lastPongMs > this.HEARTBEAT_TIMEOUT_MS) {
+            if (!c.outbound && now - c.lastPongMs > this.HEARTBEAT_TIMEOUT_MS) {
                 this.kick(c, 'heartbeat timeout');
                 continue;
             }

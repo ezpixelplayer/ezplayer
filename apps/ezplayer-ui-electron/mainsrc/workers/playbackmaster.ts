@@ -80,6 +80,7 @@ import {
     OverlayConflictError,
     type OverlayLeaseInfo,
     overlayHolderLabel,
+    PATTERN_PAYLOAD_MAX,
 } from '@ezplayer/epp';
 
 import {
@@ -101,6 +102,7 @@ import {
     type XlModelChannelInfo,
     migrateToFormat,
 } from 'xllayoutcalcs';
+import { rulerFromLayout } from './layout-ruler.js';
 
 // Unused-attribute warnings are only actionable in the parser library itself.
 const PARSE_OPTS: ModelParseOptions = { warnUnusedAttrs: false };
@@ -2280,6 +2282,9 @@ async function loadXmlCoordinates() {
                 if (parsedSettings.layoutMode3D !== undefined) {
                     layoutSettings.layoutMode3D = parsedSettings.layoutMode3D;
                 }
+                // The ruler lives among the view objects, but it is a fact about the whole layout.
+                const ruler = rulerFromLayout(xrgb);
+                if (ruler) layoutSettings.ruler = ruler;
 
                 if (layoutSettings.backgroundImage) {
                     emitInfo(
@@ -3800,6 +3805,27 @@ function logOverlayLease(verb: 'opened' | 'closed', lease: OverlayLeaseInfo): vo
     }, OVERLAY_BURST_QUIET_MS).unref();
 }
 
+/**
+ * What an xLights group reaches on the display: its pixel models, then its submodel members
+ * ("Model/Submodel") whose whole model is not itself a member, so no node is listed twice.
+ */
+function groupLeaseTargets(
+    ov: {
+        targets(): { model: string }[];
+        catalog: { find(name: string): { model: string; subModel?: string } | undefined };
+    },
+    g: { models: string[]; subModels: string[] },
+): { models: string[]; subModels: string[] } {
+    const known = new Set(ov.targets().map((t) => t.model));
+    const models = g.models.filter((m) => known.has(m));
+    const have = new Set(models);
+    const subModels = g.subModels.filter((s) => {
+        const t = ov.catalog.find(s);
+        return t?.subModel !== undefined && !have.has(t.model);
+    });
+    return { models, subModels };
+}
+
 /** Overlay lease operations from the HTTP API. */
 function overlayCommand(cmd: OverlayCommand): OverlayResult {
     const p = curPipeline;
@@ -3816,18 +3842,27 @@ function overlayCommand(cmd: OverlayCommand): OverlayResult {
                     .map((t) => (!t.subModel && types.has(t.model) ? { ...t, type: types.get(t.model) } : t));
                 const res: OverlayResult = { ok: true, targets, layoutVersion: p.layout.layoutVersion };
                 if (cmd.groups) {
-                    // Models only: a group that reaches no overlay target is left out.
-                    const known = new Set(ov.targets().map((t) => t.model));
+                    // A group that reaches no overlay target is left out.
                     res.groups = groups
-                        .map((g) => ({ name: g.name, models: g.models.filter((m) => known.has(m)) }))
-                        .filter((g) => g.models.length > 0);
+                        .map((g) => ({ name: g.name, ...groupLeaseTargets(ov, g) }))
+                        .filter((g) => g.models.length + g.subModels.length > 0);
                 }
                 return res;
             }
             case 'list':
                 return { ok: true, leases: ov.list() };
             case 'open': {
-                const lease = ov.open(cmd.request, Date.now());
+                const request = { ...cmd.request };
+                if (request.group !== undefined) {
+                    // An xLights group names models and submodels; the lease takes them in group order.
+                    const g = testTweak.showModels().groups.find((x) => x.name === request.group);
+                    if (!g) return { ok: false, error: `no xLights model group named ${String(request.group)}` };
+                    const { models, subModels } = groupLeaseTargets(ov, g);
+                    request.models = [...models, ...subModels];
+                    if (request.models.length === 0)
+                        return { ok: false, error: `group ${g.name} reaches no pixel model` };
+                }
+                const lease = ov.open(request, Date.now());
                 logOverlayLease('opened', lease);
                 return { ok: true, lease, udpPort: p.overlayPort };
             }
@@ -3849,8 +3884,19 @@ function overlayCommand(cmd: OverlayCommand): OverlayResult {
             case 'frame': {
                 const info = ov.get(cmd.id);
                 if (!info || info.token !== cmd.token) return { ok: false, error: 'no such lease' };
-                if (cmd.data.length !== info.frameBytes)
-                    return { ok: false, error: `payload must be ${info.frameBytes} bytes` };
+                // A pattern payload is JSON of any length up to the cap; pixel payloads are exact.
+                if (
+                    info.format === 'pattern'
+                        ? cmd.data.length > PATTERN_PAYLOAD_MAX
+                        : cmd.data.length !== info.frameBytes
+                )
+                    return {
+                        ok: false,
+                        error:
+                            info.format === 'pattern'
+                                ? `uniforms must be at most ${PATTERN_PAYLOAD_MAX} bytes`
+                                : `payload must be ${info.frameBytes} bytes`,
+                    };
                 ov.write(cmd.id, cmd.token, cmd.seq, 0, cmd.data, true, Date.now());
                 return { ok: true };
             }

@@ -106,12 +106,17 @@ export type {
     AppStartupReport,
     AppInstanceStatus,
     AppInputMapping,
+    AppInputShape,
+    AppRecentInput,
     AppsState,
     AppStatusSnapshot,
     AppStatuses,
     AppEvent,
     AppInstallSource,
     AppsCommand,
+    AppUsage,
+    AppTraffic,
+    AppInputSender,
 } from './types/DataTypes';
 
 export {
@@ -284,6 +289,8 @@ export type {
 export { CLOUD_API_ENDPOINTS } from './constants/CloudApiEndpoints';
 
 export { mergePlaylists, mergeSchedule, mergeSequences } from './util/Mergers';
+
+export { inputAccepts, inputShapeOf } from './util/appInputs';
 
 export { isSequencePlayable } from './util/seqFilter';
 

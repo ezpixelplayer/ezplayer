@@ -267,6 +267,11 @@ const appsDeps: AppsApiDeps = {
     setState: (key, value) => wsBroadcaster.set(key, value),
 };
 const appsRuntime = new AppsRuntime(appsDeps);
+// Visitor requests per instance reach the usage ledger in main every few seconds.
+setInterval(() => {
+    const traffic = appsRuntime.takeTraffic();
+    if (traffic) void rpc.call('appsTraffic', traffic).catch(() => {});
+}, 10_000).unref();
 
 /** The port the web server actually bound (after any EADDRINUSE walk-up). Set
  *  once the listener is up; used to dial our own remote-access sockets from the
@@ -2707,7 +2712,10 @@ async function startServer(config: ServerWorkerData) {
 
     router.get('/api/ezp/audio/leases', (ctx) => audioCall(ctx, { op: 'list' }));
     router.post('/api/ezp/audio/leases', async (ctx) => {
-        const request = audioBody(ctx) as AudioLeaseRequest;
+        // As with overlays: an app's token puts its instance on the lease; nobody can claim one in the body.
+        const { owner: _claimed, ...claimed } = audioBody(ctx) as AudioLeaseRequest;
+        const owner = appsRuntime.ownerOf(ctx.get('x-ezp-app-token') || undefined);
+        const request: AudioLeaseRequest = owner ? { ...claimed, owner } : claimed;
         // A lease on a bus nobody has defined registers it, so it shows in settings.
         let newBus: AudioBusConfig | undefined;
         const ready = await audioSettingsTurn(async () => {

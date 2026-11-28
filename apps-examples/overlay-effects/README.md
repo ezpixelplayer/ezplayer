@@ -34,8 +34,9 @@ Open the instance's settings page (the gear on the Apps tile).
   for the current run without changing the saved one (the seed in use is shown under the readouts).
 - **Effects**: a checkbox per effect. Unticked effects are left out of the draw, which changes what
   the other targets get.
-- **Pinned effects**: fix one target's effect. A pin wins over the draw and over the checkboxes.
-  Changing a pin while the loop runs applies at once; Save keeps it.
+- **Pinned effects**: fix a model's effect, on every target it has. A pin wins over the draw and
+  over the checkboxes. Changing a pin while the loop runs applies at once; Save keeps it. A pin saved
+  under a target's own name (`Spinner/Arms`) still applies to just that target.
 
 Save writes the private `settings` document. The app re-reads it every five seconds while idle; a
 running loop keeps its leases until it is restarted (the settings page offers a restart button while
@@ -111,16 +112,21 @@ the rest open, so a slow start on a big layout does not lose them:
   "frameMs": { "avg": 3.1, "max": 12.4 },
   "bytesPerSec": 184320,
   "lateFrames": 0,
-  "targets": [{ "target": "Spinner/Arms", "nodes": 96, "width": 12, "height": 8, "format": "buffer", "effect": "comets", "pinned": false }],
+  "targetCount": 14, "modelCount": 3, "modelsRev": 2,
+  "models": [{ "model": "Spinner", "targets": 8, "nodes": 768, "lease": "8 buffer", "effect": "mixed", "pinned": false }],
   "effectsAvailable": ["comets", "sweep", "rings", "twinkle", "snow", "waves", "rainbow", "ripple", "checker", "stripes", "chase"],
   "message": "Painting 14 targets at 20 fps over HTTP"
 }
 ```
 
-The target rows are the bulk of the status, so they ride along only when the list changed (`targetsRev`
-bumps) and every ten seconds for a page that joined late; a status without `targets` means the list a
-page already has still stands. The player accepts a status of up to 4 MB, so above 20000 targets the
-list is left out altogether (`targetsListed` is false) and `targetCount` and `modelCount` carry the
-numbers; the pin table on the settings page then says so, and pins saved earlier still apply by name.
+The status lists one row per model, not per target: a layout can hold twenty thousand submodels, and
+a row for each is megabytes that no page can draw (one such table brought a 32-core machine to a
+crawl). A row carries the number of targets on the model, their nodes, a lease summary and the effect
+(`mixed` when the targets differ). The rows are the bulk of the status, so they ride along only when
+the list changed (`modelsRev` bumps) and every ten seconds for a page that joined late; a status
+without `models` means the list a page already has still stands, and the pages redraw only on a new
+`modelsRev`. The player accepts a status of up to 4 MB, so above 5000 models the list is left out
+altogether (`modelsListed` is false) and `targetCount` and `modelCount` carry the numbers; the pin
+table on the settings page then says so, and pins saved earlier still apply by name.
 Over UDP a payload handed to the socket counts as the lease's keepalive, so the keepalive call is only
 made for a lease whose sends fail.

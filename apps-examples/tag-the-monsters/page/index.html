@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0b0d12">
+<title>Tag the Monsters</title>
+<style>
+  :root { color-scheme: dark; --bg: #0b0d12; --panel: #161a24; --line: #2a3040; --text: #e8ebf2; --dim: #8b93a7; --accent: #ffb347; --bad: #ff5c5c; --good: #5fe39a; --foe: #ff6a9a; --friend: #6ad0ff; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.3 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+  body { display: flex; flex-direction: column; align-items: center; padding: 12px 16px 24px; gap: 12px; }
+  header { display: flex; width: 100%; max-width: 640px; justify-content: space-between; align-items: baseline; }
+  h1 { margin: 0; font-size: 20px; letter-spacing: 1px; }
+  #phase { font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: var(--dim); }
+  #phase.playing { color: var(--good); }
+  #phase.starting, #phase.stopping { color: var(--accent); }
+  .big { width: 100%; max-width: 640px; background: var(--panel); border-radius: 14px; padding: 18px 20px; text-align: center; }
+  .big small { display: block; color: var(--dim); font-size: 12px; text-transform: uppercase; letter-spacing: 1px; }
+  .big b { display: block; font-size: 72px; line-height: 1; font-variant-numeric: tabular-nums; margin: 6px 0 2px; }
+  .big span { color: var(--dim); font-size: 15px; }
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; width: 100%; max-width: 640px; }
+  .stat { background: var(--panel); border-radius: 10px; padding: 8px 10px; text-align: center; }
+  .stat small { display: block; color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: 1px; }
+  .stat b { font-size: 20px; font-variant-numeric: tabular-nums; }
+  .stat b.on { color: var(--accent); }
+  #message { min-height: 1.3em; color: var(--dim); text-align: center; width: 100%; max-width: 640px; }
+  #message.alert { color: var(--bad); }
+  .pad { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; width: 100%; max-width: 640px; }
+  button { font: inherit; font-weight: 600; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 12px; height: 52px; cursor: pointer; }
+  button:disabled { opacity: 0.35; cursor: default; }
+  #start { background: #3a2a10; border-color: var(--accent); }
+  #stop { background: #3a1a22; border-color: var(--bad); }
+  table { width: 100%; max-width: 640px; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { color: var(--dim); font-weight: 500; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  td.foe { color: var(--foe); }
+  td.friend { color: var(--friend); }
+  .bar { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; min-width: 60px; }
+  .bar i { display: block; height: 100%; background: var(--accent); }
+  .hint { color: var(--dim); font-size: 13px; max-width: 640px; text-align: center; }
+  #result { width: 100%; max-width: 640px; background: #1d2433; border-radius: 12px; padding: 12px 16px; text-align: center; }
+  #result[hidden] { display: none; }
+</style>
+</head>
+<body>
+<header><h1>🔦 Tag the Monsters</h1><div id="phase">idle</div></header>
+<div class="big"><small>Score</small><b id="score">0</b><span id="clock">&nbsp;</span></div>
+<div class="stats">
+  <div class="stat"><small>Tagged</small><b id="tags">0</b></div>
+  <div class="stat"><small>Friends lit</small><b id="misses">0</b></div>
+  <div class="stat"><small>Beam</small><b id="beam">off</b></div>
+</div>
+<div id="result" hidden></div>
+<div id="message"></div>
+<div class="pad">
+  <button id="start">Start round</button>
+  <button id="stop">Stop</button>
+</div>
+<table>
+  <thead><tr><th>Matrix</th><th>Running</th><th>In beam</th></tr></thead>
+  <tbody id="sprites"></tbody>
+</table>
+<div class="hint" id="hint"></div>
+<script>
+(function () {
+  const el = (id) => document.getElementById(id);
+  let app, status = null;
+
+  function render() {
+    const s = status;
+    if (!s) return;
+    el('phase').textContent = s.phase;
+    el('phase').className = s.phase;
+    el('score').textContent = s.score;
+    el('clock').textContent = s.phase === 'playing' ? `${s.timeLeft} s left` : s.phase === 'over' ? 'round over' : `${s.roundSeconds} s rounds, ${s.cast} cast`;
+    el('tags').textContent = s.tags;
+    el('misses').textContent = s.misses;
+    const beam = el('beam');
+    beam.textContent = s.beam.on ? 'ON' : s.pose.ageMs == null ? 'no wand' : s.beam.fresh ? 'off' : 'wand silent';
+    beam.className = s.beam.on ? 'on' : '';
+    el('start').disabled = s.phase === 'playing' || s.phase === 'starting' || s.phase === 'stopping';
+    el('stop').disabled = s.phase !== 'playing';
+    el('message').textContent = s.message || '';
+    el('message').className = s.message ? 'alert' : '';
+    const r = el('result');
+    if (s.phase === 'over' && s.result) {
+      r.hidden = false;
+      r.textContent = `Round over: ${s.result.score} points, ${s.result.tags} monsters tagged, ${s.result.misses} friends lit.`;
+    } else r.hidden = true;
+    const rows = s.sprites.map((p) => `<tr><td>${esc(p.model)} <span style="color:var(--dim)">${p.size}</span></td>` +
+      `<td class="${p.role || ''}">${p.creature ? `${p.creature} (${p.role})` : '—'}</td>` +
+      `<td><div class="bar"><i style="width:${p.lit}%"></i></div></td></tr>`);
+    el('sprites').innerHTML = rows.join('') || '<tr><td colspan="3" style="color:var(--dim)">No sprite matrices until a round starts.</td></tr>';
+    const lease = s.beam.lease;
+    const rt = s.rates || {};
+    const speed = [];
+    if (rt.poseHz) speed.push(`wand ${rt.poseHz}/s${rt.poseLagMs != null ? `, ${rt.poseLagMs} ms behind` : ''}`);
+    if (rt.beamFps != null) speed.push(`beam painted ${rt.beamFps} fps${rt.beamRenderMs != null ? ` at ${rt.beamRenderMs} ms` : ''} on the ${lease && lease.backend === 'gpu' ? 'GPU' : 'CPU'}`);
+    if (rt.spriteFps != null) speed.push(`sprites sent ${rt.spriteFps} fps`);
+    el('hint').textContent = lease
+      ? `Beam over ${lease.nodes} nodes${lease.group ? ` of group "${lease.group}"` : ''}; wand at ${s.wand.origin.join(', ')} via ${s.transport}, ${s.wand.scale} units/m from the ${s.wand.scaleFrom === 'ruler' ? 'layout\u2019s ruler' : s.wand.scaleFrom === 'settings' ? 'settings' : 'default'}, holder ${rt.holderUnits} units tall.${speed.length ? ' ' + speed.join('; ') + '.' : ''}`
+      : s.pose.ageMs == null ? 'Waiting for a wand: on the Apps card, expand this instance and give its pose input the wand\u2019s feed.' : speed.length ? speed.join('; ') + '.' : '';
+  }
+
+  const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+  function send(type) {
+    app.send({ type }).catch((e) => { el('message').textContent = `Could not send: ${e.message}`; el('message').className = 'alert'; });
+  }
+
+  function init() {
+    app = window.EZApp.connect();
+    el('start').addEventListener('click', () => send('start'));
+    el('stop').addEventListener('click', () => send('stop'));
+    app.onStatus((s) => { if (s) { status = s; render(); } });
+  }
+
+  const sdk = document.createElement('script');
+  sdk.src = '_sdk.js';
+  sdk.onload = init;
+  sdk.onerror = () => { el('message').textContent = 'Could not load the app SDK.'; el('message').className = 'alert'; };
+  document.head.appendChild(sdk);
+})();
+</script>
+</body>
+</html>

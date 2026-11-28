@@ -8,12 +8,14 @@ import type {
     AppInstanceRecord,
     AppInstanceStatus,
     AppsCommand,
+    AppTraffic,
     AppsState,
     CloudPollScheduleEntry,
     InstalledApp,
 } from '@ezplayer/ezplayer-core';
 import { findMatchingScheduleEntry } from '@ezplayer/ezplayer-core';
 import { logsDir } from '../applog.js';
+import { playWorkerAudio, playWorkerOverlay } from '../ipcezplayer.js';
 import { broadcastToWebSocket, getServerStatus, setAppsAuth, type AppsAuthEntry } from '../server-worker-manager.js';
 import { examplesDir, installApps, uninstallApp } from './apps-install.js';
 import { APP_NAME_RE, runsHere } from './apps-manifest.js';
@@ -21,8 +23,13 @@ import { checkPython, findPythonCandidates, resetRuntimeCache } from './apps-run
 import { appDataDir, loadAppsFile, saveAppsFile, scanInstalledApps, type AppsFile } from './apps-store.js';
 import { sweepStale, writeRunning, type RunningFile } from './apps-stale.js';
 import { AppProcess } from './apps-supervisor.js';
+import { UsageLedger, usageFilePath, type RunningInstance } from './apps-usage.js';
 
 const SCHEDULE_TICK_MS = 30_000;
+const USAGE_TICK_MS = 5_000;
+const USAGE_SAVE_MS = 60_000;
+/** An instance that posted an input this recently counts as active; the counts arrive every 10 s. */
+const SENDER_ACTIVE_MS = 15_000;
 
 let showFolder: string | undefined;
 let file: AppsFile = { instances: [], defaultSchedule: [], inputMappings: [] };
@@ -32,6 +39,11 @@ let lastError: string | undefined;
 let pythonCandidates: { path: string; version: string }[] | undefined;
 let tick: NodeJS.Timeout | undefined;
 let publishTimer: NodeJS.Timeout | undefined;
+let usage = new UsageLedger(undefined);
+let usageTick: NodeJS.Timeout | undefined;
+let lastUsageSave = 0;
+/** When each instance last posted an input, from the server worker's counts. */
+const lastSentAt = new Map<string, number>();
 
 /** "Front Tree" becomes `front-tree`: the URL-safe instance name for a title people typed. */
 export function slugifyName(title: string): string {
@@ -77,6 +89,7 @@ export function getAppsState(): AppsState {
         pythonPath: file.pythonPath,
         pythonCandidates,
         inputMappings: file.inputMappings,
+        usage: usage.records,
         lastError,
         hasExamples: examplesDir() !== undefined,
     };
@@ -192,6 +205,38 @@ async function reconcile(): Promise<void> {
     publish();
 }
 
+/** Count the moment for every process up now, and as active for those holding a lease or posting inputs. */
+async function sampleUsage(): Promise<void> {
+    const running: RunningInstance[] = [];
+    for (const [name, p] of processes) {
+        const rec = file.instances.find((i) => i.name === name);
+        const startedAt = p.view.report.startedAt;
+        if (rec && p.view.pid && startedAt) running.push({ instance: name, appId: rec.appId, startedAt });
+    }
+    const active = new Set<string>();
+    if (running.length) {
+        // A lease an app opened carries its instance; holding one is what counts as active.
+        const [ov, au] = await Promise.all([playWorkerOverlay({ op: 'list' }), playWorkerAudio({ op: 'list' })]);
+        if (ov.ok && 'leases' in ov) for (const l of ov.leases) if (l.owner) active.add(l.owner.instance);
+        if (au.ok && 'leases' in au) for (const l of au.leases) if (l.owner) active.add(l.owner.instance);
+    }
+    const now = Date.now();
+    // Posting inputs to other apps is work too, even with nothing on the lights.
+    for (const [instance, at] of lastSentAt) if (now - at <= SENDER_ACTIVE_MS) active.add(instance);
+    usage.sample(now, running, active);
+    if (now - lastUsageSave >= USAGE_SAVE_MS) {
+        lastUsageSave = now;
+        await usage.save();
+    }
+}
+
+/** The server worker's count of visitor requests per instance since it last told us. */
+export function appsTraffic(counts: Record<string, AppTraffic>): void {
+    const now = Date.now();
+    for (const [instance, t] of Object.entries(counts)) if (t.sent > 0) lastSentAt.set(instance, now);
+    usage.addTraffic(counts, (instance) => file.instances.find((i) => i.name === instance)?.appId);
+}
+
 /** Called when a show folder is opened; stops whatever the previous show ran. */
 export async function appsLoadShow(folder: string): Promise<void> {
     await appsStopAll();
@@ -199,10 +244,14 @@ export async function appsLoadShow(folder: string): Promise<void> {
     lastError = undefined;
     await sweepStale(folder);
     file = await loadAppsFile(folder);
+    usage = await UsageLedger.load(usageFilePath(folder));
+    lastUsageSave = Date.now();
     installed = await scanInstalledApps(folder);
     await reconcile();
     tick ??= setInterval(() => void reconcile(), SCHEDULE_TICK_MS);
     tick.unref?.();
+    usageTick ??= setInterval(() => void sampleUsage().catch(() => undefined), USAGE_TICK_MS);
+    usageTick.unref?.();
 }
 
 /** The server worker just came up (or back); it needs the state and the secrets again. */
@@ -216,8 +265,15 @@ export async function appsStopAll(): Promise<void> {
         clearInterval(tick);
         tick = undefined;
     }
+    if (usageTick) {
+        clearInterval(usageTick);
+        usageTick = undefined;
+    }
+    // The last stretch counts too, then the ledger goes to disk before the show changes.
+    await sampleUsage().catch(() => undefined);
     await Promise.all([...processes.values()].map((p) => p.stop()));
     processes.clear();
+    await usage.save().catch((err) => console.error('[apps] apps-usage.json not saved:', err));
     publish();
 }
 
@@ -382,6 +438,11 @@ async function run(cmd: AppsCommand): Promise<void> {
                 (m) => APP_NAME_RE.test(m.instance) && typeof m.source === 'string' && typeof m.name === 'string',
             );
             await save();
+            publish();
+            return;
+        case 'resetUsage':
+            usage.reset();
+            await usage.save();
             publish();
             return;
     }

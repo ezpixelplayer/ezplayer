@@ -22,6 +22,7 @@ import type {
     AudioChunk,
     AppPageSource,
     AppsCommand,
+    AppTraffic,
     AppsState,
     AppSettingsCommand,
     CloudAudioMode,
@@ -214,4 +215,6 @@ export interface ServerWorkerRPCAPI {
     appsCommand(cmd: AppsCommand): Promise<AppsState>;
     /** An instance published a status; its startup report notes the first. */
     appsSawStatus(instance: string): void;
+    /** Visitor requests per instance since the last report, for the usage ledger. */
+    appsTraffic(counts: Record<string, AppTraffic>): void;
 }

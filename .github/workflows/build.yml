@@ -71,6 +71,11 @@ jobs:
               env:
                   REQUIRE_ICMP: '1'
 
+            # Builds the GL addon on each platform; the draw test skips where the
+            # runner has no GL context (no GPU and no Mesa).
+            - name: Run xlgl tests
+              run: pnpm --filter @ezplayer/xlgl test
+
             # Includes the real-ffmpeg conversion tests; fails if the ffmpeg-static
             # binary for this platform is missing.
             - name: Run app unit tests

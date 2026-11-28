@@ -224,3 +224,25 @@ export {
 } from './pipeline/Descriptor';
 export type { DescriptorPrefix } from './pipeline/Descriptor';
 export type { FileIdentity } from './formats/FSeqPrefetcher';
+
+export {
+    compilePatternGlsl,
+    compilePatternJs,
+    normalizeUniforms,
+    PATTERN_PRESETS,
+    PatternError,
+    resolvePattern,
+    validatePattern,
+} from './pipeline/Patterns';
+export type {
+    PatternCall,
+    PatternExpr,
+    PatternGlsl,
+    PatternProgram,
+    PatternRenderFn,
+    PatternSpec,
+    PatternUniforms,
+    PatternUniformValue,
+} from './pipeline/Patterns';
+export { jsPatternBackend, PATTERN_PAYLOAD_MAX } from './pipeline/Overlays';
+export type { PatternBackend, PatternLeaseSpec, PatternRenderer } from './pipeline/Overlays';

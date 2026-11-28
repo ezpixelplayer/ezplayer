@@ -33,6 +33,19 @@ Each instance has:
 - a **startup report**: which runtime was used, the port it was given, when it started, when its first
   status arrived, and the last lines it printed.
 - its own **data**, under `<show folder>/apps-data/<name>/`, which a reinstall of the app keeps.
+- a line of **usage**: how long it ran and over how many starts, how long it was active, how many
+  requests visitors made and how many events they sent (see below).
+
+## Usage
+
+The player counts, for every instance, how long its process was up, how long it was **active**
+(holding an overlay or audio lease, so painting pixels or playing sound, or posting inputs to other
+apps), how many requests visitors made for its pages, how many events they sent that were accepted,
+and how many inputs it posted itself. The apps report nothing; every app is measured the same way.
+Each instance shows its own line on the Apps card, and **App activity** at the bottom ranks the
+instances by active time, removed ones included.
+The counts live in `<show folder>/.ezplayer/apps-usage.json` and survive restarts; **Reset** forgets
+them. Time while the computer sleeps is not counted.
 
 ## Installing
 
@@ -74,9 +87,18 @@ address on a press (Falcon and FPP controllers can) post to:
 POST http://<player>:3000/api/ezp/inputs/<source>/<name>
 ```
 
-Under **Show inputs** on the Apps card, add a row for each one: the source and name the board sends,
-and the instance and input it should drive. An app declares its inputs in its manifest. The app sees the
-press as an ordinary event whose source says it came from an input.
+The sender chooses both words: `source` says who it is (a board's name, a helper app's setting) and
+`name` says which button or value. An app declares its inputs in its manifest, and each instance's card
+on the Apps card lists them under **Show inputs** with what drives each one: pick a feed from what the
+player has heard, or type `source/name`. The easiest way is to let the sender post once first. A feed
+is offered only where what it sends fits the input's kind: a bare press or an on/off goes to an
+`event` or `value` input, a number to a `value`, a string to `text`, and a structured value such as
+a wand pose to an `object` input; anything else is not offered. The **Show input events received
+recently** section at the bottom of the card is the view from the other end: everything that has posted
+lately, its last value, who sent it (the instance, when an app posted with its token; otherwise the
+address), and which instance inputs listen to it, with a **Send to** picker for the ones nothing listens
+to. The app sees the press as an ordinary event whose source says it came from
+an input.
 
 ## Writing an app
 
@@ -92,3 +114,10 @@ two instances pointed at the same tree never paint over each other. Hold the lea
 something is on the lights and release it between games, so the show and the other apps get the
 model back. A background effect opens a **layer** instead, which blends over whatever is there and
 blocks nothing.
+
+An effect that covers most of the display does not have to send pixels at all. A **pattern lease**
+names a program (a flashlight beam, a shockwave, fire, snow) that the player evaluates for every
+node from its position and the time, on the GPU when it has one, and the app only updates a few
+uniforms as things move. The `tag-the-monsters` example sweeps a wand's beam over an xLights group
+that way while RGBA sprites run across the matrices, and `wand-sim` stands in for the wand's base
+station by posting poses to the show inputs.

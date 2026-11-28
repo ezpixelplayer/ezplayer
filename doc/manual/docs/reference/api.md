@@ -1218,6 +1218,10 @@ Submodels are overlay targets only. They are not in the frame pool manifest and 
 
 Payloads travel over UDP (fast, lossy, meant for animation) or as a raw `PUT` (simple clients). Either one also renews the lease. A lease with no traffic for `ttlMs` is dropped.
 
+Cells are RGB by default. With `channels: 4` they are RGBA: a cell's alpha scales it before it blends, and under the default `over` blend also fades the frame beneath it by the same amount, so a sprite with a transparent background runs across a matrix that keeps playing its sequence.
+
+A lease can also cover **several targets** at once (`models`, or an xLights `group`), and a lease can carry no pixels at all: a **pattern** lease names a program the player evaluates for every node from its position and the time, on the GPU when the player has one. See [Pattern leases](#pattern-leases) below.
+
 A lease is **exclusive** or a **layer**. An exclusive lease is refused while another exclusive lease holds any of the same nodes, so two games cannot fight over one tree: a lease on a model covers its submodels, and a lease on the whole display covers everything. A layer blends over whatever is there and never blocks anything, which is what a background effect wants. Every lease carries a `name`; an app that sends its `x-ezp-app-token` holds the lease under its instance title, and a refused client is told who has the model.
 
 #### GET /api/ezp/overlays/targets
@@ -1235,7 +1239,7 @@ A layout can hold thousands of submodels, so more is sent only when asked for:
 | `model=NAME`       | Only that model, or only that `Model/Submodel`                                        |
 | `detail=submodels` | A row per submodel, and the shape of every row (below)                                |
 | `detail=nodes`     | The same plus per-node coordinates; needs `model=NAME`                                |
-| `groups=1`         | `groups`: the show's xLights model groups as `{ name, models }`, flattened to the models listed here; a group that reaches none is left out |
+| `groups=1`         | `groups`: the show's xLights model groups as `{ name, models, subModels }`, flattened to the models listed here and to submodel members (as `Model/Submodel`) whose model is not itself a member; a group that reaches none is left out |
 
 ```json
 {
@@ -1273,12 +1277,16 @@ Open a lease. Body (`mode` and `name` are required; a grid also needs a size whe
 | `name`    | Who is painting, shown in the lease list and in "in use" errors  |
 | `model`   | Model name or `Model/Submodel`; the whole display when omitted   |
 | `subModel` | Submodel of `model`, as an alternative to naming it in `model`  |
-| `format`  | `grid` (default for grid models), `nodes`, or `buffer` (default for submodels) |
+| `models`  | Several targets at once, as a list of names; the payload lists their nodes in this order (`nodes` and `pattern` formats) |
+| `group`   | An xLights model group; the player resolves it to `models` (its models that can take an overlay, then its submodel members whose model is not already listed, in group order) |
+| `format`  | `grid` (default for grid models), `nodes`, `buffer` (default for submodels), or `pattern` (default when `pattern` is given) |
+| `channels` | Bytes per cell: `3` (RGB, default) or `4` (RGBA, straight alpha) |
+| `pattern` | `format: "pattern"`: `{ preset, uniforms }` or `{ program, uniforms }`, see below |
 | `width`   | Picture width; defaults to the target's grid or buffer           |
 | `height`  | Picture height                                                   |
 | `overlap` | `buffer` only: which cell colors a node that sits in several. `last` (default) takes the cell listed latest, as xLights does, so later passes of a strand lie on top; `first` takes the earliest; `max` takes the brightest of them, channel by channel |
-| `blend`   | `replace` (default), `max`, `underlay`, `add`, `subtract`, `multiply`, `screen`, `alpha`, `min` |
-| `opacity` | 0..1, default 1                                                  |
+| `blend`   | `replace` (default for RGB), `over` (default for RGBA and patterns: alpha fades the frame beneath), `max`, `underlay`, `add`, `subtract`, `multiply`, `screen`, `alpha` (same as `over`), `min` |
+| `opacity` | 0..1, default 1; multiplies every cell's alpha                   |
 | `ttlMs`   | Expiry after the last payload, default 30000                     |
 
 An app process sends its `x-ezp-app-token` header too; the lease then carries `owner` (`instance` and `title`) and the title is what other clients are told.
@@ -1297,7 +1305,7 @@ Response:
 }
 ```
 
-`frameBytes` is the exact payload size the lease expects (`width * height * 3`, or `nodeCount * 3`). The `token` must accompany every payload and every later call. A lease on a submodel also reports `subModel`, and its `nodeStart` is -1 when the submodel's nodes are not next to each other in the frame.
+`frameBytes` is the exact payload size the lease expects (`width * height * channels`, or `nodeCount * channels`; 0 for a pattern lease, whose payload is JSON). The `token` must accompany every payload and every later call. A lease on a submodel also reports `subModel`, and its `nodeStart` is -1 when the submodel's nodes are not next to each other in the frame. A multi-target lease reports `models` (and `group` when it was opened by group); a pattern lease reports `pattern` with the preset, the evaluator in use (`gpu` or `js`) and the current uniform values, plus `renders` (output frames it has painted, so two reads a second apart give the player's frame rate) and `renderMs` (how long one paint takes, smoothed). Every lease carries `channels` and `openedAt`; `frames` counts the payloads a client has sent.
 
 When an exclusive lease is refused the status is `409` and the body names the holder, so a game can tell its players who has the lights and try again when that lease closes or expires:
 
@@ -1310,9 +1318,44 @@ A bad request (a missing `mode` or `name`, an unknown model) is `400`.
 
 With `format: "nodes"` a model takes its nodes in frame order and a submodel takes them in the order its lines list them, each node once. With `format: "grid"` a target that has no dense grid is treated as one strip in that same order.
 
+#### Pattern leases
+
+A pattern lease sends no pixels. It names a program, and the player computes every node's color itself, from the node's position, the time since the lease opened, and a block of **uniforms** the client may update at any rate it likes with a payload of a few dozen bytes. On a player with a GPU the program runs there, one point per node, in well under a millisecond for a whole yard; without one it runs in JavaScript. A pattern is RGBA and blends `over` by default; `add` suits a light beam.
+
+```json
+{ "mode": "layer", "name": "wand", "group": "Beam Coverage", "blend": "add",
+  "pattern": { "preset": "beam",
+               "uniforms": { "origin": [120, 60, 900], "dir": [0, 0, -1], "halfAngle": 0.15, "range": 1200, "color": "#fff0c0" } } }
+```
+
+Presets and their uniforms (a color is `"#rrggbb"` or `[r, g, b]` in 0..1; positions are in the layout's world units):
+
+| Preset      | Uniforms                                                                 | Paints                                                     |
+| ----------- | ------------------------------------------------------------------------ | ---------------------------------------------------------- |
+| `beam`      | `origin`, `dir`, `halfAngle` (radians), `softness` (0..1 of the rim), `range`, `color`, `noise` (0..1 cloudiness) | A flashlight cone, fading with distance |
+| `shockwave` | `center`, `radius`, `thickness`, `color`                                 | A ring of light; animate `radius`                          |
+| `wipe`      | `dir`, `offset`, `width`, `color`                                        | A band across the plane `dot(pos, dir) = offset`           |
+| `fire`      | `base` (y), `height`, `speed`, `scale`, `intensity`                      | Flames rising from `base`                                  |
+| `snow`      | `cell`, `speed`, `size`, `density`, `color`                              | Flakes drifting down, one per cell of space                |
+| `meteors`   | `cell`, `speed`, `length`, `height`, `density`, `color`                  | Streaks falling through columns `cell` apart               |
+| `solid`     | `color`, `opacity`                                                       | One color everywhere                                       |
+| `rainbow`   | `dir`, `period`, `speed`                                                 | Hue by position along `dir`, drifting                      |
+
+A client can also send its own `program`: an expression graph in JSON with a `color` (vec3 or vec4) and an optional `alpha` (float), over the inputs `pos` (world x, y, z), `local` (model-local x, y, z), `t` (seconds), `i` (node index in the lease), `n` (nodes in the lease), `u` (`i / (n - 1)`) and the program's declared `uniforms` as `$name`; any of them takes a swizzle such as `pos.xz`. Numbers and `[x, y, z]` are constants, `"#rrggbb"` is a color, and `{ "op": ..., "args": [...] }` applies an operation: `add sub mul div min max mod pow step atan2`, `neg abs floor ceil fract sqrt exp log sin cos tan asin acos atan sign saturate`, `clamp mix smoothstep`, `vec2 vec3 vec4 swizzle dot length distance normalize cross angle`, `hash noise fbm hsv`, and `ramp` (a float through color `stops`). Every uniform a program reads must be declared in `uniforms` with a default, which fixes its type. A program that does not compile is refused with the reason.
+
+```json
+{ "mode": "layer", "name": "plane", "models": ["Arch 1", "Arch 2"],
+  "pattern": { "program": {
+    "uniforms": { "y": 50, "tint": "#40c0ff" },
+    "color": "$tint",
+    "alpha": { "op": "sub", "args": [1, { "op": "saturate", "args": [{ "op": "div", "args": [{ "op": "abs", "args": [{ "op": "sub", "args": ["pos.y", "$y"] }] }, 20] }] }] } } } }
+```
+
+The payload of a pattern lease is a JSON object of uniform values, over UDP or `PUT` like any other payload, at most 16384 bytes. Names the program does not declare are ignored; a value of the wrong shape refuses the whole update. The open response and `GET /api/ezp/overlays` show the values in force.
+
 #### PUT /api/ezp/overlays/:id/frame?token=T[&seq=N]
 
-Whole payload as `application/octet-stream`, exactly `frameBytes` long. Commits immediately.
+Whole payload as `application/octet-stream`, exactly `frameBytes` long (a pattern lease: the JSON uniform object). Commits immediately.
 
 #### POST /api/ezp/overlays/:id/keepalive?token=T
 
@@ -1811,6 +1854,8 @@ Open a lease.
 
 The `token` must accompany every later call, as `?token=` or an `x-ezp-token` header. A wrong id or token answers 404.
 
+An app process sends its `x-ezp-app-token` header too; the lease then carries `owner` (`instance` and `title`), and the time it is held counts as the instance's active time.
+
 #### GET /api/ezp/audio/leases
 
 Open leases, each with its clips, the number of sounds playing (`voices`), stream audio queued ahead (`bufferedMs`) and stream audio that arrived too late to play (`lateMs`, a running total).
@@ -2073,6 +2118,12 @@ Returns layout-level settings parsed from the xLights `<settings>` element in `x
 
 All fields are optional — the object may be empty if no settings are present in the XML. The `backgroundImage` path is show-folder-relative and can be loaded via `/api/ezp/show-file?path=PIFar.jpg`.
 
+When the layout has an active xLights **Ruler** view object, `ruler` says what a world unit measures:
+`{ name, units, unitName, length, from, to, worldLength, unitsPerMeter }`. `units` is xLights' code
+(0 m, 1 cm, 2 mm, 3 yd, 4 ft, 5 in), `length` the ruler's real length in that unit, `from`/`to` its
+ends in world coordinates, and `unitsPerMeter` the number an app placing real-world things in the
+layout needs. Apps should prefer it over asking the owner for a scale.
+
 ---
 
 ### GET /api/ezp/moving-heads
@@ -2291,7 +2342,7 @@ A package is a directory with `ezapp.json` at its root:
 | `start`     | Arguments after the runtime. For `binary`, the first is the executable, relative to the package.                                         |
 | `page`      | The visitors' page: a directory inside the package served as static files, or `{"proxy": true}` to forward to the app's own HTTP server. |
 | `config`    | The owner's settings page, same forms. Served even while the instance is stopped.                                                        |
-| `inputs`    | Show inputs the app accepts: `kind` is `event` (a press), `value` (a level or open/closed) or `text`.                                     |
+| `inputs`    | Show inputs the app accepts: `kind` is `event` (a press), `value` (a level or open/closed), `text` or `object` (a structured value, such as a pose). The Apps card offers a sender to an input only when what it sends fits the kind. |
 | `platforms` | `process.platform` values the app runs on; absent means all.                                                                             |
 | `events`    | The event rate the app needs: `perMinute` across every phone (default 600, at most 6000) and `perClientPerSecond` for one phone (default 10, at most 60). A game that sends every tap asks here; a game that adds taps up on the phone and sends one number a second does not need to. The owner can still change an instance's per-minute rate on the Apps card. |
 
@@ -2383,11 +2434,18 @@ event with source `input:<source>`. Answers `{ "ok": true, "delivered": n }`.
 #### Owner
 
 `GET /api/ezp/apps` returns the apps state: installed packages, instances with state, startup report
-and log tail, default schedule, Python path, input mappings. `POST /api/ezp/apps/command` takes one
+and log tail, default schedule, Python path, input mappings, `recentInputs` and `usage`.
+`recentInputs` lists the last fifty senders heard at `/api/ezp/inputs`, newest first, each with its
+post count, last time, how many instances the last post reached, a short rendering of the last value
+its `shape` (`none`, `boolean`, `number`, `text` or `object`) and its `sender` (`instance` and `title`
+when an app posted with its token, otherwise the `address`). `usage` is by instance name: `runs`,
+`runMs`, `activeMs` while it held an overlay or audio lease or was posting inputs, `requests` from
+visitors and the `events` among them, `sent` inputs it posted, `firstRunAt`, `lastRunAt`,
+`lastActiveAt`; counted by the player, kept in `.ezplayer/apps-usage.json`. `POST /api/ezp/apps/command` takes one
 of: `rescan`, `install` (`source`: `{kind:"folder",path}`, `{kind:"url",url}` or `{kind:"contrib"}`),
 `uninstall`, `createInstance`, `removeInstance`, `setInstance` (patch `enabled`, `schedule`, `title`,
 `eventsPerMinute`), `start`, `stop`, `restart`, `setDefaultSchedule`, `setPythonPath`,
-`setInputMappings`. The same state is in the WebSocket snapshot under `apps`, and the latest status of
+`setInputMappings`, `resetUsage`. The same state is in the WebSocket snapshot under `apps`, and the latest status of
 every instance under `appStatuses`.
 
 ---

@@ -1,0 +1,18 @@
+{
+    "id": "tag-the-monsters",
+    "name": "Tag the Monsters",
+    "version": "1",
+    "description": "A wand's flashlight beam sweeps the whole display through a GPU pattern lease; tag the monsters that run across your matrices and spare the friends",
+    "icon": "🔦",
+    "runtime": "node",
+    "start": ["tag-the-monsters.mjs"],
+    "page": "page/",
+    "config": "config/",
+    "inputs": [
+        { "name": "start", "kind": "event" },
+        { "name": "stop", "kind": "event" },
+        { "name": "pose", "kind": "object" }
+    ],
+    "platforms": ["win32", "darwin", "linux"],
+    "events": { "perMinute": 3000, "perClientPerSecond": 30 }
+}

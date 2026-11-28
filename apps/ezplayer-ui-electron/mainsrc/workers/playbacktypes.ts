@@ -53,6 +53,24 @@ export interface LayoutSettings {
     layoutMode3D?: boolean;
     layoutGroups?: LayoutGroupInfo[];
     viewpoints?: ViewpointsResult;
+    /** The xLights Ruler view object, when the layout has one: what a world unit measures. */
+    ruler?: LayoutRuler;
+}
+
+/** A ruler drawn in the layout: a known real length between two world points. */
+export interface LayoutRuler {
+    name: string;
+    /** xLights unit code: 0 m, 1 cm, 2 mm, 3 yd, 4 ft, 5 in. */
+    units: number;
+    unitName: string;
+    /** The ruler's real length, in its unit. */
+    length: number;
+    from: [number, number, number];
+    to: [number, number, number];
+    /** The same length in world units. */
+    worldLength: number;
+    /** What everyone wants from it. */
+    unitsPerMeter: number;
 }
 
 // View objects (meshes like house models, images) from XML
