@@ -201,11 +201,11 @@ async function main() {
         if (method === 'GET') {
             const q = `?value=${encodeURIComponent(String(value))}`;
             url += q;
-            init = { method: 'GET' };
+            init = { method: 'GET', headers: authHeaders };
             shown = `GET ${path}${q}`;
         } else {
             const body = JSON.stringify({ value });
-            init = { method: 'POST', headers: { 'content-type': 'application/json' }, body };
+            init = { method: 'POST', headers: jsonHeaders, body };
             shown = `POST ${path} ${body}`;
         }
         const entry = { at: Date.now(), name, kind, method, call: shown, value, status: 0, delivered: null };

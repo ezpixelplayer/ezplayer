@@ -28,6 +28,8 @@ import { UsageLedger, usageFilePath, type RunningInstance } from './apps-usage.j
 const SCHEDULE_TICK_MS = 30_000;
 const USAGE_TICK_MS = 5_000;
 const USAGE_SAVE_MS = 60_000;
+/** An instance that posted an input this recently counts as active; the counts arrive every 10 s. */
+const SENDER_ACTIVE_MS = 15_000;
 
 let showFolder: string | undefined;
 let file: AppsFile = { instances: [], defaultSchedule: [], inputMappings: [] };
@@ -40,6 +42,8 @@ let publishTimer: NodeJS.Timeout | undefined;
 let usage = new UsageLedger(undefined);
 let usageTick: NodeJS.Timeout | undefined;
 let lastUsageSave = 0;
+/** When each instance last posted an input, from the server worker's counts. */
+const lastSentAt = new Map<string, number>();
 
 /** "Front Tree" becomes `front-tree`: the URL-safe instance name for a title people typed. */
 export function slugifyName(title: string): string {
@@ -201,7 +205,7 @@ async function reconcile(): Promise<void> {
     publish();
 }
 
-/** Count the moment for every process up now, and as active for those holding a lease. */
+/** Count the moment for every process up now, and as active for those holding a lease or posting inputs. */
 async function sampleUsage(): Promise<void> {
     const running: RunningInstance[] = [];
     for (const [name, p] of processes) {
@@ -217,6 +221,8 @@ async function sampleUsage(): Promise<void> {
         if (au.ok && 'leases' in au) for (const l of au.leases) if (l.owner) active.add(l.owner.instance);
     }
     const now = Date.now();
+    // Posting inputs to other apps is work too, even with nothing on the lights.
+    for (const [instance, at] of lastSentAt) if (now - at <= SENDER_ACTIVE_MS) active.add(instance);
     usage.sample(now, running, active);
     if (now - lastUsageSave >= USAGE_SAVE_MS) {
         lastUsageSave = now;
@@ -226,6 +232,8 @@ async function sampleUsage(): Promise<void> {
 
 /** The server worker's count of visitor requests per instance since it last told us. */
 export function appsTraffic(counts: Record<string, AppTraffic>): void {
+    const now = Date.now();
+    for (const [instance, t] of Object.entries(counts)) if (t.sent > 0) lastSentAt.set(instance, now);
     usage.addTraffic(counts, (instance) => file.instances.find((i) => i.name === instance)?.appId);
 }
 

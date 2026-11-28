@@ -45,6 +45,7 @@ import UpdateIcon from '@mui/icons-material/Update';
 import type {
     AppInputDecl,
     AppInputMapping,
+    AppInputSender,
     AppRecentInput,
     AppInstallSource,
     AppInstanceStatus,
@@ -172,7 +173,7 @@ export const AppsSettings: React.FC = () => {
             <Divider />
             <AddAppsSection state={state} busy={busy} command={command} />
             <Divider />
-            <InputsSection state={state} busy={busy} command={command} />
+            <InputsSection state={state} busy={busy} playerUrl={url ?? ''} command={command} />
             <Divider />
             <RuntimeSection state={state} busy={busy} command={command} />
             <Divider />
@@ -233,39 +234,42 @@ const InstancesSection: React.FC<{
 
             <Dialog open={creating} onClose={() => setCreating(false)} fullWidth maxWidth="xs">
                 <DialogTitle>Add an instance</DialogTitle>
-                <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
-                    <FormControl fullWidth size="small">
-                        <InputLabel id="apps-new-app">App</InputLabel>
-                        <Select
-                            labelId="apps-new-app"
-                            label="App"
-                            value={newApp}
-                            onChange={(e) => setNewApp(e.target.value)}
-                        >
-                            {usable.map((a) => (
-                                <MenuItem key={a.id} value={a.id}>
-                                    {a.manifest!.icon ? `${a.manifest!.icon} ` : ''}
-                                    {a.manifest!.name} ({a.manifest!.version})
-                                </MenuItem>
-                            ))}
-                        </Select>
-                    </FormControl>
-                    <TextField
-                        size="small"
-                        label="Name"
-                        value={newTitle}
-                        onChange={(e) => setNewTitle(e.target.value)}
-                        placeholder="Front Tree"
-                        helperText={
-                            slug
-                                ? taken
-                                    ? `There is already an instance at /apps/${slug}/`
-                                    : `Visitors see this name. Its page will be /apps/${slug}/`
-                                : 'Visitors see this name; the page address is made from it.'
-                        }
-                        error={taken}
-                        autoFocus
-                    />
+                <DialogContent>
+                    {/* The title's rule zeroes the content's top padding, so the padding sits on an inner box or the labels clip. */}
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
+                        <FormControl fullWidth size="small">
+                            <InputLabel id="apps-new-app">App</InputLabel>
+                            <Select
+                                labelId="apps-new-app"
+                                label="App"
+                                value={newApp}
+                                onChange={(e) => setNewApp(e.target.value)}
+                            >
+                                {usable.map((a) => (
+                                    <MenuItem key={a.id} value={a.id}>
+                                        {a.manifest!.icon ? `${a.manifest!.icon} ` : ''}
+                                        {a.manifest!.name} ({a.manifest!.version})
+                                    </MenuItem>
+                                ))}
+                            </Select>
+                        </FormControl>
+                        <TextField
+                            size="small"
+                            label="Name"
+                            value={newTitle}
+                            onChange={(e) => setNewTitle(e.target.value)}
+                            placeholder="Front Tree"
+                            helperText={
+                                slug
+                                    ? taken
+                                        ? `There is already an instance at /apps/${slug}/`
+                                        : `Visitors see this name. Its page will be /apps/${slug}/`
+                                    : 'Visitors see this name; the page address is made from it.'
+                            }
+                            error={taken}
+                            autoFocus
+                        />
+                    </Box>
                 </DialogContent>
                 <DialogActions>
                     <Button onClick={() => setCreating(false)}>Cancel</Button>
@@ -402,7 +406,7 @@ const InstanceRow: React.FC<{
                         label="Description shown to visitors"
                         defaultValue={inst.description ?? ''}
                         placeholder={manifest?.description}
-                        helperText="Say where to go to play, like “Tetris on the big tree by the nutcracker”. Blank uses the app's own words."
+                        helperText="Say where to go to play, like “Tetris on the big tree by the nutcracker”. If left blank, the app's default will be used."
                         inputProps={{ maxLength: 300 }}
                         onBlur={(e) => {
                             if ((e.target.value || '') !== (inst.description ?? '')) {
@@ -422,11 +426,7 @@ const InstanceRow: React.FC<{
                         label="Events per minute accepted"
                         defaultValue={inst.eventsPerMinute ?? manifest?.events?.perMinute ?? 600}
                         inputProps={{ min: 1, max: 6000 }}
-                        helperText={`Taps from every phone together, ${
-                            manifest?.events?.perMinute
-                                ? `${manifest.events.perMinute} asked for by the app`
-                                : '600 unless the app asks for more'
-                        }. Each phone on its own is held to ${manifest?.events?.perClientPerSecond ?? 10} a second.`}
+                        helperText="Event rate limiting may help protect your app from overload. When setting the event limit, consider actions taken by all users simultaneously, not just one."
                         onBlur={(e) => {
                             const n = Number(e.target.value);
                             if (n !== (inst.eventsPerMinute ?? manifest?.events?.perMinute ?? 600)) {
@@ -440,6 +440,7 @@ const InstanceRow: React.FC<{
                             inst={inst}
                             inputs={manifest.inputs}
                             state={state}
+                            playerUrl={playerUrl}
                             busy={busy}
                             command={command}
                         />
@@ -842,30 +843,27 @@ const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString
 
 /** One line of what the player counted for an instance; nothing until it has run or been visited. */
 const UsageLine: React.FC<{ usage: AppUsage | undefined }> = ({ usage }) => {
-    if (!usage || (usage.runs === 0 && usage.requests === 0)) return null;
+    if (!usage || (usage.runs === 0 && usage.requests === 0 && usage.sent === 0)) return null;
     const share = usage.runMs > 0 ? Math.round((100 * usage.activeMs) / usage.runMs) : 0;
     return (
         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
             Ran {fmtDuration(usage.runMs)} over {plural(usage.runs, 'start')} · active {fmtDuration(usage.activeMs)} (
-            {share}%) · {plural(usage.requests, 'visitor request')}, {plural(usage.events, 'event')}
+            {share}%) · {plural(usage.requests, 'visitor request')}, {plural(usage.events, 'event')} received
+            {usage.sent > 0 ? `, ${plural(usage.sent, 'input')} sent` : ''}
             {usage.lastActiveAt ? ` · last active ${fmtAgo(usage.lastActiveAt)}` : ''}
         </Typography>
     );
 };
 
-interface AppTotals {
-    appId: string;
+interface UsageRow extends AppUsage {
+    instance: string;
+    /** The instance's title, or its name once it is removed. */
     name: string;
-    installed: boolean;
-    instances: number;
-    runs: number;
-    runMs: number;
-    activeMs: number;
-    requests: number;
-    events: number;
+    app: string;
+    removed: boolean;
 }
 
-/** Every app's totals over its instances, past ones included, most active first. */
+/** Every instance's counts, removed ones included, most active first. */
 const UsageSection: React.FC<{
     state: AppsState;
     appsById: Map<string, InstalledApp>;
@@ -874,40 +872,27 @@ const UsageSection: React.FC<{
 }> = ({ state, appsById, busy, command }) => {
     const [confirm, setConfirm] = useState(false);
     const rows = useMemo(() => {
-        const byApp = new Map<string, AppTotals>();
-        for (const u of Object.values(state.usage ?? {})) {
-            let t = byApp.get(u.appId);
-            if (!t) {
-                const m = appsById.get(u.appId)?.manifest;
-                t = {
-                    appId: u.appId,
-                    name: m ? `${m.icon ? `${m.icon} ` : ''}${m.name}` : u.appId,
-                    installed: !!m,
-                    instances: 0,
-                    runs: 0,
-                    runMs: 0,
-                    activeMs: 0,
-                    requests: 0,
-                    events: 0,
-                };
-                byApp.set(u.appId, t);
-            }
-            t.instances++;
-            t.runs += u.runs;
-            t.runMs += u.runMs;
-            t.activeMs += u.activeMs;
-            t.requests += u.requests;
-            t.events += u.events;
+        const out: UsageRow[] = [];
+        for (const [instance, u] of Object.entries(state.usage ?? {})) {
+            const inst = state.instances.find((i) => i.name === instance);
+            const m = appsById.get(u.appId)?.manifest;
+            out.push({
+                ...u,
+                instance,
+                name: inst?.title ?? instance,
+                app: m ? `${m.icon ? `${m.icon} ` : ''}${m.name}` : u.appId,
+                removed: !inst,
+            });
         }
-        return [...byApp.values()].sort(
-            (a, b) => b.activeMs - a.activeMs || b.requests - a.requests || b.runMs - a.runMs,
+        return out.sort(
+            (a, b) => b.activeMs - a.activeMs || b.requests + b.sent - (a.requests + a.sent) || b.runMs - a.runMs,
         );
-    }, [state.usage, appsById]);
+    }, [state.usage, state.instances, appsById]);
 
     return (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <Typography variant="h6">Most used apps</Typography>
+                <Typography variant="h6">App activity</Typography>
                 {rows.length > 0 &&
                     (confirm ? (
                         <Box sx={{ display: 'flex', gap: 1 }}>
@@ -933,11 +918,6 @@ const UsageSection: React.FC<{
                         </Button>
                     ))}
             </Box>
-            <Typography color="text.secondary" variant="body2">
-                Counted by the player, so every app is measured the same way: how long its process was up, how long it
-                was active (holding a lease, so painting pixels or playing sound), how many times visitors asked for its
-                pages, and how many events they sent it. Instances you removed still count toward their app.
-            </Typography>
             {rows.length === 0 ? (
                 <Typography color="text.secondary" variant="body2">
                     Nothing has run yet.
@@ -946,27 +926,31 @@ const UsageSection: React.FC<{
                 <Table size="small">
                     <TableHead>
                         <TableRow>
-                            <TableCell>App</TableCell>
+                            <TableCell>Instance</TableCell>
                             <TableCell align="right">Active</TableCell>
                             <TableCell align="right">Ran</TableCell>
                             <TableCell align="right">Starts</TableCell>
                             <TableCell align="right">Visitor requests</TableCell>
-                            <TableCell align="right">Events</TableCell>
+                            <TableCell align="right">Events received</TableCell>
+                            <TableCell align="right">Inputs sent</TableCell>
                         </TableRow>
                     </TableHead>
                     <TableBody>
                         {rows.map((r) => (
-                            <TableRow key={r.appId}>
+                            <TableRow key={r.instance}>
                                 <TableCell>
                                     {r.name}
-                                    {!r.installed ? ' (not installed)' : ''}
-                                    {r.instances > 1 ? ` · ${r.instances} instances` : ''}
+                                    {r.removed ? ' (removed)' : ''}{' '}
+                                    <Typography component="span" variant="caption" color="text.secondary">
+                                        {r.app}
+                                    </Typography>
                                 </TableCell>
                                 <TableCell align="right">{fmtDuration(r.activeMs)}</TableCell>
                                 <TableCell align="right">{fmtDuration(r.runMs)}</TableCell>
                                 <TableCell align="right">{r.runs.toLocaleString()}</TableCell>
                                 <TableCell align="right">{r.requests.toLocaleString()}</TableCell>
                                 <TableCell align="right">{r.events.toLocaleString()}</TableCell>
+                                <TableCell align="right">{r.sent.toLocaleString()}</TableCell>
                             </TableRow>
                         ))}
                     </TableBody>
@@ -990,6 +974,8 @@ function ago(ms: number): string {
 
 const FEED_RE = /^[a-z0-9][a-z0-9-]{0,39}\/[a-z0-9][a-z0-9-]{0,39}$/;
 const feedKey = (m: { source: string; name: string }) => `${m.source}/${m.name}`;
+/** Where senders post, spelled out with this player's address. */
+const inputsUrl = (playerUrl: string) => `${playerUrl}/api/ezp/inputs/<source>/<name>`;
 
 /** Pick lists read best in name order, "Arch 2" before "Arch 10". */
 const byName = (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
@@ -1010,23 +996,9 @@ const KIND_WORDS: Record<AppInputDecl['kind'], string> = {
     object: 'an object',
 };
 
-/** A heard feed as the pickers show it: offered when what it sends fits the input. */
+/** A heard feed that sends what the input takes, as the picker offers it. */
 interface FeedOption {
     key: string;
-    fits: boolean;
-    /** Why not, when it does not fit. */
-    why?: string;
-}
-
-function feedOption(r: AppRecentInput, kind: AppInputDecl['kind']): FeedOption {
-    const fits = inputAccepts(kind, r.shape, r.lastValue);
-    return {
-        key: feedKey(r),
-        fits,
-        why: fits
-            ? undefined
-            : `sends ${SHAPE_WORDS[r.shape] ?? r.shape}, this input takes ${KIND_WORDS[kind] ?? kind}`,
-    };
 }
 
 /** On an instance card: what drives each input the app declares, with a picker for one more feed. */
@@ -1034,9 +1006,10 @@ const InstanceInputs: React.FC<{
     inst: AppInstanceStatus;
     inputs: AppInputDecl[];
     state: AppsState;
+    playerUrl: string;
     busy: string | null;
     command: Command;
-}> = ({ inst, inputs, state, busy, command }) => {
+}> = ({ inst, inputs, state, playerUrl, busy, command }) => {
     const mappings = state.inputMappings;
     const heard = state.recentInputs ?? [];
     const save = (next: AppInputMapping[]) => void command({ op: 'setInputMappings', mappings: next });
@@ -1044,13 +1017,16 @@ const InstanceInputs: React.FC<{
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
             <Typography variant="subtitle2">Show inputs</Typography>
             <Typography color="text.secondary" variant="body2">
-                What drives each input this app declares. A board or helper app posts to{' '}
-                <code>/api/ezp/inputs/&lt;source&gt;/&lt;name&gt;</code> on this player; pick it from what the player
-                has heard, or type <code>source/name</code> and press Enter.
+                Some apps allow inputs from other apps or external sources (sent to <code>{inputsUrl(playerUrl)}</code>
+                ). This app accepts the following events:
             </Typography>
             {inputs.map((inp) => {
                 const feeds = mappings.filter((m) => m.instance === inst.name && m.input === inp.name);
                 const have = new Set(feeds.map(feedKey));
+                // Only feeds that send what this input takes are offered.
+                const options = heard
+                    .filter((r) => !have.has(feedKey(r)) && inputAccepts(inp.kind, r.shape, r.lastValue))
+                    .map((r) => ({ key: feedKey(r) }));
                 return (
                     <Box key={inp.name} sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
                         <Typography variant="body2" sx={{ minWidth: 110 }}>
@@ -1059,6 +1035,14 @@ const InstanceInputs: React.FC<{
                                 {inp.kind}
                             </Typography>
                         </Typography>
+                        <FeedPicker
+                            options={options}
+                            disabled={busy !== null}
+                            onPick={(k) => {
+                                const [source, name] = k.split('/');
+                                save([...mappings, { source, name, instance: inst.name, input: inp.name }]);
+                            }}
+                        />
                         {feeds.map((m) => (
                             <Chip
                                 key={feedKey(m)}
@@ -1069,14 +1053,6 @@ const InstanceInputs: React.FC<{
                             />
                         ))}
                         {feeds.length === 0 && <Chip size="small" variant="outlined" label="not wired" />}
-                        <FeedPicker
-                            options={heard.filter((r) => !have.has(feedKey(r))).map((r) => feedOption(r, inp.kind))}
-                            disabled={busy !== null}
-                            onPick={(k) => {
-                                const [source, name] = k.split('/');
-                                save([...mappings, { source, name, instance: inst.name, input: inp.name }]);
-                            }}
-                        />
                     </Box>
                 );
             })}
@@ -1084,11 +1060,7 @@ const InstanceInputs: React.FC<{
     );
 };
 
-/**
- * A `source/name` box with what the player has heard as suggestions; Enter or a pick adds the feed.
- * A heard feed that sends the wrong kind of value is listed but cannot be picked, and typing its
- * name says why.
- */
+/** A `source/name` box with the fitting feeds the player has heard as suggestions; Enter or a pick adds the feed. */
 const FeedPicker: React.FC<{ options: FeedOption[]; disabled: boolean; onPick: (key: string) => void }> = ({
     options,
     disabled,
@@ -1096,11 +1068,9 @@ const FeedPicker: React.FC<{ options: FeedOption[]; disabled: boolean; onPick: (
 }) => {
     const [text, setText] = useState('');
     const valid = FEED_RE.test(text);
-    const unfit = options.find((o) => o.key === text && !o.fits);
-    // Grouped lists want their groups contiguous: the ones that fit first, each group by name.
-    const sorted = [...options].sort((a, b) => Number(b.fits) - Number(a.fits) || byName(a.key, b.key));
+    const sorted = [...options].sort((a, b) => byName(a.key, b.key));
     const pick = (key: string) => {
-        if (!FEED_RE.test(key) || options.some((o) => o.key === key && !o.fits)) return;
+        if (!FEED_RE.test(key)) return;
         onPick(key);
         setText('');
     };
@@ -1111,8 +1081,6 @@ const FeedPicker: React.FC<{ options: FeedOption[]; disabled: boolean; onPick: (
             disabled={disabled}
             options={sorted}
             getOptionLabel={(o) => (typeof o === 'string' ? o : o.key)}
-            getOptionDisabled={(o) => !o.fits}
-            groupBy={(o) => (o.fits ? 'Heard' : 'Heard, but sends the wrong kind of value')}
             value={null}
             inputValue={text}
             onInputChange={(_, v) => setText((v ?? '').toLowerCase())}
@@ -1122,39 +1090,30 @@ const FeedPicker: React.FC<{ options: FeedOption[]; disabled: boolean; onPick: (
             }}
             renderOption={(props, o) => (
                 <li {...props} key={o.key}>
-                    <Box sx={{ display: 'flex', flexDirection: 'column' }}>
-                        <code>{o.key}</code>
-                        {o.why && (
-                            <Typography variant="caption" color="text.secondary">
-                                {o.why}
-                            </Typography>
-                        )}
-                    </Box>
+                    <code>{o.key}</code>
                 </li>
             )}
             sx={{ width: 230 }}
             renderInput={(params) => (
-                <TextField
-                    {...params}
-                    label="Add a feed"
-                    placeholder="source/name"
-                    error={text !== '' && (!valid || unfit !== undefined)}
-                    helperText={unfit?.why}
-                />
+                <TextField {...params} label="Add a feed" placeholder="source/name" error={text !== '' && !valid} />
             )}
         />
     );
 };
 
 /** The other end: what has posted to this player lately and where each one goes. */
-const InputsSection: React.FC<{ state: AppsState; busy: string | null; command: Command }> = ({
+const InputsSection: React.FC<{ state: AppsState; busy: string | null; playerUrl: string; command: Command }> = ({
     state,
     busy,
+    playerUrl,
     command,
 }) => {
     const recent = state.recentInputs ?? [];
     const appsById = useMemo(() => new Map(state.apps.map((a) => [a.id, a])), [state.apps]);
     const titleOf = (instance: string) => state.instances.find((i) => i.name === instance)?.title ?? instance;
+    // An app that posted with its token is named; anything else is known by its address.
+    const sentBy = (s: AppInputSender | undefined) =>
+        s?.instance ? `, sent by ${titleOf(s.instance)}` : s?.address ? `, from ${s.address}` : '';
     // Every input every instance declares, so a heard post can be wired from here too.
     const targets = state.instances
         .flatMap((i) =>
@@ -1170,18 +1129,16 @@ const InputsSection: React.FC<{ state: AppsState; busy: string | null; command: 
 
     return (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-            <Typography variant="h6">Show inputs heard</Typography>
+            <Typography variant="h6">Show input events received recently</Typography>
             <Typography color="text.secondary" variant="body2">
-                Everything that has posted to <code>/api/ezp/inputs/&lt;source&gt;/&lt;name&gt;</code> on this player
-                lately, and where it goes. The sender picks both words: <em>source</em> is who it is (a board, the Wand
-                Simulator's source setting) and <em>name</em> is which button or value. Each instance's card says what
-                drives its inputs; this is the view from the other end, for finding a sender and seeing whether anything
-                listens to it.
+                Recent input events received (posted to <code>{inputsUrl(playerUrl)}</code>) are listed below. This
+                should help in diagnosing whether EZPlayer is receiving your input events. Once input events have been
+                received, you can map them to one or more target apps. (You can also configure inputs on each app's
+                configuration card.)
             </Typography>
             {recent.length === 0 && (
                 <Typography color="text.secondary" variant="body2">
-                    Nothing has posted since the player started. A board pressed once, or the Wand Simulator moved once,
-                    shows up here.
+                    No input events have been received since the player started.
                 </Typography>
             )}
             {recent.slice(0, 12).map((r) => {
@@ -1193,6 +1150,7 @@ const InputsSection: React.FC<{ state: AppsState; busy: string | null; command: 
                     <Box key={key} sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
                         <Typography variant="body2">
                             <code>{key}</code> · {r.count} {r.count === 1 ? 'post' : 'posts'}, last {ago(r.lastAt)}
+                            {sentBy(r.sender)}
                             {r.lastValue !== undefined && (
                                 <Typography component="span" variant="caption" color="text.secondary">
                                     {' '}

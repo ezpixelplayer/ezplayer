@@ -53,7 +53,7 @@ let lastPublish = 0;
 function normalize(raw) {
     const r = raw && typeof raw === 'object' ? raw : {};
     const source = typeof r.source === 'string' && SOURCE_RE.test(r.source) ? r.source : 'wand-sim';
-    const rateHz = typeof r.rateHz === 'number' && Number.isFinite(r.rateHz) ? Math.min(30, Math.max(1, r.rateHz)) : 20;
+    const rateHz = typeof r.rateHz === 'number' && Number.isFinite(r.rateHz) ? Math.min(100, Math.max(1, r.rateHz)) : 20;
     return { source, rateHz };
 }
 
@@ -73,7 +73,7 @@ async function refreshSettings() {
     }
 }
 
-/** The controller-style call: no app token, no instance, just what a base station would send. */
+/** The controller-style call: the body is what a base station would send; the token only tells the Apps card who sent it. */
 async function sendPose() {
     // t is this clock's time of sending, so a game on the same machine can say how far behind it runs.
     const value = { x: round(pose.x, 3), z: round(pose.z, 3), yaw: round(pose.yaw, 1), pitch: round(pose.pitch, 1), on: pose.on, t: Date.now() };
@@ -82,7 +82,7 @@ async function sendPose() {
     lastSentAt = Date.now();
     counts.sent++;
     try {
-        const res = await fetch(`${base}/api/ezp/inputs/${settings.source}/pose`, { method: 'POST', headers: { 'content-type': 'application/json' }, body });
+        const res = await fetch(`${base}/api/ezp/inputs/${settings.source}/pose`, { method: 'POST', headers: { ...authHeaders, 'content-type': 'application/json' }, body });
         const answer = await res.json().catch(() => null);
         if (res.ok && answer?.ok) {
             lastDelivered = typeof answer.delivered === 'number' ? answer.delivered : 0;

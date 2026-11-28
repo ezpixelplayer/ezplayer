@@ -116,6 +116,7 @@ export type {
     AppsCommand,
     AppUsage,
     AppTraffic,
+    AppInputSender,
 } from './types/DataTypes';
 
 export {

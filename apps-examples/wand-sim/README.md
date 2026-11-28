@@ -20,7 +20,7 @@ POST http://<player>:3000/api/ezp/inputs/<source>/pose
 
 In the player, open the Apps tile and point it at this folder. Open its page and move the wand once,
 then, on the Apps card, expand the Tag the Monsters instance and under **Show inputs** give its `pose`
-input the feed `wand-sim/pose`; or find `wand-sim/pose` under **Show inputs heard** and send it to that
+input the feed `wand-sim/pose`; or find `wand-sim/pose` under **Show input events received recently** and send it to that
 input. The page's header says whether the last pose reached an app.
 
 ## Use
@@ -36,6 +36,6 @@ last pose once a second while the page holds still, so the game keeps seeing a l
 
 ## Configure
 
-The settings page sets the **source** name (default `wand-sim`) and the **rate** (1 to 30 poses a
+The settings page sets the **source** name (default `wand-sim`) and the **rate** (1 to 100 poses a
 second). When the real base station arrives, give it the same source name and the mapping row needs
 no change.

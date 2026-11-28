@@ -26,7 +26,7 @@
 <section>
   <label>Source name<input id="source" pattern="[A-Za-z0-9][A-Za-z0-9._~-]{0,63}"></label>
   <div class="hint">Poses post to <code>/api/ezp/inputs/&lt;source&gt;/pose</code>. On the Apps card, under Show inputs, map this source and the name <code>pose</code> to the Tag the Monsters instance's <code>pose</code> input. Give the real base station the same source name later and the mapping row stays.</div>
-  <label>Poses per second (1 to 30)<input id="rateHz" type="number" min="1" max="30" step="1"></label>
+  <label>Poses per second (1 to 100)<input id="rateHz" type="number" min="1" max="100" step="1"></label>
 </section>
 <button id="save">Save</button>
 <div id="msg"></div>
@@ -45,7 +45,7 @@
       el('msg').className = 'bad';
       return;
     }
-    const next = { source, rateHz: Math.min(30, Math.max(1, Number(el('rateHz').value) || 20)) };
+    const next = { source, rateHz: Math.min(100, Math.max(1, Number(el('rateHz').value) || 20)) };
     try {
       await app.put('private', 'settings', next);
       settings = next;

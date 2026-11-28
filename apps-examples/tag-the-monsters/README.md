@@ -46,8 +46,8 @@ Open the instance's settings page (the gear on the Apps tile).
 - **Season**: the Halloween cast (ghosts, witches and goblins to tag; pumpkins, kids and candy to
   spare) or the Christmas cast (Krampus, gremlins and a yeti; Santa, reindeer, elves and gingerbread).
 - **Beam coverage**: an xLights model group the beam may land on, or a list of models. A group of
-  everything except the sprite matrices works well. Half angle, rim softness, range, color,
-  cloudiness and blend shape the beam; `add` is light, `max` never darkens, `over` paints.
+  everything except the sprite matrices works well. Half angle, rim softness, range (also the farthest
+  a tag can land), color, cloudiness and blend shape the beam; `add` is light, `max` never darkens, `over` paints.
 - **Sprite surfaces**: where the cast runs; each gets an exclusive lease during a round. Matrices
   at least 8x8 are offered, and so is any other model with at least 500 nodes and a 2D render buffer
   at least 8x8 (an HD spinner, a big tree): the sprite is drawn onto that buffer and lands on the

@@ -12,6 +12,7 @@ import getRawBody from 'raw-body';
 import { WebSocketServer, type WebSocket } from 'ws';
 import type {
     AppInputMapping,
+    AppInputSender,
     AppRecentInput,
     AppsCommand,
     AppsState,
@@ -87,9 +88,13 @@ export class AppsRuntime {
         this.deps.setState('appStatuses', { ...this.statuses });
     }
 
-    /** A visitor asked for one of the instance's pages, or sent it an event that was accepted. */
-    countRequest(instance: string, kind: 'page' | 'event'): void {
-        const t = (this.traffic[instance] ??= { requests: 0, events: 0 });
+    /** A visitor asked for one of the instance's pages or sent it an accepted event, or the instance posted an input. */
+    countRequest(instance: string, kind: 'page' | 'event' | 'sent'): void {
+        const t = (this.traffic[instance] ??= { requests: 0, events: 0, sent: 0 });
+        if (kind === 'sent') {
+            t.sent++;
+            return;
+        }
         t.requests++;
         if (kind === 'event') t.events++;
     }
@@ -155,7 +160,7 @@ export class AppsRuntime {
     }
 
     /** Deliver a show input to every instance mapped to it. Returns how many got it. */
-    input(source: string, name: string, value: unknown): number {
+    input(source: string, name: string, value: unknown, sender?: AppInputSender): number {
         const mappings = (this.deps.getState('apps')?.inputMappings ?? []) as AppInputMapping[];
         let n = 0;
         for (const m of mappings) {
@@ -171,7 +176,8 @@ export class AppsRuntime {
             });
             if (!('refused' in r)) n++;
         }
-        this.remember(source, name, value, n);
+        this.remember(source, name, value, n, sender);
+        if (sender?.instance) this.countRequest(sender.instance, 'sent');
         return n;
     }
 
@@ -181,7 +187,13 @@ export class AppsRuntime {
         return [...this.recent.values()].reverse();
     }
 
-    private remember(source: string, name: string, value: unknown, delivered: number): void {
+    private remember(
+        source: string,
+        name: string,
+        value: unknown,
+        delivered: number,
+        sender: AppInputSender | undefined,
+    ): void {
         const key = `${source}/${name}`;
         const was = this.recent.get(key);
         let lastValue: string | undefined;
@@ -204,6 +216,7 @@ export class AppsRuntime {
             delivered,
             lastValue,
             shape: inputShapeOf(value),
+            sender,
         });
         while (this.recent.size > RECENT_INPUTS_MAX) this.recent.delete(this.recent.keys().next().value!);
     }
@@ -226,6 +239,11 @@ function tokenOf(ctx: Koa.Context): string | undefined {
     if (h) return h;
     const q = ctx.query.token;
     return typeof q === 'string' ? q : undefined;
+}
+
+/** Who posted an input: the instance behind an app token, otherwise the address it came from. */
+function senderOf(ctx: Koa.Context, apps: AppsRuntime): AppInputSender {
+    return apps.ownerOf(tokenOf(ctx)) ?? { address: ctx.ip };
 }
 
 /** Routes the app process and its pages call. Web app only; never on the kiosk. */
@@ -435,7 +453,7 @@ export function registerAppsRoutes(router: Router, apps: AppsRuntime, deps: Apps
         }
         const body = ctx.request.body as { value?: unknown } | undefined;
         const value = body?.value ?? (typeof ctx.query.value === 'string' ? ctx.query.value : undefined);
-        ctx.body = { ok: true, delivered: apps.input(source, name, value) };
+        ctx.body = { ok: true, delivered: apps.input(source, name, value, senderOf(ctx, apps)) };
     });
     // Boards that can only GET.
     router.get('/api/ezp/inputs/:source/:name', (ctx) => {
@@ -445,7 +463,7 @@ export function registerAppsRoutes(router: Router, apps: AppsRuntime, deps: Apps
             ctx.body = { error: 'source and name: lower-case letters, digits and dashes' };
             return;
         }
-        ctx.body = { ok: true, delivered: apps.input(source, name, ctx.query.value) };
+        ctx.body = { ok: true, delivered: apps.input(source, name, ctx.query.value, senderOf(ctx, apps)) };
     });
 }
 

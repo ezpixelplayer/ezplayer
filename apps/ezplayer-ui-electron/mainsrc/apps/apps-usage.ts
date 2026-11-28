@@ -40,7 +40,8 @@ export class UsageLedger {
         try {
             const raw = JSON.parse(await fsp.readFile(file, 'utf8')) as { instances?: Record<string, unknown> };
             for (const [name, rec] of Object.entries(raw.instances ?? {})) {
-                if (validRecord(rec)) ledger.records[name] = { ...rec };
+                // Files from before inputs were counted have no `sent`.
+                if (validRecord(rec)) ledger.records[name] = { ...rec, sent: rec.sent ?? 0 };
             }
         } catch (err) {
             if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
@@ -59,7 +60,7 @@ export class UsageLedger {
     private record(instance: string, appId: string): AppUsage {
         let u = this.records[instance];
         if (!u) {
-            u = { appId, runs: 0, runMs: 0, activeMs: 0, requests: 0, events: 0 };
+            u = { appId, runs: 0, runMs: 0, activeMs: 0, requests: 0, events: 0, sent: 0 };
             this.records[instance] = u;
         }
         this.dirty = true;
@@ -94,6 +95,7 @@ export class UsageLedger {
             const u = this.record(instance, appId);
             u.requests += t.requests;
             u.events += t.events;
+            u.sent += t.sent;
         }
     }
 

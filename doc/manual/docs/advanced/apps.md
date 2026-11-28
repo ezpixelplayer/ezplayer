@@ -39,10 +39,11 @@ Each instance has:
 ## Usage
 
 The player counts, for every instance, how long its process was up, how long it was **active**
-(holding an overlay or audio lease, so painting pixels or playing sound), how many requests visitors
-made for its pages and how many events they sent that were accepted. The apps report nothing; every
-app is measured the same way. Each instance shows its own line on the Apps card, and **Most used
-apps** at the bottom ranks the apps by active time, adding up their instances, removed ones included.
+(holding an overlay or audio lease, so painting pixels or playing sound, or posting inputs to other
+apps), how many requests visitors made for its pages, how many events they sent that were accepted,
+and how many inputs it posted itself. The apps report nothing; every app is measured the same way.
+Each instance shows its own line on the Apps card, and **App activity** at the bottom ranks the
+instances by active time, removed ones included.
 The counts live in `<show folder>/.ezplayer/apps-usage.json` and survive restarts; **Reset** forgets
 them. Time while the computer sleeps is not counted.
 
@@ -92,10 +93,11 @@ on the Apps card lists them under **Show inputs** with what drives each one: pic
 player has heard, or type `source/name`. The easiest way is to let the sender post once first. A feed
 is offered only where what it sends fits the input's kind: a bare press or an on/off goes to an
 `event` or `value` input, a number to a `value`, a string to `text`, and a structured value such as
-a wand pose to an `object` input; anything else is listed but cannot be picked, with the reason. The
-**Show inputs heard** section at the bottom of the card is the view from the other end: everything that
-has posted lately, its last value, and which instance inputs listen to it, with a **Send to** picker for
-the ones nothing listens to. The app sees the press as an ordinary event whose source says it came from
+a wand pose to an `object` input; anything else is not offered. The **Show input events received
+recently** section at the bottom of the card is the view from the other end: everything that has posted
+lately, its last value, who sent it (the instance, when an app posted with its token; otherwise the
+address), and which instance inputs listen to it, with a **Send to** picker for the ones nothing listens
+to. The app sees the press as an ordinary event whose source says it came from
 an input.
 
 ## Writing an app

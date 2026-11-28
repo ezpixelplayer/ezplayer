@@ -1417,6 +1417,8 @@ export interface AppInstanceStatus extends AppInstanceRecord {
  * in `.ezplayer/apps-usage.json`, and kept for instances that were removed, so an app's total stands.
  */
 export interface AppUsage {
+    /** Inputs it posted to other apps. */
+    sent: number;
     appId: string;
     /** Times the process was started, by the player or again after it died. */
     runs: number;
@@ -1435,6 +1437,8 @@ export interface AppUsage {
 
 /** Visitor requests the web server counted for an instance since it last reported them. */
 export interface AppTraffic {
+    /** Inputs the instance itself posted to `/api/ezp/inputs`. */
+    sent: number;
     requests: number;
     events: number;
 }
@@ -1451,6 +1455,13 @@ export interface AppInputMapping {
 /** What a show input post carried: nothing, an on/off, a number, a string or a structured value. */
 export type AppInputShape = 'none' | 'boolean' | 'number' | 'text' | 'object';
 
+/** Who posted an input: a running instance, known by its app token, or else the address it came from. */
+export interface AppInputSender {
+    instance?: string;
+    title?: string;
+    address?: string;
+}
+
 export interface AppRecentInput {
     source: string;
     name: string;
@@ -1463,6 +1474,7 @@ export interface AppRecentInput {
     shape: AppInputShape;
     /** A short rendering of the last value, for the owner to recognize the sender. */
     lastValue?: string;
+    sender?: AppInputSender;
 }
 
 export interface AppsState {

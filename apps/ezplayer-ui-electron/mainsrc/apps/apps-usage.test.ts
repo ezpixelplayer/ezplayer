@@ -40,10 +40,14 @@ describe('usage ledger', () => {
         const l = new UsageLedger(undefined);
         l.sample(0, [game], new Set());
         l.addTraffic(
-            { game: { requests: 5, events: 2 }, board: { requests: 3, events: 0 }, gone: { requests: 1, events: 0 } },
+            {
+                game: { requests: 5, events: 2, sent: 3 },
+                board: { requests: 3, events: 0, sent: 0 },
+                gone: { requests: 1, events: 0, sent: 0 },
+            },
             (i) => (i === 'board' ? 'message-board' : undefined),
         );
-        expect(l.records.game).toMatchObject({ requests: 5, events: 2 });
+        expect(l.records.game).toMatchObject({ requests: 5, events: 2, sent: 3 });
         expect(l.records.board).toMatchObject({ appId: 'message-board', requests: 3, runs: 0 });
         expect(l.records.gone).toBeUndefined();
     });

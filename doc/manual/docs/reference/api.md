@@ -2437,10 +2437,11 @@ event with source `input:<source>`. Answers `{ "ok": true, "delivered": n }`.
 and log tail, default schedule, Python path, input mappings, `recentInputs` and `usage`.
 `recentInputs` lists the last fifty senders heard at `/api/ezp/inputs`, newest first, each with its
 post count, last time, how many instances the last post reached, a short rendering of the last value
-and its `shape` (`none`, `boolean`, `number`, `text` or `object`). `usage` is by instance name:
-`runs`, `runMs`, `activeMs` while it held an overlay or audio lease, `requests` from visitors and
-the `events` among them, `firstRunAt`, `lastRunAt`, `lastActiveAt`; counted by the player, kept in
-`.ezplayer/apps-usage.json`. `POST /api/ezp/apps/command` takes one
+its `shape` (`none`, `boolean`, `number`, `text` or `object`) and its `sender` (`instance` and `title`
+when an app posted with its token, otherwise the `address`). `usage` is by instance name: `runs`,
+`runMs`, `activeMs` while it held an overlay or audio lease or was posting inputs, `requests` from
+visitors and the `events` among them, `sent` inputs it posted, `firstRunAt`, `lastRunAt`,
+`lastActiveAt`; counted by the player, kept in `.ezplayer/apps-usage.json`. `POST /api/ezp/apps/command` takes one
 of: `rescan`, `install` (`source`: `{kind:"folder",path}`, `{kind:"url",url}` or `{kind:"contrib"}`),
 `uninstall`, `createInstance`, `removeInstance`, `setInstance` (patch `enabled`, `schedule`, `title`,
 `eventsPerMinute`), `start`, `stop`, `restart`, `setDefaultSchedule`, `setPythonPath`,
