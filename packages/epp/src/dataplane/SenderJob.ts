@@ -25,6 +25,8 @@ export interface Sender {
     disconnect?(): Promise<void>;
     /** What this sender has sent so far, for reporting. */
     stats?(): SenderStats | undefined;
+    /** The IP the socket sends to once connected: a hostname, resolved. */
+    destination?(): string | undefined;
 }
 
 // What's in here?  The description of the job, containing:

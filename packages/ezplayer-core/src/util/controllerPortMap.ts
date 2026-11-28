@@ -309,6 +309,8 @@ export function portIntentFromModelIntents(intents: ControllerModelIntent[]): Co
             ...(first.colorOrder !== undefined ? { colorOrder: first.colorOrder } : {}),
             ...(first.brightness !== undefined ? { brightness: first.brightness } : {}),
             ...(first.gamma !== undefined ? { gamma: first.gamma } : {}),
+            ...(first.nullPixels !== undefined ? { nullPixels: first.nullPixels } : {}),
+            ...(first.endNullPixels !== undefined ? { endNullPixels: first.endNullPixels } : {}),
         });
     }
     return out.sort((a, b) => a.port - b.port);

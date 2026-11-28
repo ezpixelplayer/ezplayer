@@ -404,9 +404,15 @@ const PORT_DRIFT_LABEL: Record<PortDriftKind, string> = {
     settings: 'settings differ',
 };
 
-/** A port's settings on one line, e.g. "GRB, 40%, gamma 2.2". */
+/** A port's settings on one line, e.g. "GRB, 40%, gamma 2.2, 3 null px"; no nulls goes unsaid. */
 const settingsLabel = (v: PortSettingsValues): string =>
-    [v.colorOrder, v.brightness !== undefined && `${v.brightness}%`, v.gamma !== undefined && `gamma ${v.gamma}`]
+    [
+        v.colorOrder,
+        v.brightness !== undefined && `${v.brightness}%`,
+        v.gamma !== undefined && `gamma ${v.gamma}`,
+        !!v.nullPixels && `${v.nullPixels} null px`,
+        !!v.endNullPixels && `${v.endNullPixels} end null px`,
+    ]
         .filter(Boolean)
         .join(', ');
 
@@ -588,7 +594,11 @@ const SerialReconcileTable: React.FC<{ rows: SerialPortReconcile[] }> = ({ rows 
                             <>
                                 <PortModelList names={r.intendedModels} flagTitle="" />
                                 <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                                    {[r.intendedProtocol?.toUpperCase(), `${r.intendedChannels ?? 0} ch`]
+                                    {[
+                                        r.intendedProtocol?.toUpperCase(),
+                                        `${r.intendedChannels ?? 0} ch`,
+                                        r.drift === 'start' ? `@ ch ${r.intendedStart}` : undefined,
+                                    ]
                                         .filter(Boolean)
                                         .join(' · ')}
                                 </Typography>
@@ -598,11 +608,15 @@ const SerialReconcileTable: React.FC<{ rows: SerialPortReconcile[] }> = ({ rows 
                         )}
                     </TableCell>
                     <TableCell>
-                        {r.actualChannels !== undefined ? (
+                        {r.actualChannels !== undefined || r.actualProtocol !== undefined ? (
                             <>
                                 {r.actualModel && <Typography variant="body2">{r.actualModel}</Typography>}
                                 <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                                    {[r.actualProtocol?.toUpperCase(), `${r.actualChannels} ch`]
+                                    {[
+                                        r.actualProtocol?.toUpperCase(),
+                                        r.actualChannels !== undefined ? `${r.actualChannels} ch` : undefined,
+                                        r.drift === 'start' ? `@ ch ${r.actualStart}` : undefined,
+                                    ]
                                         .filter(Boolean)
                                         .join(' · ')}
                                 </Typography>
@@ -615,7 +629,7 @@ const SerialReconcileTable: React.FC<{ rows: SerialPortReconcile[] }> = ({ rows 
                         <Chip
                             size="small"
                             {...severityChip(r.severity, r.drift)}
-                            title={severityTitle(r.severity, r.drift)}
+                            title={r.settingsNotes?.join('; ') ?? severityTitle(r.severity, r.drift)}
                             label={r.drift === 'count' ? 'channels short' : PORT_DRIFT_LABEL[r.drift]}
                         />
                     </TableCell>
@@ -852,10 +866,11 @@ const GridRow: React.FC<{
         check: portSettingsCheck(managePortSettings, row),
         defaultBrightness: row.defaultBrightness,
         defaultGamma: row.defaultGamma,
+        gammaSteps: d?.gammaSteps,
     });
     // Serial (DMX/…) ports are compared in channels, apart from the pixels.
     const serialRead = d?.serialPorts !== undefined;
-    const serialRows = reconcileSerialPorts(row.serialIntent, d?.serialPorts);
+    const serialRows = reconcileSerialPorts(row.serialIntent, d?.serialPorts, row.startChannel);
     // Matrices are compared by matrix number (panels) or model name (HDMI).
     const panelsRead = d?.panelMatrices !== undefined;
     const panelRows = reconcilePanelMatrices(row.panelMatrixIntent, d?.panelMatrices);
