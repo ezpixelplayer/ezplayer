@@ -727,6 +727,38 @@ describe('reconcileSerialPorts', () => {
         const rows = reconcileSerialPorts(undefined, [{ port: 2, channels: 16, protocol: 'dmx' }]);
         expect(rows.map((r) => [r.port, r.drift])).toEqual([[2, 'unexpected']]);
     });
+
+    // A Falcon describes its serial output by protocol and start channel only.
+    const addressed = [{ ...intent[0], startChannel: 1001 }];
+
+    it('takes a port the device describes without a channel count as present', () => {
+        const rows = reconcileSerialPorts(addressed, [{ port: 1, protocol: 'dmx', startChannel: 1001 }]);
+        expect(rows[0]).toMatchObject({ drift: 'ok', actualProtocol: 'dmx', actualChannels: undefined });
+        expect(reconcileSerialPorts(undefined, [{ port: 1, protocol: 'dmx', startChannel: 1 }])[0].drift).toBe(
+            'unexpected',
+        );
+    });
+
+    it('flags a start channel that puts the frame somewhere else', () => {
+        const rows = reconcileSerialPorts(addressed, [{ port: 1, protocol: 'dmx', startChannel: 1010, channels: 512 }]);
+        expect(rows[0]).toMatchObject({ drift: 'start', intendedStart: 1001, actualStart: 1010 });
+    });
+
+    it('accepts a start counted from the controller, or given by universe', () => {
+        expect(reconcileSerialPorts(addressed, [{ port: 1, protocol: 'dmx', startChannel: 1 }], 1001)[0].drift).toBe(
+            'ok',
+        );
+        expect(
+            reconcileSerialPorts(addressed, [{ port: 1, protocol: 'dmx', startChannel: 1, universe: 3 }])[0].drift,
+        ).toBe('ok');
+    });
+
+    it('flags another protocol family, but not another spelling of the same one', () => {
+        const rows = reconcileSerialPorts(addressed, [{ port: 1, protocol: 'renard', startChannel: 1001 }]);
+        expect(rows[0]).toMatchObject({ drift: 'settings', settingsNotes: ['protocol renard (xLights dmx)'] });
+        const open = [{ ...addressed[0], protocol: 'DMX-Open' }];
+        expect(reconcileSerialPorts(open, [{ port: 1, protocol: 'dmx', startChannel: 1001 }])[0].drift).toBe('ok');
+    });
 });
 
 describe('reconcilePorts start channels', () => {
@@ -840,8 +872,16 @@ describe('who owns the port settings a model leaves unset', () => {
             colorOrder: 'RGB',
             brightness: 60,
             gamma: 2.2,
+            nullPixels: 0,
+            endNullPixels: 0,
         });
-        expect(intendedPortSettings({}, { check: 'all' })).toEqual({ colorOrder: 'RGB', brightness: 100, gamma: 1.0 });
+        expect(intendedPortSettings({}, { check: 'all' })).toEqual({
+            colorOrder: 'RGB',
+            brightness: 100,
+            gamma: 1.0,
+            nullPixels: 0,
+            endNullPixels: 0,
+        });
         expect(intendedPortSettings({ brightness: 60 }, { check: 'specified', defaultGamma: 2.2 })).toEqual({
             brightness: 60,
         });
@@ -901,6 +941,41 @@ describe('reconcilePorts settings drift', () => {
     it('says nothing about a setting the device does not report', () => {
         const mute = [{ port: 1, model: 'Tree', pixels: 50 }];
         expect(reconcilePorts(intent, mute, undefined, undefined, { check: 'all' })[0].drift).toBe('ok');
+    });
+
+    it('accepts either step a fixed-gamma device can land on for a value between them', () => {
+        const steps = [1.0, 2.0, 2.3, 2.5, 2.8, 3.0];
+        const wants21 = [{ port: 1, models: ['Tree'], pixels: 50, gamma: 2.1 }];
+        const at = (gamma: number) => [{ port: 1, model: 'Tree', pixels: 50, gamma }];
+        const check = (gamma: number, gammaSteps?: number[]) =>
+            reconcilePorts(wants21, at(gamma), undefined, undefined, { check: 'specified', gammaSteps })[0];
+        expect(check(2.0, steps).drift).toBe('ok');
+        expect(check(2.3, steps).drift).toBe('ok');
+        expect(check(2.5, steps)).toMatchObject({ drift: 'settings', settingsNotes: ['gamma 2.5 (xLights 2.1)'] });
+        // Without steps, only the value itself will do.
+        expect(check(2.0).drift).toBe('settings');
+        expect(check(2.1).drift).toBe('ok');
+    });
+
+    it('holds null pixels to the layout, or to none when every setting is managed', () => {
+        const want100 = [{ port: 1, models: ['Arch'], pixels: 50, nullPixels: 100 }];
+        const bare = [{ port: 1, models: ['Arch'], pixels: 50 }];
+        const at = (nullPixels: number) => [{ port: 1, model: 'Arch', pixels: 50, nullPixels }];
+        expect(reconcilePorts(want100, at(100), undefined, undefined, { check: 'specified' })[0].drift).toBe('ok');
+        expect(reconcilePorts(want100, at(0), undefined, undefined, { check: 'specified' })[0]).toMatchObject({
+            drift: 'settings',
+            settingsNotes: ['null pixels 0 (xLights 100)'],
+        });
+        // A count set by hand on the controller is left alone...
+        expect(reconcilePorts(bare, at(100), undefined, undefined, { check: 'specified' })[0].drift).toBe('ok');
+        // ...unless every setting is managed, when a reconfigure would clear it.
+        expect(reconcilePorts(bare, at(100), undefined, undefined, { check: 'all' })[0]).toMatchObject({
+            drift: 'settings',
+            settingsNotes: ['null pixels 100 (xLights 0)'],
+        });
+        expect(portSettingsDrift({ endNullPixels: 2 }, { endNullPixels: 0 })).toEqual([
+            'end null pixels 0 (xLights 2)',
+        ]);
     });
 
     it('reports a wrong pixel count ahead of wrong settings', () => {

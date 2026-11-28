@@ -128,6 +128,21 @@ let holdData: ((address: string) => (() => void) | undefined) | null = null;
 export function setControllerDataHold(fn: (address: string) => (() => void) | undefined): void {
     holdData = fn;
 }
+
+/**
+ * Hold a device's data under every name the show might send to it by: its
+ * IP, its hostname and the address its layout record gives.
+ */
+function holdDataFor(dev: DiscoveredController): (() => void) | undefined {
+    const hold = holdData;
+    if (!hold) return undefined;
+    const addresses = new Set<string>([dev.ip]);
+    if (dev.hostname) addresses.add(dev.hostname);
+    const rec = recordFor(dev, state.known ?? []);
+    if (rec?.address) addresses.add(rec.address);
+    const releases = [...addresses].map(hold).filter((r): r is () => void => r !== undefined);
+    return releases.length ? () => releases.forEach((r) => r()) : undefined;
+}
 export function setControllerOpsBroadcaster(fn: (s: ControllerOpsState) => void): void {
     broadcast = fn;
 }
@@ -398,6 +413,8 @@ function toControllerPort(p: PixelPortInfo): ControllerPort {
         colorOrder: p.colorOrder,
         brightness: p.brightness,
         gamma: p.gamma,
+        nullPixels: p.nullPixels,
+        endNullPixels: p.endNullPixels,
         startChannel: p.startChannel,
         endChannel: p.endChannel,
         universe: p.universe,
@@ -465,6 +482,7 @@ function toController(d: DiscoveryDevice): DiscoveredController {
         // Structured per-port config (full depth only) — reconcile's "actual" side.
         pixelPorts: d.report?.pixelPorts?.map(toControllerPort),
         pixelPortCount: d.report?.pixelPortCount,
+        gammaSteps: d.report?.gammaSteps,
         serialPorts: d.report?.serialPorts?.map(toControllerSerialPort),
         serialPortCount: d.report?.serialPortCount,
         panelMatrices: d.report?.panelMatrices?.map(toControllerPanelMatrix),
@@ -486,6 +504,7 @@ function mergeDevice(d: DiscoveryDevice): void {
         if (next.detail === undefined) next.detail = prev.detail;
         if (next.pixelPorts === undefined) next.pixelPorts = prev.pixelPorts;
         if (next.pixelPortCount === undefined) next.pixelPortCount = prev.pixelPortCount;
+        if (next.gammaSteps === undefined) next.gammaSteps = prev.gammaSteps;
         if (next.serialPorts === undefined) next.serialPorts = prev.serialPorts;
         if (next.serialPortCount === undefined) next.serialPortCount = prev.serialPortCount;
         if (next.panelMatrices === undefined) next.panelMatrices = prev.panelMatrices;
@@ -962,7 +981,7 @@ async function runStatus(
     try {
         slot = await started;
         if (!slot) return;
-        release = holdData?.(dev.ip);
+        release = holdDataFor(dev);
         for (const note of await ensureProxyLists()) console.warn('[controller-ops] proxy list:', note);
         const probe = await probeController(dev.ip, proxyFor(dev), {
             detail: true,
@@ -1001,6 +1020,7 @@ async function runStatus(
             detail: reportToTree(probe.report) as DiscoveredController['detail'],
             pixelPorts: probe.report.pixelPorts?.map(toControllerPort),
             pixelPortCount: probe.report.pixelPortCount ?? dev.pixelPortCount,
+            gammaSteps: probe.report.gammaSteps ?? dev.gammaSteps,
             serialPorts: probe.report.serialPorts?.map(toControllerSerialPort),
             serialPortCount: probe.report.serialPortCount ?? dev.serialPortCount,
             panelMatrices: probe.report.panelMatrices?.map(toControllerPanelMatrix),
@@ -1189,7 +1209,7 @@ async function runUpload(
         // A controller needing an upload is not outputting correctly anyway,
         // and an interrupted upload leaves it worse off, so its data stays held
         // for the whole operation.
-        release = holdData?.(dev.ip);
+        release = holdDataFor(dev);
         const proxyNotes = await ensureProxyLists();
         // Upload needs xLights intent, so a controller is expected here.
         const probe = await probeController(dev.ip, proxyFor(dev), {
@@ -1402,6 +1422,7 @@ async function runUpload(
                     detail: reportToTree(verify.report) as DiscoveredController['detail'],
                     pixelPorts: verify.report.pixelPorts?.map(toControllerPort),
                     pixelPortCount: verify.report.pixelPortCount ?? dev.pixelPortCount,
+                    gammaSteps: verify.report.gammaSteps ?? dev.gammaSteps,
                     serialPorts: verify.report.serialPorts?.map(toControllerSerialPort),
                     serialPortCount: verify.report.serialPortCount ?? dev.serialPortCount,
                     panelMatrices: verify.report.panelMatrices?.map(toControllerPanelMatrix),
